@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <script>window.FRAPPE_CSRF_TOKEN = "{{ frappe.session.csrf_token }}";</script>
+</head>
+<body>
+  {{ frontend_html | safe }}
+</body>
+</html>

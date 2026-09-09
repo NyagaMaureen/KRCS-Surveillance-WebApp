@@ -5,6 +5,10 @@ app_description = "KRCS AI-Enabled Public Health Surveillance System"
 app_email = "maureen@goodpartnerske.org"
 app_license = "mit"
 
+
+website_route_rules = [
+    {"from_route": "/surveillance/<path:app_path>", "to_route": "surveillance"},
+]
 # Apps
 # ------------------
 
