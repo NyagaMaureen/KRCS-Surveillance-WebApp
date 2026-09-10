@@ -50,7 +50,7 @@
       <!-- Messages / welcome -->
       <div ref="scrollAreaRef" class="flex-1 overflow-y-auto px-4 sm:px-6">
         <div v-if="!messages.length" class="h-full flex flex-col items-center justify-center text-center px-4 py-10">
-          <img :src="'/assets/surveillance/images/logo.png'" alt="KRCS" class="w-14 h-14 object-contain mb-5" />
+          <img :src="'/assets/surveillance/images/logo.png'" alt="KRCS" class="w-20 h-18 object-contain mb-5" />
           <h2 class="text-2xl sm:text-3xl font-medium text-gray-900 mb-3">Welcome to KRCS AI DataAssistant</h2>
           <p class="text-gray-500 text-base sm:text-lg max-w-2xl mb-8">
             Ask me about community health data, disease trends, alerts, or reports.

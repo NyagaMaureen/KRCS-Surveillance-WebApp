@@ -17,6 +17,36 @@ export async function getCurrentUser() {
   return getDoc('User', email)
 }
 
+export async function getMySurveillanceRole() {
+  const user = await getCurrentUser()
+
+  if (!user || !user.roles) {
+    return null
+  }
+
+  const roles = user.roles
+    .map(r => r.role)
+    .filter(Boolean)
+
+  // Get roles that are defined as Surveillance roles
+  const surveillanceRoles = await getRoles()
+
+  const surveillanceRoleNames = surveillanceRoles.map(r => r.role)
+
+  return roles.find(role =>
+    surveillanceRoleNames.includes(role)
+  ) || null
+}
+
+export async function getMyCapabilities() {
+  const res = await fetch('/api/method/get_my_capabilities')
+  const data = await res.json()
+  const message = data.message || {}
+  return {
+    capabilities: message.capabilities || [],
+    primary_role: message.primary_role || '',
+  }
+}
 
 export async function login(usr, pwd) {
   const res = await fetch(`${BASE}/api/method/login`, {
@@ -25,6 +55,14 @@ export async function login(usr, pwd) {
     body: `usr=${encodeURIComponent(usr)}&pwd=${encodeURIComponent(pwd)}`,
   })
   return res.ok
+}
+
+
+export async function logout() {
+  await fetch(`${BASE}/api/method/logout`, {
+    method: 'POST',
+    headers: { 'X-Frappe-CSRF-Token': csrfToken() },
+  })
 }
 
 
@@ -129,10 +167,18 @@ export async function createUser(userData) {
     first_name: userData.first_name,
     last_name: userData.last_name || '',
     user_type: 'System User',
-    primary_role: userData.primary_role || '',
+
+    roles: userData.primary_role
+      ? [{ role: userData.primary_role }]
+      : [],
+
     assigned_region: userData.assigned_region || '',
     account_status: userData.account_status || 'Active',
-    enabled: userData.account_status !== 'Inactive' && userData.account_status !== 'Suspended',
+
+    enabled:
+      userData.account_status !== 'Inactive' &&
+      userData.account_status !== 'Suspended',
+
     new_password: userData.password,
     send_welcome_email: 0,
   })
@@ -272,6 +318,44 @@ export async function createRegion(regionData) {
     doctype: 'Region',
     ...regionData,
   })
+}
+
+export async function getRoleCapabilities(role) {
+  const url = BASE + '/api/method/get_role_capabilities?role=' + encodeURIComponent(role)
+  const res = await fetch(url)
+  let data
+  try {
+    data = await res.json()
+  } catch (e) {
+    data = null
+  }
+  if (!res.ok) {
+    const msg = (data && (data.exception || data.message)) || 'Failed to load role capabilities'
+    throw new Error(msg)
+  }
+  return (data && data.message) || null
+}
+
+export async function setRoleCapability(role, capability, enabled) {
+  const res = await fetch(BASE + '/api/method/set_role_capability', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken(),
+    },
+    body: JSON.stringify({ role: role, capability: capability, enabled: enabled }),
+  })
+  let data
+  try {
+    data = await res.json()
+  } catch (e) {
+    data = null
+  }
+  if (!res.ok) {
+    const msg = (data && (data.exception || data.message)) || 'Failed to update capability'
+    throw new Error(msg)
+  }
+  return data && data.message
 }
 
 /*
@@ -564,4 +648,14 @@ const MOCK_DATA_EXPLORER_RECORDS = buildMockDataExplorerRecords(50)
 
 export async function getDataExplorerRecords(opts = {}) {
   return MOCK_DATA_EXPLORER_RECORDS.slice(opts.start || 0, (opts.start || 0) + (opts.limit || MOCK_DATA_EXPLORER_RECORDS.length))
+}
+
+// --- Reference data lookups (Region, Symptom) — always readable regardless of role ---
+let referenceLabelsCache = null
+export async function getReferenceLabels() {
+  if (referenceLabelsCache) return referenceLabelsCache
+  const res = await fetch('/api/method/surveillance.surveillance.api.get_reference_labels')
+  const data = await res.json()
+  referenceLabelsCache = data.message || { regions: {}, symptoms: {} }
+  return referenceLabelsCache
 }

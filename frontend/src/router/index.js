@@ -1,4 +1,6 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
+import { getMyCapabilities } from '../api/frappe'
+import { SIDEBAR_MENU } from '../data/sidebarMenu'
 import Login from '../pages/Login.vue'
 import Dashboard from '../pages/Dashboard.vue'
 import Analytics from '../pages/Analytics.vue'
@@ -29,8 +31,33 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHashHistory(),
+  history: createWebHistory('/surveillance/'),
   routes,
+})
+
+const MENU_ITEMS = SIDEBAR_MENU.flatMap((group) => group.items)
+
+let capabilitiesPromise = null
+function loadCapabilities() {
+  if (!capabilitiesPromise) {
+    capabilitiesPromise = getMyCapabilities()
+  }
+  return capabilitiesPromise
+}
+
+router.beforeEach(async (to) => {
+  const page = to.path.replace(/^\//, '')
+  const menuItem = MENU_ITEMS.find((item) => item.page === page)
+
+  if (!menuItem || !menuItem.requiresCapability) return true
+
+  const { capabilities } = await loadCapabilities()
+
+  if (!capabilities.includes(menuItem.requiresCapability)) {
+    return '/dashboard'
+  }
+
+  return true
 })
 
 export default router

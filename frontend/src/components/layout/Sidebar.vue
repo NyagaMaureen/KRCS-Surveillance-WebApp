@@ -3,11 +3,11 @@
     <div class="flex items-center justify-between px-5 py-6">
       <div class="flex items-center overflow-hidden flex-1">
   <img
-  :src="'/assets/surveillance/images/logo.png'"
+  :src="'/assets/surveillance/images/newlogo.png'"
   alt="Kenya Red Cross"
   :class="[
     'object-contain object-left transition-all duration-300',
-    collapsed ? 'h-8 w-8' : 'h-12 w-full'
+    collapsed ? 'h-8 w-8' : 'h-13 w-full'
   ]"
 />
 </div>
@@ -18,7 +18,7 @@
     </div>
 
     <nav class="flex-1 overflow-y-auto px-3 pb-6">
-      <template v-for="group in SIDEBAR_MENU" :key="group.section">
+      <template v-for="group in visibleMenu" :key="group.section">
         <div v-if="!collapsed" class="px-2 text-xs font-semibold text-gray-400 tracking-wide mb-2 mt-5">{{ group.section }}</div>
         <router-link
           v-for="item in group.items"
@@ -36,13 +36,28 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+
 import { useRoute } from 'vue-router'
 import * as icons from 'lucide-vue-next'
 import { SIDEBAR_MENU } from '@/data/sidebarMenu'
+import { ref, computed, onMounted } from 'vue'
+import { getMyCapabilities } from '@/api/frappe'
 
 const route = useRoute()
 const currentPage = computed(() => route.path.replace('/', ''))
+
+const myCapabilities = ref([])
+onMounted(async () => {
+  const { capabilities } = await getMyCapabilities()
+  myCapabilities.value = capabilities
+})
+
+const visibleMenu = computed(() =>
+  SIDEBAR_MENU.map(group => ({
+    ...group,
+    items: group.items.filter(item => !item.requiresCapability || myCapabilities.value.includes(item.requiresCapability)),
+  })).filter(group => group.items.length > 0)
+)
 
 const collapsed = ref(localStorage.getItem('sidebarCollapsed') === 'true')
 function toggle() {
