@@ -6,6 +6,7 @@ import Dashboard from '../pages/Dashboard.vue'
 import Analytics from '../pages/Analytics.vue'
 import DataExplorer from '../pages/DataExplorer.vue'
 import Reports from '../pages/Reports.vue'
+import ReportDetail from '../pages/ReportDetail.vue'
 import RecordHealthSignal from '../pages/RecordHealthSignal.vue'
 import UserManagement from '../pages/UserManagement.vue'
 import Channels from '../pages/Channels.vue'
@@ -20,6 +21,7 @@ const routes = [
   { path: '/analytics', name: 'analytics', component: Analytics },
   { path: '/data-explorer', name: 'data-explorer', component: DataExplorer },
   { path: '/reports', name: 'reports', component: Reports },
+  { path: '/reports/:id', name: 'report-detail', component: ReportDetail },
   { path: '/record-health-signal', name: 'record-health-signal', component: RecordHealthSignal },
   { path: '/user-management', name: 'user-management', component: UserManagement },
   { path: '/channels', name: 'channels', component: Channels },

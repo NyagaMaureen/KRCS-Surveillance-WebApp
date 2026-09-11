@@ -141,7 +141,7 @@ async function handleLogin() {
   try {
     const ok = await login(usr.value, pwd.value)
     if (ok) {
-      router.push('/reports')
+      router.push('/ai-data-assistant')
     } else {
       error.value = 'Invalid email or password. Please try again.'
     }

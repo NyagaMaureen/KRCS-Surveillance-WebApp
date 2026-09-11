@@ -358,54 +358,6 @@ export async function setRoleCapability(role, capability, enabled) {
   return data && data.message
 }
 
-/*
-|--------------------------------------------------------------------------
-| Audit Log
-|--------------------------------------------------------------------------
-|
-| Backed by mock data for now. Once an "Audit Log" DocType exists on the
-| Frappe side, swap the body of getAuditLogs() for a getList() call, e.g.
-|
-|   return getList('Audit Log',
-|     ['name', 'timestamp', 'category', 'action', 'user', 'role', 'details', 'ip_address'],
-|     { limit: opts.limit || 500, start: opts.start || 0, orderBy: 'timestamp desc' })
-|
-| The page consuming this function does all of its search/filter/pagination
-| client-side, so the return shape (an array of the fields below) is all
-| that needs to stay the same.
-*/
-
-const AUDIT_LOG_TEMPLATES = [
-  { category: 'Auth', action: 'User Login', user: 'Peter Mwangi', role: 'HQ Admin', details: 'Logged in from 192.168.1.100' },
-  { category: 'Alert', action: 'Alert Created', user: 'System (AI)', role: 'System', details: 'Auto-generated alert ALT-021 for cholera cluster in Dadaab' },
-  { category: 'Report', action: 'Report Submitted', user: 'Amina Hassan', role: 'CHP', details: 'Report RPT-0051 submitted via Mobile App' },
-  { category: 'Case', action: 'Case Status Changed', user: 'James Ochieng', role: 'Surveillance Officer', details: "CASE-003 moved from 'open' to 'investigating'" },
-  { category: 'Config', action: 'Alert Threshold Updated', user: 'Peter Mwangi', role: 'HQ Admin', details: 'Critical alert threshold changed from 0.85 to 0.80' },
-  { category: 'User', action: 'User Role Modified', user: 'Peter Mwangi', role: 'HQ Admin', details: 'Changed James Ochieng role: added surveillance permissions' },
-  { category: 'AI', action: 'Report Verified', user: 'James Ochieng', role: 'Surveillance Officer', details: 'Report RPT-0023 verified and linked to ALT-005' },
-  { category: 'Auth', action: 'User Logout', user: 'Amina Hassan', role: 'CHP', details: 'Session ended from 192.168.1.114' },
-  { category: 'Report', action: 'Report Approved', user: 'Peter Mwangi', role: 'HQ Admin', details: 'Report RPT-0048 approved and archived' },
-  { category: 'Config', action: 'System Backup', user: 'System', role: 'System', details: 'Nightly database backup completed successfully' },
-]
-
-function buildMockAuditLogs(count = 50) {
-  const now = Date.now()
-  return Array.from({ length: count }, (_, i) => {
-    const template = AUDIT_LOG_TEMPLATES[i % AUDIT_LOG_TEMPLATES.length]
-    return {
-      name: `LOG-${String(count - i).padStart(4, '0')}`,
-      timestamp: new Date(now - i * 60 * 60 * 1000).toISOString(),
-      ...template,
-    }
-  })
-}
-
-const MOCK_AUDIT_LOGS = buildMockAuditLogs(50)
-
-export async function getAuditLogs(opts = {}) {
-  return MOCK_AUDIT_LOGS.slice(opts.start || 0, (opts.start || 0) + (opts.limit || MOCK_AUDIT_LOGS.length))
-}
-
 export function exportCsv(filename, rows, columns) {
   const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
   const header = columns.map((c) => escape(c.label)).join(',')
@@ -658,4 +610,27 @@ export async function getReferenceLabels() {
   const data = await res.json()
   referenceLabelsCache = data.message || { regions: {}, symptoms: {} }
   return referenceLabelsCache
+}
+
+export async function getAuditLogs(opts = {}) {
+  const res = await fetch(`/api/method/surveillance.surveillance.api.get_audit_logs?limit=${opts.limit || 500}`)
+  const data = await res.json()
+  return data.message || []
+}
+
+// --- Case Report (health signal) CRUD ---
+export async function getReport(name) {
+  return getDoc('Case Report', name)
+}
+
+export async function createReport(fields) {
+  return insertDoc({ doctype: 'Case Report', ...fields })
+}
+
+export async function updateReport(name, fields) {
+  return updateDoc('Case Report', name, fields)
+}
+
+export async function deleteReport(name) {
+  return deleteDoc('Case Report', name)
 }

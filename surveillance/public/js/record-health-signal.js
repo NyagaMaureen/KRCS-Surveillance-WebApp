@@ -191,7 +191,7 @@ function formatCoords(lat, lng) {
   return `${Math.abs(lat).toFixed(4)}\u00b0${latDir}, ${Math.abs(lng).toFixed(4)}\u00b0${lngDir}`;
 }
 
-// --- Final submit ---
+
 async function submitReport() {
   const errorEl = document.getElementById('submit-error');
   errorEl.classList.add('hidden');
