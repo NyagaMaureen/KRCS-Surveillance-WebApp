@@ -1,8 +1,0 @@
-@import "tailwindcss";
-
-body { font-family: 'Inter', sans-serif; }
-
-button:not(:disabled),
-[role="switch"] {
-  cursor: pointer;
-}
