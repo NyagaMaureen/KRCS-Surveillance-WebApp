@@ -34,6 +34,20 @@ def get_audit_logs(limit=500):
         "Region": "Config",
     }
 
+    for doctype, category in CATEGORY_MAP.items():
+        records = frappe.get_all(doctype, fields=["name", "owner", "creation"], limit_page_length=limit, order_by="creation desc")
+        for r in records:
+            user_role = frappe.db.get_value("User", r.owner, "primary_role") or "—"
+            results.append({
+                "name": f"create-{doctype}-{r.name}",
+                "timestamp": r.creation,
+                "category": category,
+                "action": "Created",
+                "user": r.owner,
+                "role": user_role,
+                "details": f"Created {doctype} {r.name}",
+            })
+
     versions = frappe.get_all(
         "Version",
         filters={"ref_doctype": ["in", list(CATEGORY_MAP.keys())]},
@@ -41,26 +55,20 @@ def get_audit_logs(limit=500):
         order_by="creation desc",
         limit_page_length=limit,
     )
-
     for v in versions:
         category = CATEGORY_MAP.get(v.ref_doctype, "Config")
         user_role = frappe.db.get_value("User", v.owner, "primary_role") or "—"
-        action = "Updated"
         details = f"{v.ref_doctype} {v.docname} was updated"
         try:
             data = json.loads(v.data) if v.data else {}
-            if data.get("creation"):
-                action = "Created"
-                details = f"Created {v.ref_doctype} {v.docname}"
-            elif data.get("changed"):
+            if data.get("changed"):
                 fields_changed = ", ".join([c[0] for c in data["changed"][:3]])
                 details = f"Changed {fields_changed} on {v.ref_doctype} {v.docname}"
         except Exception:
             pass
-
         results.append({
             "name": v.name, "timestamp": v.creation, "category": category,
-            "action": action, "user": v.owner, "role": user_role, "details": details,
+            "action": "Updated", "user": v.owner, "role": user_role, "details": details,
         })
 
     logins = frappe.get_all(
@@ -80,3 +88,12 @@ def get_audit_logs(limit=500):
 
     results.sort(key=lambda r: r["timestamp"], reverse=True)
     return results[:limit]
+
+@frappe.whitelist()
+def get_my_profile():
+    user_doc = frappe.get_doc("User", frappe.session.user)
+    return {
+        "name": user_doc.name,
+        "full_name": user_doc.full_name,
+        "phone_number": user_doc.mobile_no or "",
+    }
