@@ -1,0 +1,86 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:43:17.447782",
+  "name": "Field Supervisor",
+  "role": "Field Supervisor"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:43:44.459816",
+  "name": "System Administrator",
+  "role": "System Administrator"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:44:09.709779",
+  "name": "Partner Organization",
+  "role": "Partner Organization"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:44:36.672516",
+  "name": "Government / MOH / IDSR",
+  "role": "Government / MOH / IDSR"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:44:55.478114",
+  "name": "Data & AI Administrator",
+  "role": "Data & AI Administrator"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:45:16.340874",
+  "name": "Public Health Manager",
+  "role": "Public Health Manager"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:45:33.888495",
+  "name": "Surveillance Officer",
+  "role": "Surveillance Officer"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:47:25.664873",
+  "name": "Facility Health Worker",
+  "role": "Facility Health Worker"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:47:54.202387",
+  "name": "Public Health Specialist",
+  "role": "Public Health Specialist"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:48:16.947842",
+  "name": "County Officer",
+  "role": "County Officer"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:48:37.218901",
+  "name": "CHP",
+  "role": "CHP"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-08-28 10:48:56.538718",
+  "name": "HQ Admin",
+  "role": "HQ Admin"
+ }
+]

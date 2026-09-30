@@ -89,6 +89,25 @@ website_route_rules = [
 # before_install = "surveillance.install.before_install"
 # after_install = "surveillance.install.after_install"
 
+after_migrate = [
+	"surveillance.alert_thresholds.seed_defaults",
+	"surveillance.capabilities.after_migrate",
+]
+
+# Fixtures: shipped with the app and installed on every site on migrate
+SURVEILLANCE_ROLES = [
+	"HQ Admin", "CHP", "County Officer", "Public Health Specialist",
+	"Facility Health Worker", "Surveillance Officer", "Public Health Manager",
+	"Data & AI Administrator", "Government / MOH / IDSR", "Partner Organization",
+	"System Administrator", "Field Supervisor",
+]
+
+fixtures = [
+	{"dt": "Custom Field", "filters": [["name", "in", ["User-primary_role", "User-account_status", "User-assigned_region"]]]},
+	{"dt": "Role", "filters": [["name", "in", SURVEILLANCE_ROLES]]},
+	{"dt": "Surveillance Role"},
+]
+
 # Uninstallation
 # ------------
 

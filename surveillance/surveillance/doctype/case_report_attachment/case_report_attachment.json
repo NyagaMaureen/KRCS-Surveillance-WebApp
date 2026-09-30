@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-09-21 13:16:25.699017",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "attachment_type",
+  "file",
+  "text_content"
+ ],
+ "fields": [
+  {
+   "fieldname": "attachment_type",
+   "fieldtype": "Select",
+   "label": "Attachment Type",
+   "options": "Photo\nVoice Note\nText Note\nAttachment"
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "label": "File"
+  },
+  {
+   "fieldname": "text_content",
+   "fieldtype": "Small Text",
+   "label": "Text Content"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-30 09:23:29.226006",
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "Case Report Attachment",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
