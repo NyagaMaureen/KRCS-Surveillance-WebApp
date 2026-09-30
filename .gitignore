@@ -17,3 +17,10 @@ surveillance/public/frontend/
 
 *.env
 site_config.json
+# Environment files (API keys etc.)
+.env
+.env.*
+!.env.example
+
+# Local reference files
+frontend/reference/
