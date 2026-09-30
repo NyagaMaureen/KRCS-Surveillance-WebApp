@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+html, body, #app { background: #ffffff; }
 body { font-family: 'Inter', sans-serif; }
 
 button:not(:disabled),

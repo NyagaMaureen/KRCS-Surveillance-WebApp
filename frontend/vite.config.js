@@ -16,7 +16,7 @@ export default defineConfig(({ command }) => ({
   },
 
   server: {
-    port: 8081,
+    port: 8080,
 
     proxy: {
       '/assets/surveillance/images': {

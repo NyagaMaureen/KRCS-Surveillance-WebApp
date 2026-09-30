@@ -18,7 +18,7 @@ export default function Login() {
     try {
       const ok = await login(usr, pwd)
       if (ok) {
-        navigate('/ai-data-assistant')
+        navigate('/dashboard')
       } else {
         setError('Invalid email or password. Please try again.')
       }
@@ -32,7 +32,7 @@ export default function Login() {
       <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-[1fr_1.5px_1fr] overflow-hidden">
         <div className="p-10 md:p-14 flex flex-col justify-center">
           <div className="mb-10">
-            <img src="/assets/surveillance/images/newlogo.png" alt="Kenya Red Cross" className="h-10 w-auto object-contain" />
+            <img src="/assets/surveillance/images/newlogo.svg" alt="Kenya Red Cross" className="h-10 w-auto object-contain" />
           </div>
           <h1 className="text-3xl font-extrabold text-gray-900 mb-1">Welcome Back!</h1>
           <p className="text-gray-400 mb-8">Login to your account</p>
