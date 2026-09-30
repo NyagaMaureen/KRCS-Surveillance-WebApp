@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload } from 'lucide-react'
+import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getCurrentUser, getRegions, getRoles, updateDoc } from '../api/frappe'
+import { getCurrentUser, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds } from '../api/frappe'
+import { useCapabilities } from '../context/CapabilitiesContext'
 
 const TABS = [
   { key: 'profile', label: 'Profile', icon: UserCircle },
   { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'system', label: 'System', icon: SlidersHorizontal },
+  { key: 'alert-thresholds', label: 'Alert Thresholds', icon: Clock },
   { key: 'ai-config', label: 'AI Config', icon: Wand2 },
   { key: 'data', label: 'Data', icon: Database },
   { key: 'security', label: 'Security', icon: Shield },
@@ -72,9 +74,22 @@ function Toggle({ enabled, onClick }) {
 }
 
 export default function Settings() {
+  const { has } = useCapabilities()
   const [activeTab, setActiveTab] = useState('profile')
-  const [thresholds, setThresholds] = useState({ critical: 0.85, high: 0.6, minReports: 3, timeWindow: 24 })
-  const [thresholdsSaved, setThresholdsSaved] = useState(false)
+  const [diseases, setDiseases] = useState([])
+  const [diseaseThresholds, setDiseaseThresholds] = useState({})
+  const [outbreakMultiplier, setOutbreakMultiplier] = useState(2.5)
+  const [thresholdsLoading, setThresholdsLoading] = useState(true)
+  const [thresholdsError, setThresholdsError] = useState('')
+  const [savingThresholds, setSavingThresholds] = useState(false)
+  const [saveThresholdsError, setSaveThresholdsError] = useState('')
+  const [editingDiseaseThresholds, setEditingDiseaseThresholds] = useState(false)
+  const [diseaseThresholdsBackup, setDiseaseThresholdsBackup] = useState(null)
+  const [addingDisease, setAddingDisease] = useState(false)
+  const [newDiseaseName, setNewDiseaseName] = useState('')
+  const [newDiseaseThreshold, setNewDiseaseThreshold] = useState('1')
+  const [addDiseaseError, setAddDiseaseError] = useState('')
+  const [addingDiseaseSaving, setAddingDiseaseSaving] = useState(false)
 
   const [surveillanceRegions, setSurveillanceRegions] = useState([])
   const [addingRegion, setAddingRegion] = useState(false)
@@ -106,11 +121,20 @@ export default function Settings() {
   const [editing, setEditing] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [password, setPassword] = useState({ current: '', next: '', confirm: '' })
+  const [showPassword, setShowPassword] = useState({ current: false, next: false, confirm: false })
   const emptyForm = () => ({ first_name: '', middle_name: '', last_name: '', mobile_no: '', assigned_region: '' })
   const [form, setForm] = useState(emptyForm)
 
   const [aiFeatures, setAiFeatures] = useState(INITIAL_AI_FEATURES)
   const [notificationPrefs, setNotificationPrefs] = useState(INITIAL_NOTIFICATION_PREFS)
+
+  const [toast, setToast] = useState({ show: false, message: '' })
+  const toastTimerRef = useRef(null)
+  function showToast(message) {
+    setToast({ show: true, message })
+    clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToast({ show: false, message: '' }), 3000)
+  }
 
   const roleLabel = useMemo(() => {
     const match = roles.find((r) => r.name === user?.primary_role)
@@ -127,9 +151,83 @@ export default function Settings() {
     })
   }
 
-  function saveThresholds() {
-    setThresholdsSaved(true)
-    setTimeout(() => setThresholdsSaved(false), 3000)
+  function startEditDiseaseThresholds() {
+    setDiseaseThresholdsBackup({ values: diseaseThresholds, multiplier: outbreakMultiplier, diseases })
+    setEditingDiseaseThresholds(true)
+  }
+
+  function cancelEditDiseaseThresholds() {
+    if (diseaseThresholdsBackup) {
+      setDiseaseThresholds(diseaseThresholdsBackup.values)
+      setOutbreakMultiplier(diseaseThresholdsBackup.multiplier)
+      setDiseases(diseaseThresholdsBackup.diseases)
+    }
+    setEditingDiseaseThresholds(false)
+    cancelAddDisease()
+  }
+
+  function updateDiseaseThreshold(key, value) {
+    setDiseaseThresholds((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function saveDiseaseThresholds() {
+    setSaveThresholdsError('')
+    setSavingThresholds(true)
+    const numericThresholds = Object.fromEntries(
+      Object.entries(diseaseThresholds).map(([key, value]) => [key, Number(value)])
+    )
+    try {
+      const result = await saveAlertThresholds(numericThresholds, Number(outbreakMultiplier))
+      setDiseases(result.diseases)
+      setDiseaseThresholds(Object.fromEntries(result.diseases.map((d) => [d.key, d.threshold])))
+      setOutbreakMultiplier(result.outbreak_multiplier)
+      setEditingDiseaseThresholds(false)
+      setDiseaseThresholdsBackup(null)
+      showToast('Disease alert thresholds saved')
+    } catch (e) {
+      setSaveThresholdsError(e.message || 'Could not save disease alert thresholds.')
+    } finally {
+      setSavingThresholds(false)
+    }
+  }
+
+  async function confirmAddDisease() {
+    const name = newDiseaseName.trim()
+    if (!name) return
+    setAddDiseaseError('')
+    setAddingDiseaseSaving(true)
+    try {
+      const disease = await addDisease({ disease_name: name, threshold: Number(newDiseaseThreshold) || 1, category: 'human' })
+      setDiseases((prev) => [...prev, disease])
+      setDiseaseThresholds((prev) => ({ ...prev, [disease.key]: disease.threshold }))
+      if (diseaseThresholdsBackup) {
+        setDiseaseThresholdsBackup((prev) => ({
+          ...prev,
+          diseases: [...prev.diseases, disease],
+          values: { ...prev.values, [disease.key]: disease.threshold },
+        }))
+      }
+      setNewDiseaseName('')
+      setNewDiseaseThreshold('1')
+      setAddingDisease(false)
+      showToast('Disease added')
+    } catch (e) {
+      setAddDiseaseError(e.message || 'Could not add disease.')
+    } finally {
+      setAddingDiseaseSaving(false)
+    }
+  }
+
+    function startAddDisease() {
+    setNewDiseaseName('')
+    setNewDiseaseThreshold('1')
+    setAddingDisease(true)
+  }
+
+  function cancelAddDisease() {
+    setNewDiseaseName('')
+    setNewDiseaseThreshold('1')
+    setAddingDisease(false)
   }
 
   function confirmAddRegion() {
@@ -174,7 +272,8 @@ export default function Settings() {
       surveillanceRegions,
       aiFeatures,
       notificationPrefs,
-      thresholds,
+      diseaseThresholds,
+      outbreakMultiplier,
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -209,6 +308,21 @@ export default function Settings() {
     reader.readAsText(file)
   }
 
+  async function loadThresholds() {
+    setThresholdsLoading(true)
+    setThresholdsError('')
+    try {
+      const result = await getAlertThresholds()
+      setDiseases(result.diseases)
+      setDiseaseThresholds(Object.fromEntries(result.diseases.map((d) => [d.key, d.threshold])))
+      setOutbreakMultiplier(result.outbreak_multiplier)
+    } catch (e) {
+      setThresholdsError(e.message || 'Could not load disease alert thresholds.')
+    } finally {
+      setThresholdsLoading(false)
+    }
+  }
+
   useEffect(() => {
     Promise.all([getCurrentUser(), getRegions(), getRoles()]).then(([me, regionList, roleList]) => {
       setUser(me)
@@ -217,6 +331,7 @@ export default function Settings() {
       setSurveillanceRegions(regionList.map((r) => ({ name: r.region_name, active: true })))
       syncForm(me)
     })
+    loadThresholds()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -321,15 +436,63 @@ export default function Settings() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-6">
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-1.5">Current Password</label>
-                <input value={password.current} onChange={(e) => setPassword({ ...password, current: e.target.value })} type="password" className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
+                <div className="relative">
+                  <input
+                    value={password.current}
+                    onChange={(e) => setPassword({ ...password, current: e.target.value })}
+                    type={showPassword.current ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 pr-11 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword({ ...showPassword, current: !showPassword.current })}
+                    aria-label={showPassword.current ? 'Hide password' : 'Show password'}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-1.5">New Password</label>
-                <input value={password.next} onChange={(e) => setPassword({ ...password, next: e.target.value })} type="password" className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
+                <div className="relative">
+                  <input
+                    value={password.next}
+                    onChange={(e) => setPassword({ ...password, next: e.target.value })}
+                    type={showPassword.next ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 pr-11 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword({ ...showPassword, next: !showPassword.next })}
+                    aria-label={showPassword.next ? 'Hide password' : 'Show password'}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword.next ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-1.5">Confirm Password</label>
-                <input value={password.confirm} onChange={(e) => setPassword({ ...password, confirm: e.target.value })} type="password" className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
+                <div className="relative">
+                  <input
+                    value={password.confirm}
+                    onChange={(e) => setPassword({ ...password, confirm: e.target.value })}
+                    type={showPassword.confirm ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 pr-11 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword({ ...showPassword, confirm: !showPassword.confirm })}
+                    aria-label={showPassword.confirm ? 'Hide password' : 'Show password'}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -361,39 +524,6 @@ export default function Settings() {
 
       {activeTab === 'system' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <Clock className="w-7 h-7 text-gray-900" />
-              <h3 className="text-lg font-semibold text-gray-900">Alert Thresholds</h3>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-900 mb-1.5">Critical Alert Threshold</label>
-                <input value={thresholds.critical} onChange={(e) => setThresholds({ ...thresholds, critical: Number(e.target.value) })} type="number" step="0.01" min="0" max="1" className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
-                <p className="text-xs text-gray-400 mt-1.5">AI risk score above this triggers critical</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-900 mb-1.5">High Alert Threshold</label>
-                <input value={thresholds.high} onChange={(e) => setThresholds({ ...thresholds, high: Number(e.target.value) })} type="number" step="0.01" min="0" max="1" className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-900 mb-1.5">Min Reports for Alert</label>
-                <input value={thresholds.minReports} onChange={(e) => setThresholds({ ...thresholds, minReports: Number(e.target.value) })} type="number" min="1" className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
-                <p className="text-xs text-gray-400 mt-1.5">Minimum reports to generate alert</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-900 mb-1.5">Alert Time Window (hours)</label>
-                <input value={thresholds.timeWindow} onChange={(e) => setThresholds({ ...thresholds, timeWindow: Number(e.target.value) })} type="number" min="1" className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button onClick={saveThresholds} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">Update Thresholds</button>
-              {thresholdsSaved && <span className="text-sm text-green-600 font-medium">Thresholds updated</span>}
-            </div>
-          </div>
-
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <div className="flex items-center gap-3 mb-2">
               <MapPin className="w-7 h-7 text-gray-900" />
@@ -457,6 +587,113 @@ export default function Settings() {
 
             <p className="text-sm text-gray-400 mt-4">Last backup: {maintenance.lastBackup} · Size: {maintenance.lastBackupSize}</p>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'alert-thresholds' && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6">
+          <div className="flex items-center justify-between gap-6 mb-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Disease Alert Thresholds</h3>
+              <p className="text-sm text-gray-400 mt-1">Set the baseline case counts that trigger automated alerts. AI will flag anomalies above these thresholds.</p>
+            </div>
+            {has('manage_alert_thresholds') && (
+              <div className="flex items-center gap-3 shrink-0">
+                {!addingDisease && (
+                  <button onClick={startAddDisease} className="flex items-center gap-2 border border-gray-200 bg-gray-50 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-100">
+                    <Plus className="w-4 h-4" /> Add Disease
+                  </button>
+                )}
+                {!editingDiseaseThresholds && (
+                  <button onClick={startEditDiseaseThresholds} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">
+                    <Pencil className="w-4 h-4" /> Edit Thresholds
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {thresholdsLoading ? (
+            <p className="text-sm text-gray-400">Loading thresholds…</p>
+          ) : thresholdsError ? (
+            <div>
+              <p className="text-red-600 text-sm mb-3">{thresholdsError}</p>
+              <button onClick={loadThresholds} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50">Retry</button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-5">
+                {diseases.map((disease) => (
+                  <div key={disease.key}>
+                    <label className="block text-sm font-medium text-gray-900 mb-1.5">
+                      {disease.name}
+                      {disease.note && <span className="ml-2 text-xs font-normal text-red-500">({disease.note})</span>}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={diseaseThresholds[disease.key]}
+                      disabled={!editingDiseaseThresholds}
+                      onChange={(e) => updateDiseaseThreshold(disease.key, e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200"
+                    />
+                    <p className="text-xs text-gray-400 mt-1.5">Cases per week before alert</p>
+                  </div>
+                ))}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-1.5">Outbreak Multiplier</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.1"
+                    value={outbreakMultiplier}
+                    disabled={!editingDiseaseThresholds}
+                    onChange={(e) => setOutbreakMultiplier(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200"
+                  />
+                  <p className="text-xs text-gray-400 mt-1.5">e.g., 2.5x = 2.5 times baseline triggers outbreak alert</p>
+                </div>
+              </div>
+
+              {saveThresholdsError && <p className="text-red-600 text-sm mt-4">{saveThresholdsError}</p>}
+
+              {addingDisease && (
+                <div className="flex items-center gap-3 mt-6">
+                  <input
+                    value={newDiseaseName}
+                    onChange={(e) => setNewDiseaseName(e.target.value)}
+                    placeholder="Disease name"
+                    autoFocus
+                    className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    value={newDiseaseThreshold}
+                    onChange={(e) => setNewDiseaseThreshold(e.target.value)}
+                    onKeyUp={(e) => { if (e.key === 'Enter') confirmAddDisease() }}
+                    placeholder="Threshold"
+                    className="w-32 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                  />
+                  <button onClick={confirmAddDisease} disabled={addingDiseaseSaving} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">
+                    {addingDiseaseSaving ? 'Adding…' : 'Add'}
+                  </button>
+                  <button onClick={cancelAddDisease} className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600">Cancel</button>
+                </div>
+              )}
+              {addingDisease && addDiseaseError && <p className="text-red-600 text-sm mt-3">{addDiseaseError}</p>}
+
+              {editingDiseaseThresholds && (
+                <div className="flex gap-3 mt-6">
+                  <button onClick={saveDiseaseThresholds} disabled={savingThresholds} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">
+                    {savingThresholds ? 'Saving…' : 'Save Changes'}
+                  </button>
+                  <button onClick={cancelEditDiseaseThresholds} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold text-gray-600">Cancel</button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -599,6 +836,13 @@ export default function Settings() {
               <Toggle enabled={security.auditLogging} onClick={() => setSecurity({ ...security, auditLogging: !security.auditLogging })} />
             </div>
           </div>
+        </div>
+      )}
+
+      {toast.show && (
+        <div className="fixed bottom-6 right-6 bg-gray-900 text-white text-sm rounded-lg px-4 py-2.5 flex items-center gap-2 shadow-lg z-50">
+          <Check className="w-4 h-4 text-green-400" />
+          <span>{toast.message}</span>
         </div>
       )}
     </AppShell>

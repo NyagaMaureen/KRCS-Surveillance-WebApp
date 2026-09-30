@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Search, ChevronDown, Bell, Check } from 'lucide-react'
 import { getRoleCapabilities, setRoleCapability } from '../../api/frappe'
+import { useCapabilities } from '../../context/CapabilitiesContext'
 
 const NOTIFICATION_PREFS = [
   { key: 'email_new_alert', name: 'Email me on new alerts', description: 'Get an email whenever a new alert is created in your region.' },
@@ -19,6 +20,7 @@ function loadPrefs() {
 }
 
 export default function RolesPermissions({ roles = [], users = [] }) {
+  const { refresh } = useCapabilities()
   const [search, setSearch] = useState('')
   const [selectedRole, setSelectedRole] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -26,14 +28,16 @@ export default function RolesPermissions({ roles = [], users = [] }) {
   const [capState, setCapState] = useState({})
   const [openCategories, setOpenCategories] = useState({})
   const [prefState, setPrefState] = useState(loadPrefs)
+  const [locked, setLocked] = useState(false)
 
   const categories = useMemo(() => {
     const byCategory = new Map()
     for (const cap of rawCapabilities) {
       if (!byCategory.has(cap.category)) byCategory.set(cap.category, new Map())
       const byDoctype = byCategory.get(cap.category)
-      if (!byDoctype.has(cap.target_doctype)) byDoctype.set(cap.target_doctype, [])
-      byDoctype.get(cap.target_doctype).push(cap)
+            const groupKey = cap.target_doctype || 'all'
+      if (!byDoctype.has(groupKey)) byDoctype.set(groupKey, [])
+      byDoctype.get(groupKey).push(cap)
     }
     return Array.from(byCategory.entries())
       .map(([category, byDoctype]) => ({
@@ -91,19 +95,15 @@ export default function RolesPermissions({ roles = [], users = [] }) {
     setSelectedRole(r)
   }
 
-  function isEnabled(name) {
-    return !!capState[name]
-  }
 
-  async function loadCapabilities(role) {
+    async function loadCapabilities(role) {
     setLoading(true)
     try {
-      const list = await getRoleCapabilities(role)
-      const caps = list || []
+      const res = await getRoleCapabilities(role)
+      const caps = res?.capabilities || []
       setRawCapabilities(caps)
-      const state = {}
-      for (const cap of caps) state[cap.name] = !!cap.enabled
-      setCapState(state)
+      setLocked(!!res?.locked)
+      setCapState(Object.fromEntries(caps.map((c) => [c.key, !!c.enabled])))
     } catch (err) {
       setRawCapabilities([])
       showToast(err.message || 'Failed to load capabilities', true)
@@ -112,18 +112,21 @@ export default function RolesPermissions({ roles = [], users = [] }) {
     }
   }
 
-  async function toggleCapability(cap, event) {
+    async function toggleCapability(cap, event) {
     const enabled = event.target.checked
+    setCapState((prev) => ({ ...prev, [cap.key]: enabled }))
     try {
-      await setRoleCapability(selectedRole.role, cap.name, enabled ? 1 : 0)
-      setCapState((prev) => ({ ...prev, [cap.name]: enabled }))
-      showToast('Capability updated')
+      const res = await setRoleCapability(selectedRole.role, cap.key, enabled ? 1 : 0)
+      if (res?.capabilities) {
+        setCapState(Object.fromEntries(res.capabilities.map((c) => [c.key, !!c.enabled])))
+      }
+      showToast('Permissions saved')
+      refresh()
     } catch (err) {
-      event.target.checked = !enabled
+      setCapState((prev) => ({ ...prev, [cap.key]: !enabled }))
       showToast(err.message || 'Failed to update capability', true)
     }
   }
-
   useEffect(() => {
     if (selectedRole) loadCapabilities(selectedRole.role)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,7 +184,16 @@ export default function RolesPermissions({ roles = [], users = [] }) {
               <h2 className="text-lg font-bold text-gray-900">{selectedRole.role}</h2>
               <p className="text-sm text-gray-500 mt-1">Configure what {selectedRole.role} can view, create, and manage across the platform.</p>
             </div>
+<div className="bg-white rounded-xl border border-gray-100 p-5">
+              <h2 className="text-lg font-bold text-gray-900">{selectedRole.role}</h2>
+              <p className="text-sm text-gray-500 mt-1">Configure what {selectedRole.role} can view, create, and manage across the platform.</p>
+            </div>
 
+            {locked && (
+              <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-sm text-gray-500">
+                System roles always have full access and can't be edited here.
+              </div>
+            )}
             {loading ? (
               <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-sm text-gray-400">Loading permissions…</div>
             ) : !categories.length ? (
@@ -201,15 +213,16 @@ export default function RolesPermissions({ roles = [], users = [] }) {
                             <div className="pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{group.recordType}</div>
                           )}
                           {group.capabilities.map((cap) => (
-                            <label key={cap.name} className="flex items-start gap-3 py-3 cursor-pointer">
+                                                       <label key={cap.key} className={['flex items-start gap-3 py-3', locked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'].join(' ')}>
                               <input
                                 type="checkbox"
                                 className="mt-1 w-4 h-4 rounded border-gray-300 accent-red-600 focus:ring-red-500 cursor-pointer"
-                                checked={isEnabled(cap.name)}
+                                checked={!!capState[cap.key]}
+                                disabled={locked}
                                 onChange={(e) => toggleCapability(cap, e)}
                               />
                               <div>
-                                <div className="text-sm font-bold text-gray-900">{cap.capability_name}</div>
+                                <div className="text-sm font-bold text-gray-900">{cap.name}</div>
                                 <div className="text-xs text-gray-400 mt-0.5">{cap.description}</div>
                               </div>
                             </label>

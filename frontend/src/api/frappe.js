@@ -11,6 +11,50 @@ export const csrfToken = () => window.FRAPPE_CSRF_TOKEN || ''
 export const currentUserFullName = () => (getCookie('full_name') || 'User').replace(/^"|"$/g, '')
 export const currentUserId = () => (getCookie('user_id') || '').replace(/^"|"$/g, '')
 
+function extractErrorMessage(data) {
+  if (data && typeof data._server_messages === 'string') {
+    try {
+      const messages = JSON.parse(data._server_messages)
+      for (const raw of messages) {
+        try {
+          const parsed = JSON.parse(raw)
+          if (parsed && parsed.message) return parsed.message
+        } catch (e) {
+          if (raw) return raw
+        }
+      }
+    } catch (e) {
+      // ignore malformed _server_messages
+    }
+  }
+  return (data && data.exception) || 'Request failed'
+}
+
+async function callMethod(path) {
+  const res = await fetch(`${BASE}${path}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(data))
+  }
+  return data.message
+}
+
+async function callMethodPost(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken(),
+    },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(data))
+  }
+  return data.message
+}
+
 export async function getCurrentUser() {
   const email = currentUserId()
   if (!email || email === 'Guest') return null
@@ -39,13 +83,30 @@ export async function getMySurveillanceRole() {
 }
 
 export async function getMyCapabilities() {
-  const res = await fetch('/api/method/get_my_capabilities')
-  const data = await res.json()
-  const message = data.message || {}
+  const message = (await callMethod('/api/method/surveillance.capabilities.get_my_capabilities')) || {}
   return {
     capabilities: message.capabilities || [],
     primary_role: message.primary_role || '',
   }
+}
+
+export async function getCapabilityCatalog() {
+  return (await callMethod('/api/method/surveillance.capabilities.get_capability_catalog')) || []
+}
+
+export async function getAlertThresholds() {
+  return callMethod('/api/method/surveillance.alert_thresholds.get_alert_thresholds')
+}
+
+export async function addDisease({ disease_name, threshold, category }) {
+  return callMethodPost('/api/method/surveillance.alert_thresholds.add_disease', { disease_name, threshold, category })
+}
+
+export async function saveAlertThresholds(thresholds, outbreakMultiplier) {
+  return callMethodPost('/api/method/surveillance.alert_thresholds.save_alert_thresholds', {
+    thresholds,
+    outbreak_multiplier: outbreakMultiplier,
+  })
 }
 
 export async function login(usr, pwd) {
@@ -324,41 +385,11 @@ export async function createRegion(regionData) {
 }
 
 export async function getRoleCapabilities(role) {
-  const url = BASE + '/api/method/get_role_capabilities?role=' + encodeURIComponent(role)
-  const res = await fetch(url)
-  let data
-  try {
-    data = await res.json()
-  } catch (e) {
-    data = null
-  }
-  if (!res.ok) {
-    const msg = (data && (data.exception || data.message)) || 'Failed to load role capabilities'
-    throw new Error(msg)
-  }
-  return (data && data.message) || null
+  return callMethod('/api/method/surveillance.capabilities.get_role_capabilities?role=' + encodeURIComponent(role))
 }
 
 export async function setRoleCapability(role, capability, enabled) {
-  const res = await fetch(BASE + '/api/method/set_role_capability', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Frappe-CSRF-Token': csrfToken(),
-    },
-    body: JSON.stringify({ role: role, capability: capability, enabled: enabled }),
-  })
-  let data
-  try {
-    data = await res.json()
-  } catch (e) {
-    data = null
-  }
-  if (!res.ok) {
-    const msg = (data && (data.exception || data.message)) || 'Failed to update capability'
-    throw new Error(msg)
-  }
-  return data && data.message
+  return callMethodPost('/api/method/surveillance.capabilities.set_role_capability', { role, capability, enabled })
 }
 
 export function exportCsv(filename, rows, columns) {
@@ -677,6 +708,101 @@ export async function getPriorityAlertQueue() {
 
 /*
 |--------------------------------------------------------------------------
+| Alerts & Signals
+|--------------------------------------------------------------------------
+|
+| Backed by mock data for now. Once a "Signal Alert" DocType exists on the
+| Frappe side, swap the body of getAlertsSignals() for a getList() call
+| returning the same field shape - the Alerts & Signals page does its
+| search/filter/pagination client-side, so no changes needed there.
+*/
+
+const ALERT_TEMPLATES = [
+  {
+    title: 'Acute Watery Diarrhea Cluster', description: '12 cases of AWD reported in Dagahaley section over 48 hours. AI anomaly detection flagged 3.2x baseline.', location: 'Dagahaley, Dadaab', region: 'Dadaab', severity: 'critical', status: 'Pending', affected: 12, aiScore: 94,
+    reportedBy: 'CHP Ahmed Abdi', tags: ['Diarrhea', 'Vomiting', 'Dehydration'],
+    insights: ['Symptom cluster matches ICD-11: A09 (Infectious gastroenteritis)', '3.2x baseline incidence for this location and timeframe', 'Correlation with water quality reports from last week', 'Recommended action: Immediate verification & water testing'],
+    relatedAlerts: [{ title: 'AWD Cluster - Ifo', subtitle: '5 cases, 3 days ago' }, { title: 'Water Quality Alert', subtitle: 'Dagahaley, 1 week ago' }],
+  },
+  {
+    title: 'Measles Suspected Cases', description: '5 children with fever and rash in Kalobeyei Zone 1. Requires urgent verification.', location: 'Kalobeyei Zone 1', region: 'Kalobeyei', severity: 'high', status: 'Resolved', affected: 5, aiScore: 87,
+    reportedBy: 'CHP Grace Wanjiru', tags: ['Fever', 'Rash', 'Cough'],
+    insights: ['Symptom cluster matches ICD-11: 1F03 (Measles)', 'Vaccination coverage in area below 80% threshold', 'No prior measles cases in this zone in past 6 months', 'Recommended action: Case isolation & vaccination campaign'],
+    relatedAlerts: [{ title: 'Measles Cluster - Zone 2', subtitle: '3 cases, 2 weeks ago' }],
+  },
+  {
+    title: 'Malaria Outbreak - Resolved', description: 'Confirmed malaria cases successfully contained. All patients treated.', location: 'Ifo Camp', region: 'Ifo', severity: 'medium', status: 'Investigating', affected: 8, aiScore: 76,
+    reportedBy: 'Dr. Peter Otieno', tags: ['Fever', 'Chills', 'Headache'],
+    insights: ['Symptom cluster matches ICD-11: 1F40 (Malaria)', 'Seasonal increase consistent with rainy season pattern', 'All confirmed cases responded to first-line treatment', 'Recommended action: Continue bed net distribution'],
+    relatedAlerts: [{ title: 'Malaria Cluster - Ifo Block A', subtitle: '4 cases, 1 month ago' }],
+  },
+  {
+    title: 'Respiratory Illness Increase', description: 'Elevated reports of cough and breathing difficulty. Monitoring for COVID-19/TB.', location: 'Dagahaley, Dadaab', region: 'Dadaab', severity: 'low', status: 'Rejected', affected: 12, aiScore: 94,
+    reportedBy: 'CHP Ahmed Abdi', tags: ['Cough', 'Breathing Difficulty'],
+    insights: ['Symptom cluster inconsistent with outbreak thresholds', 'Seasonal dust levels likely contributing factor', 'No epidemiological link between reported cases found', 'Recommended action: Continue routine monitoring'],
+    relatedAlerts: [{ title: 'Respiratory Alert - Ifo', subtitle: '6 cases, 2 months ago' }],
+  },
+  {
+    title: 'Cholera Suspected Cluster', description: 'Reports of severe dehydration and vomiting in Hagadera block C2. Verification pending.', location: 'Hagadera, Dadaab', region: 'Dadaab', severity: 'critical', status: 'Pending', affected: 9, aiScore: 91,
+    reportedBy: 'CHP Fatuma Noor', tags: ['Dehydration', 'Vomiting', 'Diarrhea'],
+    insights: ['Symptom cluster matches ICD-11: 1A00 (Cholera)', '2.8x baseline incidence for this location and timeframe', 'Correlation with recent latrine overflow reports', 'Recommended action: Immediate verification & water testing'],
+    relatedAlerts: [{ title: 'AWD Cluster - Dagahaley', subtitle: '12 cases, 5 days ago' }],
+  },
+  {
+    title: 'Malnutrition Spike', description: 'Rising MUAC screening failures among under-5 children this week.', location: 'Kalobeyei Zone 2', region: 'Kalobeyei', severity: 'medium', status: 'Investigating', affected: 15, aiScore: 68,
+    reportedBy: 'Nutritionist Sarah Lokuru', tags: ['Wasting', 'Low MUAC', 'Appetite Loss'],
+    insights: ['MUAC failure rate up 40% versus monthly average', 'Correlated with recent reduction in food ration size', 'Concentrated among children aged 6-24 months', 'Recommended action: Targeted supplementary feeding'],
+    relatedAlerts: [{ title: 'Malnutrition Spike - Zone 1', subtitle: '9 cases, 3 weeks ago' }],
+  },
+]
+
+const ALERT_DATES = ['2/12/2026', '2/11/2026', '2/10/2026', '2/9/2026', '2/8/2026', '2/7/2026']
+
+function buildMockAlertsSignals(count = 50) {
+  return Array.from({ length: count }, (_, i) => {
+    const template = ALERT_TEMPLATES[i % ALERT_TEMPLATES.length]
+    return {
+      id: `ALT-${String(i + 1).padStart(3, '0')}`,
+      ...template,
+      date: ALERT_DATES[i % ALERT_DATES.length],
+      notes: [],
+    }
+  })
+}
+
+const MOCK_ALERTS_SIGNALS = buildMockAlertsSignals(50)
+
+export async function getAlertsSignals(opts = {}) {
+  return MOCK_ALERTS_SIGNALS.slice(opts.start || 0, (opts.start || 0) + (opts.limit || MOCK_ALERTS_SIGNALS.length))
+}
+
+export async function getAlertRegions() {
+  return [...new Set(MOCK_ALERTS_SIGNALS.map((a) => a.region))].sort()
+}
+
+export async function getAlertSignal(id) {
+  const alert = MOCK_ALERTS_SIGNALS.find((a) => a.id === id)
+  if (!alert) throw new Error('Alert not found')
+  return alert
+}
+
+export async function updateAlertStatus(id, status) {
+  const alert = MOCK_ALERTS_SIGNALS.find((a) => a.id === id)
+  if (!alert) throw new Error('Alert not found')
+  alert.status = status
+  return alert
+}
+
+export async function addAlertNote(id, note) {
+  const alert = MOCK_ALERTS_SIGNALS.find((a) => a.id === id)
+  if (!alert) throw new Error('Alert not found')
+  const entry = { text: note, createdAt: new Date().toISOString() }
+  alert.notes = [...(alert.notes || []), entry]
+  return entry
+}
+
+/*
+|--------------------------------------------------------------------------
 | Data Explorer
 |--------------------------------------------------------------------------
 |
@@ -721,6 +847,57 @@ const MOCK_DATA_EXPLORER_RECORDS = buildMockDataExplorerRecords(50)
 
 export async function getDataExplorerRecords(opts = {}) {
   return MOCK_DATA_EXPLORER_RECORDS.slice(opts.start || 0, (opts.start || 0) + (opts.limit || MOCK_DATA_EXPLORER_RECORDS.length))
+}
+
+/*
+|--------------------------------------------------------------------------
+| AI Governance & Monitoring Dashboard (Data & AI Administrator)
+|--------------------------------------------------------------------------
+|
+| Backed by mock data for now. Each function resolves the exact shape the
+| AiGovernanceDashboard page expects, so swapping in real data later just
+| means replacing the function body with a fetch/getList call that
+| resolves to the same shape - no changes needed in the page.
+*/
+
+const MOCK_AI_GOVERNANCE_STATS = [
+  { key: 'models_in_service', label: 'Models in service', value: '4', icon: 'Sparkles' },
+  { key: 'avg_accuracy', label: 'Avg. accuracy', value: '88%', icon: 'LineChart' },
+  { key: 'human_override_rate', label: 'Human override rate', value: '12%', icon: 'ThumbsDown' },
+  { key: 'since_last_retrain', label: 'Since last retrain', value: '9 Days', icon: 'RefreshCw' },
+]
+
+const MOCK_MODEL_REGISTRY = [
+  { name: 'Signal Extraction (NLP/NER)', version: 'v2.3', status: 'Production', accuracy: 91, precision: 0.89, recall: 0.86, drift: 'Low', lastRetrained: '2026-06-14' },
+  { name: 'Alert Risk Scoring', version: 'v1.8', status: 'Production', accuracy: 88, precision: 0.85, recall: 0.90, drift: 'Low', lastRetrained: '2026-05-30' },
+  { name: 'Anomaly Detection', version: 'v3.1', status: 'Production', accuracy: 84, precision: 0.80, recall: 0.87, drift: 'Moderate', lastRetrained: '2026-07-02' },
+  { name: 'Outbreak Forecasting', version: 'v1.9', status: 'Shadow', accuracy: 79, precision: 0.76, recall: 0.82, drift: 'Monitoring', lastRetrained: '2026-07-18' },
+]
+
+const MOCK_CONFIDENCE_DISTRIBUTION = {
+  labels: ['50-60%', '60-70%', '70-80%', '80-90%', '90-100%'],
+  data: [12, 24, 41, 58, 33],
+}
+
+const MOCK_COMPOSITE_PERFORMANCE = {
+  labels: ['Accuracy', 'Precision', 'Recall', 'Timeliness', 'Explainability'],
+  data: [88, 85, 87, 90, 72],
+}
+
+export async function getAiGovernanceStats() {
+  return MOCK_AI_GOVERNANCE_STATS
+}
+
+export async function getModelRegistry() {
+  return MOCK_MODEL_REGISTRY
+}
+
+export async function getConfidenceDistribution() {
+  return MOCK_CONFIDENCE_DISTRIBUTION
+}
+
+export async function getCompositePerformance() {
+  return MOCK_COMPOSITE_PERFORMANCE
 }
 
 // --- Reference data lookups (Region, Symptom) — always readable regardless of role ---

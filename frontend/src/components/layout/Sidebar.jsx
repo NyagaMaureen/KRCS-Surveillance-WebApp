@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
+import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import * as icons from 'lucide-react'
 import { SIDEBAR_MENU } from '../../data/sidebarMenu'
-import { getMyCapabilities } from '../../api/frappe'
+import { useCapabilities } from '../../context/CapabilitiesContext'
 
 function iconFor(name) {
   return icons[name] || icons.Circle
@@ -12,19 +13,14 @@ export default function Sidebar() {
   const location = useLocation()
   const currentPage = location.pathname.replace('/', '')
 
-  const [myCapabilities, setMyCapabilities] = useState([])
-  useEffect(() => {
-    getMyCapabilities().then(({ capabilities }) => {
-      setMyCapabilities(capabilities)
-    })
-  }, [])
+  const { capabilities } = useCapabilities()
 
   const visibleMenu = useMemo(() =>
     SIDEBAR_MENU.map(group => ({
       ...group,
-      items: group.items.filter(item => !item.requiresCapability || myCapabilities.includes(item.requiresCapability)),
+      items: group.items.filter(item => !item.requiresCapability || capabilities.includes(item.requiresCapability)),
     })).filter(group => group.items.length > 0),
-    [myCapabilities]
+    [capabilities]
   )
 
   const [collapsed, setCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true')
@@ -39,7 +35,7 @@ export default function Sidebar() {
       <div className="flex items-center justify-between px-5 py-6">
         <div className="flex items-center overflow-hidden flex-1">
           <img
-            src="/assets/surveillance/images/newlogo.png"
+            src="/assets/surveillance/images/newlogo.svg"
             alt="Kenya Red Cross"
             className={[
               'object-contain object-left transition-all duration-300',
