@@ -12,7 +12,10 @@
   "note",
   "threshold",
   "is_active",
-  "sort_order"
+  "sort_order",
+  "icd11_code",
+  "icd11_title",
+  "icd11_uri"
  ],
  "fields": [
   {
@@ -61,12 +64,29 @@
    "fieldname": "sort_order",
    "fieldtype": "Int",
    "label": "Sort Order"
+  },
+  {
+   "fieldname": "icd11_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "ICD-11 Code"
+  },
+  {
+   "fieldname": "icd11_title",
+   "fieldtype": "Data",
+   "label": "ICD-11 Title"
+  },
+  {
+   "fieldname": "icd11_uri",
+   "fieldtype": "Data",
+   "label": "ICD-11 URI",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-30 09:23:29.746446",
+ "modified": "2026-10-02 11:53:33.755230",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Alert Threshold Config",

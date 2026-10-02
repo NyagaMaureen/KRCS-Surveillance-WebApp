@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getCurrentUser, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds } from '../api/frappe'
+import { getCurrentUser, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds, searchIcd11, setIcd11 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 const TABS = [
@@ -59,6 +59,38 @@ const INITIAL_NOTIFICATION_PREFS = [
   { key: 'ai-anomaly-reports', label: 'AI anomaly reports', description: 'When AI detects unusual patterns', enabled: true },
 ]
 
+function cleanDiseaseNameForIcd11(name) {
+  return (name || '').replace(/suspected +/gi, '').replace(/ ?([(][^)]*[)])/g, '').trim()
+}
+
+function useIcd11Search(query, active) {
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!active) return
+    const q = query.trim()
+    if (q.length < 2) {
+      setResults([])
+      setLoading(false)
+      setError('')
+      return
+    }
+    setLoading(true)
+    setError('')
+    const timer = setTimeout(() => {
+      searchIcd11(q)
+        .then((res) => setResults(res || []))
+        .catch((e) => setError(e.message || 'ICD-11 search failed'))
+        .finally(() => setLoading(false))
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [query, active])
+
+  return { results, loading, error }
+}
+
 function Toggle({ enabled, onClick }) {
   return (
     <button
@@ -90,6 +122,20 @@ export default function Settings() {
   const [newDiseaseThreshold, setNewDiseaseThreshold] = useState('1')
   const [addDiseaseError, setAddDiseaseError] = useState('')
   const [addingDiseaseSaving, setAddingDiseaseSaving] = useState(false)
+
+  const [icd11ChangeKey, setIcd11ChangeKey] = useState(null)
+  const [icd11ChangeQuery, setIcd11ChangeQuery] = useState('')
+  const [icd11ChangeSaveError, setIcd11ChangeSaveError] = useState('')
+  const icd11ChangeSearch = useIcd11Search(icd11ChangeQuery, icd11ChangeKey !== null)
+
+  const [icd11AddQuery, setIcd11AddQuery] = useState('')
+  const [icd11AddQueryEdited, setIcd11AddQueryEdited] = useState(false)
+  const [icd11AddSelected, setIcd11AddSelected] = useState(null)
+  const icd11AddSearch = useIcd11Search(icd11AddQuery, addingDisease)
+
+  useEffect(() => {
+    setIcd11AddSelected(icd11AddSearch.results.length > 0 ? icd11AddSearch.results[0] : null)
+  }, [icd11AddSearch.results])
 
   const [surveillanceRegions, setSurveillanceRegions] = useState([])
   const [addingRegion, setAddingRegion] = useState(false)
@@ -164,10 +210,36 @@ export default function Settings() {
     }
     setEditingDiseaseThresholds(false)
     cancelAddDisease()
+    closeIcd11Change()
   }
 
   function updateDiseaseThreshold(key, value) {
     setDiseaseThresholds((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function startIcd11Change(disease) {
+    setIcd11ChangeSaveError('')
+    setIcd11ChangeQuery(cleanDiseaseNameForIcd11(disease.name))
+    setIcd11ChangeKey(disease.key)
+  }
+
+  function closeIcd11Change() {
+    setIcd11ChangeKey(null)
+    setIcd11ChangeQuery('')
+    setIcd11ChangeSaveError('')
+  }
+
+  async function selectIcd11(disease, result) {
+    setIcd11ChangeSaveError('')
+    const payload = result ? { code: result.code, title: result.title, uri: result.uri } : { code: '', title: '', uri: '' }
+    try {
+      await setIcd11(disease.key, payload)
+      setDiseases((prev) => prev.map((d) => (d.key === disease.key ? { ...d, icd11_code: payload.code, icd11_title: payload.title, icd11_uri: payload.uri } : d)))
+      closeIcd11Change()
+      showToast('ICD-11 code saved')
+    } catch (e) {
+      setIcd11ChangeSaveError(e.message || 'Could not save ICD-11 code.')
+    }
   }
 
   async function saveDiseaseThresholds() {
@@ -197,7 +269,10 @@ export default function Settings() {
     setAddDiseaseError('')
     setAddingDiseaseSaving(true)
     try {
-      const disease = await addDisease({ disease_name: name, threshold: Number(newDiseaseThreshold) || 1, category: 'human' })
+      const icd11Payload = icd11AddSelected
+        ? { icd11_code: icd11AddSelected.code, icd11_title: icd11AddSelected.title, icd11_uri: icd11AddSelected.uri }
+        : {}
+      const disease = await addDisease({ disease_name: name, threshold: Number(newDiseaseThreshold) || 1, category: 'human', ...icd11Payload })
       setDiseases((prev) => [...prev, disease])
       setDiseaseThresholds((prev) => ({ ...prev, [disease.key]: disease.threshold }))
       if (diseaseThresholdsBackup) {
@@ -209,6 +284,9 @@ export default function Settings() {
       }
       setNewDiseaseName('')
       setNewDiseaseThreshold('1')
+      setIcd11AddQuery('')
+      setIcd11AddQueryEdited(false)
+      setIcd11AddSelected(null)
       setAddingDisease(false)
       showToast('Disease added')
     } catch (e) {
@@ -221,13 +299,29 @@ export default function Settings() {
     function startAddDisease() {
     setNewDiseaseName('')
     setNewDiseaseThreshold('1')
+    setIcd11AddQuery('')
+    setIcd11AddQueryEdited(false)
+    setIcd11AddSelected(null)
     setAddingDisease(true)
   }
 
   function cancelAddDisease() {
     setNewDiseaseName('')
     setNewDiseaseThreshold('1')
+    setIcd11AddQuery('')
+    setIcd11AddQueryEdited(false)
+    setIcd11AddSelected(null)
     setAddingDisease(false)
+  }
+
+  function handleNewDiseaseNameChange(value) {
+    setNewDiseaseName(value)
+    if (!icd11AddQueryEdited) setIcd11AddQuery(cleanDiseaseNameForIcd11(value))
+  }
+
+  function handleIcd11AddQueryChange(value) {
+    setIcd11AddQueryEdited(true)
+    setIcd11AddQuery(value)
   }
 
   function confirmAddRegion() {
@@ -638,6 +732,63 @@ export default function Settings() {
                       className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200"
                     />
                     <p className="text-xs text-gray-400 mt-1.5">Cases per week before alert</p>
+
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      {disease.icd11_code ? (
+                        <p className="text-xs text-gray-400">
+                          ICD-11: <span className="font-mono bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{disease.icd11_code}</span>
+                          {disease.icd11_title ? ` · ${disease.icd11_title}` : ''}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-300">No ICD-11 code</p>
+                      )}
+                      {editingDiseaseThresholds && has('manage_alert_thresholds') && (
+                        <button type="button" onClick={() => startIcd11Change(disease)} className="text-xs font-medium text-red-600 hover:underline">
+                          Change
+                        </button>
+                      )}
+                    </div>
+
+                    {icd11ChangeKey === disease.key && (
+                      <div className="mt-2 border border-gray-200 rounded-lg p-3 bg-gray-50">
+                        <input
+                          value={icd11ChangeQuery}
+                          onChange={(e) => setIcd11ChangeQuery(e.target.value)}
+                          autoFocus
+                          placeholder="Search ICD-11…"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 mb-2"
+                        />
+                        {icd11ChangeSearch.loading && <p className="text-xs text-gray-400">Searching…</p>}
+                        {!icd11ChangeSearch.loading && icd11ChangeSearch.error && <p className="text-xs text-red-600">{icd11ChangeSearch.error}</p>}
+                        {!icd11ChangeSearch.loading && !icd11ChangeSearch.error && icd11ChangeQuery.trim().length >= 2 && icd11ChangeSearch.results.length === 0 && (
+                          <p className="text-xs text-gray-400">No ICD-11 matches</p>
+                        )}
+                        <div className="space-y-1 max-h-56 overflow-y-auto">
+                          {icd11ChangeSearch.results.slice(0, 8).map((r) => (
+                            <button
+                              key={r.code}
+                              type="button"
+                              onClick={() => selectIcd11(disease, r)}
+                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100"
+                            >
+                              <span className="font-mono text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{r.code}</span>
+                              <span className="text-gray-900 truncate">{r.title}</span>
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => selectIcd11(disease, null)}
+                            className="w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-100"
+                          >
+                            No ICD-11 code
+                          </button>
+                        </div>
+                        {icd11ChangeSaveError && <p className="text-xs text-red-600 mt-2">{icd11ChangeSaveError}</p>}
+                        <button type="button" onClick={closeIcd11Change} className="mt-2 text-xs font-medium text-gray-500 hover:underline">
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -659,27 +810,67 @@ export default function Settings() {
               {saveThresholdsError && <p className="text-red-600 text-sm mt-4">{saveThresholdsError}</p>}
 
               {addingDisease && (
-                <div className="flex items-center gap-3 mt-6">
-                  <input
-                    value={newDiseaseName}
-                    onChange={(e) => setNewDiseaseName(e.target.value)}
-                    placeholder="Disease name"
-                    autoFocus
-                    className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
-                  />
-                  <input
-                    type="number"
-                    min="1"
-                    value={newDiseaseThreshold}
-                    onChange={(e) => setNewDiseaseThreshold(e.target.value)}
-                    onKeyUp={(e) => { if (e.key === 'Enter') confirmAddDisease() }}
-                    placeholder="Threshold"
-                    className="w-32 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
-                  />
-                  <button onClick={confirmAddDisease} disabled={addingDiseaseSaving} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">
-                    {addingDiseaseSaving ? 'Adding…' : 'Add'}
-                  </button>
-                  <button onClick={cancelAddDisease} className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600">Cancel</button>
+                <div className="mt-6">
+                  <div className="flex items-center gap-3">
+                    <input
+                      value={newDiseaseName}
+                      onChange={(e) => handleNewDiseaseNameChange(e.target.value)}
+                      placeholder="Disease name"
+                      autoFocus
+                      className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      value={newDiseaseThreshold}
+                      onChange={(e) => setNewDiseaseThreshold(e.target.value)}
+                      onKeyUp={(e) => { if (e.key === 'Enter') confirmAddDisease() }}
+                      placeholder="Threshold"
+                      className="w-32 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                    />
+                    <button onClick={confirmAddDisease} disabled={addingDiseaseSaving} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">
+                      {addingDiseaseSaving ? 'Adding…' : 'Add'}
+                    </button>
+                    <button onClick={cancelAddDisease} className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600">Cancel</button>
+                  </div>
+
+                  <div className="mt-3">
+                    <input
+                      value={icd11AddQuery}
+                      onChange={(e) => handleIcd11AddQueryChange(e.target.value)}
+                      placeholder="Search ICD-11 code…"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                    />
+                    {icd11AddSearch.loading && <p className="text-xs text-gray-400 mt-1.5">Searching…</p>}
+                    {!icd11AddSearch.loading && icd11AddSearch.error && (
+                      <p className="text-xs text-gray-400 mt-1.5">ICD-11 lookup unavailable — you can add the code later</p>
+                    )}
+                    {!icd11AddSearch.loading && !icd11AddSearch.error && icd11AddQuery.trim().length >= 2 && icd11AddSearch.results.length === 0 && (
+                      <p className="text-xs text-gray-400 mt-1.5">No ICD-11 matches</p>
+                    )}
+                    {icd11AddSearch.results.length > 0 && (
+                      <div className="space-y-1 mt-2 max-h-56 overflow-y-auto">
+                        {icd11AddSearch.results.slice(0, 8).map((r) => (
+                          <button
+                            key={r.code}
+                            type="button"
+                            onClick={() => setIcd11AddSelected(r)}
+                            className={['flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm', icd11AddSelected?.code === r.code ? 'bg-red-50 ring-1 ring-red-200' : 'hover:bg-gray-100'].join(' ')}
+                          >
+                            <span className="font-mono text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{r.code}</span>
+                            <span className="text-gray-900 truncate">{r.title}</span>
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setIcd11AddSelected(null)}
+                          className={['w-full rounded-md px-2 py-1.5 text-left text-sm', icd11AddSelected === null ? 'bg-red-50 ring-1 ring-red-200 text-gray-700' : 'text-gray-500 hover:bg-gray-100'].join(' ')}
+                        >
+                          No ICD-11 code
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               {addingDisease && addDiseaseError && <p className="text-red-600 text-sm mt-3">{addDiseaseError}</p>}

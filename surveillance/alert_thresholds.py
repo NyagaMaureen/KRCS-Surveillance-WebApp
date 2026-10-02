@@ -65,6 +65,9 @@ def _row(d):
 		"note": d.note or "",
 		"threshold": d.threshold,
 		"sort_order": d.sort_order,
+		"icd11_code": d.get("icd11_code") or "",
+		"icd11_title": d.get("icd11_title") or "",
+		"icd11_uri": d.get("icd11_uri") or "",
 	}
 
 
@@ -76,7 +79,8 @@ def get_alert_thresholds():
 	rows = frappe.get_all(
 		DOCTYPE,
 		filters={"is_active": 1},
-		fields=["disease_key", "disease_name", "category", "note", "threshold", "sort_order"],
+		fields=["disease_key", "disease_name", "category", "note", "threshold", "sort_order",
+		        "icd11_code", "icd11_title", "icd11_uri"],
 		order_by="sort_order asc, creation asc",
 	)
 	multiplier = frappe.db.get_single_value(SETTINGS, "outbreak_multiplier") or 2.5
@@ -85,9 +89,8 @@ def get_alert_thresholds():
 		"outbreak_multiplier": multiplier,
 	}
 
-
 @frappe.whitelist(methods=["POST"])
-def add_disease(disease_name, threshold=1, category="human", note=""):
+def add_disease(disease_name, threshold=1, category="human", note="", icd11_code="", icd11_title="", icd11_uri=""):
 	require_capability(CAPABILITY)
 
 	disease_name = (disease_name or "").strip()
@@ -104,6 +107,7 @@ def add_disease(disease_name, threshold=1, category="human", note=""):
 
 	max_order = frappe.db.sql(f"select coalesce(max(sort_order), 0) from `tab{DOCTYPE}`")[0][0]
 
+	code = (icd11_code or "").strip()
 	doc = frappe.get_doc({
 		"doctype": DOCTYPE,
 		"disease_key": key,
@@ -113,10 +117,12 @@ def add_disease(disease_name, threshold=1, category="human", note=""):
 		"threshold": _valid_threshold(threshold),
 		"is_active": 1,
 		"sort_order": max_order + 1,
+		"icd11_code": code,
+		"icd11_title": (icd11_title or "").strip() if code else "",
+		"icd11_uri": (icd11_uri or "").strip() if code else "",
 	}).insert(ignore_permissions=True)
 	return _row(doc)
-
-
+	
 @frappe.whitelist(methods=["POST"])
 def save_alert_thresholds(thresholds, outbreak_multiplier=None):
 	"""thresholds: {"awd-cholera": 1, "measles": 2, ...}"""

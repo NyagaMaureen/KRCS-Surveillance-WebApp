@@ -98,8 +98,25 @@ export async function getAlertThresholds() {
   return callMethod('/api/method/surveillance.alert_thresholds.get_alert_thresholds')
 }
 
-export async function addDisease({ disease_name, threshold, category }) {
-  return callMethodPost('/api/method/surveillance.alert_thresholds.add_disease', { disease_name, threshold, category })
+export async function addDisease({ disease_name, threshold, category, icd11_code, icd11_title, icd11_uri }) {
+  const body = { disease_name, threshold, category }
+  if (icd11_code !== undefined) body.icd11_code = icd11_code
+  if (icd11_title !== undefined) body.icd11_title = icd11_title
+  if (icd11_uri !== undefined) body.icd11_uri = icd11_uri
+  return callMethodPost('/api/method/surveillance.alert_thresholds.add_disease', body)
+}
+
+export async function searchIcd11(q) {
+  return callMethod('/api/method/surveillance.icd11.search_icd11?q=' + encodeURIComponent(q))
+}
+
+export async function setIcd11(diseaseKey, { code, title, uri }) {
+  return callMethodPost('/api/method/surveillance.icd11.set_icd11', {
+    disease_key: diseaseKey,
+    code,
+    title,
+    uri,
+  })
 }
 
 export async function saveAlertThresholds(thresholds, outbreakMultiplier) {
