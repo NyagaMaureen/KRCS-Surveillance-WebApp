@@ -106,6 +106,8 @@ fixtures = [
 	{"dt": "Custom Field", "filters": [["name", "in", ["User-primary_role", "User-account_status", "User-assigned_region"]]]},
 	{"dt": "Role", "filters": [["name", "in", SURVEILLANCE_ROLES]]},
 	{"dt": "Surveillance Role"},
+	{"dt": "Region"},
+	{"dt": "Symptom"},
 ]
 
 # Uninstallation

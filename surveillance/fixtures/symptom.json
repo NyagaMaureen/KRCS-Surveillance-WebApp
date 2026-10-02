@@ -1,0 +1,164 @@
+[
+ {
+  "category": "Gastrointestinal",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A00-1A4Z",
+  "modified": "2026-08-10 10:28:34.474375",
+  "name": "q2o97spk7l",
+  "symptom_name": "Diarrhea"
+ },
+ {
+  "category": "Gastrointestinal",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A00-1A4Z",
+  "modified": "2026-08-10 10:32:03.325623",
+  "name": "s41tgukdrm",
+  "symptom_name": "Dehydration"
+ },
+ {
+  "category": "Gastrointestinal",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A00-1A4Z",
+  "modified": "2026-08-10 10:32:25.566197",
+  "name": "sav31fd3q6",
+  "symptom_name": "Bloody Stool"
+ },
+ {
+  "category": "Respiratory",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: CA00-CA4Z",
+  "modified": "2026-08-10 10:33:46.444813",
+  "name": "t4849lgeod",
+  "symptom_name": "Cough"
+ },
+ {
+  "category": "Respiratory",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: CA00-CA4Z",
+  "modified": "2026-08-10 10:34:06.027884",
+  "name": "tac33nnc7d",
+  "symptom_name": "Chest Pain"
+ },
+ {
+  "category": "Respiratory",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: CA00-CA4Z",
+  "modified": "2026-08-10 10:34:35.448398",
+  "name": "tjigfmo1dr",
+  "symptom_name": "Difficulty Breathing "
+ },
+ {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A40-1A9Z",
+  "modified": "2026-08-10 10:36:17.844666",
+  "name": "ujisie9eut",
+  "symptom_name": "Joint Pain "
+ },
+ {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A40-1A9Z",
+  "modified": "2026-08-10 10:36:49.303655",
+  "name": "utdqldjk3o",
+  "symptom_name": "Chills"
+ },
+ {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A40-1A9Z",
+  "modified": "2026-08-10 10:37:11.224475",
+  "name": "v48h8mrl3l",
+  "symptom_name": "Fatigue"
+ },
+ {
+  "category": "Dermatological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1B00-1B7Z",
+  "modified": "2026-08-10 10:37:47.177284",
+  "name": "vffraa33p1",
+  "symptom_name": "Rash"
+ },
+ {
+  "category": "Dermatological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1B00-1B7Z",
+  "modified": "2026-08-10 10:38:05.737863",
+  "name": "vl9aocflc4",
+  "symptom_name": "Itching"
+ },
+ {
+  "category": "Dermatological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1B00-1B7Z",
+  "modified": "2026-08-10 10:38:27.246589",
+  "name": "vs0sm92f57",
+  "symptom_name": "Skin Lesions"
+ },
+ {
+  "category": "Dermatological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1B00-1B7Z",
+  "modified": "2026-08-10 10:38:45.739072",
+  "name": "01pg3csgq6",
+  "symptom_name": "Swelling"
+ },
+ {
+  "category": "Gastrointestinal",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A00-1A4Z",
+  "modified": "2026-08-10 10:30:05.661148",
+  "name": "qv8m56ku23",
+  "symptom_name": "Abdominal Pain"
+ },
+ {
+  "category": "Gastrointestinal",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A00-1A4Z",
+  "modified": "2026-08-10 10:31:38.870934",
+  "name": "rkv6db5hhr",
+  "symptom_name": "Vomiting"
+ },
+ {
+  "category": "Respiratory",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: CA00-CA4Z",
+  "modified": "2026-08-10 10:34:55.908577",
+  "name": "tpvuso3368",
+  "symptom_name": "Runny Nose"
+ },
+ {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A40-1A9Z",
+  "modified": "2026-08-10 10:35:35.859559",
+  "name": "u6e0b9hbhs",
+  "symptom_name": "High Fever "
+ },
+ {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": "ICD-11: 1A40-1A9Z",
+  "modified": "2026-08-10 10:35:56.579575",
+  "name": "ucto7qj3sh",
+  "symptom_name": "Headache"
+ }
+]
