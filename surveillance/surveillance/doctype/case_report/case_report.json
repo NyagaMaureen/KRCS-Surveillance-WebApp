@@ -25,7 +25,14 @@
   "sex",
   "category",
   "reported_by",
-  "onset_date"
+  "onset_date",
+  "age_group",
+  "animal_exposure",
+  "deaths_count",
+  "suspected_disease",
+  "also_consistent_with",
+  "classified_by",
+  "classification_reason"
  ],
  "fields": [
   {
@@ -153,12 +160,54 @@
    "fieldtype": "Date",
    "label": "Onset Date",
    "reqd": 1
+  },
+  {
+   "fieldname": "age_group",
+   "fieldtype": "Select",
+   "label": "Age Group",
+   "options": "Under 1\n1-4 years\n5-14 years\n15+ years"
+  },
+  {
+   "fieldname": "animal_exposure",
+   "fieldtype": "Select",
+   "label": "Animal Exposure",
+   "options": "None\nBite or scratch\nHandled sick or dead animal"
+  },
+  {
+   "fieldname": "deaths_count",
+   "fieldtype": "Int",
+   "label": "Deaths"
+  },
+  {
+   "fieldname": "suspected_disease",
+   "fieldtype": "Link",
+   "label": "Suspected Disease",
+   "options": "Alert Threshold Config"
+  },
+  {
+   "fieldname": "also_consistent_with",
+   "fieldtype": "Small Text",
+   "label": "Also Consistent With",
+   "read_only": 1
+  },
+  {
+   "fieldname": "classified_by",
+   "fieldtype": "Select",
+   "label": "Classified By",
+   "options": "Rules\nOfficer\nModel",
+   "read_only": 1
+  },
+  {
+   "fieldname": "classification_reason",
+   "fieldtype": "Small Text",
+   "label": "Classification Reason",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-30 09:23:29.905923",
+ "modified": "2026-10-05 14:14:01.585035",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",

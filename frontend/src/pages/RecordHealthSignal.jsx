@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MapPin, Loader2, CheckCircle2, AlertCircle, Camera, Mic, FileText, Paperclip, X } from 'lucide-react'
+import { MapPin, Loader2, CheckCircle2, AlertCircle, Camera, Mic, FileText, Paperclip, X, Stethoscope } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getList, createReport, getMyProfile, uploadFile } from '../api/frappe'
-import { CATEGORIES, SEXES } from '../data/formOptions'
+import { getList, createReport, getMyProfile, uploadFile, classifyPreview } from '../api/frappe'
+import { CATEGORIES, SEXES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS } from '../data/formOptions'
 
 const steps = ['Reporter Info', 'Symptoms', 'Details', 'Review Report']
 
@@ -54,7 +54,11 @@ export default function RecordHealthSignal() {
     signal_type: '', category: '', region: '', location_name: '',
     latitude: null, longitude: null, affected_count: '', sex: '',
     symptoms: [], onset_date: '', attachments: [], additional_notes: '',
+    age_group: '', animal_exposure: '', deaths_count: 0,
   })
+
+  const [classifyResults, setClassifyResults] = useState([])
+  const classifyTimerRef = useRef(null)
 
   function updateForm(fields) {
     setForm((prev) => ({ ...prev, ...fields }))
@@ -66,6 +70,20 @@ export default function RecordHealthSignal() {
       symptoms: prev.symptoms.includes(name) ? prev.symptoms.filter((s) => s !== name) : [...prev.symptoms, name],
     }))
   }
+
+  useEffect(() => {
+    clearTimeout(classifyTimerRef.current)
+    if (!form.symptoms.length && !form.animal_exposure) {
+      setClassifyResults([])
+      return
+    }
+    classifyTimerRef.current = setTimeout(() => {
+      classifyPreview({ symptoms: form.symptoms, age_group: form.age_group, animal_exposure: form.animal_exposure })
+        .then(setClassifyResults)
+        .catch(() => setClassifyResults([]))
+    }, 400)
+    return () => clearTimeout(classifyTimerRef.current)
+  }, [form.symptoms, form.age_group, form.animal_exposure])
 
   const symptomCategories = useMemo(() => [...new Set(symptoms.map((s) => s.category))], [symptoms])
   const symptomsByCategory = (cat) => symptoms.filter((s) => s.category === cat)
@@ -156,6 +174,7 @@ export default function RecordHealthSignal() {
         symptoms: form.symptoms.map((s) => ({ symptom: s })),
         onset_date: form.onset_date, attachments: form.attachments,
         additional_notes: form.additional_notes, channel: 'Web', status: 'Submitted',
+        age_group: form.age_group, animal_exposure: form.animal_exposure, deaths_count: form.deaths_count,
       })
       navigate('/reports')
     } catch (e) {
@@ -286,6 +305,72 @@ export default function RecordHealthSignal() {
                   </div>
                 </div>
               ))}
+
+              <div className="pt-6 mt-6 border-t border-gray-100">
+                <h3 className="text-sm font-bold text-gray-900 mb-4">About the affected person(s)</h3>
+
+                <div className="mb-5">
+                  <label className="block text-sm font-semibold mb-1">Age group</label>
+                  <div className="flex flex-wrap gap-2">
+                    {AGE_GROUPS.map((g) => (
+                      <button
+                        key={g.value}
+                        type="button"
+                        onClick={() => updateForm({ age_group: form.age_group === g.value ? '' : g.value })}
+                        className={['px-4 py-2 rounded-full text-sm font-medium border transition-colors', form.age_group === g.value ? 'bg-red-600 border-red-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'].join(' ')}
+                      >
+                        {g.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1.5">Age of the person reported (or the youngest, if several).</p>
+                </div>
+
+                <div className="mb-5">
+                  <label className="block text-sm font-semibold mb-2">Was anyone bitten or scratched by an animal, or did they handle a sick or dead animal?</label>
+                  <div className="flex flex-col gap-2">
+                    {ANIMAL_EXPOSURE_OPTIONS.map((opt) => (
+                      <label key={opt.value} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="animal_exposure"
+                          checked={form.animal_exposure === opt.value}
+                          onChange={() => updateForm({ animal_exposure: opt.value })}
+                          className="accent-red-600"
+                        />
+                        {opt.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Number of deaths (if any)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.deaths_count}
+                    onChange={(e) => updateForm({ deaths_count: Math.max(0, Number(e.target.value) || 0) })}
+                    className="w-32 bg-gray-50 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow"
+                  />
+                </div>
+
+                {classifyResults.length > 0 && (
+                  <div className="mt-5 bg-gray-50 border border-gray-100 rounded-xl p-4">
+                    <div className="flex items-start gap-2.5">
+                      <Stethoscope className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">These signs match: Suspected {classifyResults[0].name}</p>
+                        {classifyResults.length > 1 && (
+                          <p className="text-xs text-gray-500 mt-1">Also consistent with: {classifyResults.slice(1).map((r) => r.name).join(', ')}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1.5">Suggestion based on Ministry of Health case definitions. An officer will verify.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-between mt-6">
                 <button onClick={() => setCurrentStep(1)} className="border border-gray-200 rounded-lg px-6 py-2.5 text-sm font-semibold hover:bg-gray-50 transition-colors">Back</button>
                 <button onClick={() => setCurrentStep(3)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>

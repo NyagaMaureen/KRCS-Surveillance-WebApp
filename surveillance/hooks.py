@@ -91,6 +91,7 @@ website_route_rules = [
 
 after_migrate = [
 	"surveillance.alert_thresholds.seed_defaults",
+	"surveillance.case_definitions.seed_case_definitions",
 	"surveillance.capabilities.after_migrate",
 ]
 

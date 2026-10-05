@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "creation": "2026-10-05 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "links": [],
+ "modified": "2026-10-05 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "Case Definition",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "field:disease",
+ "naming_rule": "By fieldname",
+ "title_field": "disease",
+ "track_changes": 1,
+ "index_web_pages_for_search": 1,
+ "field_order": [
+  "disease",
+  "enabled",
+  "match_order",
+  "source",
+  "lay_definition",
+  "criteria_section",
+  "required_symptoms",
+  "any_of_symptoms",
+  "min_any_of",
+  "excluded_symptoms",
+  "other_section",
+  "allowed_age_groups",
+  "required_exposure",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "disease",
+   "fieldtype": "Link",
+   "label": "Disease",
+   "options": "Alert Threshold Config",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "match_order",
+   "fieldtype": "Int",
+   "label": "Match Order",
+   "default": "10",
+   "in_list_view": 1,
+   "description": "When several definitions match a report, the lowest Match Order becomes the suspected disease."
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "MOH IDSR\nProvisional (WHO)",
+   "default": "MOH IDSR",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "lay_definition",
+   "fieldtype": "Small Text",
+   "label": "Lay Case Definition"
+  },
+  {
+   "fieldname": "criteria_section",
+   "fieldtype": "Section Break",
+   "label": "Symptoms"
+  },
+  {
+   "fieldname": "required_symptoms",
+   "fieldtype": "Table MultiSelect",
+   "label": "Required (all of)",
+   "options": "Case Definition Symptom"
+  },
+  {
+   "fieldname": "any_of_symptoms",
+   "fieldtype": "Table MultiSelect",
+   "label": "Supporting (any of)",
+   "options": "Case Definition Symptom"
+  },
+  {
+   "fieldname": "min_any_of",
+   "fieldtype": "Int",
+   "label": "Minimum Supporting Symptoms",
+   "default": "0",
+   "description": "How many of the supporting symptoms must be present. 0 = supporting symptoms are optional."
+  },
+  {
+   "fieldname": "excluded_symptoms",
+   "fieldtype": "Table MultiSelect",
+   "label": "Excluded (none of)",
+   "options": "Case Definition Symptom"
+  },
+  {
+   "fieldname": "other_section",
+   "fieldtype": "Section Break",
+   "label": "Age and Exposure"
+  },
+  {
+   "fieldname": "allowed_age_groups",
+   "fieldtype": "Small Text",
+   "label": "Allowed Age Groups",
+   "description": "One per line, exactly as on Case Report (e.g. 5-14 years). Blank = any age. A report with no age recorded is never excluded."
+  },
+  {
+   "fieldname": "required_exposure",
+   "fieldtype": "Select",
+   "label": "Required Animal Exposure",
+   "options": "\nBite or scratch\nHandled sick or dead animal\nAny animal exposure"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  },
+  {
+   "role": "HQ Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  }
+ ]
+}

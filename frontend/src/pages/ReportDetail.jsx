@@ -1,9 +1,20 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Trash2, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope, Check } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels } from '../api/frappe'
-import { STATUSES, CATEGORIES, SEXES, formatDateTime } from '../data/formOptions'
+import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease } from '../api/frappe'
+import { STATUSES, CATEGORIES, SEXES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
+import { useCapabilities } from '../context/CapabilitiesContext'
+
+const CLASSIFIED_BY_BADGES = {
+  Rules: { label: 'Case definition', className: 'bg-blue-50 text-blue-600' },
+  Officer: { label: 'Officer verified', className: 'bg-emerald-50 text-emerald-600' },
+  Model: { label: 'AI model', className: 'bg-purple-50 text-purple-600' },
+}
+
+function alsoConsistentWith(value) {
+  return (value || '').split(',').map((s) => s.trim()).filter(Boolean)
+}
 
 function withCurrentValue(list, value) {
   return value && !list.includes(value) ? [...list, value] : list
@@ -84,6 +95,18 @@ export default function ReportDetail() {
   const [showTextNote, setShowTextNote] = useState(false)
   const [textNoteValue, setTextNoteValue] = useState('')
   const [regionMap, setRegionMap] = useState({})
+  const [diseaseOptions, setDiseaseOptions] = useState([])
+  const [changingDisease, setChangingDisease] = useState(false)
+  const [savingDisease, setSavingDisease] = useState(false)
+  const [toast, setToast] = useState({ show: false, message: '', error: false })
+  const toastTimerRef = useRef(null)
+  const { has } = useCapabilities()
+
+  function showToast(message, error = false) {
+    setToast({ show: true, message, error })
+    clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 3000)
+  }
 
   const fileInputRefs = {
     Photo: useRef(null),
@@ -103,8 +126,37 @@ export default function ReportDetail() {
       { label: 'Onset Date', value: formatReadableDate(report.onset_date) },
       { label: 'Affected Persons', value: report.affected_count },
       { label: 'Reported By', value: report.reporter_name || report.reported_by },
+      { label: 'Age Group', value: (AGE_GROUPS.find((g) => g.value === report.age_group) || {}).label, empty: 'Not recorded' },
+      { label: 'Animal Exposure', value: (ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === report.animal_exposure) || {}).label, empty: 'Not recorded' },
+      { label: 'Number of Deaths', value: report.deaths_count === null || report.deaths_count === undefined ? '' : String(report.deaths_count), empty: 'Not recorded' },
     ]
   }, [report, regionMap])
+
+  const diseaseName = useMemo(() => {
+    const d = diseaseOptions.find((o) => o.key === report?.suspected_disease)
+    return d ? d.name : ''
+  }, [diseaseOptions, report])
+
+  const classificationLines = useMemo(() => {
+    const reason = report?.classification_reason || ''
+    const idx = reason.indexOf('\nRules view:')
+    if (idx === -1) return { decision: reason, rulesView: '' }
+    return { decision: reason.slice(0, idx), rulesView: reason.slice(idx + 1).replace(/^Rules view:\s*/, '') }
+  }, [report])
+
+  async function handleChangeDisease(key) {
+    setSavingDisease(true)
+    try {
+      const updated = await setSuspectedDisease(report.name, key)
+      setReport((prev) => ({ ...prev, ...updated }))
+      setChangingDisease(false)
+      showToast('Suspected disease updated')
+    } catch (e) {
+      showToast(e.message || 'Could not update suspected disease', true)
+    } finally {
+      setSavingDisease(false)
+    }
+  }
 
   const statusOptions = useMemo(() => withCurrentValue(STATUSES, report?.status), [report])
   const categoryOptions = useMemo(() => withCurrentValue(CATEGORIES, report?.category), [report])
@@ -203,6 +255,7 @@ export default function ReportDetail() {
 
   useEffect(() => {
     getReferenceLabels().then((labels) => setRegionMap(labels.regions || {}))
+    getDiseaseOptions().then(setDiseaseOptions)
   }, [])
 
   return (
@@ -259,7 +312,7 @@ export default function ReportDetail() {
                     {detailFields.map((f) => (
                       <div key={f.label}>
                         <div className="text-xs font-medium text-gray-400 mb-1">{f.label}</div>
-                        <div className="text-sm font-medium text-gray-900">{f.value || '—'}</div>
+                        <div className="text-sm font-medium text-gray-900">{f.value || f.empty || '—'}</div>
                       </div>
                     ))}
                     <div>
@@ -278,6 +331,75 @@ export default function ReportDetail() {
                       </div>
                     ) : (
                       <span className="text-sm text-gray-400">—</span>
+                    )}
+                  </div>
+
+                  <div className="pt-6 border-t border-gray-100 mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-gray-900">Suspected Disease</h3>
+                        {report.classified_by && CLASSIFIED_BY_BADGES[report.classified_by] && (
+                          <span className={['text-xs font-semibold px-2.5 py-1 rounded-full', CLASSIFIED_BY_BADGES[report.classified_by].className].join(' ')}>
+                            {CLASSIFIED_BY_BADGES[report.classified_by].label}
+                          </span>
+                        )}
+                      </div>
+                      {has('verify_suspected_disease') && (
+                        <button
+                          onClick={() => setChangingDisease((v) => !v)}
+                          className="inline-flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          Change
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2.5 mb-3">
+                      <Stethoscope className="w-5 h-5 text-red-600 shrink-0" />
+                      <span className={['text-lg font-bold', report.suspected_disease ? 'text-gray-900' : 'text-gray-400'].join(' ')}>
+                        {report.suspected_disease ? (diseaseName || report.suspected_disease) : 'Not classified'}
+                      </span>
+                    </div>
+
+                    {changingDisease && (
+                      <div className="mb-3">
+                        <select
+                          defaultValue=""
+                          disabled={savingDisease}
+                          onChange={(e) => handleChangeDisease(e.target.value === '__rules__' ? '' : e.target.value)}
+                          className="w-full sm:w-72 bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100"
+                        >
+                          <option value="" disabled>Select a disease...</option>
+                          <option value="__rules__">Let the case definition decide</option>
+                          {diseaseOptions.map((d) => (
+                            <option key={d.key} value={d.key}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {report.classification_reason && (
+                      <div className="mb-3">
+                        <div className="text-xs font-medium text-gray-400 mb-1">Why</div>
+                        <p className="text-sm text-gray-700">{classificationLines.decision}</p>
+                        {classificationLines.rulesView && (
+                          <div className="mt-2 bg-gray-50 rounded-lg p-3">
+                            <div className="text-xs font-medium text-gray-400 mb-1">What the case definition says</div>
+                            <p className="text-sm text-gray-600">{classificationLines.rulesView}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {alsoConsistentWith(report.also_consistent_with).length > 0 && (
+                      <div>
+                        <div className="text-xs font-medium text-gray-400 mb-1.5">Also consistent with</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {alsoConsistentWith(report.also_consistent_with).map((d) => (
+                            <span key={d} className="bg-gray-100 text-gray-600 text-xs font-medium px-2.5 py-1 rounded-full">{d}</span>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
 

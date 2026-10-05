@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getList, getCount, exportExcel, getReferenceLabels } from '../api/frappe'
+import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions } from '../api/frappe'
 import { formatDateTime, STATUSES } from '../data/formOptions'
 
 const PAGE_SIZE = 6
@@ -21,7 +21,20 @@ export default function Reports() {
   const [counts, setCounts] = useState({ total: 0, submitted: 0, reviewed: 0, linked: 0 })
   const [statusFilter, setStatusFilter] = useState('')
   const [regionFilter, setRegionFilter] = useState('')
+  const [diseaseFilter, setDiseaseFilter] = useState('')
   const [regions, setRegions] = useState({})
+  const [diseaseOptions, setDiseaseOptions] = useState([])
+  const [search, setSearch] = useState('')
+
+  const diseaseMap = useMemo(() => Object.fromEntries(diseaseOptions.map((d) => [d.key, d.name])), [diseaseOptions])
+  const diseaseName = (key) => diseaseMap[key] || '—'
+
+  const visibleReports = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return reports
+    return reports.filter((r) => [r.reporter_name, r.location_name, r.symptom_tags, diseaseName(r.suspected_disease)]
+      .some((v) => (v || '').toLowerCase().includes(q)))
+  }, [reports, search, diseaseMap])
 
   const statCards = useMemo(() => [
     { label: 'Total Reports', value: counts.total, icon: FileText },
@@ -50,9 +63,10 @@ export default function Reports() {
     const filters = {}
     if (statusFilter) filters.status = statusFilter
     if (regionFilter) filters.region = regionFilter
+    if (diseaseFilter) filters.suspected_disease = diseaseFilter
     const list = await getList(
       'Case Report',
-      ['name', 'reporter_name', 'symptom_tags', 'location_name', 'channel', 'status', 'report_date', 'creation'],
+      ['name', 'reporter_name', 'symptom_tags', 'location_name', 'channel', 'status', 'report_date', 'creation', 'age_group', 'animal_exposure', 'deaths_count', 'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with'],
       { limit: PAGE_SIZE, start: p * PAGE_SIZE, orderBy: 'creation desc', filters }
     )
     setReports(list)
@@ -80,13 +94,14 @@ export default function Reports() {
 
   useEffect(() => {
     getReferenceLabels().then((labels) => setRegions(labels.regions || {}))
+    getDiseaseOptions().then(setDiseaseOptions)
   }, [])
 
   useEffect(() => {
     setPage(0)
     loadReports(0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, regionFilter])
+  }, [statusFilter, regionFilter, diseaseFilter])
 
   return (
     <AppShell>
@@ -120,11 +135,15 @@ export default function Reports() {
       <div className="bg-white rounded-xl p-4 flex gap-3 mb-4 border border-gray-100">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input type="text" placeholder="Search" className="w-full bg-gray-50 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} type="text" placeholder="Search" className="w-full bg-gray-50 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" />
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 text-sm text-gray-600">
           <option value="">All Status</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={diseaseFilter} onChange={(e) => setDiseaseFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 text-sm text-gray-600">
+          <option value="">All Suspected Diseases</option>
+          {diseaseOptions.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
         </select>
         <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 text-sm text-gray-600">
           <option value="">All Locations</option>
@@ -142,6 +161,7 @@ export default function Reports() {
                 <th className="px-5 py-3 font-medium">Reporter</th>
                 <th className="px-5 py-3 font-medium">Symptoms</th>
                 <th className="px-5 py-3 font-medium">Location</th>
+                <th className="px-5 py-3 font-medium">Suspected Disease</th>
                 <th className="px-5 py-3 font-medium">Channel</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Date</th>
@@ -159,6 +179,7 @@ export default function Reports() {
                     ))}
                   </td>
                   <td className="px-5 py-3 text-gray-700">{r.location_name}</td>
+                  <td className="px-5 py-3 text-gray-700">{diseaseName(r.suspected_disease)}</td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span></td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', statusColor(r.status)].join(' ')}>{r.status}</span></td>
                   <td className="px-5 py-3 text-gray-500 whitespace-nowrap">{formatDateTime(r.creation)}</td>
@@ -177,7 +198,7 @@ export default function Reports() {
               ))}
               {!reports.length && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-gray-400">No reports found</td>
+                  <td colSpan={9} className="px-5 py-10 text-center text-gray-400">No reports found</td>
                 </tr>
               )}
             </tbody>

@@ -950,6 +950,24 @@ export async function deleteReport(name) {
   return deleteDoc('Case Report', name)
 }
 
+export async function classifyPreview({ symptoms, age_group, animal_exposure }) {
+  const params = new URLSearchParams({ symptoms: JSON.stringify(symptoms || []) })
+  if (age_group) params.set('age_group', age_group)
+  if (animal_exposure) params.set('animal_exposure', animal_exposure)
+  return (await callMethod(`/api/method/surveillance.case_definitions.classify_preview?${params}`)) || []
+}
+
+export async function getDiseaseOptions() {
+  return (await callMethod('/api/method/surveillance.case_definitions.get_disease_options')) || []
+}
+
+export async function setSuspectedDisease(report, disease) {
+  return callMethodPost('/api/method/surveillance.case_definitions.set_suspected_disease', {
+    report,
+    disease,
+  })
+}
+
 export async function getMyProfile() {
   const res = await fetch('/api/method/surveillance.surveillance.api.get_my_profile')
   const data = await res.json()

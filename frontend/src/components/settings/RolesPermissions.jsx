@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Search, ChevronDown, Bell, Check } from 'lucide-react'
 import { getRoleCapabilities, setRoleCapability } from '../../api/frappe'
-import { useCapabilities } from '../../context/CapabilitiesContext'
 
 const NOTIFICATION_PREFS = [
   { key: 'email_new_alert', name: 'Email me on new alerts', description: 'Get an email whenever a new alert is created in your region.' },
@@ -20,7 +19,6 @@ function loadPrefs() {
 }
 
 export default function RolesPermissions({ roles = [], users = [] }) {
-  const { refresh } = useCapabilities()
   const [search, setSearch] = useState('')
   const [selectedRole, setSelectedRole] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -112,7 +110,7 @@ export default function RolesPermissions({ roles = [], users = [] }) {
     }
   }
 
-    async function toggleCapability(cap, event) {
+  async function toggleCapability(cap, event) {
     const enabled = event.target.checked
     setCapState((prev) => ({ ...prev, [cap.key]: enabled }))
     try {
@@ -121,7 +119,6 @@ export default function RolesPermissions({ roles = [], users = [] }) {
         setCapState(Object.fromEntries(res.capabilities.map((c) => [c.key, !!c.enabled])))
       }
       showToast('Permissions saved')
-      refresh()
     } catch (err) {
       setCapState((prev) => ({ ...prev, [cap.key]: !enabled }))
       showToast(err.message || 'Failed to update capability', true)

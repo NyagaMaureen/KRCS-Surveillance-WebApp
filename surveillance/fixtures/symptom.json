@@ -1,5 +1,95 @@
 [
  {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:10:06.923097",
+  "name": "4dl4ll45e2",
+  "symptom_name": "Red Eyes"
+ },
+ {
+  "category": "Neurological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:10:26.259629",
+  "name": "4jmkdnojev",
+  "symptom_name": "Sudden Weakness of Arm or Leg"
+ },
+ {
+  "category": "Neurological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:10:42.043400",
+  "name": "4okubba60h",
+  "symptom_name": "Stiff Neck"
+ },
+ {
+  "category": "Neurological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:11:03.369698",
+  "name": "4v9lp35rno",
+  "symptom_name": "Bulging Soft Spot (infant)"
+ },
+ {
+  "category": "Neurological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:11:17.254545",
+  "name": "53kiktpq4b",
+  "symptom_name": "Confusion or Unconsciousness"
+ },
+ {
+  "category": "Haemorrhagic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:11:31.927908",
+  "name": "587ldlmsik",
+  "symptom_name": "Unexplained Bleeding"
+ },
+ {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:11:46.722204",
+  "name": "5cri94mqlo",
+  "symptom_name": "Yellow Eyes or Skin"
+ },
+ {
+  "category": "Dermatological",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:11:58.956854",
+  "name": "5glsi1crf0",
+  "symptom_name": "Black Skin Sore"
+ },
+ {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:12:22.532353",
+  "name": "5o11lvrrto",
+  "symptom_name": "Severe Body or Muscle Pain"
+ },
+ {
+  "category": "Febrile/Systemic",
+  "docstatus": 0,
+  "doctype": "Symptom",
+  "icd11_range": null,
+  "modified": "2026-10-05 11:12:36.213499",
+  "name": "5sa3jjk6aq",
+  "symptom_name": "Swollen Lymph Nodes"
+ },
+ {
   "category": "Gastrointestinal",
   "docstatus": 0,
   "doctype": "Symptom",
@@ -148,9 +238,9 @@
   "docstatus": 0,
   "doctype": "Symptom",
   "icd11_range": "ICD-11: 1A40-1A9Z",
-  "modified": "2026-08-10 10:35:35.859559",
+  "modified": "2026-10-05 12:11:50.174167",
   "name": "u6e0b9hbhs",
-  "symptom_name": "High Fever "
+  "symptom_name": "Fever (hot body) "
  },
  {
   "category": "Febrile/Systemic",

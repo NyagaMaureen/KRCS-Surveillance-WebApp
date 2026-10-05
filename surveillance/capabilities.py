@@ -29,6 +29,8 @@ CAPABILITIES = [
 	 "description": "Delete case reports", "grants": {"Case Report": ["read", "delete"]}},
 	{"key": "export_reports", "name": "Export Reports", "category": "Case Reports",
 	 "description": "Export case reports to file", "grants": {"Case Report": ["read", "export"]}},
+	{"key": "verify_suspected_disease", "name": "Verify Suspected Disease", "category": "Case Reports",
+	 "description": "Confirm or change the suspected disease on a case report", "grants": {"Case Report": ["read"]}},
 
 	# Alerts & Risk
 	{"key": "view_alerts", "name": "View Alerts", "category": "Alerts & Risk",

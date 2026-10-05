@@ -10,7 +10,7 @@ const CATEGORY_COLORS = {
   Alert: 'bg-[#F2C94C]/10 text-[#F2C94C]',
   Report: 'bg-[#27AE60]/10 text-[#27AE60]',
   Case: 'bg-[#1447E6]/10 text-[#1447E6]',
-  Config: 'bg-gray-100 text-gray-500',
+  Config: 'bg-[#9333EA]/10 text-[#9333EA]',
   User: 'bg-gray-50 text-gray-900',
   AI: 'bg-[#DB2424]/10 text-[#DB2424]',
 }
@@ -20,6 +20,15 @@ const DATE_RANGE_MS = { today: 24 * 60 * 60 * 1000, '7d': 7 * 24 * 60 * 60 * 100
 
 function formatTimestamp(v) {
   return new Date(v).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'medium' })
+}
+
+function formatChangeValue(v) {
+  return v === null || v === undefined || v === '' ? '—' : v
+}
+
+function changesToText(changes) {
+  if (!changes?.length) return ''
+  return changes.map((c) => `${c.field}: ${formatChangeValue(c.from)} → ${formatChangeValue(c.to)}`).join('; ')
 }
 
 function useClickOutside(ref, handler) {
@@ -60,7 +69,8 @@ export default function AuditLog() {
 
     return logs.filter((l) => {
       if (q) {
-        const haystack = `${l.action} ${l.user} ${l.role} ${l.details} ${l.category}`.toLowerCase()
+        const changesText = (l.changes || []).map((c) => `${c.field} ${c.from} ${c.to}`).join(' ')
+        const haystack = `${l.action} ${l.user} ${l.role} ${l.details} ${l.category} ${changesText}`.toLowerCase()
         if (!haystack.includes(q)) return false
       }
       if (categoryFilter && l.category !== categoryFilter) return false
@@ -97,6 +107,7 @@ export default function AuditLog() {
       { label: 'User', value: (r) => r.user },
       { label: 'Role', value: (r) => r.role },
       { label: 'Details', value: (r) => r.details },
+      { label: 'Changes', value: (r) => changesToText(r.changes) },
     ])
   }
 
@@ -178,7 +189,15 @@ export default function AuditLog() {
                 <td className="px-5 py-4 font-medium text-gray-900 whitespace-nowrap">{log.action}</td>
                 <td className="px-5 py-4 text-gray-900 whitespace-nowrap">{log.user}</td>
                 <td className="px-5 py-4 text-gray-500 whitespace-nowrap">{log.role}</td>
-                <td className="px-5 py-4 text-gray-500 max-w-xs">{log.details}</td>
+                <td className="px-5 py-4 text-gray-500 max-w-xs">
+                  {log.details}
+                  {log.changes?.length > 0 && (
+                    <>
+                      {' '}
+                      <button onClick={() => viewDetails(log)} className="text-xs text-gray-400 hover:underline">View changes</button>
+                    </>
+                  )}
+                </td>
                 <td className="px-5 py-4 text-right relative">
                   <button onClick={() => toggleMenu(log.name)} className="text-gray-400 hover:text-gray-700">
                     <MoreHorizontal className="w-5 h-5" />
@@ -216,7 +235,7 @@ export default function AuditLog() {
 
       {detailsLog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setDetailsLog(null) }}>
-          <div className="bg-white rounded-xl w-full max-w-md p-6">
+          <div className={['bg-white rounded-xl w-full p-6', detailsLog.changes?.length > 0 ? 'max-w-2xl max-h-[80vh] overflow-y-auto' : 'max-w-md'].join(' ')}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-gray-900">Log Details</h3>
               <button onClick={() => setDetailsLog(null)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
@@ -228,8 +247,35 @@ export default function AuditLog() {
               <div className="flex justify-between gap-4"><dt className="text-gray-400">Action</dt><dd className="text-gray-900 font-medium">{detailsLog.action}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-gray-400">User</dt><dd className="text-gray-900 font-medium">{detailsLog.user}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-gray-400">Role</dt><dd className="text-gray-900 font-medium">{detailsLog.role}</dd></div>
-              <div><dt className="text-gray-400 mb-1">Details</dt><dd className="text-gray-700">{detailsLog.details}</dd></div>
+              <div><dt className="text-gray-400 mb-1">Details</dt><dd className="text-gray-700 break-words whitespace-pre-wrap">{detailsLog.details}</dd></div>
             </dl>
+            {detailsLog.changes?.length > 0 && (
+              <div className="mt-4">
+                <h4 className="text-gray-400 text-sm mb-2">Changes</h4>
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left">
+                      <th className="text-xs font-medium text-gray-400 pb-2 pr-3">Field</th>
+                      <th className="text-xs font-medium text-gray-400 pb-2 pr-3">From</th>
+                      <th className="text-xs font-medium text-gray-400 pb-2">To</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailsLog.changes.map((c, i) => (
+                      <tr key={i} className="border-b border-gray-50">
+                        <td className="text-sm text-gray-900 py-2 pr-3 break-words whitespace-pre-wrap align-top">{c.field || <span className="text-gray-400">—</span>}</td>
+                        <td className="text-sm text-gray-500 line-through decoration-gray-300 py-2 pr-3 break-words whitespace-pre-wrap align-top">
+                          {c.from === null || c.from === undefined || c.from === '' ? <span className="text-gray-400 no-underline">—</span> : c.from}
+                        </td>
+                        <td className="text-sm text-gray-900 font-medium py-2 break-words whitespace-pre-wrap align-top">
+                          {c.to === null || c.to === undefined || c.to === '' ? <span className="text-gray-400 font-normal">—</span> : c.to}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
