@@ -1,0 +1,132 @@
+{
+ "actions": [],
+ "creation": "2026-10-05 16:00:00.000000",
+ "modified": "2026-10-05 16:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "links": [],
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "Weekly Count",
+ "owner": "Administrator",
+ "sort_field": "week_start",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "hash",
+ "naming_rule": "Random",
+ "in_create": 1,
+ "title_field": "location",
+ "index_web_pages_for_search": 0,
+ "description": "Aggregated weekly counts per source, disease and sub-county. Filled automatically; no personal data.",
+ "field_order": [
+  "source",
+  "disease",
+  "week_start",
+  "column_break_loc",
+  "county",
+  "sub_county",
+  "location",
+  "counts_section",
+  "signals",
+  "affected",
+  "deaths"
+ ],
+ "fields": [
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "CBS\nCase Report\nEMR",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "disease",
+   "fieldtype": "Link",
+   "label": "Disease",
+   "options": "Alert Threshold Config",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "week_start",
+   "fieldtype": "Date",
+   "label": "Week Start (Monday)",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_loc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "county",
+   "fieldtype": "Data",
+   "label": "County",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Data",
+   "label": "Sub-county"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "County / Sub-county. The engine compares each location with its own history."
+  },
+  {
+   "fieldname": "counts_section",
+   "fieldtype": "Section Break",
+   "label": "Counts"
+  },
+  {
+   "fieldname": "signals",
+   "fieldtype": "Int",
+   "label": "Signals (reports)",
+   "default": "0",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "affected",
+   "fieldtype": "Int",
+   "label": "Affected Persons",
+   "default": "0"
+  },
+  {
+   "fieldname": "deaths",
+   "fieldtype": "Int",
+   "label": "Deaths",
+   "default": "0"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "HQ Admin",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "write": 0,
+   "create": 0,
+   "delete": 0
+  }
+ ]
+}

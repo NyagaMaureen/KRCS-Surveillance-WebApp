@@ -1,0 +1,80 @@
+{
+ "actions": [],
+ "creation": "2026-10-06 10:00:00.000000",
+ "modified": "2026-10-06 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "links": [],
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "Sub County",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "format:{county}-{sub_county_name}",
+ "naming_rule": "Expression",
+ "title_field": "sub_county_name",
+ "show_title_field_in_link": 1,
+ "search_fields": "county,region",
+ "track_changes": 1,
+ "field_order": [
+  "sub_county_name",
+  "county",
+  "region",
+  "is_active"
+ ],
+ "fields": [
+  {
+   "fieldname": "sub_county_name",
+   "fieldtype": "Data",
+   "label": "Sub-county",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Spell it exactly as CBS does, so counts line up with CBS history."
+  },
+  {
+   "fieldname": "county",
+   "fieldtype": "Data",
+   "label": "County",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region (site)",
+   "options": "Region",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Active",
+   "default": "1"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1
+  },
+  {
+   "role": "HQ Admin",
+   "read": 1,
+   "report": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "export": 1
+  }
+ ]
+}

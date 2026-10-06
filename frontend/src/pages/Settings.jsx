@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff } from 'lucide-react'
+import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff, Search, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getCurrentUser, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds, searchIcd11, setIcd11 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
@@ -46,6 +46,12 @@ const INITIAL_AI_FEATURES = [
   { key: 'natural-language-queries', label: 'Natural language queries', description: 'Allow users to query data using natural language', enabled: false },
   { key: 'auto-generate-sops', label: 'Auto-generate SOPs', description: 'AI suggests response protocols based on alert type', enabled: false },
   { key: 'cross-region-correlation', label: 'Cross-region correlation', description: 'Detect patterns across multiple regions', enabled: true },
+]
+
+const PRIORITY_OPTIONS = [
+  { value: 'Critical', colorClass: 'text-red-600' },
+  { value: 'High', colorClass: 'text-amber-600' },
+  { value: 'Standard', colorClass: 'text-gray-600' },
 ]
 
 const INITIAL_NOTIFICATION_PREFS = [
@@ -110,6 +116,7 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState('profile')
   const [diseases, setDiseases] = useState([])
   const [diseaseThresholds, setDiseaseThresholds] = useState({})
+  const [diseasePriorities, setDiseasePriorities] = useState({})
   const [outbreakMultiplier, setOutbreakMultiplier] = useState(2.5)
   const [thresholdsLoading, setThresholdsLoading] = useState(true)
   const [thresholdsError, setThresholdsError] = useState('')
@@ -120,8 +127,10 @@ export default function Settings() {
   const [addingDisease, setAddingDisease] = useState(false)
   const [newDiseaseName, setNewDiseaseName] = useState('')
   const [newDiseaseThreshold, setNewDiseaseThreshold] = useState('1')
+  const [newDiseasePriority, setNewDiseasePriority] = useState('Standard')
   const [addDiseaseError, setAddDiseaseError] = useState('')
   const [addingDiseaseSaving, setAddingDiseaseSaving] = useState(false)
+  const [diseaseSearchQuery, setDiseaseSearchQuery] = useState('')
 
   const [icd11ChangeKey, setIcd11ChangeKey] = useState(null)
   const [icd11ChangeQuery, setIcd11ChangeQuery] = useState('')
@@ -187,6 +196,12 @@ export default function Settings() {
     return match?.role || user?.primary_role || 'Member'
   }, [roles, user])
 
+  const filteredDiseases = useMemo(() => {
+    const q = diseaseSearchQuery.trim().toLowerCase()
+    if (!q) return diseases
+    return diseases.filter((d) => d.name.toLowerCase().includes(q) || d.icd11_code?.toLowerCase().includes(q) || d.icd11_title?.toLowerCase().includes(q))
+  }, [diseases, diseaseSearchQuery])
+
   function syncForm(u) {
     setForm({
       first_name: u?.first_name || '',
@@ -198,7 +213,7 @@ export default function Settings() {
   }
 
   function startEditDiseaseThresholds() {
-    setDiseaseThresholdsBackup({ values: diseaseThresholds, multiplier: outbreakMultiplier, diseases })
+    setDiseaseThresholdsBackup({ values: diseaseThresholds, multiplier: outbreakMultiplier, diseases, priorities: diseasePriorities })
     setEditingDiseaseThresholds(true)
   }
 
@@ -207,6 +222,7 @@ export default function Settings() {
       setDiseaseThresholds(diseaseThresholdsBackup.values)
       setOutbreakMultiplier(diseaseThresholdsBackup.multiplier)
       setDiseases(diseaseThresholdsBackup.diseases)
+      setDiseasePriorities(diseaseThresholdsBackup.priorities)
     }
     setEditingDiseaseThresholds(false)
     cancelAddDisease()
@@ -215,6 +231,10 @@ export default function Settings() {
 
   function updateDiseaseThreshold(key, value) {
     setDiseaseThresholds((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function updateDiseasePriority(key, value) {
+    setDiseasePriorities((prev) => ({ ...prev, [key]: value }))
   }
 
   function startIcd11Change(disease) {
@@ -248,10 +268,15 @@ export default function Settings() {
     const numericThresholds = Object.fromEntries(
       Object.entries(diseaseThresholds).map(([key, value]) => [key, Number(value)])
     )
+    const originalPriorities = diseaseThresholdsBackup?.priorities || {}
+    const changedPriorities = Object.fromEntries(
+      Object.entries(diseasePriorities).filter(([key, value]) => originalPriorities[key] !== value)
+    )
     try {
-      const result = await saveAlertThresholds(numericThresholds, Number(outbreakMultiplier))
+      const result = await saveAlertThresholds(numericThresholds, Number(outbreakMultiplier), changedPriorities)
       setDiseases(result.diseases)
       setDiseaseThresholds(Object.fromEntries(result.diseases.map((d) => [d.key, d.threshold])))
+      setDiseasePriorities(Object.fromEntries(result.diseases.map((d) => [d.key, d.priority])))
       setOutbreakMultiplier(result.outbreak_multiplier)
       setEditingDiseaseThresholds(false)
       setDiseaseThresholdsBackup(null)
@@ -272,18 +297,21 @@ export default function Settings() {
       const icd11Payload = icd11AddSelected
         ? { icd11_code: icd11AddSelected.code, icd11_title: icd11AddSelected.title, icd11_uri: icd11AddSelected.uri }
         : {}
-      const disease = await addDisease({ disease_name: name, threshold: Number(newDiseaseThreshold) || 1, category: 'human', ...icd11Payload })
+      const disease = await addDisease({ disease_name: name, threshold: Number(newDiseaseThreshold) || 1, category: 'human', priority: newDiseasePriority, ...icd11Payload })
       setDiseases((prev) => [...prev, disease])
       setDiseaseThresholds((prev) => ({ ...prev, [disease.key]: disease.threshold }))
+      setDiseasePriorities((prev) => ({ ...prev, [disease.key]: disease.priority }))
       if (diseaseThresholdsBackup) {
         setDiseaseThresholdsBackup((prev) => ({
           ...prev,
           diseases: [...prev.diseases, disease],
           values: { ...prev.values, [disease.key]: disease.threshold },
+          priorities: { ...prev.priorities, [disease.key]: disease.priority },
         }))
       }
       setNewDiseaseName('')
       setNewDiseaseThreshold('1')
+      setNewDiseasePriority('Standard')
       setIcd11AddQuery('')
       setIcd11AddQueryEdited(false)
       setIcd11AddSelected(null)
@@ -299,6 +327,7 @@ export default function Settings() {
     function startAddDisease() {
     setNewDiseaseName('')
     setNewDiseaseThreshold('1')
+    setNewDiseasePriority('Standard')
     setIcd11AddQuery('')
     setIcd11AddQueryEdited(false)
     setIcd11AddSelected(null)
@@ -308,6 +337,7 @@ export default function Settings() {
   function cancelAddDisease() {
     setNewDiseaseName('')
     setNewDiseaseThreshold('1')
+    setNewDiseasePriority('Standard')
     setIcd11AddQuery('')
     setIcd11AddQueryEdited(false)
     setIcd11AddSelected(null)
@@ -409,6 +439,7 @@ export default function Settings() {
       const result = await getAlertThresholds()
       setDiseases(result.diseases)
       setDiseaseThresholds(Object.fromEntries(result.diseases.map((d) => [d.key, d.threshold])))
+      setDiseasePriorities(Object.fromEntries(result.diseases.map((d) => [d.key, d.priority])))
       setOutbreakMultiplier(result.outbreak_multiplier)
     } catch (e) {
       setThresholdsError(e.message || 'Could not load disease alert thresholds.')
@@ -686,20 +717,20 @@ export default function Settings() {
 
       {activeTab === 'alert-thresholds' && (
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
-          <div className="flex items-center justify-between gap-6 mb-6">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Disease Alert Thresholds</h3>
-              <p className="text-sm text-gray-400 mt-1">Set the baseline case counts that trigger automated alerts. AI will flag anomalies above these thresholds.</p>
+              <p className="text-sm text-gray-400 mt-1 max-w-xl">Set the baseline case counts that trigger automated alerts. AI will flag anomalies above these thresholds.</p>
             </div>
             {has('manage_alert_thresholds') && (
               <div className="flex items-center gap-3 shrink-0">
-                {!addingDisease && (
-                  <button onClick={startAddDisease} className="flex items-center gap-2 border border-gray-200 bg-gray-50 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-100">
+                {!addingDisease && !editingDiseaseThresholds && (
+                  <button onClick={startAddDisease} className="flex items-center gap-2 border border-gray-200 bg-gray-50 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-100">
                     <Plus className="w-4 h-4" /> Add Disease
                   </button>
                 )}
                 {!editingDiseaseThresholds && (
-                  <button onClick={startEditDiseaseThresholds} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">
+                  <button onClick={startEditDiseaseThresholds} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">
                     <Pencil className="w-4 h-4" /> Edit Thresholds
                   </button>
                 )}
@@ -716,84 +747,12 @@ export default function Settings() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-5">
-                {diseases.map((disease) => (
-                  <div key={disease.key}>
-                    <label className="block text-sm font-medium text-gray-900 mb-1.5">
-                      {disease.name}
-                      {disease.note && <span className="ml-2 text-xs font-normal text-red-500">({disease.note})</span>}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={diseaseThresholds[disease.key]}
-                      disabled={!editingDiseaseThresholds}
-                      onChange={(e) => updateDiseaseThreshold(disease.key, e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200"
-                    />
-                    <p className="text-xs text-gray-400 mt-1.5">Cases per week before alert</p>
-
-                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                      {disease.icd11_code ? (
-                        <p className="text-xs text-gray-400">
-                          ICD-11: <span className="font-mono bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{disease.icd11_code}</span>
-                          {disease.icd11_title ? ` · ${disease.icd11_title}` : ''}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-gray-300">No ICD-11 code</p>
-                      )}
-                      {editingDiseaseThresholds && has('manage_alert_thresholds') && (
-                        <button type="button" onClick={() => startIcd11Change(disease)} className="text-xs font-medium text-red-600 hover:underline">
-                          Change
-                        </button>
-                      )}
-                    </div>
-
-                    {icd11ChangeKey === disease.key && (
-                      <div className="mt-2 border border-gray-200 rounded-lg p-3 bg-gray-50">
-                        <input
-                          value={icd11ChangeQuery}
-                          onChange={(e) => setIcd11ChangeQuery(e.target.value)}
-                          autoFocus
-                          placeholder="Search ICD-11…"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 mb-2"
-                        />
-                        {icd11ChangeSearch.loading && <p className="text-xs text-gray-400">Searching…</p>}
-                        {!icd11ChangeSearch.loading && icd11ChangeSearch.error && <p className="text-xs text-red-600">{icd11ChangeSearch.error}</p>}
-                        {!icd11ChangeSearch.loading && !icd11ChangeSearch.error && icd11ChangeQuery.trim().length >= 2 && icd11ChangeSearch.results.length === 0 && (
-                          <p className="text-xs text-gray-400">No ICD-11 matches</p>
-                        )}
-                        <div className="space-y-1 max-h-56 overflow-y-auto">
-                          {icd11ChangeSearch.results.slice(0, 8).map((r) => (
-                            <button
-                              key={r.code}
-                              type="button"
-                              onClick={() => selectIcd11(disease, r)}
-                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100"
-                            >
-                              <span className="font-mono text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{r.code}</span>
-                              <span className="text-gray-900 truncate">{r.title}</span>
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => selectIcd11(disease, null)}
-                            className="w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-100"
-                          >
-                            No ICD-11 code
-                          </button>
-                        </div>
-                        {icd11ChangeSaveError && <p className="text-xs text-red-600 mt-2">{icd11ChangeSaveError}</p>}
-                        <button type="button" onClick={closeIcd11Change} className="mt-2 text-xs font-medium text-gray-500 hover:underline">
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-red-100 bg-red-50/50 px-5 py-4 mb-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-900 mb-1.5">Outbreak Multiplier</label>
+                  <p className="text-sm font-semibold text-gray-900">Outbreak Multiplier</p>
+                  <p className="text-xs text-gray-500 mt-0.5">e.g., 2.5× baseline for a disease triggers an outbreak alert</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
                   <input
                     type="number"
                     min="1"
@@ -801,23 +760,152 @@ export default function Settings() {
                     value={outbreakMultiplier}
                     disabled={!editingDiseaseThresholds}
                     onChange={(e) => setOutbreakMultiplier(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200"
+                    className="w-24 rounded-lg border border-gray-200 bg-white disabled:bg-gray-50 disabled:text-gray-500 px-3 py-2.5 text-sm font-semibold text-center focus:outline-none focus:ring-2 focus:ring-red-200"
                   />
-                  <p className="text-xs text-gray-400 mt-1.5">e.g., 2.5x = 2.5 times baseline triggers outbreak alert</p>
+                  <span className="text-sm font-medium text-gray-400">×</span>
                 </div>
               </div>
+
+              {diseases.length > 6 && (
+                <div className="relative mb-4">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={diseaseSearchQuery}
+                    onChange={(e) => setDiseaseSearchQuery(e.target.value)}
+                    placeholder="Search diseases or ICD-11 codes…"
+                    className="w-full sm:w-80 rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                  />
+                  {diseaseSearchQuery && (
+                    <button type="button" onClick={() => setDiseaseSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="hidden sm:grid grid-cols-[1fr_140px_150px] gap-4 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                <span>Disease</span>
+                <span>Threshold / week</span>
+                <span>Priority</span>
+              </div>
+
+              <div className="divide-y divide-gray-100 border-t border-gray-100">
+                {filteredDiseases.map((disease) => (
+                  <div key={disease.key} className="py-4 grid grid-cols-1 sm:grid-cols-[1fr_140px_150px] gap-3 sm:gap-4 sm:items-start">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-gray-900">{disease.name}</p>
+                        {disease.note && <span className="text-xs font-medium text-red-600 bg-red-50 rounded px-1.5 py-0.5">{disease.note}</span>}
+                      </div>
+
+                      <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                        {disease.icd11_code ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-medium bg-gray-100 text-gray-700 rounded px-1.5 py-0.5">{disease.icd11_code}</span>
+                            {disease.icd11_title && <span className="text-xs text-gray-500">{disease.icd11_title}</span>}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">No ICD-11 code</span>
+                        )}
+                        {editingDiseaseThresholds && has('manage_alert_thresholds') && (
+                          <button type="button" onClick={() => startIcd11Change(disease)} className="text-xs font-medium text-red-600 hover:underline">
+                            Change
+                          </button>
+                        )}
+                      </div>
+
+                      {icd11ChangeKey === disease.key && (
+                        <div className="mt-2 border border-gray-200 rounded-lg p-3 bg-gray-50 max-w-md">
+                          <input
+                            value={icd11ChangeQuery}
+                            onChange={(e) => setIcd11ChangeQuery(e.target.value)}
+                            autoFocus
+                            placeholder="Search ICD-11…"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 mb-2"
+                          />
+                          {icd11ChangeSearch.loading && <p className="text-xs text-gray-400">Searching…</p>}
+                          {!icd11ChangeSearch.loading && icd11ChangeSearch.error && <p className="text-xs text-red-600">{icd11ChangeSearch.error}</p>}
+                          {!icd11ChangeSearch.loading && !icd11ChangeSearch.error && icd11ChangeQuery.trim().length >= 2 && icd11ChangeSearch.results.length === 0 && (
+                            <p className="text-xs text-gray-400">No ICD-11 matches</p>
+                          )}
+                          <div className="space-y-1 max-h-56 overflow-y-auto">
+                            {icd11ChangeSearch.results.slice(0, 8).map((r) => (
+                              <button
+                                key={r.code}
+                                type="button"
+                                onClick={() => selectIcd11(disease, r)}
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100"
+                              >
+                                <span className="font-mono text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">{r.code}</span>
+                                <span className="text-gray-900 truncate">{r.title}</span>
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => selectIcd11(disease, null)}
+                              className="w-full rounded-md px-2 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-100"
+                            >
+                              No ICD-11 code
+                            </button>
+                          </div>
+                          {icd11ChangeSaveError && <p className="text-xs text-red-600 mt-2">{icd11ChangeSaveError}</p>}
+                          <button type="button" onClick={closeIcd11Change} className="mt-2 text-xs font-medium text-gray-500 hover:underline">
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <span className="sm:hidden block text-xs font-medium text-gray-400 mb-1">Threshold / week</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={diseaseThresholds[disease.key]}
+                        disabled={!editingDiseaseThresholds}
+                        onChange={(e) => updateDiseaseThreshold(disease.key, e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+
+                    <div>
+                      <span className="sm:hidden block text-xs font-medium text-gray-400 mb-1">Priority</span>
+                      <select
+                        value={diseasePriorities[disease.key] || 'Standard'}
+                        disabled={!editingDiseaseThresholds}
+                        onChange={(e) => updateDiseasePriority(disease.key, e.target.value)}
+                        className={[
+                          'w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200',
+                          PRIORITY_OPTIONS.find((p) => p.value === (diseasePriorities[disease.key] || 'Standard'))?.colorClass || 'text-gray-600',
+                        ].join(' ')}
+                      >
+                        {PRIORITY_OPTIONS.map((p) => (
+                          <option key={p.value} value={p.value}>{p.value}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+
+                {filteredDiseases.length === 0 && (
+                  <p className="text-sm text-gray-400 py-8 text-center">No diseases match “{diseaseSearchQuery}”</p>
+                )}
+              </div>
+
+              <p className="text-xs text-gray-400 mt-4">Priority sets how serious one suspected case is. Alerts for Critical diseases are always treated as critical.</p>
 
               {saveThresholdsError && <p className="text-red-600 text-sm mt-4">{saveThresholdsError}</p>}
 
               {addingDisease && (
-                <div className="mt-6">
-                  <div className="flex items-center gap-3">
+                <div className="mt-6 border border-gray-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-gray-900 mb-3">Add New Disease</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px_140px] gap-3">
                     <input
                       value={newDiseaseName}
                       onChange={(e) => handleNewDiseaseNameChange(e.target.value)}
                       placeholder="Disease name"
                       autoFocus
-                      className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                      className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
                     />
                     <input
                       type="number"
@@ -826,12 +914,20 @@ export default function Settings() {
                       onChange={(e) => setNewDiseaseThreshold(e.target.value)}
                       onKeyUp={(e) => { if (e.key === 'Enter') confirmAddDisease() }}
                       placeholder="Threshold"
-                      className="w-32 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                      className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
                     />
-                    <button onClick={confirmAddDisease} disabled={addingDiseaseSaving} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">
-                      {addingDiseaseSaving ? 'Adding…' : 'Add'}
-                    </button>
-                    <button onClick={cancelAddDisease} className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600">Cancel</button>
+                    <select
+                      value={newDiseasePriority}
+                      onChange={(e) => setNewDiseasePriority(e.target.value)}
+                      className={[
+                        'rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200',
+                        PRIORITY_OPTIONS.find((p) => p.value === newDiseasePriority)?.colorClass || 'text-gray-600',
+                      ].join(' ')}
+                    >
+                      {PRIORITY_OPTIONS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.value}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="mt-3">
@@ -871,12 +967,20 @@ export default function Settings() {
                       </div>
                     )}
                   </div>
+
+                  {addDiseaseError && <p className="text-red-600 text-sm mt-3">{addDiseaseError}</p>}
+
+                  <div className="flex justify-end gap-3 mt-4">
+                    <button onClick={cancelAddDisease} className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                    <button onClick={confirmAddDisease} disabled={addingDiseaseSaving} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">
+                      {addingDiseaseSaving ? 'Adding…' : 'Add Disease'}
+                    </button>
+                  </div>
                 </div>
               )}
-              {addingDisease && addDiseaseError && <p className="text-red-600 text-sm mt-3">{addDiseaseError}</p>}
 
               {editingDiseaseThresholds && (
-                <div className="flex gap-3 mt-6">
+                <div className="flex gap-3 mt-6 sticky bottom-0 bg-white pt-2">
                   <button onClick={saveDiseaseThresholds} disabled={savingThresholds} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">
                     {savingThresholds ? 'Saving…' : 'Save Changes'}
                   </button>
@@ -1031,9 +1135,11 @@ export default function Settings() {
       )}
 
       {toast.show && (
-        <div className="fixed bottom-6 right-6 bg-gray-900 text-white text-sm rounded-lg px-4 py-2.5 flex items-center gap-2 shadow-lg z-50">
-          <Check className="w-4 h-4 text-green-400" />
-          <span>{toast.message}</span>
+        <div className="toast-in fixed bottom-6 right-6 bg-gray-900 text-white text-sm rounded-xl pl-3 pr-4 py-3 flex items-center gap-2.5 shadow-xl z-50">
+          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-green-500/20 shrink-0">
+            <Check className="w-3.5 h-3.5 text-green-400" />
+          </span>
+          <span className="font-medium">{toast.message}</span>
         </div>
       )}
     </AppShell>

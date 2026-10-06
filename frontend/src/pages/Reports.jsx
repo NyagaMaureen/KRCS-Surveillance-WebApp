@@ -66,7 +66,7 @@ export default function Reports() {
     if (diseaseFilter) filters.suspected_disease = diseaseFilter
     const list = await getList(
       'Case Report',
-      ['name', 'reporter_name', 'symptom_tags', 'location_name', 'channel', 'status', 'report_date', 'creation', 'age_group', 'animal_exposure', 'deaths_count', 'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with'],
+      ['name', 'reporter_name', 'symptom_tags', 'location_name', 'sub_county', 'channel', 'status', 'report_date', 'creation', 'age_group', 'animal_exposure', 'deaths_count', 'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with'],
       { limit: PAGE_SIZE, start: p * PAGE_SIZE, orderBy: 'creation desc', filters }
     )
     setReports(list)
@@ -125,6 +125,7 @@ export default function Reports() {
           <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between">
             <div>
               <div className="text-xs text-gray-400">{c.label}</div>
+              
               <div className="text-2xl font-bold text-gray-900">{c.value}</div>
             </div>
             <div className="bg-gray-100 rounded-full p-2"><c.icon className="w-4 h-4 text-gray-500" /></div>
@@ -161,6 +162,7 @@ export default function Reports() {
                 <th className="px-5 py-3 font-medium">Reporter</th>
                 <th className="px-5 py-3 font-medium">Symptoms</th>
                 <th className="px-5 py-3 font-medium">Location</th>
+                <th className="px-5 py-3 font-medium">Sub-county</th>
                 <th className="px-5 py-3 font-medium">Suspected Disease</th>
                 <th className="px-5 py-3 font-medium">Channel</th>
                 <th className="px-5 py-3 font-medium">Status</th>
@@ -179,6 +181,7 @@ export default function Reports() {
                     ))}
                   </td>
                   <td className="px-5 py-3 text-gray-700">{r.location_name}</td>
+                  <td className="px-5 py-3 text-gray-700">{r.sub_county || '—'}</td>
                   <td className="px-5 py-3 text-gray-700">{diseaseName(r.suspected_disease)}</td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span></td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', statusColor(r.status)].join(' ')}>{r.status}</span></td>
@@ -198,7 +201,7 @@ export default function Reports() {
               ))}
               {!reports.length && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-gray-400">No reports found</td>
+                  <td colSpan={10} className="px-5 py-10 text-center text-gray-400">No reports found</td>
                 </tr>
               )}
             </tbody>

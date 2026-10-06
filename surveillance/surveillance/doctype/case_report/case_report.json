@@ -10,6 +10,7 @@
   "phone_number",
   "signal_type",
   "region",
+  "sub_county",
   "location_name",
   "latitude",
   "longitude",
@@ -202,12 +203,18 @@
    "fieldtype": "Small Text",
    "label": "Classification Reason",
    "read_only": 1
+  },
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Link",
+   "label": "Sub-county",
+   "options": "Sub County"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-05 14:14:01.585035",
+ "modified": "2026-10-06 10:03:43.662263",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",

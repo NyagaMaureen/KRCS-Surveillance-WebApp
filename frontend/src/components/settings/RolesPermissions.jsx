@@ -181,10 +181,7 @@ export default function RolesPermissions({ roles = [], users = [] }) {
               <h2 className="text-lg font-bold text-gray-900">{selectedRole.role}</h2>
               <p className="text-sm text-gray-500 mt-1">Configure what {selectedRole.role} can view, create, and manage across the platform.</p>
             </div>
-<div className="bg-white rounded-xl border border-gray-100 p-5">
-              <h2 className="text-lg font-bold text-gray-900">{selectedRole.role}</h2>
-              <p className="text-sm text-gray-500 mt-1">Configure what {selectedRole.role} can view, create, and manage across the platform.</p>
-            </div>
+
 
             {locked && (
               <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-sm text-gray-500">

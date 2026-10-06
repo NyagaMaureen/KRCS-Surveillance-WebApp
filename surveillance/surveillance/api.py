@@ -145,4 +145,5 @@ def get_my_profile():
         "name": user_doc.name,
         "full_name": user_doc.full_name,
         "phone_number": user_doc.mobile_no or "",
+        "assigned_region": user_doc.get("assigned_region") or "",
     }

@@ -15,7 +15,8 @@
   "sort_order",
   "icd11_code",
   "icd11_title",
-  "icd11_uri"
+  "icd11_uri",
+  "priority"
  ],
  "fields": [
   {
@@ -81,12 +82,19 @@
    "fieldtype": "Data",
    "label": "ICD-11 URI",
    "read_only": 1
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Priority",
+   "options": "Critical\nHigh\nStandard"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-02 11:53:33.755230",
+ "modified": "2026-10-05 15:18:18.604185",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Alert Threshold Config",

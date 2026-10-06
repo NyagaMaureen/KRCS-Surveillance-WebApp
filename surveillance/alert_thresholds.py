@@ -9,6 +9,27 @@ DOCTYPE = "Alert Threshold Config"
 SETTINGS = "Alert Threshold Settings"
 CAPABILITY = "manage_alert_thresholds"
 CATEGORIES = {"human": "Human", "animal": "Animal"}
+PRIORITIES = ("Critical", "High", "Standard")
+
+# How serious one suspected case is. Used with the engine's signal strength to set alert severity.
+# Applied on migrate only to diseases whose priority is still blank, so KRCS changes are kept.
+DEFAULT_PRIORITY = {
+	"afp-polio": "Critical",
+	"vhf": "Critical",
+	"bvd": "Critical",
+	"yellow-fever": "Critical",
+	"mpox": "Critical",
+	"unusual-death-people": "Critical",
+	"unusual-illness-people": "Critical",
+	"unusual-illness-animals": "Critical",
+	"awd-cholera": "High",
+	"measles": "High",
+	"meningococcal-meningitis": "High",
+	"anthrax": "High",
+	"rift-valley-fever": "High",
+	"covid-sari": "High",
+	
+}  # anything not listed is Standard
 
 # key, name, category, note — keys match the frontend exactly
 DEFAULT_DISEASES = [
@@ -57,6 +78,13 @@ def _valid_multiplier(value):
 	return m
 
 
+def _valid_priority(value):
+	value = (value or "Standard").strip().title()
+	if value not in PRIORITIES:
+		frappe.throw(_("Priority must be Critical, High or Standard"))
+	return value
+
+
 def _row(d):
 	return {
 		"key": d.disease_key,
@@ -64,6 +92,7 @@ def _row(d):
 		"category": (d.category or "Human").lower(),
 		"note": d.note or "",
 		"threshold": d.threshold,
+		"priority": d.get("priority") or "Standard",
 		"sort_order": d.sort_order,
 		"icd11_code": d.get("icd11_code") or "",
 		"icd11_title": d.get("icd11_title") or "",
@@ -79,7 +108,7 @@ def get_alert_thresholds():
 	rows = frappe.get_all(
 		DOCTYPE,
 		filters={"is_active": 1},
-		fields=["disease_key", "disease_name", "category", "note", "threshold", "sort_order",
+		fields=["disease_key", "disease_name", "category", "note", "threshold", "priority", "sort_order",
 		        "icd11_code", "icd11_title", "icd11_uri"],
 		order_by="sort_order asc, creation asc",
 	)
@@ -90,7 +119,7 @@ def get_alert_thresholds():
 	}
 
 @frappe.whitelist(methods=["POST"])
-def add_disease(disease_name, threshold=1, category="human", note="", icd11_code="", icd11_title="", icd11_uri=""):
+def add_disease(disease_name, threshold=1, category="human", note="", icd11_code="", icd11_title="", icd11_uri="", priority="Standard"):
 	require_capability(CAPABILITY)
 
 	disease_name = (disease_name or "").strip()
@@ -115,6 +144,7 @@ def add_disease(disease_name, threshold=1, category="human", note="", icd11_code
 		"category": cat,
 		"note": note or "",
 		"threshold": _valid_threshold(threshold),
+		"priority": _valid_priority(priority),
 		"is_active": 1,
 		"sort_order": max_order + 1,
 		"icd11_code": code,
@@ -122,22 +152,30 @@ def add_disease(disease_name, threshold=1, category="human", note="", icd11_code
 		"icd11_uri": (icd11_uri or "").strip() if code else "",
 	}).insert(ignore_permissions=True)
 	return _row(doc)
-	
+
+
 @frappe.whitelist(methods=["POST"])
-def save_alert_thresholds(thresholds, outbreak_multiplier=None):
-	"""thresholds: {"awd-cholera": 1, "measles": 2, ...}"""
+def save_alert_thresholds(thresholds=None, outbreak_multiplier=None, priorities=None):
+	"""thresholds: {"awd-cholera": 1, ...}   priorities: {"awd-cholera": "High", ...} (both optional)"""
 	require_capability(CAPABILITY)
 
-	if isinstance(thresholds, str):
-		thresholds = frappe.parse_json(thresholds)
+	thresholds = frappe.parse_json(thresholds) if isinstance(thresholds, str) else (thresholds or {})
+	priorities = frappe.parse_json(priorities) if isinstance(priorities, str) else (priorities or {})
 
-	for key, value in (thresholds or {}).items():
+	for key in set(thresholds) | set(priorities):
 		if not frappe.db.exists(DOCTYPE, key):
 			frappe.throw(_("Unknown disease: {0}").format(key))
-		new_value = _valid_threshold(value)
 		doc = frappe.get_doc(DOCTYPE, key)
-		if doc.threshold != new_value:
-			doc.threshold = new_value
+		changed = False
+		if key in thresholds:
+			new_value = _valid_threshold(thresholds[key])
+			if doc.threshold != new_value:
+				doc.threshold, changed = new_value, True
+		if key in priorities:
+			new_priority = _valid_priority(priorities[key])
+			if doc.priority != new_priority:
+				doc.priority, changed = new_priority, True
+		if changed:
 			doc.save(ignore_permissions=True)  # still validated + version-tracked
 
 	if outbreak_multiplier is not None:
@@ -153,7 +191,8 @@ def save_alert_thresholds(thresholds, outbreak_multiplier=None):
 # ---------- seed ----------
 
 def seed_defaults():
-	"""Safe to run many times: adds missing diseases at threshold 1, never overwrites edits."""
+	"""Safe to run many times: adds missing diseases at threshold 1 and fills blank priorities.
+	Never overwrites a threshold or priority someone has set."""
 	for i, (key, name, category, note) in enumerate(DEFAULT_DISEASES, start=1):
 		if not frappe.db.exists(DOCTYPE, key):
 			frappe.get_doc({
@@ -163,9 +202,14 @@ def seed_defaults():
 				"category": category,
 				"note": note,
 				"threshold": 1,
+				"priority": DEFAULT_PRIORITY.get(key, "Standard"),
 				"is_active": 1,
 				"sort_order": i,
 			}).insert(ignore_permissions=True)
+
+	# "not set" matches both empty and NULL
+	for key in frappe.get_all(DOCTYPE, filters={"priority": ["is", "not set"]}, pluck="name"):
+		frappe.db.set_value(DOCTYPE, key, "priority", DEFAULT_PRIORITY.get(key, "Standard"), update_modified=False)
 
 	if not frappe.db.get_single_value(SETTINGS, "outbreak_multiplier"):
 		frappe.db.set_single_value(SETTINGS, "outbreak_multiplier", 2.5)

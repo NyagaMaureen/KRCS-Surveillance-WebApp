@@ -4,9 +4,11 @@
 import frappe
 from frappe.model.document import Document
 from surveillance.case_definitions import apply_to_case_report
+from surveillance.locations import validate_case_report_location
 
 class CaseReport(Document):
 	def validate(self):
+		validate_case_report_location(self)
 		apply_to_case_report(self)
 		self.set_symptom_tags()
 

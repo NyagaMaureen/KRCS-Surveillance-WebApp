@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MapPin, Loader2, CheckCircle2, AlertCircle, Camera, Mic, FileText, Paperclip, X, Stethoscope } from 'lucide-react'
+import { LocateFixed, Loader2, Camera, Mic, FileText, Paperclip, X, Stethoscope, CheckCircle2, AlertCircle, MapPin } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getList, createReport, getMyProfile, uploadFile, classifyPreview } from '../api/frappe'
+import { getList, createReport, getMyProfile, getSubCounties, uploadFile, classifyPreview } from '../api/frappe'
 import { CATEGORIES, SEXES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS } from '../data/formOptions'
 
 const steps = ['Reporter Info', 'Symptoms', 'Details', 'Review Report']
@@ -13,12 +13,6 @@ const ATTACHMENT_TYPES = [
   { type: 'Text Note', icon: FileText, accept: null },
   { type: 'Attachment', icon: Paperclip, accept: '' },
 ]
-
-function formatCoords(lat, lng) {
-  const latDir = lat >= 0 ? 'N' : 'S'
-  const lngDir = lng >= 0 ? 'E' : 'W'
-  return `${Math.abs(lat).toFixed(4)}\u00b0${latDir}, ${Math.abs(lng).toFixed(4)}\u00b0${lngDir}`
-}
 
 function toDateInputValue(date) {
   return date.toISOString().slice(0, 10)
@@ -34,8 +28,9 @@ export default function RecordHealthSignal() {
   const [currentStep, setCurrentStep] = useState(1)
   const [regions, setRegions] = useState([])
   const [symptoms, setSymptoms] = useState([])
-  const [gpsLabel, setGpsLabel] = useState('GPS not captured yet')
-  const [gpsState, setGpsState] = useState('idle')
+  const [subCounties, setSubCounties] = useState([])
+  const [geoError, setGeoError] = useState('')
+  const [locationError, setLocationError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState({})
@@ -51,7 +46,7 @@ export default function RecordHealthSignal() {
 
   const [form, setForm] = useState({
     reported_by: '', reporter_name: '', phone_number: '',
-    signal_type: '', category: '', region: '', location_name: '',
+    signal_type: '', category: '', region: '', sub_county: '', location_name: '',
     latitude: null, longitude: null, affected_count: '', sex: '',
     symptoms: [], onset_date: '', attachments: [], additional_notes: '',
     age_group: '', animal_exposure: '', deaths_count: 0,
@@ -90,23 +85,20 @@ export default function RecordHealthSignal() {
   const regionLabel = useMemo(() => (regions.find((r) => r.name === form.region) || {}).region_name || '', [regions, form.region])
   const symptomLabels = useMemo(() => form.symptoms.map((id) => (symptoms.find((s) => s.name === id) || {}).symptom_name).filter(Boolean), [form.symptoms, symptoms])
 
-  function captureGPS() {
-    if (!navigator.geolocation) { setGpsLabel('GPS not supported on this device/browser.'); return }
-    setGpsState('loading')
-    setGpsLabel('Capturing location...')
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setGeoError("Couldn't get your location. Enter coordinates manually.")
+      return
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const latitude = pos.coords.latitude
-        const longitude = pos.coords.longitude
-        updateForm({ latitude, longitude })
-        setGpsState('success')
-        setGpsLabel(`GPS: ${formatCoords(latitude, longitude)} (accuracy \u00b1${Math.round(pos.coords.accuracy)}m)`)
+        setGeoError('')
+        updateForm({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
       },
       () => {
-        setGpsState('error')
-        setGpsLabel('Could not get location \u2014 check browser permission, or enter location name manually.')
+        setGeoError("Couldn't get your location. Enter coordinates manually.")
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true }
     )
   }
 
@@ -164,12 +156,16 @@ export default function RecordHealthSignal() {
 
   async function submitReport() {
     setSubmitError('')
+    if (!form.sub_county) {
+      setSubmitError('Please select a sub-county')
+      return
+    }
     setSubmitting(true)
     try {
       await createReport({
         reported_by: form.reported_by, reporter_name: form.reporter_name, phone_number: form.phone_number,
         signal_type: form.signal_type, category: form.category,
-        region: form.region, location_name: form.location_name, latitude: form.latitude, longitude: form.longitude,
+        region: form.region, sub_county: form.sub_county, location_name: form.location_name, latitude: form.latitude, longitude: form.longitude,
         affected_count: form.affected_count, sex: form.sex,
         symptoms: form.symptoms.map((s) => ({ symptom: s })),
         onset_date: form.onset_date, attachments: form.attachments,
@@ -192,9 +188,35 @@ export default function RecordHealthSignal() {
         reported_by: profile.name || '',
         reporter_name: profile.full_name || '',
         phone_number: profile.phone_number || '',
+        region: profile.assigned_region || '',
       })
     })
   }, [])
+
+  useEffect(() => {
+    if (!form.region) {
+      setSubCounties([])
+      updateForm({ sub_county: '' })
+      return
+    }
+    let cancelled = false
+    getSubCounties(form.region).then((list) => {
+      if (cancelled) return
+      setSubCounties(list)
+      updateForm({ sub_county: list.length === 1 ? list[0].name : '' })
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.region])
+
+  function goToStep2() {
+    if (!form.sub_county) {
+      setLocationError('Please select a sub-county')
+      return
+    }
+    setLocationError('')
+    setCurrentStep(2)
+  }
 
   return (
     <AppShell>
@@ -245,29 +267,42 @@ export default function RecordHealthSignal() {
                     {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Sub-county</label>
+                  <select
+                    value={form.sub_county}
+                    onChange={(e) => { updateForm({ sub_county: e.target.value }); setLocationError('') }}
+                    disabled={!form.region}
+                    className="w-full bg-gray-50 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow disabled:text-gray-400"
+                  >
+                    <option value="">{form.region ? 'Select sub-county' : 'Select a region first'}</option>
+                    {subCounties.map((sc) => <option key={sc.name} value={sc.name}>{`${sc.sub_county_name} \u00b7 ${sc.county}`}</option>)}
+                  </select>
+                  {locationError && <p className="text-xs text-red-600 mt-1">{locationError}</p>}
+                </div>
               </div>
-              <label className="block text-sm font-semibold mb-1">Location</label>
-              <div className="flex gap-2 mb-1">
-                <input value={form.location_name} onChange={(e) => updateForm({ location_name: e.target.value })} className="flex-1 bg-gray-50 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow" placeholder="Location name" />
-                <button
-                  type="button"
-                  onClick={captureGPS}
-                  disabled={gpsState === 'loading'}
-                  className={['border rounded-lg px-4 flex items-center justify-center transition-colors', gpsState === 'success' ? 'border-green-200 bg-green-50 text-green-600' : gpsState === 'error' ? 'border-red-200 bg-red-50 text-red-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-300'].join(' ')}
-                >
-                  {gpsState === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : gpsState === 'success' ? <CheckCircle2 className="w-4 h-4" /> : gpsState === 'error' ? <AlertCircle className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
-                </button>
-              </div>
-              <div
-                className={['inline-flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 mb-8', gpsState === 'success' ? 'bg-green-50 text-green-600' : gpsState === 'error' ? 'bg-red-50 text-red-600' : gpsState === 'loading' ? 'bg-amber-50 text-amber-600' : 'text-gray-400'].join(' ')}
+              <label className="block text-sm font-semibold mb-1">Exact location / landmark</label>
+              <input value={form.location_name} onChange={(e) => updateForm({ location_name: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow mb-2" placeholder="e.g. Ifo camp, Block C4, near the water point" />
+              <button
+                type="button"
+                onClick={useMyLocation}
+                className="inline-flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors mb-1"
               >
-                {gpsState === 'loading' && <Loader2 className="w-3 h-3 animate-spin" />}
-                {gpsState === 'success' && <CheckCircle2 className="w-3 h-3" />}
-                {gpsState === 'error' && <AlertCircle className="w-3 h-3" />}
-                {gpsLabel}
+                <MapPin className="w-3.5 h-3.5" /> Use my current location
+              </button>
+              {geoError && <p className="text-xs text-gray-400 mb-2">{geoError}</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 mt-3">
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Latitude</label>
+                  <input type="number" step="any" value={form.latitude ?? ''} onChange={(e) => updateForm({ latitude: e.target.value === '' ? null : Number(e.target.value) })} className="w-full bg-gray-50 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow" placeholder="e.g. 0.3476" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Longitude</label>
+                  <input type="number" step="any" value={form.longitude ?? ''} onChange={(e) => updateForm({ longitude: e.target.value === '' ? null : Number(e.target.value) })} className="w-full bg-gray-50 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow" placeholder="e.g. 32.5825" />
+                </div>
               </div>
               <div className="flex justify-end">
-                <button onClick={() => setCurrentStep(2)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>
+                <button onClick={goToStep2} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>
               </div>
             </div>
           )}
@@ -471,6 +506,7 @@ export default function RecordHealthSignal() {
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Category</span><span className="font-medium">{form.category || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Signal Type</span><span className="font-medium">{form.signal_type || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Region</span><span className="font-medium">{regionLabel || '\u2014'}</span></div>
+                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Sub-county</span><span className="font-medium">{(subCounties.find((s) => s.name === form.sub_county) || {}).sub_county_name || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Location</span><span className="font-medium">{form.location_name || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Affected Persons</span><span className="font-medium">{form.affected_count || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Sex</span><span className="font-medium">{form.sex || '\u2014'}</span></div>

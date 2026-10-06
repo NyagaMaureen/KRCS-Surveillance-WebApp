@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Trash2, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope, Check } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease } from '../api/frappe'
+import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getSubCounties, getRegions } from '../api/frappe'
 import { STATUSES, CATEGORIES, SEXES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
@@ -83,7 +83,7 @@ export default function ReportDetail() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [mode, setMode] = useState('view')
-  const [editForm, setEditForm] = useState({ location_name: '', status: '', additional_notes: '', category: '', sex: '', onset_date: '' })
+  const [editForm, setEditForm] = useState({ location_name: '', status: '', additional_notes: '', category: '', sex: '', onset_date: '', region: '', sub_county: '', latitude: null, longitude: null })
   const [editAttachments, setEditAttachments] = useState([])
   const [actionError, setActionError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -95,6 +95,8 @@ export default function ReportDetail() {
   const [showTextNote, setShowTextNote] = useState(false)
   const [textNoteValue, setTextNoteValue] = useState('')
   const [regionMap, setRegionMap] = useState({})
+  const [subCounties, setSubCounties] = useState([])
+  const [regions, setRegions] = useState([])
   const [diseaseOptions, setDiseaseOptions] = useState([])
   const [changingDisease, setChangingDisease] = useState(false)
   const [savingDisease, setSavingDisease] = useState(false)
@@ -121,6 +123,7 @@ export default function ReportDetail() {
       { label: 'Phone Number', value: report.phone_number },
       { label: 'Location', value: report.location_name },
       { label: 'Region', value: regionMap[report.region] || report.region },
+      { label: 'Sub-county', value: report.sub_county },
       { label: 'Category', value: report.category },
       { label: 'Sex', value: report.sex },
       { label: 'Onset Date', value: formatReadableDate(report.onset_date) },
@@ -172,6 +175,10 @@ export default function ReportDetail() {
       category: report.category || '',
       sex: report.sex || '',
       onset_date: report.onset_date || '',
+      region: report.region || '',
+      sub_county: report.sub_county || '',
+      latitude: report.latitude ?? null,
+      longitude: report.longitude ?? null,
     })
     setEditAttachments(attachments)
     setUploadErrors({})
@@ -220,6 +227,10 @@ export default function ReportDetail() {
 
   async function saveEdit() {
     setActionError('')
+    if (!editForm.sub_county) {
+      setActionError('Please select a sub-county')
+      return
+    }
     setSaving(true)
     try {
       const updated = await updateReport(report.name, { ...editForm, attachments: editAttachments })
@@ -256,7 +267,16 @@ export default function ReportDetail() {
   useEffect(() => {
     getReferenceLabels().then((labels) => setRegionMap(labels.regions || {}))
     getDiseaseOptions().then(setDiseaseOptions)
+    getRegions().then(setRegions)
   }, [])
+
+  useEffect(() => {
+    if (mode !== 'edit' || !editForm.region) { setSubCounties([]); return }
+    getSubCounties(editForm.region).then((list) => {
+      setSubCounties(list)
+      setEditForm((f) => (list.some((s) => s.name === f.sub_county) ? f : { ...f, sub_county: list.length === 1 ? list[0].name : '' }))
+    })
+  }, [mode, editForm.region])
 
   return (
     <AppShell>
@@ -319,6 +339,20 @@ export default function ReportDetail() {
                       <div className="text-xs font-medium text-gray-400 mb-1">Channel</div>
                       <span className={['inline-block text-xs font-semibold px-2.5 py-1 rounded-full', channelColor(report.channel)].join(' ')}>{(report.channel || '—').toUpperCase()}</span>
                     </div>
+                  </div>
+                                    <div className="mb-8 -mt-4 text-sm">
+                    {Number(report.latitude) && Number(report.longitude) ? (
+                      <a
+                        href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-red-600 font-semibold hover:underline"
+                      >
+                        Open in Maps ({Number(report.latitude).toFixed(5)}, {Number(report.longitude).toFixed(5)})
+                      </a>
+                    ) : (
+                      <span className="text-gray-400">No GPS recorded</span>
+                    )}
                   </div>
 
                   <div className="pt-6 border-t border-gray-100 mb-8">
@@ -427,6 +461,44 @@ export default function ReportDetail() {
                     <div>
                       <label className="block text-sm font-semibold mb-1">Location</label>
                       <input value={editForm.location_name} onChange={(e) => setEditForm({ ...editForm, location_name: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Location name" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Region</label>
+                      <select value={editForm.region} onChange={(e) => setEditForm({ ...editForm, region: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100">
+                        <option value="">Select a region...</option>
+                        {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Sub-county</label>
+                      <select
+                        value={editForm.sub_county}
+                        onChange={(e) => setEditForm({ ...editForm, sub_county: e.target.value })}
+                        disabled={!editForm.region}
+                        className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 disabled:opacity-60"
+                      >
+                        <option value="">{editForm.region ? 'Select a sub-county...' : 'Select a region first'}</option>
+                        {subCounties.map((s) => <option key={s.name} value={s.name}>{`${s.sub_county_name} · ${s.county}`}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Latitude</label>
+                      <input type="number" step="any" value={editForm.latitude ?? ''} onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value === '' ? null : Number(e.target.value) })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Latitude" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Longitude</label>
+                      <input type="number" step="any" value={editForm.longitude ?? ''} onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value === '' ? null : Number(e.target.value) })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Longitude" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.geolocation.getCurrentPosition((pos) => {
+                            setEditForm((f) => ({ ...f, latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
+                          }, undefined, { enableHighAccuracy: true })
+                        }}
+                        className="mt-2 text-xs font-semibold text-red-600 hover:underline"
+                      >
+                        Use my current location
+                      </button>
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-1">Status</label>

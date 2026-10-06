@@ -72,7 +72,8 @@ CAPABILITIES = [
 	# Reference Data
 	{"key": "manage_reference_data", "name": "Manage Regions & Symptoms", "category": "Reference Data",
 	 "description": "Add and edit regions and symptoms",
-	 "grants": {"Region": ["read", "write", "create"], "Symptom": ["read", "write", "create"]}},
+	 "grants": {"Region": ["read", "write", "create"], "Symptom": ["read", "write", "create"],
+	            "Sub County": ["read", "write", "create"]}},
 ]
 CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 
