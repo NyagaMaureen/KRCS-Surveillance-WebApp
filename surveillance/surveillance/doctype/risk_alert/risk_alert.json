@@ -1,0 +1,214 @@
+{
+ "actions": [],
+ "creation": "2026-10-06 12:30:00.000000",
+ "modified": "2026-10-06 12:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "links": [],
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "Risk Alert",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "ALT-.#####",
+ "naming_rule": "Expression (old style)",
+ "title_field": "disease_name",
+ "track_changes": 1,
+ "field_order": [
+  "disease",
+  "disease_name",
+  "severity",
+  "status",
+  "col1",
+  "location",
+  "county",
+  "sub_county",
+  "week_start",
+  "detection_section",
+  "signals",
+  "affected",
+  "baseline_mean",
+  "level",
+  "signal_strength",
+  "col2",
+  "priority",
+  "rules",
+  "possible_reporting_surge",
+  "sources",
+  "explanation",
+  "first_detected",
+  "last_detected",
+  "notes_section",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "disease",
+   "fieldtype": "Link",
+   "label": "Disease",
+   "options": "Alert Threshold Config",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "disease_name",
+   "fieldtype": "Data",
+   "label": "Disease Name",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "severity",
+   "fieldtype": "Select",
+   "label": "Severity",
+   "options": "critical\nhigh\nmedium\nlow",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nInvestigating\nConfirmed\nResolved\nRejected",
+   "default": "Pending",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "col1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "county",
+   "fieldtype": "Data",
+   "label": "County",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Data",
+   "label": "Sub-county"
+  },
+  {
+   "fieldname": "week_start",
+   "fieldtype": "Date",
+   "label": "Week Start",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "detection_section",
+   "fieldtype": "Section Break",
+   "label": "Detection"
+  },
+  {
+   "fieldname": "signals",
+   "fieldtype": "Int",
+   "label": "Signals"
+  },
+  {
+   "fieldname": "affected",
+   "fieldtype": "Int",
+   "label": "Affected Persons"
+  },
+  {
+   "fieldname": "baseline_mean",
+   "fieldtype": "Float",
+   "label": "Usual Weekly Level",
+   "precision": "2"
+  },
+  {
+   "fieldname": "level",
+   "fieldtype": "Select",
+   "label": "Engine Level",
+   "options": "alert\noutbreak"
+  },
+  {
+   "fieldname": "signal_strength",
+   "fieldtype": "Select",
+   "label": "Signal Strength",
+   "options": "normal\nthreshold\noutbreak"
+  },
+  {
+   "fieldname": "col2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Data",
+   "label": "Disease Priority"
+  },
+  {
+   "fieldname": "rules",
+   "fieldtype": "Data",
+   "label": "Rules Fired"
+  },
+  {
+   "fieldname": "possible_reporting_surge",
+   "fieldtype": "Check",
+   "label": "Possible Reporting Surge"
+  },
+  {
+   "fieldname": "sources",
+   "fieldtype": "Data",
+   "label": "Sources"
+  },
+  {
+   "fieldname": "explanation",
+   "fieldtype": "Small Text",
+   "label": "Explanation"
+  },
+  {
+   "fieldname": "first_detected",
+   "fieldtype": "Datetime",
+   "label": "First Detected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_detected",
+   "fieldtype": "Datetime",
+   "label": "Last Detected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes_section",
+   "fieldtype": "Section Break",
+   "label": "Investigation Notes"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Table",
+   "label": "Notes",
+   "options": "Risk Alert Note"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "HQ Admin",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  }
+ ]
+}

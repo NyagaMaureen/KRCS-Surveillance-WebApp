@@ -172,7 +172,7 @@ export default function AlertsSignals() {
                   <span>•</span>
                   <span>{alert.affected} affected</span>
                   <span>•</span>
-                  <span>AI Score: {alert.aiScore}%</span>
+                  <span>{alert.rulesLabel}{alert.surge ? ' · possible reporting surge' : ''}</span>
                   <span className={['inline-flex items-center text-[10px] font-medium px-2.5 py-1 rounded-full border ml-1', STATUS_STYLES[alert.status] || 'border-gray-200 bg-gray-50 text-gray-500'].join(' ')}>
                     {alert.status}
                   </span>

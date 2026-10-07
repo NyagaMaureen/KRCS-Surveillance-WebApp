@@ -724,102 +724,21 @@ export async function getSignalTrend() {
 export async function getPriorityAlertQueue() {
   return MOCK_PRIORITY_ALERT_QUEUE
 }
-
-/*
-|--------------------------------------------------------------------------
-| Alerts & Signals
-|--------------------------------------------------------------------------
-|
-| Backed by mock data for now. Once a "Signal Alert" DocType exists on the
-| Frappe side, swap the body of getAlertsSignals() for a getList() call
-| returning the same field shape - the Alerts & Signals page does its
-| search/filter/pagination client-side, so no changes needed there.
-*/
-
-const ALERT_TEMPLATES = [
-  {
-    title: 'Acute Watery Diarrhea Cluster', description: '12 cases of AWD reported in Dagahaley section over 48 hours. AI anomaly detection flagged 3.2x baseline.', location: 'Dagahaley, Dadaab', region: 'Dadaab', severity: 'critical', status: 'Pending', affected: 12, aiScore: 94,
-    reportedBy: 'CHP Ahmed Abdi', tags: ['Diarrhea', 'Vomiting', 'Dehydration'],
-    insights: ['Symptom cluster matches ICD-11: A09 (Infectious gastroenteritis)', '3.2x baseline incidence for this location and timeframe', 'Correlation with water quality reports from last week', 'Recommended action: Immediate verification & water testing'],
-    relatedAlerts: [{ title: 'AWD Cluster - Ifo', subtitle: '5 cases, 3 days ago' }, { title: 'Water Quality Alert', subtitle: 'Dagahaley, 1 week ago' }],
-  },
-  {
-    title: 'Measles Suspected Cases', description: '5 children with fever and rash in Kalobeyei Zone 1. Requires urgent verification.', location: 'Kalobeyei Zone 1', region: 'Kalobeyei', severity: 'high', status: 'Resolved', affected: 5, aiScore: 87,
-    reportedBy: 'CHP Grace Wanjiru', tags: ['Fever', 'Rash', 'Cough'],
-    insights: ['Symptom cluster matches ICD-11: 1F03 (Measles)', 'Vaccination coverage in area below 80% threshold', 'No prior measles cases in this zone in past 6 months', 'Recommended action: Case isolation & vaccination campaign'],
-    relatedAlerts: [{ title: 'Measles Cluster - Zone 2', subtitle: '3 cases, 2 weeks ago' }],
-  },
-  {
-    title: 'Malaria Outbreak - Resolved', description: 'Confirmed malaria cases successfully contained. All patients treated.', location: 'Ifo Camp', region: 'Ifo', severity: 'medium', status: 'Investigating', affected: 8, aiScore: 76,
-    reportedBy: 'Dr. Peter Otieno', tags: ['Fever', 'Chills', 'Headache'],
-    insights: ['Symptom cluster matches ICD-11: 1F40 (Malaria)', 'Seasonal increase consistent with rainy season pattern', 'All confirmed cases responded to first-line treatment', 'Recommended action: Continue bed net distribution'],
-    relatedAlerts: [{ title: 'Malaria Cluster - Ifo Block A', subtitle: '4 cases, 1 month ago' }],
-  },
-  {
-    title: 'Respiratory Illness Increase', description: 'Elevated reports of cough and breathing difficulty. Monitoring for COVID-19/TB.', location: 'Dagahaley, Dadaab', region: 'Dadaab', severity: 'low', status: 'Rejected', affected: 12, aiScore: 94,
-    reportedBy: 'CHP Ahmed Abdi', tags: ['Cough', 'Breathing Difficulty'],
-    insights: ['Symptom cluster inconsistent with outbreak thresholds', 'Seasonal dust levels likely contributing factor', 'No epidemiological link between reported cases found', 'Recommended action: Continue routine monitoring'],
-    relatedAlerts: [{ title: 'Respiratory Alert - Ifo', subtitle: '6 cases, 2 months ago' }],
-  },
-  {
-    title: 'Cholera Suspected Cluster', description: 'Reports of severe dehydration and vomiting in Hagadera block C2. Verification pending.', location: 'Hagadera, Dadaab', region: 'Dadaab', severity: 'critical', status: 'Pending', affected: 9, aiScore: 91,
-    reportedBy: 'CHP Fatuma Noor', tags: ['Dehydration', 'Vomiting', 'Diarrhea'],
-    insights: ['Symptom cluster matches ICD-11: 1A00 (Cholera)', '2.8x baseline incidence for this location and timeframe', 'Correlation with recent latrine overflow reports', 'Recommended action: Immediate verification & water testing'],
-    relatedAlerts: [{ title: 'AWD Cluster - Dagahaley', subtitle: '12 cases, 5 days ago' }],
-  },
-  {
-    title: 'Malnutrition Spike', description: 'Rising MUAC screening failures among under-5 children this week.', location: 'Kalobeyei Zone 2', region: 'Kalobeyei', severity: 'medium', status: 'Investigating', affected: 15, aiScore: 68,
-    reportedBy: 'Nutritionist Sarah Lokuru', tags: ['Wasting', 'Low MUAC', 'Appetite Loss'],
-    insights: ['MUAC failure rate up 40% versus monthly average', 'Correlated with recent reduction in food ration size', 'Concentrated among children aged 6-24 months', 'Recommended action: Targeted supplementary feeding'],
-    relatedAlerts: [{ title: 'Malnutrition Spike - Zone 1', subtitle: '9 cases, 3 weeks ago' }],
-  },
-]
-
-const ALERT_DATES = ['2/12/2026', '2/11/2026', '2/10/2026', '2/9/2026', '2/8/2026', '2/7/2026']
-
-function buildMockAlertsSignals(count = 50) {
-  return Array.from({ length: count }, (_, i) => {
-    const template = ALERT_TEMPLATES[i % ALERT_TEMPLATES.length]
-    return {
-      id: `ALT-${String(i + 1).padStart(3, '0')}`,
-      ...template,
-      date: ALERT_DATES[i % ALERT_DATES.length],
-      notes: [],
-    }
-  })
-}
-
-const MOCK_ALERTS_SIGNALS = buildMockAlertsSignals(50)
-
 export async function getAlertsSignals(opts = {}) {
-  return MOCK_ALERTS_SIGNALS.slice(opts.start || 0, (opts.start || 0) + (opts.limit || MOCK_ALERTS_SIGNALS.length))
+  return (await callMethod(`/api/method/surveillance.alerts.get_alerts?limit=${opts.limit || 500}`)) || []
 }
-
 export async function getAlertRegions() {
-  return [...new Set(MOCK_ALERTS_SIGNALS.map((a) => a.region))].sort()
+  return (await callMethod('/api/method/surveillance.alerts.get_alert_regions')) || []
 }
-
 export async function getAlertSignal(id) {
-  const alert = MOCK_ALERTS_SIGNALS.find((a) => a.id === id)
-  if (!alert) throw new Error('Alert not found')
-  return alert
+  return callMethod('/api/method/surveillance.alerts.get_alert?name=' + encodeURIComponent(id))
 }
-
 export async function updateAlertStatus(id, status) {
-  const alert = MOCK_ALERTS_SIGNALS.find((a) => a.id === id)
-  if (!alert) throw new Error('Alert not found')
-  alert.status = status
-  return alert
+  return callMethodPost('/api/method/surveillance.alerts.update_alert_status', { name: id, status })
 }
-
 export async function addAlertNote(id, note) {
-  const alert = MOCK_ALERTS_SIGNALS.find((a) => a.id === id)
-  if (!alert) throw new Error('Alert not found')
-  const entry = { text: note, createdAt: new Date().toISOString() }
-  alert.notes = [...(alert.notes || []), entry]
-  return entry
+  return callMethodPost('/api/method/surveillance.alerts.add_alert_note', { name: id, note })
 }
-
 /*
 |--------------------------------------------------------------------------
 | Data Explorer

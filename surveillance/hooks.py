@@ -175,6 +175,10 @@ fixtures = [
 # Scheduled Tasks
 # ---------------
 
+
+scheduler_events = {
+	"daily": ["surveillance.alerts.run_detection"],
+}
 # scheduler_events = {
 # 	"all": [
 # 		"surveillance.tasks.all"

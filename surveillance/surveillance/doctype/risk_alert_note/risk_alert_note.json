@@ -1,0 +1,47 @@
+{
+ "actions": [],
+ "creation": "2026-10-06 12:30:00.000000",
+ "modified": "2026-10-06 12:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "links": [],
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "Risk Alert Note",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "istable": 1,
+ "editable_grid": 1,
+ "field_order": [
+  "note",
+  "added_by",
+  "created_at"
+ ],
+ "permissions": [],
+ "fields": [
+  {
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "label": "Note",
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "added_by",
+   "fieldtype": "Link",
+   "label": "Added By",
+   "options": "User",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "created_at",
+   "fieldtype": "Datetime",
+   "label": "Created At",
+   "in_list_view": 1,
+   "read_only": 1
+  }
+ ]
+}

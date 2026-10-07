@@ -39,6 +39,8 @@ CAPABILITIES = [
 	 "description": "Add diseases and change alert thresholds",
 	 "grants": {"Alert Threshold Config": ["read", "write", "create"],
 	            "Alert Threshold Settings": ["read", "write"]}},
+	{"key": "investigate_alerts", "name": "Investigate Alerts", "category": "Alerts & Risk",
+	 "description": "Change alert status and add investigation notes", "grants": {"Risk Alert": ["read", "write"]}},
 
 	# Response
 	{"key": "view_response_protocols", "name": "View Response Protocols", "category": "Response",

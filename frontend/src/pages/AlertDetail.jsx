@@ -28,7 +28,7 @@ function accentFor(severity) {
 function buildTimeline(alert) {
   const steps = [
     { label: 'Report Submitted', subtitle: alert.reportedBy, timestamp: `${alert.date}, 11:30:00 AM`, done: true },
-    { label: 'AI Analysis Completed', subtitle: `AI System Risk Score: ${alert.aiScore}% | Priority: ${alert.severity}`, timestamp: `${alert.date}, 12:15:00 PM`, done: true },
+    { label: 'AI Analysis Completed', subtitle: `${alert.rulesLabel} | Severity: ${alert.severity}`, timestamp: `${alert.date}, 12:15:00 PM`, done: true },
   ]
 
   if (alert.status === 'Rejected') {
@@ -251,7 +251,8 @@ export default function AlertDetail() {
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-7">
-            <h2 className="text-xl font-semibold text-gray-900 mb-5">AI Analysis & Risk Assessment</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-5">Detection & Risk Assessment</h2>
+                            <p className={['text-sm font-semibold mb-6', accent.chip].join(' ')}>{alert.rulesLabel}</p>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-900">Risk Score</span>
               <span className={['text-xl font-semibold', accent.chip].join(' ')}>{alert.aiScore}%</span>
@@ -260,7 +261,7 @@ export default function AlertDetail() {
               <div className={['h-full rounded-full', accent.bar].join(' ')} style={{ width: `${alert.aiScore}%` }} />
             </div>
 
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Model Insights</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Why this alert</h3>
             <ul className="space-y-2">
               {(alert.insights || []).map((insight) => (
                 <li key={insight} className="text-sm text-gray-400 leading-relaxed">{insight}</li>
