@@ -519,11 +519,7 @@ const MOCK_DISEASE_TRENDS = {
   ],
 }
 
-const MOCK_REPORTING_CHANNELS = {
-  labels: ['Mobile App', 'USSD', 'SMS', 'WhatsApp'],
-  colors: ['#D62728', '#F2C94C', '#2F80ED', '#27AE60'],
-  data: [45, 28, 18, 9],
-}
+
 
 const MOCK_FACILITY_RESPONSE_TIME = {
   labels: ['Dagahaley Health Center', 'Ifo Hospital', 'Kalobeyei Clinic', 'Hagadera Dispensary'],
@@ -575,8 +571,10 @@ export async function getDiseaseTrends() {
   return MOCK_DISEASE_TRENDS
 }
 
-export async function getReportingChannelsDistribution() {
-  return MOCK_REPORTING_CHANNELS
+
+
+export async function getChannelStats(days = 30) {
+  return (await callMethod(`/api/method/surveillance.surveillance.api.get_channel_stats?days=${days}`)) || { channels: [], total: 0, days }
 }
 
 export async function getFacilityResponseTime() {

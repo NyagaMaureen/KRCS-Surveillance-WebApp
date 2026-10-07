@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Line, Bar, Doughnut, Radar } from 'react-chartjs-2'
+import { Line, Bar, Radar } from 'react-chartjs-2'
 import { Clock, Sparkles, AlertTriangle, Map, Download } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import ChartCard from '../components/analytics/ChartCard'
@@ -8,7 +8,6 @@ import { CHART_FONT } from '../charts/chartSetup'
 import {
   getAnalyticsSummary,
   getDiseaseTrends,
-  getReportingChannelsDistribution,
   getFacilityResponseTime,
   getAiPredictiveForecast,
   getMonthOverMonthComparison,
@@ -40,7 +39,6 @@ const baseOptions = {
 export default function Analytics() {
   const [summary, setSummary] = useState([])
   const [diseaseTrends, setDiseaseTrends] = useState({ labels: [], series: [] })
-  const [reportingChannels, setReportingChannels] = useState({ labels: [], colors: [], data: [] })
   const [facilityResponseTime, setFacilityResponseTime] = useState({ labels: [], data: [] })
   const [aiForecast, setAiForecast] = useState(null)
   const [monthOverMonth, setMonthOverMonth] = useState(null)
@@ -52,17 +50,16 @@ export default function Analytics() {
   useEffect(() => {
     (async () => {
       const [
-        summaryRes, diseaseTrendsRes, reportingChannelsRes, facilityResponseTimeRes,
+        summaryRes, diseaseTrendsRes, facilityResponseTimeRes,
         aiForecastRes, monthOverMonthRes, responseTimeImprovementRes, ageGenderRes,
         alertPatternRes, effectivenessRes,
       ] = await Promise.all([
-        getAnalyticsSummary(), getDiseaseTrends(), getReportingChannelsDistribution(), getFacilityResponseTime(),
+        getAnalyticsSummary(), getDiseaseTrends(), getFacilityResponseTime(),
         getAiPredictiveForecast(), getMonthOverMonthComparison(), getResponseTimeImprovement(), getAgeGenderDistribution(),
         getAlertReportingPattern(), getResponseEffectivenessScore(),
       ])
       setSummary(summaryRes)
       setDiseaseTrends(diseaseTrendsRes)
-      setReportingChannels(reportingChannelsRes)
       setFacilityResponseTime(facilityResponseTimeRes)
       setAiForecast(aiForecastRes)
       setMonthOverMonth(monthOverMonthRes)
@@ -92,15 +89,6 @@ export default function Analytics() {
     }
   }, [diseaseTrends])
   const lineOptions = { ...baseOptions, scales: baseScales }
-
-  const reportingChannelsData = useMemo(() => {
-    if (!reportingChannels.labels.length) return null
-    return {
-      labels: reportingChannels.labels,
-      datasets: [{ data: reportingChannels.data, backgroundColor: reportingChannels.colors, borderColor: '#fff', borderWidth: 2 }],
-    }
-  }, [reportingChannels])
-  const doughnutOptions = { ...baseOptions, cutout: '55%' }
 
   const facilityResponseTimeData = useMemo(() => {
     if (!facilityResponseTime.labels.length) return null
@@ -219,7 +207,6 @@ export default function Analytics() {
     const payload = {
       summary,
       diseaseTrends,
-      reportingChannels,
       facilityResponseTime,
       aiForecast,
       monthOverMonth,
@@ -285,22 +272,6 @@ export default function Analytics() {
           }
         >
           {diseaseTrendsData && <Line data={diseaseTrendsData} options={lineOptions} />}
-        </ChartCard>
-
-        <ChartCard
-          title="Reporting Channels Distribution"
-          height="h-72 sm:h-80"
-          legend={
-            <div className="flex items-center gap-4 flex-wrap justify-end">
-              {reportingChannels.labels.map((label, i) => (
-                <span key={label} className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: reportingChannels.colors[i] }}>
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: reportingChannels.colors[i] }} />{label} {reportingChannels.data[i]}%
-                </span>
-              ))}
-            </div>
-          }
-        >
-          {reportingChannelsData && <Doughnut data={reportingChannelsData} options={doughnutOptions} />}
         </ChartCard>
 
         <ChartCard title="Facility Response Time (hours)" height="h-72 sm:h-80">

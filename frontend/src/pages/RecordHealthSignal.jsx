@@ -395,7 +395,7 @@ export default function RecordHealthSignal() {
                     <div className="flex items-start gap-2.5">
                       <Stethoscope className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">These signs match: Suspected {classifyResults[0].name}</p>
+                        <p className="text-sm font-semibold text-gray-900">These signs match:  {classifyResults[0].name}</p>
                         {classifyResults.length > 1 && (
                           <p className="text-xs text-gray-500 mt-1">Also consistent with: {classifyResults.slice(1).map((r) => r.name).join(', ')}</p>
                         )}

@@ -147,3 +147,32 @@ def get_my_profile():
         "phone_number": user_doc.mobile_no or "",
         "assigned_region": user_doc.get("assigned_region") or "",
     }
+
+@frappe.whitelist()
+def get_channel_stats(days=30):
+    """Reports per channel: last `days` days, today, last 7 days, and last report time."""
+    require_capability("view_reports")
+    days = int(days)
+    rows = frappe.db.sql("""
+        select ifnull(channel, '') as channel,
+               count(*) as total,
+               sum(date(creation) = curdate()) as today,
+               sum(creation >= now() - interval 7 day) as last7,
+               max(creation) as last_report
+        from `tabCase Report`
+        where creation >= now() - interval %s day
+        group by channel
+    """, (days,), as_dict=True)
+    grand = sum(r.total for r in rows) or 1
+    return {
+        "days": days,
+        "total": sum(r.total for r in rows),
+        "channels": [{
+            "channel": r.channel or "Unknown",
+            "total": int(r.total),
+            "today": int(r.today or 0),
+            "last7": int(r.last7 or 0),
+            "share": round(100 * r.total / grand, 1),
+            "last_report": str(r.last_report) if r.last_report else None,
+        } for r in rows],
+    }
