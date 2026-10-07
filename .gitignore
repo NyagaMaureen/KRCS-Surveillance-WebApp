@@ -24,3 +24,5 @@ site_config.json
 
 # Local reference files
 frontend/reference/
+.vite/
+node_modules/
