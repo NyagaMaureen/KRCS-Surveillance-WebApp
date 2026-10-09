@@ -1,0 +1,7 @@
+const normalized = toOptions(options)
+
+  function labelFor(v) {
+    const hit = normalized.find((o) => o.value === v)
+    if (hit) return hit.label
+    return v
+  }

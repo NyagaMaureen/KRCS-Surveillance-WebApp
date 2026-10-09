@@ -924,8 +924,24 @@ export async function uploadFile(file, isPrivate = 1) {
 export async function getKbDocuments() {
   return (await callMethod('/api/method/surveillance.knowledge_base.list_documents')) || []
 }
-export async function createKbDocument({ file_url, category, applied_to }) {
-  return callMethodPost('/api/method/surveillance.knowledge_base.create_document', { file_url, category, applied_to: JSON.stringify(applied_to) })
+export async function createKbDocument({ file_url, category, applied_to, diseases }) {
+  return callMethodPost('/api/method/surveillance.knowledge_base.create_document', {
+    file_url,
+    category,
+    applied_to: JSON.stringify(applied_to),
+    diseases: JSON.stringify(diseases || []),
+  })
+}
+export async function updateKbDocument(name, { category, applied_to, diseases, version }) {
+  return post('surveillance.knowledge_base.update_document', {
+    name, category, version,
+    applied_to: JSON.stringify(applied_to),
+    diseases: JSON.stringify(diseases),
+  })
+}
+
+export async function setKbApproval(name, status) {
+  return post('surveillance.knowledge_base.set_approval', { name, status })
 }
 export async function reindexKbDocument(name) {
   return callMethodPost('/api/method/surveillance.knowledge_base.reindex_document', { name })

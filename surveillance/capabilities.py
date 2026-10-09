@@ -80,6 +80,12 @@ CAPABILITIES = [
 	# Knowledge Base
 	{"key": "manage_knowledge_base", "name": "Manage Knowledge Base", "category": "Knowledge Base",
 	 "description": "Upload, reindex and delete AI knowledge base documents", "grants": {"Knowledge Document": ["read", "write", "create", "delete"]}},
+	{"key": "approve_knowledge_base", "name": "Approve Knowledge Base", "category": "Knowledge Base",
+	 "description": "Approve or retire knowledge base documents", "grants": {"Knowledge Document": ["read", "write"]}},
+	{"key": "use_knowledge_base", "name": "Use Knowledge Base", "category": "Knowledge Base",
+	 "description": "Search approved knowledge base documents for your own role", "grants": {}},
+	{"key": "kb_service", "name": "Knowledge Base Service Access", "category": "Knowledge Base",
+	 "description": "Search on behalf of another role (chatbot service account only)", "grants": {}},
 ]
 CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 

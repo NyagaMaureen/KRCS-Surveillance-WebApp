@@ -1,0 +1,20 @@
+async function changeApproval(doc, status, message) {
+    try {
+      const updated = await setKbApproval(doc.id, status)
+      setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)))
+      showToast(message)
+    } catch (e) {
+      showToast(e.message || 'Could not update approval', true)
+    }
+  }
+
+  async function saveEdit(values) {
+    try {
+      const updated = await updateKbDocument(editingDoc.id, values)
+      setDocuments((prev) => prev.map((d) => (d.id === editingDoc.id ? updated : d)))
+      setEditingDoc(null)
+      showToast('Document updated')
+    } catch (e) {
+      showToast(e.message || 'Could not update document', true)
+    }
+  }
