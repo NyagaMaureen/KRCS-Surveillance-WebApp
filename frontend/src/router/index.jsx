@@ -21,6 +21,7 @@ import Response from '../pages/Response'
 import EventLifecycle from '../pages/EventLifecycle'
 import AlertsSignals from '../pages/AlertsSignals'
 import AlertDetail from '../pages/AlertDetail'
+import SurveillanceMap from '../pages/SurveillanceMap'
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
@@ -32,6 +33,7 @@ const rawRoutes = [
   { path: '/event-lifecycle', name: 'event-lifecycle', element: EventLifecycle },
   { path: '/alerts-signals', name: 'alerts-signals', element: AlertsSignals },
   { path: '/alerts-signals/:id', name: 'alert-detail', element: AlertDetail },
+  { path: '/surveillance-map', name: 'surveillance-map', element: SurveillanceMap },
   { path: '/analytics', name: 'analytics', element: Analytics },
   { path: '/data-explorer', name: 'data-explorer', element: DataExplorer },
   { path: '/reports', name: 'reports', element: Reports },

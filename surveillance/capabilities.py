@@ -76,6 +76,10 @@ CAPABILITIES = [
 	 "description": "Add and edit regions and symptoms",
 	 "grants": {"Region": ["read", "write", "create"], "Symptom": ["read", "write", "create"],
 	            "Sub County": ["read", "write", "create"]}},
+
+	# Knowledge Base
+	{"key": "manage_knowledge_base", "name": "Manage Knowledge Base", "category": "Knowledge Base",
+	 "description": "Upload, reindex and delete AI knowledge base documents", "grants": {"Knowledge Document": ["read", "write", "create", "delete"]}},
 ]
 CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 

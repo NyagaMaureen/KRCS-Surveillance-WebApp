@@ -9,35 +9,33 @@ from frappe import _
 
 DOCTYPE = "Sub County"
 
-# (region_name, county, sub_county). Draft list, to be confirmed by KRCS. Missing ones are added on
-# migrate; existing records are never changed, so edits made in Desk are kept.
+# (region_name, county, sub_county, approx_lat, approx_lng). Coordinates are approximate centre points
+# for the map; KRCS can correct them in Desk. Missing ones are added; blank coordinates are filled.
 DEFAULT_SUB_COUNTIES = [
-	("Dadaab", "Garissa", "Dadaab"),
-	("Dadaab", "Garissa", "Liboi"),
-	("Dadaab", "Garissa", "Fafi"),
-	("Kalobeyei", "Turkana", "Turkana West"),
-	("Kalobeyei", "Turkana", "Lokichogio"),
+	("Dadaab", "Garissa", "Dadaab", 0.0560, 40.3110),
+	("Dadaab", "Garissa", "Liboi", 0.3500, 40.8800),
+	("Dadaab", "Garissa", "Fafi", 0.0010, 40.3700),
+	("Kalobeyei", "Turkana", "Turkana West", 3.8100, 34.7500),
+	("Kalobeyei", "Turkana", "Lokichogio", 4.2050, 34.3500),
 ]
 
 
 def seed_sub_counties():
-	"""after_migrate: add missing default sub-counties, linked to their Region by name."""
+	"""after_migrate: add missing default sub-counties and fill blank coordinates. Never overwrites edits."""
 	regions = {(r.region_name or "").strip().lower(): r.name
 		for r in frappe.get_all("Region", fields=["name", "region_name"])}
-	for region_name, county, sub_county in DEFAULT_SUB_COUNTIES:
+	for region_name, county, sub_county, lat, lng in DEFAULT_SUB_COUNTIES:
 		region = regions.get(region_name.lower())
 		if not region:
 			print(f"Sub County {sub_county} skipped: no Region named {region_name}")
 			continue
-		if frappe.db.exists(DOCTYPE, {"county": county, "sub_county_name": sub_county}):
+		name = frappe.db.exists(DOCTYPE, {"county": county, "sub_county_name": sub_county})
+		if name:
+			if not frappe.db.get_value(DOCTYPE, name, "latitude"):
+				frappe.db.set_value(DOCTYPE, name, {"latitude": lat, "longitude": lng}, update_modified=False)
 			continue
-		frappe.get_doc({
-			"doctype": DOCTYPE,
-			"sub_county_name": sub_county,
-			"county": county,
-			"region": region,
-			"is_active": 1,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": DOCTYPE, "sub_county_name": sub_county, "county": county,
+			"region": region, "is_active": 1, "latitude": lat, "longitude": lng}).insert(ignore_permissions=True)
 	frappe.db.commit()
 
 

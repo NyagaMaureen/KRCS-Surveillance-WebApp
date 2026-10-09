@@ -250,3 +250,55 @@ def add_alert_note(name, note):
 	doc.append("notes", {"note": note, "added_by": frappe.session.user, "created_at": now_datetime()})
 	doc.save(ignore_permissions=True)
 	return {"text": note, "createdAt": str(now_datetime()), "by": frappe.session.user}
+
+def _report_points(disease, county, sub_county, week):
+	"""Average GPS of the case reports behind one alert (same disease, sub-county and week)."""
+	sc = frappe.db.get_value("Sub County", {"county": county, "sub_county_name": sub_county})
+	if not sc:
+		return None
+	pts = []
+	for r in frappe.get_all("Case Report", filters={"suspected_disease": disease, "sub_county": sc},
+			fields=["latitude", "longitude", "onset_date", "report_date", "creation"]):
+		if r.latitude and r.longitude and week_start(r.onset_date or r.report_date or r.creation) == getdate(week):
+			pts.append((r.latitude, r.longitude))
+	if not pts:
+		return None
+	return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+
+
+@frappe.whitelist()
+def get_map_data(weeks=8):
+	"""Alerts placed at sub-county centre points, plus GPS-located case reports, for the Surveillance Map."""
+	require_capability("view_alerts")
+	since = add_days(week_start(today()), -7 * (int(weeks) - 1))
+	coords = {(s.county, s.sub_county_name): (s.latitude, s.longitude)
+		for s in frappe.get_all("Sub County", fields=["county", "sub_county_name", "latitude", "longitude"])
+		if s.latitude and s.longitude}
+	alerts, unmapped = [], 0
+	for d in frappe.get_all(DOCTYPE, filters={"week_start": [">=", since]}, fields=["*"], order_by="week_start desc"):
+		point = _report_points(d.disease, d.county, d.sub_county, d.week_start) or coords.get((d.county, d.sub_county))
+		if not point:
+			unmapped += 1
+			continue
+		a = _shape(d)
+		a.update({"lat": point[0], "lng": point[1], "disease": d.disease})
+		alerts.append(a)
+	reports = [{"id": r.name, "lat": r.latitude, "lng": r.longitude, "disease": r.suspected_disease,
+		"title": frappe.db.get_value("Alert Threshold Config", r.suspected_disease, "disease_name") if r.suspected_disease else "Unclassified report", "location": r.location_name or "",
+		"affected": r.affected_count, "date": str(r.creation)[:10]}
+		for r in frappe.get_all("Case Report",
+			filters={"creation": [">=", add_days(today(), -30)], "latitude": ["!=", 0], "longitude": ["!=", 0]},
+			fields=["name", "latitude", "longitude", "suspected_disease", "location_name", "affected_count", "creation"])
+		if r.latitude and r.longitude]
+	all_alerts = frappe.get_all(DOCTYPE, filters={"week_start": [">=", since]}, fields=["severity", "status"])
+	return {
+		"alerts": alerts,
+		"reports": reports,
+		"unmapped_alerts": unmapped,
+		"stats": {
+			"total": len(all_alerts),
+			"critical": sum(1 for a in all_alerts if a.severity == "critical"),
+			"investigating": sum(1 for a in all_alerts if a.status == "Investigating"),
+			"resolved": sum(1 for a in all_alerts if a.status == "Resolved"),
+		},
+	}

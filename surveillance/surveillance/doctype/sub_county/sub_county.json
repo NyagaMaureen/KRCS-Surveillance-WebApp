@@ -1,80 +1,95 @@
 {
  "actions": [],
- "creation": "2026-10-06 10:00:00.000000",
- "modified": "2026-10-06 10:00:00.000000",
+ "autoname": "format:{county}-{sub_county_name}",
+ "creation": "2026-10-06 10:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
- "links": [],
- "modified_by": "Administrator",
- "module": "Surveillance",
- "name": "Sub County",
- "owner": "Administrator",
- "sort_field": "modified",
- "sort_order": "DESC",
- "states": [],
- "autoname": "format:{county}-{sub_county_name}",
- "naming_rule": "Expression",
- "title_field": "sub_county_name",
- "show_title_field_in_link": 1,
- "search_fields": "county,region",
- "track_changes": 1,
  "field_order": [
   "sub_county_name",
   "county",
   "region",
-  "is_active"
+  "is_active",
+  "latitude",
+  "longitude"
  ],
  "fields": [
   {
+   "description": "Spell it exactly as CBS does, so counts line up with CBS history.",
    "fieldname": "sub_county_name",
    "fieldtype": "Data",
-   "label": "Sub-county",
-   "reqd": 1,
    "in_list_view": 1,
-   "description": "Spell it exactly as CBS does, so counts line up with CBS history."
+   "label": "Sub-county",
+   "reqd": 1
   },
   {
    "fieldname": "county",
    "fieldtype": "Data",
-   "label": "County",
-   "reqd": 1,
    "in_list_view": 1,
-   "in_standard_filter": 1
+   "in_standard_filter": 1,
+   "label": "County",
+   "reqd": 1
   },
   {
    "fieldname": "region",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Region (site)",
    "options": "Region",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "reqd": 1
   },
   {
+   "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
-   "label": "Active",
-   "default": "1"
-  }
- ],
- "permissions": [
-  {
-   "role": "System Manager",
-   "read": 1,
-   "report": 1,
-   "write": 1,
-   "create": 1,
-   "delete": 1,
-   "export": 1
+   "label": "Active"
   },
   {
-   "role": "HQ Admin",
-   "read": 1,
-   "report": 1,
-   "write": 1,
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "label": "Latitude",
+   "precision": "6"
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "label": "Longitude",
+   "precision": "6"
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-07 12:40:02.203760",
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "Sub County",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
    "create": 1,
    "delete": 1,
-   "export": 1
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HQ Admin",
+   "write": 1
   }
- ]
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "county,region",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "sub_county_name",
+ "track_changes": 1
 }

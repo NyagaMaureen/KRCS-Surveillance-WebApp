@@ -13,7 +13,8 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { KB_CATEGORIES, KB_APPLY_TO_OPTIONS, KB_WORKSPACE_LIMIT_BYTES, INITIAL_KB_DOCUMENTS } from '../data/mockKnowledgeBase'
+import { KB_CATEGORIES, KB_APPLY_TO_OPTIONS, KB_WORKSPACE_LIMIT_BYTES } from '../data/mockKnowledgeBase'
+import { uploadFile, getKbDocuments, createKbDocument, reindexKbDocument, deleteKbDocument } from '../api/frappe'
 
 const STATUS_STYLES = {
   indexed: 'bg-emerald-500/10 text-emerald-600',
@@ -90,14 +91,17 @@ function MultiSelectDropdown({ label, options, selected, onChange }) {
   )
 }
 
-let nextDocSeq = 1042
+const ACCEPTED = ['pdf', 'docx', 'txt', 'md']
+const MAX_BYTES = 25 * 1024 * 1024
 
 export default function KnowledgeBase() {
-  const [documents, setDocuments] = useState(INITIAL_KB_DOCUMENTS)
+  const [documents, setDocuments] = useState([])
   const [pendingFiles, setPendingFiles] = useState([])
   const [category, setCategory] = useState(KB_CATEGORIES[0])
   const [applyTo, setApplyTo] = useState(['All roles'])
   const [isDragging, setIsDragging] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
 
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -106,6 +110,24 @@ export default function KnowledgeBase() {
 
   const fileInputRef = useRef(null)
 
+  async function loadDocuments() {
+    try {
+      setDocuments(await getKbDocuments())
+    } catch (e) {
+      setError(e.message || 'Could not load documents')
+    }
+  }
+
+  useEffect(() => { loadDocuments() }, [])
+
+  // While anything is processing, refresh every 3 seconds
+  const anyProcessing = documents.some((d) => d.status === 'processing')
+  useEffect(() => {
+    if (!anyProcessing) return
+    const t = setInterval(loadDocuments, 3000)
+    return () => clearInterval(t)
+  }, [anyProcessing])
+
   const stats = useMemo(() => {
     const totalSize = documents.reduce((sum, d) => sum + d.sizeBytes, 0)
     const processing = documents.filter((d) => d.status === 'processing').length
@@ -113,7 +135,7 @@ export default function KnowledgeBase() {
     const totalChunks = indexedDocs.reduce((sum, d) => sum + d.chunks, 0)
     return {
       total: documents.length,
-      categories: KB_CATEGORIES.length,
+      categories: new Set(documents.map((d) => d.category)).size,
       processing,
       indexed: indexedDocs.length,
       totalChunks,
@@ -134,9 +156,12 @@ export default function KnowledgeBase() {
   }, [documents, search, categoryFilter, appliedToFilter, statusFilter])
 
   function addFiles(fileList) {
+    setError('')
     const files = Array.from(fileList)
-    if (!files.length) return
-    setPendingFiles((prev) => [...prev, ...files])
+    const bad = files.filter((f) => !ACCEPTED.includes((f.name.split('.').pop() || '').toLowerCase()) || f.size > MAX_BYTES)
+    if (bad.length) setError(`Skipped ${bad.map((f) => f.name).join(', ')}: only PDF, DOCX, TXT or MD up to 25MB.`)
+    const ok = files.filter((f) => !bad.includes(f))
+    if (ok.length) setPendingFiles((prev) => [...prev, ...ok])
   }
 
   function removePendingFile(index) {
@@ -149,45 +174,42 @@ export default function KnowledgeBase() {
     addFiles(e.dataTransfer.files)
   }
 
-  function scheduleIndexing(id) {
-    setTimeout(() => {
-      setDocuments((prev) =>
-        prev.map((d) => (d.id === id ? { ...d, status: 'indexed', chunks: 60 + Math.floor(Math.random() * 260) } : d))
-      )
-    }, 2200)
-  }
-
-  function processDocuments() {
+  async function processDocuments() {
     if (!pendingFiles.length) return
-    const newDocs = pendingFiles.map((file) => {
-      const id = `KB-${nextDocSeq++}`
-      const ext = (file.name.split('.').pop() || 'FILE').toUpperCase()
-      return {
-        id,
-        name: file.name,
-        extension: ext,
-        version: 'v1.0',
-        category,
-        appliedTo: applyTo.length ? applyTo : ['All roles'],
-        sizeBytes: file.size,
-        status: 'processing',
-        chunks: 0,
-        uploadedBy: 'You',
-        uploadedAt: new Date().toISOString(),
+    setUploading(true)
+    setError('')
+    const failed = []
+    for (const file of pendingFiles) {
+      try {
+        const fileUrl = await uploadFile(file, 1)
+        const doc = await createKbDocument({ file_url: fileUrl, category, applied_to: applyTo.length ? applyTo : ['All roles'] })
+        setDocuments((prev) => [doc, ...prev])
+      } catch (e) {
+        failed.push(`${file.name}: ${e.message || 'upload failed'}`)
       }
-    })
-    setDocuments((prev) => [...newDocs, ...prev])
-    newDocs.forEach((d) => scheduleIndexing(d.id))
+    }
     setPendingFiles([])
+    setUploading(false)
+    if (failed.length) setError(failed.join(' | '))
   }
 
-  function reindexDocument(id) {
-    setDocuments((prev) => prev.map((d) => (d.id === id ? { ...d, status: 'processing', chunks: 0 } : d)))
-    scheduleIndexing(id)
+  async function reindexDocument(id) {
+    try {
+      const doc = await reindexKbDocument(id)
+      setDocuments((prev) => prev.map((d) => (d.id === id ? doc : d)))
+    } catch (e) {
+      setError(e.message || 'Could not reindex')
+    }
   }
 
-  function deleteDocument(id) {
-    setDocuments((prev) => prev.filter((d) => d.id !== id))
+  async function deleteDocument(id) {
+    if (!window.confirm('Delete this document and remove it from the AI knowledge base?')) return
+    try {
+      await deleteKbDocument(id)
+      setDocuments((prev) => prev.filter((d) => d.id !== id))
+    } catch (e) {
+      setError(e.message || 'Could not delete')
+    }
   }
 
   return (
@@ -222,12 +244,12 @@ export default function KnowledgeBase() {
             isDragging ? 'border-red-400 bg-red-50/40' : 'border-red-200/60 bg-white hover:bg-gray-50',
           ].join(' ')}
         >
-          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
+          <input ref={fileInputRef} type="file" multiple accept=".pdf,.docx,.txt,.md" className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
           <div className="w-14 h-14 rounded-full bg-slate-500 flex items-center justify-center mb-4">
             <UploadCloud className="w-6 h-6 text-white" />
           </div>
           <p className="text-gray-900 text-lg">Drag and Drop files here</p>
-          <p className="text-slate-500 font-medium mt-1">PDF, DOC, TXT up to 25MB</p>
+          <p className="text-slate-500 font-medium mt-1">PDF, DOCX, TXT up to 25MB</p>
         </div>
 
         {pendingFiles.length > 0 && (
@@ -267,12 +289,14 @@ export default function KnowledgeBase() {
           </div>
         </div>
 
+        {error && <p className="mt-4 bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3">{error}</p>}
+
         <button
           onClick={processDocuments}
-          disabled={!pendingFiles.length}
+          disabled={!pendingFiles.length || uploading}
           className="w-full mt-6 bg-red-600 hover:bg-red-700 disabled:bg-gray-200 disabled:cursor-not-allowed text-white rounded-xl py-4 text-lg font-medium transition-colors"
         >
-          Process Documents
+          {uploading ? 'Uploading...' : 'Process Documents'}
         </button>
       </div>
 
@@ -367,9 +391,11 @@ export default function KnowledgeBase() {
                   <td className="px-6 py-4 text-center text-xs text-gray-900">{doc.appliedTo.join(', ')}</td>
                   <td className="px-6 py-4 text-center text-gray-500">{formatBytes(doc.sizeBytes)}</td>
                   <td className="px-6 py-4 text-center">
-                    <span className={['inline-block text-xs font-medium px-4 py-1.5 rounded-full', STATUS_STYLES[doc.status]].join(' ')}>
+                    <span title={doc.error || ''} className={['inline-block text-xs font-medium px-4 py-1.5 rounded-full', STATUS_STYLES[doc.status]].join(' ')}>
                       {STATUS_LABELS[doc.status]}
                     </span>
+                    {doc.status === 'indexed' && <div className="text-[11px] text-gray-400 mt-1"></div>}
+                    {doc.status === 'failed' && doc.error && <div className="text-[11px] text-rose-500 mt-1 max-w-[200px] mx-auto truncate" title={doc.error}>{doc.error}</div>}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-center gap-3">

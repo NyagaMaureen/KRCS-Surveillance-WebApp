@@ -737,6 +737,9 @@ export async function updateAlertStatus(id, status) {
 export async function addAlertNote(id, note) {
   return callMethodPost('/api/method/surveillance.alerts.add_alert_note', { name: id, note })
 }
+export async function getMapData(weeks = 8) {
+  return callMethod(`/api/method/surveillance.alerts.get_map_data?weeks=${weeks}`)
+}
 /*
 |--------------------------------------------------------------------------
 | Data Explorer
@@ -915,4 +918,21 @@ export async function uploadFile(file, isPrivate = 1) {
   }
   const data = await res.json()
   return data.message.file_url
+}
+
+
+export async function getKbDocuments() {
+  return (await callMethod('/api/method/surveillance.knowledge_base.list_documents')) || []
+}
+export async function createKbDocument({ file_url, category, applied_to }) {
+  return callMethodPost('/api/method/surveillance.knowledge_base.create_document', { file_url, category, applied_to: JSON.stringify(applied_to) })
+}
+export async function reindexKbDocument(name) {
+  return callMethodPost('/api/method/surveillance.knowledge_base.reindex_document', { name })
+}
+export async function deleteKbDocument(name) {
+  return callMethodPost('/api/method/surveillance.knowledge_base.delete_document', { name })
+}
+export async function searchKnowledgeBase(query, limit = 5) {
+  return (await callMethod(`/api/method/surveillance.knowledge_base.search?query=${encodeURIComponent(query)}&limit=${limit}`)) || []
 }
