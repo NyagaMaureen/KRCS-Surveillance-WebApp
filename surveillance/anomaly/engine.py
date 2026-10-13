@@ -85,7 +85,6 @@ def _series_stats(x):
     c3[x.isna()] = np.nan
     return base_mean, c1, c2, c3
 
-
 def detect(df, thresholds=None, multiplier=2.5, default_threshold=1, gap_as_missing=False):
     """Run all checks. Returns (scored_table, alerts)."""
     thresholds = thresholds or {}
@@ -118,12 +117,15 @@ def detect(df, thresholds=None, multiplier=2.5, default_threshold=1, gap_as_miss
     scored["level"] = np.select([anomaly, scored["r_threshold"]], ["outbreak", "alert"], default="")
 
     alerts = scored[scored["level"] != ""].copy()
-    alerts["rules"] = alerts.apply(_rules, axis=1)
-    alerts["explanation"] = alerts.apply(lambda r: _explain(r, multiplier), axis=1)
     cols = ["week_start", "disease_key", "location", "count", "baseline_mean", "threshold",
             "c1", "c2", "c3", "level", "rules", "possible_reporting_surge", "explanation"]
+    if alerts.empty:
+        return scored, pd.DataFrame(columns=cols)
+    alerts["rules"] = alerts.apply(_rules, axis=1)
+    alerts["explanation"] = alerts.apply(lambda r: _explain(r, multiplier), axis=1)
     alerts = alerts[cols].sort_values(["week_start", "level", "disease_key"], ascending=[True, False, True])
     return scored, alerts.reset_index(drop=True)
+   
 
 
 def _flag_surges(scored):
