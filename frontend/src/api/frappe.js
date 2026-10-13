@@ -34,7 +34,7 @@ async function callMethod(path) {
   const res = await fetch(`${BASE}${path}`)
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(extractErrorMessage(data))
+    throw Object.assign(new Error(extractErrorMessage(data)), { status: res.status })
   }
   return data.message
 }
@@ -50,7 +50,7 @@ async function callMethodPost(path, body) {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(extractErrorMessage(data))
+    throw Object.assign(new Error(extractErrorMessage(data)), { status: res.status })
   }
   return data.message
 }
@@ -921,34 +921,76 @@ export async function uploadFile(file, isPrivate = 1) {
 }
 
 
-export async function getKbDocuments() {
-  return (await callMethod('/api/method/surveillance.knowledge_base.list_documents')) || []
-}
-export async function createKbDocument({ file_url, category, applied_to, diseases }) {
-  return callMethodPost('/api/method/surveillance.knowledge_base.create_document', {
-    file_url,
-    category,
-    applied_to: JSON.stringify(applied_to),
-    diseases: JSON.stringify(diseases || []),
-  })
-}
-export async function updateKbDocument(name, { category, applied_to, diseases, version }) {
-  return post('surveillance.knowledge_base.update_document', {
-    name, category, version,
-    applied_to: JSON.stringify(applied_to),
-    diseases: JSON.stringify(diseases),
-  })
+// ---------- Knowledge Base API ----------
+
+function frappeErrorMessage(data, status) {
+  try {
+    if (data?._server_messages) {
+      const msgs = JSON.parse(data._server_messages).map((m) => {
+        try { return JSON.parse(m).message } catch { return m }
+      })
+      const text = msgs.join(' ').replace(/<[^>]+>/g, '').trim()
+      if (text) return text
+    }
+  } catch { /* fall through */ }
+  if (data?.exception) return String(data.exception).split(':').slice(1).join(':').trim() || data.exception
+  if (status === 403) return 'You do not have permission to do this.'
+  if (status === 503) return 'The knowledge base is temporarily unavailable. Please try again shortly.'
+  return 'Something went wrong. Please try again.'
 }
 
-export async function setKbApproval(name, status) {
-  return post('surveillance.knowledge_base.set_approval', { name, status })
+async function kbRequest(method, params = {}, httpMethod = 'GET') {
+  const encoded = {}
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null) return
+    encoded[k] = Array.isArray(v) ? JSON.stringify(v) : v
+  })
+  let url = `/api/method/surveillance.knowledge_base.${method}`
+  const opts = { method: httpMethod, credentials: 'include', headers: { Accept: 'application/json' } }
+  if (httpMethod === 'GET') {
+    const qs = new URLSearchParams(encoded).toString()
+    if (qs) url += `?${qs}`
+  } else {
+    opts.headers['Content-Type'] = 'application/json'
+    opts.headers['X-Frappe-CSRF-Token'] = window.csrf_token || ''
+    opts.body = JSON.stringify(encoded)
+  }
+  const res = await fetch(url, opts)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(frappeErrorMessage(data, res.status))
+    err.status = res.status
+    throw err
+  }
+  return data.message
 }
-export async function reindexKbDocument(name) {
-  return callMethodPost('/api/method/surveillance.knowledge_base.reindex_document', { name })
-}
-export async function deleteKbDocument(name) {
-  return callMethodPost('/api/method/surveillance.knowledge_base.delete_document', { name })
-}
-export async function searchKnowledgeBase(query, limit = 5) {
-  return (await callMethod(`/api/method/surveillance.knowledge_base.search?query=${encodeURIComponent(query)}&limit=${limit}`)) || []
-}
+
+export const getKbDocuments = () => kbRequest('list_documents')
+
+export const createKbDocument = ({ file_url, category, applied_to, diseases, version, language, regions, review_date, expiry_date }) =>
+  kbRequest('create_document', { file_url, category, applied_to, diseases, version, language, regions, review_date, expiry_date }, 'POST')
+
+export const updateKbDocument = (name, { category, version, applied_to, diseases, language, regions, review_date, expiry_date }) =>
+  kbRequest('update_document', { name, category, version, applied_to, diseases, language, regions, review_date, expiry_date }, 'POST')
+
+export const setKbApproval = (name, status) => kbRequest('set_approval', { name, status }, 'POST')
+
+export const reindexKbDocument = (name) => kbRequest('reindex_document', { name }, 'POST')
+
+export const deleteKbDocument = (name) => kbRequest('delete_document', { name }, 'POST')
+
+export const searchKnowledgeBase = ({ query, limit = 5, disease, category, language, includeDrafts } = {}) =>
+  kbRequest('search', { query, limit, disease, category, language, include_drafts: includeDrafts ? 1 : undefined })
+
+export const getKbPassage = (id) => kbRequest('get_passage', { id })
+
+export const getDiseaseVocabulary = () => kbRequest('get_disease_vocabulary')
+
+// export async function getRegions() {
+//   const res = await fetch('/api/resource/Region?fields=["name","region_name"]&limit_page_length=0', {
+//     credentials: 'include', headers: { Accept: 'application/json' },
+//   })
+//   const data = await res.json().catch(() => ({}))
+//   if (!res.ok) throw new Error(frappeErrorMessage(data, res.status))
+//   return (data.data || []).map((r) => r.name)
+// }

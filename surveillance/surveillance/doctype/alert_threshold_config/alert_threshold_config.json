@@ -16,7 +16,8 @@
   "icd11_code",
   "icd11_title",
   "icd11_uri",
-  "priority"
+  "priority",
+  "synonyms"
  ],
  "fields": [
   {
@@ -89,12 +90,18 @@
    "in_list_view": 1,
    "label": "Priority",
    "options": "Critical\nHigh\nStandard"
+  },
+  {
+   "fieldname": "synonyms",
+   "fieldtype": "Small Text",
+   "label": "Synonyms",
+   "options": "kipindupindu, AWD, cholera, acute watery diarrhoea"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-05 15:18:18.604185",
+ "modified": "2026-10-13 09:53:40.526088",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Alert Threshold Config",

@@ -179,6 +179,7 @@ fixtures = [
 
 
 scheduler_events = {
+	"daily": ["surveillance.knowledge_base.retire_expired"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }
 # scheduler_events = {

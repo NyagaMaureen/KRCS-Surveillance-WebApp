@@ -13,6 +13,10 @@
   "approved_by",
   "approved_on",
   "diseases",
+  "language",
+  "regions",
+  "review_date",
+  "expiry_date",
   "col1",
   "category",
   "applied_to",
@@ -120,10 +124,33 @@
    "fieldtype": "Small Text",
    "label": "Diseases",
    "options": "comma-separated disease keys"
+  },
+  {
+   "default": "English",
+   "fieldname": "language",
+   "fieldtype": "Select",
+   "label": "Language",
+   "options": "English\nKiswahili"
+  },
+  {
+   "default": "All regions",
+   "fieldname": "regions",
+   "fieldtype": "Small Text",
+   "label": "Regions"
+  },
+  {
+   "fieldname": "review_date",
+   "fieldtype": "Date",
+   "label": "Review Date"
+  },
+  {
+   "fieldname": "expiry_date",
+   "fieldtype": "Date",
+   "label": "Expiry Date"
   }
  ],
  "links": [],
- "modified": "2026-10-09 13:27:34.759917",
+ "modified": "2026-10-13 09:52:40.317020",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Knowledge Document",

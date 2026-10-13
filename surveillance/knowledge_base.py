@@ -7,36 +7,51 @@ An approver then sets approval to Approved; only Approved documents are searchab
 filtered by audience role (applied_to). Approval, audience and diseases are copied onto every
 chunk's payload and kept in sync without re-indexing.
 
+Search contract (used by the AI Data Assistant page and the chatbot): see search() and get_passage().
+
 Site config (bench --site <site> set-config <key> <value>):
     qdrant_url            default http://localhost:6333
+    kb_score_high         default 0.60  (score at or above = confidence "high")
+    kb_score_low          default 0.45  (score below = confidence "low")
     qdrant_api_key        optional
     kb_collection         default krcs_knowledge_base
     kb_embedding_model    default sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 """
 import os
+import re
+import time
 import uuid
 
 import frappe
 from frappe import _
-from frappe.utils import cint, now_datetime
+from frappe.utils import cint, getdate, now_datetime, today
 
 from surveillance.capabilities import has_capability, require_capability
 
 DOCTYPE = "Knowledge Document"
 CAPABILITY = "manage_knowledge_base"
-APPROVE_CAPABILITY = "approve_knowledge_base"  # NEW
-SEARCH_CAPABILITY = "use_knowledge_base"  # NEW
-SERVICE_CAPABILITY = "kb_service"  # NEW
-APPROVAL_STATUSES = ("Draft", "Approved", "Retired")  # NEW
-ALL_ROLES = "All roles"  # NEW
+APPROVE_CAPABILITY = "approve_knowledge_base"
+SEARCH_CAPABILITY = "use_knowledge_base"
+SERVICE_CAPABILITY = "kb_service"
+APPROVAL_STATUSES = ("Draft", "Approved", "Retired")
+ALL_ROLES = "All roles"
+ALL_REGIONS = "All regions"
+LANGUAGES = ("English", "Kiswahili")
+LANGUAGE_BOOST = 0.05   # added to the score of passages in the asker's language when ranking
+MAX_LIMIT = 20
 ALLOWED_EXTENSIONS = {"pdf", "docx", "txt", "md"}
 MAX_BYTES = 25 * 1024 * 1024
 CHUNK_CHARS = 1000
 CHUNK_OVERLAP = 150
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"  # English + Kiswahili
-INDEXED_FIELDS = ("doc", "category", "approval_status", "applied_to", "diseases")  # NEW
+INDEXED_FIELDS = ("doc", "category", "approval_status", "applied_to", "diseases", "regions", "language")
 
 _model = None
+
+
+class KBUnavailable(frappe.ValidationError):
+	"""Qdrant or the embedding model is not reachable. Returned as HTTP 503."""
+	http_status_code = 503
 
 
 # ---------- clients ----------
@@ -72,7 +87,7 @@ def _ensure_collection(client, size):
 	name = _collection()
 	if not client.collection_exists(name):
 		client.create_collection(name, vectors_config=VectorParams(size=size, distance=Distance.COSINE))
-	for field in INDEXED_FIELDS:  # NEW: also adds the new indexes to an existing collection
+	for field in INDEXED_FIELDS:  # also adds new indexes to an existing collection
 		try:
 			client.create_payload_index(name, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
 		except Exception:
@@ -90,7 +105,7 @@ def _delete_vectors(client, docname):
 		client.delete(_collection(), points_selector=_doc_filter(docname))
 
 
-# ---------- access fields (NEW) ----------
+# ---------- access fields ----------
 
 def _split(value):
 	if isinstance(value, str) and value.strip().startswith("["):
@@ -111,11 +126,34 @@ def _clean_diseases(value):
 
 
 def _access_payload(doc):
+	"""Fields used for filtering and citation; updated on every chunk without re-indexing."""
 	return {
 		"approval_status": doc.get("approval_status") or "Draft",
 		"applied_to": _split(doc.applied_to) or [ALL_ROLES],
 		"diseases": _split(doc.get("diseases")),
+		"regions": _split(doc.get("regions")) or [ALL_REGIONS],
+		"language": doc.get("language") or "English",
+		"review_date": str(doc.review_date) if doc.get("review_date") else None,
+		"expiry_date": str(doc.expiry_date) if doc.get("expiry_date") else None,
+		"version": doc.version,
+		"category": doc.category,
 	}
+
+
+def _clean_regions(value):
+	regions = [r for r in _split(value) if r != ALL_REGIONS]
+	valid = set(frappe.get_all("Region", pluck="name"))
+	unknown = [r for r in regions if r not in valid]
+	if unknown:
+		frappe.throw(_("Unknown region(s): {0}").format(", ".join(unknown)))
+	return ", ".join(regions) or ALL_REGIONS
+
+
+def _check_dates(doc):
+	if doc.get("language") and doc.language not in LANGUAGES:
+		frappe.throw(_("Language must be one of: {0}").format(", ".join(LANGUAGES)))
+	if doc.get("review_date") and doc.get("expiry_date") and getdate(doc.review_date) > getdate(doc.expiry_date):
+		frappe.throw(_("Review date must be on or before the expiry date."))
 
 
 def _sync_access(doc):
@@ -131,7 +169,7 @@ def _sync_access(doc):
 # ---------- text extraction and chunking ----------
 
 def extract_units(path, ext):
-	"""NEW: return [{section, page, text}] so every chunk can be cited.
+	"""return [{section, page, text}] so every chunk can be cited.
 	PDF: one unit per page. DOCX: one per heading section, one per table row (named by its first cell).
 	TXT/MD: one per # heading."""
 	units = []
@@ -269,10 +307,14 @@ def _row(d):
 	return {
 		"id": d.name, "name": d.title, "extension": (d.extension or "").upper(), "version": d.version,
 		"category": d.category, "appliedTo": _split(d.applied_to),
-		"diseases": _split(d.get("diseases")),  # NEW
-		"approvalStatus": (d.get("approval_status") or "Draft").lower(),  # NEW
-		"approvedBy": frappe.utils.get_fullname(d.approved_by) if d.get("approved_by") else None,  # NEW
-		"approvedAt": str(d.approved_on) if d.get("approved_on") else None,  # NEW
+		"diseases": _split(d.get("diseases")),
+		"regions": _split(d.get("regions")) or [ALL_REGIONS],
+		"language": d.get("language") or "English",
+		"reviewDate": str(d.review_date) if d.get("review_date") else None,
+		"expiryDate": str(d.expiry_date) if d.get("expiry_date") else None,
+		"approvalStatus": (d.get("approval_status") or "Draft").lower(),
+		"approvedBy": frappe.utils.get_fullname(d.approved_by) if d.get("approved_by") else None,
+		"approvedAt": str(d.approved_on) if d.get("approved_on") else None,
 		"sizeBytes": cint(d.size_bytes), "status": (d.status or "").lower(), "chunks": cint(d.chunks),
 		"error": d.error, "uploadedBy": frappe.utils.get_fullname(d.owner), "uploadedAt": str(d.creation),
 	}
@@ -286,7 +328,8 @@ def list_documents():
 
 
 @frappe.whitelist(methods=["POST"])
-def create_document(file_url, category, applied_to=None, version="v1.0", diseases=None):
+def create_document(file_url, category, applied_to=None, version="v1.0", diseases=None,
+		regions=None, language="English", review_date=None, expiry_date=None):
 	"""Register an already uploaded file (via /api/method/upload_file) and queue indexing. Starts as Draft."""
 	require_capability(CAPABILITY)
 	f = frappe.get_doc("File", {"file_url": file_url})
@@ -299,16 +342,21 @@ def create_document(file_url, category, applied_to=None, version="v1.0", disease
 		"doctype": DOCTYPE, "title": f.file_name, "file": file_url, "extension": ext,
 		"version": version or "v1.0", "category": category, "applied_to": ", ".join(_split(applied_to)) or ALL_ROLES,
 		"diseases": _clean_diseases(diseases), "approval_status": "Draft",
+		"regions": _clean_regions(regions), "language": language or "English",
+		"review_date": review_date or None, "expiry_date": expiry_date or None,
 		"size_bytes": cint(f.file_size), "status": "Processing",
-	}).insert(ignore_permissions=True)
+	})
+	_check_dates(doc)
+	doc.insert(ignore_permissions=True)
 	f.db_set({"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name})
 	_enqueue(doc.name)
 	return _row(doc)
 
 
 @frappe.whitelist(methods=["POST"])
-def update_document(name, category=None, applied_to=None, diseases=None, version=None):
-	"""NEW: edit audience, diseases, category or version. Synced to Qdrant without re-indexing."""
+def update_document(name, category=None, applied_to=None, diseases=None, version=None,
+		regions=None, language=None, review_date=None, expiry_date=None):
+	"""Edit document details. Everything is copied to Qdrant without re-embedding."""
 	require_capability(CAPABILITY)
 	doc = frappe.get_doc(DOCTYPE, name)
 	if category is not None:
@@ -319,16 +367,23 @@ def update_document(name, category=None, applied_to=None, diseases=None, version
 		doc.applied_to = ", ".join(_split(applied_to)) or ALL_ROLES
 	if diseases is not None:
 		doc.diseases = _clean_diseases(diseases)
+	if regions is not None:
+		doc.regions = _clean_regions(regions)
+	if language is not None:
+		doc.language = language or "English"
+	if review_date is not None:
+		doc.review_date = review_date or None
+	if expiry_date is not None:
+		doc.expiry_date = expiry_date or None
+	_check_dates(doc)
 	doc.save(ignore_permissions=True)
 	_sync_access(doc)
-	if category is not None or version is not None:  # these live in the payload too
-		_enqueue(doc.name)
 	return _row(doc)
 
 
 @frappe.whitelist(methods=["POST"])
 def set_approval(name, status):
-	"""NEW: approve, retire or send back to draft. Only Approved documents are searchable."""
+	"""approve, retire or send back to draft. Only Approved documents are searchable."""
 	require_capability(APPROVE_CAPABILITY)
 	if status not in APPROVAL_STATUSES:
 		frappe.throw(_("Status must be one of: {0}").format(", ".join(APPROVAL_STATUSES)))
@@ -351,6 +406,19 @@ def reindex_document(name):
 	_enqueue(name)
 	return _row(frappe.get_doc(DOCTYPE, name))
 
+def reindex_all():
+	"""Queue indexing for every Knowledge Document. Use after Qdrant data is lost or the model changes.
+
+	bench --site <site> execute surveillance.knowledge_base.reindex_all
+	"""
+	names = frappe.get_all(DOCTYPE, pluck="name")
+	for name in names:
+		frappe.db.set_value(DOCTYPE, name, {"status": "Processing", "chunks": 0, "error": ""})
+		_enqueue(name)
+	frappe.db.commit()
+	print(f"Queued {len(names)} documents for indexing")
+	return len(names)
+
 
 @frappe.whitelist(methods=["POST"])
 def delete_document(name):
@@ -367,37 +435,229 @@ def delete_document(name):
 	return {"deleted": name}
 
 
-@frappe.whitelist()
-def search(query, limit=5, category=None, disease=None, audience=None, include_drafts=0):
-	"""Semantic search over chunks.
-	Editors (manage_knowledge_base): every audience; drafts too when include_drafts=1.
-	Everyone else (use_knowledge_base): Approved only, for their own role plus "All roles".
-	The chatbot service account (kb_service) passes audience=<role of the person asking>."""
-	from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
+# ---------- search contract ----------
+#
+# GET /api/method/surveillance.knowledge_base.search
+#     query     required, the question (English or Kiswahili)
+#     audience  role or comma-separated roles of the person asking (chatbot service / editors only)
+#     region    region or comma-separated regions (chatbot service / editors only); others use their assigned region
+#     language  "English" or "Kiswahili": passages in that language are ranked first when relevant
+#     disease   disease key filter (see get_disease_vocabulary); category; limit (1-20, default 5)
+#     include_drafts=1  editors only
+# Returns {"query", "count", "results": [...], "detected_disease", "score_range", "confidence_thresholds", "took_ms"}
+# Each result: id, score (cosine similarity 0-1, higher = closer), confidence (high|medium|low), text (verbatim),
+#     title, doc, version, category, section, page, chunk, diseases (always a list), regions (list), language,
+#     review_date, expiry_date, approval_status.
+# Errors: empty query or unknown audience/region -> 417; no permission -> 403; passage not found -> 404;
+#     knowledge base unavailable -> 503. Zero matches -> 200 with "results": [].
+
+def _thresholds():
+	return {"high": float(_conf("kb_score_high", 0.60)), "low": float(_conf("kb_score_low", 0.45))}
+
+
+def _confidence(score, t):
+	return "high" if score >= t["high"] else ("medium" if score >= t["low"] else "low")
+
+
+def _assigned_region(user):
+	if frappe.get_meta("User").has_field("assigned_region"):
+		return frappe.db.get_value("User", user, "assigned_region")
+	return None
+
+
+def _access_context(audience=None, region=None, include_drafts=0):
+	"""Who is asking and what they may see. Raises 403/417 on bad requests."""
 	is_editor = has_capability(CAPABILITY)
 	if not is_editor:
 		require_capability(SEARCH_CAPABILITY)
-	query = (query or "").strip()
-	if not query:
-		return []
-	client = _qdrant()
-	if not client.collection_exists(_collection()):
-		return []
+	can_proxy = is_editor or has_capability(SERVICE_CAPABILITY)
+	if (audience or region) and not can_proxy:
+		frappe.throw(_("You cannot search on behalf of another role or region."), frappe.PermissionError)
 
+	if audience:
+		roles = _split(audience)
+		valid = set(frappe.get_all("Surveillance Role", pluck="name"))
+		unknown = [r for r in roles if r not in valid and r != ALL_ROLES]
+		if unknown:
+			frappe.throw(_("Unknown audience role(s): {0}").format(", ".join(unknown)))
+	elif is_editor:
+		roles = None  # editors see every audience
+	else:
+		role = frappe.db.get_value("User", frappe.session.user, "primary_role")
+		roles = [role] if role else []
+
+	if region:
+		regions = [r for r in _split(region) if r != ALL_REGIONS]
+		valid = set(frappe.get_all("Region", pluck="name"))
+		unknown = [r for r in regions if r not in valid]
+		if unknown:
+			frappe.throw(_("Unknown region(s): {0}").format(", ".join(unknown)))
+	elif is_editor:
+		regions = None
+	else:
+		r = _assigned_region(frappe.session.user)
+		regions = [r] if r else None  # no assigned region = national user, sees every region
+
+	return {"approved_only": not (is_editor and cint(include_drafts)), "roles": roles, "regions": regions}
+
+
+def _filter(ctx, category=None, disease=None):
+	from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
 	must = []
-	if not (is_editor and cint(include_drafts)):
+	if ctx["approved_only"]:
 		must.append(FieldCondition(key="approval_status", match=MatchValue(value="Approved")))
-	if not is_editor:
-		if audience and not has_capability(SERVICE_CAPABILITY):
-			frappe.throw(_("You cannot search on behalf of another role."), frappe.PermissionError)
-		role = audience or frappe.db.get_value("User", frappe.session.user, "primary_role")
-		must.append(FieldCondition(key="applied_to", match=MatchAny(any=[ALL_ROLES] + ([role] if role else []))))
+	if ctx["roles"] is not None:
+		must.append(FieldCondition(key="applied_to", match=MatchAny(any=[ALL_ROLES] + ctx["roles"])))
+	if ctx["regions"] is not None:
+		must.append(FieldCondition(key="regions", match=MatchAny(any=[ALL_REGIONS] + ctx["regions"])))
 	if category:
 		must.append(FieldCondition(key="category", match=MatchValue(value=category)))
 	if disease:
 		must.append(FieldCondition(key="diseases", match=MatchValue(value=disease)))
+	return Filter(must=must) if must else None
 
-	hits = client.query_points(_collection(), query=embed([query])[0], limit=min(cint(limit) or 5, 20),
-		query_filter=Filter(must=must) if must else None, with_payload=True).points
-	keep = ("doc", "title", "category", "version", "chunk", "section", "page", "diseases", "approval_status", "text")
-	return [{"score": round(h.score, 3), **{k: h.payload.get(k) for k in keep}} for h in hits]
+
+def _visible(payload, ctx):
+	"""Same rules as _filter, for a single passage fetched by id."""
+	if ctx["approved_only"] and payload.get("approval_status") != "Approved":
+		return False
+	if ctx["roles"] is not None and not ({ALL_ROLES, *ctx["roles"]} & set(payload.get("applied_to") or [ALL_ROLES])):
+		return False
+	if ctx["regions"] is not None and not ({ALL_REGIONS, *ctx["regions"]} & set(payload.get("regions") or [ALL_REGIONS])):
+		return False
+	return not _expired(payload)
+
+
+def _expired(payload):
+	return bool(payload.get("expiry_date")) and payload["expiry_date"] < today()
+
+
+def _result(point_id, score, p, t):
+	return {
+		"id": str(point_id),
+		"score": round(float(score), 3),
+		"confidence": _confidence(float(score), t),
+		"text": p.get("text"),
+		"title": p.get("title"),
+		"doc": p.get("doc"),
+		"version": p.get("version"),
+		"category": p.get("category"),
+		"section": p.get("section"),
+		"page": p.get("page"),
+		"chunk": p.get("chunk"),
+		"diseases": list(p.get("diseases") or []),
+		"regions": list(p.get("regions") or [ALL_REGIONS]),
+		"language": p.get("language") or "English",
+		"review_date": p.get("review_date"),
+		"expiry_date": p.get("expiry_date"),
+		"approval_status": p.get("approval_status"),
+	}
+
+
+def _vocabulary():
+	meta = frappe.get_meta("Alert Threshold Config")
+	fields = ["name", "disease_name"] + (["synonyms"] if meta.has_field("synonyms") else [])
+	out = []
+	for d in frappe.get_all("Alert Threshold Config", filters={"is_active": 1}, fields=fields):
+		out.append({"key": d.name, "name": d.disease_name, "synonyms": _split(d.get("synonyms"))})
+	return out
+
+
+def _detect_disease(query):
+	"""Find a disease named in the question by key, name or synonym (e.g. 'kipindupindu' -> awd-cholera)."""
+	text = query.lower()
+	for d in _vocabulary():
+		for term in [d["key"], d["name"], *d["synonyms"]]:
+			term = (term or "").strip().lower()
+			if len(term) >= 3 and re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text):
+				return d
+	return None
+
+
+def _client():
+	try:
+		client = _qdrant()
+		client.get_collections()
+		return client
+	except Exception:
+		frappe.log_error(title="Knowledge Base: Qdrant unreachable")
+		frappe.throw(_("The knowledge base is temporarily unavailable. Please try again shortly."), KBUnavailable)
+
+
+@frappe.whitelist()
+def search(query, limit=5, category=None, disease=None, audience=None, region=None, language=None, include_drafts=0):
+	"""Semantic search over approved, unexpired passages the asker may see. Passages are returned verbatim."""
+	started = time.monotonic()
+	ctx = _access_context(audience, region, include_drafts)
+	query = (query or "").strip()
+	if not query:
+		frappe.throw(_("Query is empty."))
+	if language and language not in LANGUAGES:
+		frappe.throw(_("Language must be one of: {0}").format(", ".join(LANGUAGES)))
+	limit = max(1, min(cint(limit) or 5, MAX_LIMIT))
+	t = _thresholds()
+
+	detected = _detect_disease(query)
+	expanded = f"{query} ({detected['name']})" if detected else query  # helps match synonyms like "kipindupindu"
+
+	client = _client()
+	results = []
+	if client.collection_exists(_collection()):
+		try:
+			hits = client.query_points(_collection(), query=embed([expanded])[0], limit=limit * 3,
+				query_filter=_filter(ctx, category, disease), with_payload=True).points
+		except Exception:
+			frappe.log_error(title="Knowledge Base: search failed")
+			frappe.throw(_("The knowledge base is temporarily unavailable. Please try again shortly."), KBUnavailable)
+		ranked = []
+		for h in hits:
+			if _expired(h.payload):
+				continue
+			boost = LANGUAGE_BOOST if language and h.payload.get("language") == language else 0
+			ranked.append((h.score + boost, _result(h.id, h.score, h.payload, t)))
+		ranked.sort(key=lambda x: -x[0])
+		results = [r for _, r in ranked[:limit]]
+
+	return {
+		"query": query,
+		"count": len(results),
+		"results": results,
+		"detected_disease": {"key": detected["key"], "name": detected["name"]} if detected else None,
+		"score_range": [0, 1],
+		"confidence_thresholds": t,
+		"took_ms": int((time.monotonic() - started) * 1000),
+	}
+
+
+@frappe.whitelist()
+def get_passage(id, audience=None, region=None):
+	"""Fetch one passage by the id returned from search, with the same access rules."""
+	ctx = _access_context(audience, region)
+	client = _client()
+	points = []
+	if client.collection_exists(_collection()):
+		points = client.retrieve(_collection(), ids=[id], with_payload=True)
+	if not points or not _visible(points[0].payload, ctx):
+		frappe.throw(_("Passage not found or not available for this audience."), frappe.DoesNotExistError)
+	return _result(points[0].id, 1.0, points[0].payload, _thresholds()) | {"score": None, "confidence": None}
+
+
+@frappe.whitelist()
+def get_disease_vocabulary():
+	"""Disease keys, display names and synonyms (editable in Alert Threshold Config) for the chatbot."""
+	if not (has_capability(CAPABILITY) or has_capability(SEARCH_CAPABILITY)):
+		require_capability(SEARCH_CAPABILITY)
+	return _vocabulary()
+
+
+def retire_expired():
+	"""Daily: move Approved documents past their expiry date to Retired (search also hides them immediately)."""
+	names = frappe.get_all(DOCTYPE, filters={"approval_status": "Approved", "expiry_date": ["<", today()]}, pluck="name")
+	for name in names:
+		doc = frappe.get_doc(DOCTYPE, name)
+		doc.approval_status = "Retired"
+		doc.save(ignore_permissions=True)
+		doc.add_comment("Comment", "Retired automatically: expiry date passed.")
+		_sync_access(doc)
+	frappe.db.commit()
+	return len(names)

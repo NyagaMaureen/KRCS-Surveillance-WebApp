@@ -1,23 +1,80 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Plus, History, Trash2, Sparkles, Paperclip, Mic, ArrowUp, X } from 'lucide-react'
+import { Plus, History, Trash2, Sparkles, Mic, ArrowUp } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { queryAiAssistant } from '../api/frappe'
+import KbAnswer from '../components/assistant/KbAnswer'
+import { queryAiAssistant, searchKnowledgeBase } from '../api/frappe'
 
 const STORAGE_KEY = 'krcs_ai_assistant_chats'
+const MAX_CHATS = 50
 
-const SUGGESTED_PROMPTS = [
-  'Show cholera cases by region',
-  'What are the active alerts this week?',
-  'Summarize recent case reports',
-]
+// queryAiAssistant is still mock-backed; flip this once it queries real data.
+const DATA_SOURCE_AVAILABLE = false
+
+const SUGGESTED_PROMPTS = {
+  documents: [
+    'What is the case definition for acute watery diarrhoea?',
+    'How do I report a suspected measles case?',
+    'Dalili za kipindupindu ni zipi?',
+  ],
+  data: [
+    'Show cholera cases by region',
+    'What are the active alerts this week?',
+    'Summarize recent case reports',
+  ],
+}
+
+const GENERIC_ERROR = 'Sorry, something went wrong while processing that request.'
+
+function defaultLanguage() {
+  const lang = typeof navigator !== 'undefined' ? navigator.language || '' : ''
+  return lang.toLowerCase().startsWith('sw') ? 'Kiswahili' : 'English'
+}
+
+function capChats(list) {
+  if (list.length <= MAX_CHATS) return list
+  return [...list].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_CHATS)
+}
 
 function loadChats() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? capChats(parsed) : []
   } catch {
     return []
   }
+}
+
+function buildErrorReply(e, question, source, language) {
+  if (e?.status === 503) {
+    return { role: 'assistant', kind: 'error', content: 'The knowledge base is temporarily unavailable. Try again in a moment.', retryable: true, question, source, language }
+  }
+  if (e?.status === 403) {
+    return { role: 'assistant', kind: 'error', content: 'You don\u2019t have access to the knowledge base. Ask an administrator.' }
+  }
+  return { role: 'assistant', kind: 'error', content: GENERIC_ERROR }
+}
+
+function PillToggle({ label, options, value, onChange }) {
+  return (
+    <div role="group" aria-label={label} className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          disabled={o.disabled}
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={['flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            value === o.value ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-100',
+            o.disabled ? 'opacity-60 cursor-not-allowed hover:bg-transparent' : ''].join(' ')}
+        >
+          {o.label}
+          {o.badge && <span className="rounded-full bg-gray-200 text-gray-600 px-1.5 text-[10px] font-medium">{o.badge}</span>}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function formatTime(ts) {
@@ -34,12 +91,12 @@ export default function AiDataAssistant() {
   const [inputText, setInputText] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
-  const [attachedFile, setAttachedFile] = useState(null)
   const [isRecording, setIsRecording] = useState(false)
+  const [draftSource, setDraftSource] = useState('documents')
+  const [draftLanguage, setDraftLanguage] = useState(defaultLanguage)
 
   const scrollAreaRef = useRef(null)
   const textareaRef = useRef(null)
-  const fileInputRef = useRef(null)
   const historyRef = useRef(null)
   const recognitionRef = useRef(null)
   const chatsRef = useRef(chats)
@@ -48,9 +105,34 @@ export default function AiDataAssistant() {
   const currentChat = useMemo(() => chats.find((c) => c.id === currentChatId) || null, [chats, currentChatId])
   const messages = currentChat?.messages || []
   const sortedChats = useMemo(() => [...chats].sort((a, b) => b.updatedAt - a.updatedAt), [chats])
+  const storedSource = currentChat ? currentChat.source : draftSource
+  const source = DATA_SOURCE_AVAILABLE && storedSource === 'data' ? 'data' : 'documents'
+  const language = (currentChat ? currentChat.language : draftLanguage) || defaultLanguage()
 
   function persistChats(next) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    } catch {
+      // storage unavailable or full; chats stay in memory only
+    }
+  }
+
+  function updateCurrentChat(patch) {
+    if (!currentChatId) return false
+    setChats((prev) => {
+      const next = prev.map((c) => (c.id === currentChatId ? { ...c, ...patch } : c))
+      persistChats(next)
+      return next
+    })
+    return true
+  }
+
+  function changeSource(value) {
+    if (!updateCurrentChat({ source: value })) setDraftSource(value)
+  }
+
+  function changeLanguage(value) {
+    if (!updateCurrentChat({ language: value })) setDraftLanguage(value)
   }
 
   function scrollToBottom() {
@@ -71,7 +153,6 @@ export default function AiDataAssistant() {
   function startNewQuery() {
     setCurrentChatId(null)
     setInputText('')
-    setAttachedFile(null)
     setShowHistory(false)
   }
 
@@ -97,7 +178,35 @@ export default function AiDataAssistant() {
     }
   }
 
-  async function send(preset) {
+  async function runQuery(chatId, question, querySource, queryLanguage) {
+    setIsLoading(true)
+    scrollToBottom()
+
+    let reply
+    try {
+      if (querySource === 'data') {
+        const result = await queryAiAssistant(question)
+        reply = { role: 'assistant', content: result.answer, table: result.table }
+      } else {
+        const result = await searchKnowledgeBase({ query: question, limit: 5, language: queryLanguage })
+        reply = { role: 'assistant', kind: 'kb', result }
+      }
+    } catch (e) {
+      reply = buildErrorReply(e, question, querySource, queryLanguage)
+    }
+
+    setChats((prev) => {
+      const next = capChats(
+        prev.map((c) => (c.id === chatId ? { ...c, messages: [...c.messages, reply], updatedAt: Date.now() } : c))
+      )
+      persistChats(next)
+      return next
+    })
+    setIsLoading(false)
+    scrollToBottom()
+  }
+
+  function send(preset) {
     const question = (preset ?? inputText).trim()
     if (!question || isLoading) return
 
@@ -105,53 +214,33 @@ export default function AiDataAssistant() {
     let chats0 = chatsRef.current
     if (!chatId) {
       chatId = crypto.randomUUID()
-      const chat = { id: chatId, title: question.slice(0, 60), messages: [], updatedAt: Date.now() }
+      const chat = { id: chatId, title: question.slice(0, 60), messages: [], updatedAt: Date.now(), source, language }
       chats0 = [...chats0, chat]
       setCurrentChatId(chatId)
     }
 
-    chats0 = chats0.map((c) =>
+    chats0 = capChats(chats0.map((c) =>
       c.id === chatId ? { ...c, messages: [...c.messages, { role: 'user', content: question }], updatedAt: Date.now() } : c
-    )
+    ))
     setChats(chats0)
     setInputText('')
-    setAttachedFile(null)
     autoGrowTextarea()
     persistChats(chats0)
     scrollToBottom()
 
-    setIsLoading(true)
-    scrollToBottom()
-
-    try {
-      const result = await queryAiAssistant(question)
-      chats0 = chats0.map((c) =>
-        c.id === chatId
-          ? { ...c, messages: [...c.messages, { role: 'assistant', content: result.answer, table: result.table }], updatedAt: Date.now() }
-          : c
-      )
-    } catch (e) {
-      chats0 = chats0.map((c) =>
-        c.id === chatId
-          ? { ...c, messages: [...c.messages, { role: 'assistant', content: 'Sorry, something went wrong while processing that request.' }], updatedAt: Date.now() }
-          : c
-      )
-    } finally {
-      setChats(chats0)
-      persistChats(chats0)
-      setIsLoading(false)
-      scrollToBottom()
-    }
+    runQuery(chatId, question, source, language)
   }
 
-  function triggerFilePicker() {
-    fileInputRef.current?.click()
-  }
-
-  function onFileSelected(e) {
-    const file = e.target.files?.[0]
-    if (file) setAttachedFile(file)
-    e.target.value = ''
+  function retry(index) {
+    if (isLoading || !currentChat) return
+    const msg = currentChat.messages[index]
+    if (!msg?.retryable) return
+    const next = chatsRef.current.map((c) =>
+      c.id === currentChat.id ? { ...c, messages: c.messages.filter((_, i) => i !== index) } : c
+    )
+    setChats(next)
+    persistChats(next)
+    runQuery(currentChat.id, msg.question, msg.source, msg.language)
   }
 
   function setupRecognition() {
@@ -160,7 +249,6 @@ export default function AiDataAssistant() {
     const rec = new SpeechRecognition()
     rec.continuous = false
     rec.interimResults = false
-    rec.lang = 'en-US'
     rec.onresult = (event) => {
       const transcript = event.results[0][0].transcript
       setInputText((prev) => (prev ? prev + ' ' : '') + transcript)
@@ -180,6 +268,7 @@ export default function AiDataAssistant() {
     }
     recognitionRef.current = recognitionRef.current || setupRecognition()
     if (!recognitionRef.current) return
+    recognitionRef.current.lang = language === 'Kiswahili' ? 'sw-KE' : 'en-US'
     setIsRecording(true)
     recognitionRef.current.start()
   }
@@ -251,11 +340,12 @@ export default function AiDataAssistant() {
               <img src="/assets/surveillance/images/logo.png" alt="KRCS" className="w-20 h-18 object-contain mb-5" />
               <h2 className="text-2xl sm:text-3xl font-medium text-gray-900 mb-3">Welcome to KRCS AI DataAssistant</h2>
               <p className="text-gray-500 text-base sm:text-lg max-w-2xl mb-8">
-                Ask me about community health data, disease trends, alerts, or reports.
-                I'll query the database and show you results.
+                {source === 'documents'
+                  ? 'Ask about KRCS protocols, case definitions and guidelines. Answers are quoted word for word from approved documents, with their source.'
+                  : 'Ask me about community health data, disease trends, alerts, or reports. I\'ll query the database and show you results.'}
               </p>
               <div className="flex flex-wrap justify-center gap-2 max-w-2xl">
-                {SUGGESTED_PROMPTS.map((prompt) => (
+                {SUGGESTED_PROMPTS[source].map((prompt) => (
                   <button
                     key={prompt}
                     onClick={() => send(prompt)}
@@ -275,10 +365,26 @@ export default function AiDataAssistant() {
                       <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center shrink-0">
                         <Sparkles className="w-4 h-4 text-white" />
                       </div>
-                      <div className="space-y-3">
+                      <div className="space-y-3 min-w-0">
+                        {m.kind === 'kb' ? (
+                          <KbAnswer result={m.result} />
+                        ) : (
                         <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-800 leading-relaxed">
                           {m.content}
+                          {m.retryable && i === messages.length - 1 && (
+                            <div className="mt-2">
+                              <button
+                                type="button"
+                                onClick={() => retry(i)}
+                                disabled={isLoading}
+                                className="text-xs font-medium border border-gray-200 bg-white rounded-lg px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          )}
                         </div>
+                        )}
                         {m.table && (
                           <div className="border border-gray-100 rounded-xl overflow-hidden">
                             <table className="w-full text-sm">
@@ -329,29 +435,35 @@ export default function AiDataAssistant() {
 
         <div className="px-4 sm:px-6 pb-5 pt-3">
           <div className="max-w-3xl mx-auto">
-            {attachedFile && (
-              <div className="flex items-center gap-2 mb-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-1.5 w-fit">
-                <Paperclip className="w-3.5 h-3.5" />
-                <span className="truncate max-w-xs">{attachedFile.name}</span>
-                <button onClick={() => setAttachedFile(null)} className="text-gray-400 hover:text-gray-600">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <PillToggle
+                label="Answer source"
+                value={source}
+                onChange={changeSource}
+                options={[
+                  { value: 'documents', label: 'Documents' },
+                  { value: 'data', label: 'Surveillance data', disabled: !DATA_SOURCE_AVAILABLE, badge: DATA_SOURCE_AVAILABLE ? null : 'Coming soon' },
+                ]}
+              />
+              <PillToggle
+                label="Language"
+                value={language}
+                onChange={changeLanguage}
+                options={[
+                  { value: 'English', label: 'English' },
+                  { value: 'Kiswahili', label: 'Kiswahili' },
+                ]}
+              />
+            </div>
 
             <div className="flex items-end gap-2 border border-gray-200 bg-gray-50 rounded-3xl px-4 sm:px-5 py-2.5">
-              <button onClick={triggerFilePicker} className="text-gray-500 hover:text-gray-700 shrink-0 mb-1.5" title="Attach a file">
-                <Paperclip className="w-5 h-5" />
-              </button>
-              <input ref={fileInputRef} type="file" className="hidden" onChange={onFileSelected} />
-
               <textarea
                 ref={textareaRef}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={onKeydown}
                 rows={1}
-                placeholder="Ask about health data... (e.g. 'Show cholera cases by region')"
+                placeholder={source === 'documents' ? 'Ask about KRCS protocols and guidelines...' : "Ask about health data... (e.g. 'Show cholera cases by region')"}
                 className="flex-1 bg-transparent resize-none focus:outline-none text-sm sm:text-base text-gray-800 placeholder:text-gray-400 py-1.5 max-h-40"
               ></textarea>
 
@@ -376,7 +488,9 @@ export default function AiDataAssistant() {
             </div>
 
             <p className="text-center text-xs text-gray-400 mt-3">
-              AI translates your questions into database queries. Results are based on current surveillance data.
+              {source === 'documents'
+                ? 'Answers come from approved KRCS documents uploaded on the Knowledge Base page.'
+                : 'AI translates your questions into database queries. Results are based on current surveillance data.'}
             </p>
           </div>
         </div>
