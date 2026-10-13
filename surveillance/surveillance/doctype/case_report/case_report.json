@@ -33,7 +33,10 @@
   "suspected_disease",
   "also_consistent_with",
   "classified_by",
-  "classification_reason"
+  "classification_reason",
+  "review_outcome",
+  "reviewed_by",
+  "reviewed_on"
  ],
  "fields": [
   {
@@ -209,12 +212,31 @@
    "fieldtype": "Link",
    "label": "Sub-county",
    "options": "Sub County"
+  },
+  {
+   "fieldname": "review_outcome",
+   "fieldtype": "Select",
+   "label": "Review Outcome",
+   "options": "\nNot a disease of concern"
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-06 10:03:43.662263",
+ "modified": "2026-10-12 16:35:20.310447",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",

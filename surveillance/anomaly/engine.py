@@ -2,18 +2,22 @@
 
 Input: a STANDARD WEEKLY TABLE with columns
     week_start (date), disease_key, location, count
-Any source (CBS today, EMR/IDSR later) is converted to this table by an adapter;
-the engine never needs to know where the data came from.
+Any source (CBS, Case Reports, MOH 505/IDSR, EMR later) is converted to this table by an
+adapter; the engine never needs to know where the data came from.
 
 Three layers of checks per (disease, location) series:
   1. threshold   - count >= the disease's alert threshold (Alert Threshold Config)
   2. baseline    - count >= outbreak multiplier x recent average (previous 8 weeks)
-  3. ears_c2/c3  - CDC EARS statistical methods adapted to weekly data
-Two guards against alerts caused by reporting behaviour rather than disease:
-  - warm-up      : statistical rules are off for a location's first WARMUP_WEEKS
-                   weeks of reporting (threshold alerts still fire)
-  - surge label  : if a location's total reports across all diseases jumped that
-                   week AND several diseases rose together, alerts are labelled
+  3. ears_c2/c3  - CDC EARS statistical methods adapted to weekly data; they only fire
+                   when this week is ABOVE the usual level (no alerts on the way down)
+Guards against alerts caused by reporting behaviour rather than disease:
+  - warm-up      : statistical rules are off for a location's first WARMUP_WEEKS weeks
+                   of reporting (threshold alerts still fire)
+  - missing weeks: for facility data (gap_as_missing=True) a week where the location
+                   reported nothing at all is "not reported", not zero, so it neither
+                   lowers the baseline nor hides a rise
+  - surge label  : if a location's total reports across all diseases jumped that week
+                   AND several diseases rose together, alerts are labelled
                    "possible reporting surge - verify before acting" (not hidden)
 Output: one row per flagged week with the rules that fired and a plain explanation.
 """
@@ -32,22 +36,27 @@ SURGE_MULTIPLIER = 2.0  # location total >= 2x its usual weekly total ...
 SURGE_MIN_DISEASES = 3  # ... and at least this many diseases above their usual level
 
 
-def complete_weeks(df):
-    """Zero-fill missing weeks for each series.
+def complete_weeks(df, gap_as_missing=False):
+    """Fill missing weeks for each series.
 
-    A location's series starts at the first week that location reported anything,
-    so weeks before reporting began are not mistaken for true zeros.
+    A location's series starts at the first week that location reported anything.
+    gap_as_missing=False (community data): a week with no signal is a true zero.
+    gap_as_missing=True (facility data): a week where the location reported nothing for
+    any disease is left empty (NaN) = not reported; other missing disease-weeks are zero.
     """
     df = df.copy()
     df["week_start"] = pd.to_datetime(df["week_start"])
     df = df.groupby(["disease_key", "location", "week_start"], as_index=False)["count"].sum()
     end = df["week_start"].max()
     loc_start = df.groupby("location")["week_start"].min()
+    reported = set(zip(df["location"], df["week_start"]))
 
     parts = []
     for (disease, loc), g in df.groupby(["disease_key", "location"]):
         weeks = pd.date_range(loc_start[loc], end, freq="7D")
-        s = g.set_index("week_start")["count"].reindex(weeks, fill_value=0)
+        s = g.set_index("week_start")["count"].reindex(weeks, fill_value=0).astype(float)
+        if gap_as_missing:
+            s[[(loc, w) not in reported for w in weeks]] = np.nan
         parts.append(pd.DataFrame({"week_start": weeks, "disease_key": disease,
                                    "location": loc, "count": s.values,
                                    "weeks_reporting": range(len(weeks))}))
@@ -55,7 +64,7 @@ def complete_weeks(df):
 
 
 def _series_stats(x):
-    """Rolling statistics for one series (index-aligned with x)."""
+    """Rolling statistics for one series (index-aligned with x). NaN weeks are skipped."""
     prev = x.shift(1)
     base_mean = prev.rolling(BASELINE_WEEKS, min_periods=MIN_HISTORY).mean()
 
@@ -72,14 +81,15 @@ def _series_stats(x):
 
     # EARS C3: accumulated C2 excess over this week and the 2 before it
     excess = (c2 - 1).clip(lower=0)
-    c3 = excess + excess.shift(1).fillna(0) + excess.shift(2).fillna(0)
+    c3 = excess.fillna(0) + excess.shift(1).fillna(0) + excess.shift(2).fillna(0)
+    c3[x.isna()] = np.nan
     return base_mean, c1, c2, c3
 
 
-def detect(df, thresholds=None, multiplier=2.5, default_threshold=1):
+def detect(df, thresholds=None, multiplier=2.5, default_threshold=1, gap_as_missing=False):
     """Run all checks. Returns (scored_table, alerts)."""
     thresholds = thresholds or {}
-    full = complete_weeks(df).sort_values(["disease_key", "location", "week_start"])
+    full = complete_weeks(df, gap_as_missing).sort_values(["disease_key", "location", "week_start"])
 
     out = []
     for _, g in full.groupby(["disease_key", "location"], sort=False):
@@ -96,12 +106,13 @@ def detect(df, thresholds=None, multiplier=2.5, default_threshold=1):
     thr = scored["disease_key"].map(lambda k: thresholds.get(k, default_threshold))
     expected = scored["baseline_mean"].clip(lower=EXPECTED_FLOOR)
     enough = (scored["count"] >= MIN_COUNT_STAT) & (scored["weeks_reporting"] >= WARMUP_WEEKS)
+    above = scored["count"] > expected  # statistical rules only when this week is above the usual level
 
     scored["threshold"] = thr
     scored["r_threshold"] = scored["count"] >= thr
     scored["r_baseline"] = scored["baseline_mean"].notna() & enough & (scored["count"] >= multiplier * expected)
-    scored["r_ears_c2"] = enough & (scored["c2"] > EARS_C2_LIMIT)
-    scored["r_ears_c3"] = enough & (scored["c3"] > EARS_C3_LIMIT)
+    scored["r_ears_c2"] = enough & above & (scored["c2"] > EARS_C2_LIMIT)
+    scored["r_ears_c3"] = enough & above & (scored["c3"] > EARS_C3_LIMIT)
 
     anomaly = scored[["r_baseline", "r_ears_c2", "r_ears_c3"]].any(axis=1)
     scored["level"] = np.select([anomaly, scored["r_threshold"]], ["outbreak", "alert"], default="")
@@ -140,7 +151,7 @@ def _rules(r):
 
 
 def _explain(r, multiplier):
-    parts = [f"{int(r['count'])} signal(s) in week of {r.week_start:%Y-%m-%d}"]
+    parts = [f"{int(r['count'])} case(s) in week of {r.week_start:%Y-%m-%d}"]
     if pd.notna(r.baseline_mean):
         parts.append(f"usual {r.baseline_mean:.1f}/week")
     if r.r_threshold:
@@ -149,7 +160,7 @@ def _explain(r, multiplier):
         ratio = r["count"] / max(r.baseline_mean, EXPECTED_FLOOR)
         parts.append(f"{ratio:.1f}x the usual level (outbreak multiplier {multiplier})")
     if r.r_ears_c2 or r.r_ears_c3:
-        parts.append("statistically unusual (EARS)")
+        parts.append("statistically unusual rise compared with recent weeks")
     if r.possible_reporting_surge:
         parts.append("POSSIBLE REPORTING SURGE - several diseases rose together at this location; verify before acting")
     return "; ".join(parts)

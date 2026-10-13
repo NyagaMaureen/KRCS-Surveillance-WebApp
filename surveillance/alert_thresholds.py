@@ -215,3 +215,42 @@ def seed_defaults():
 		frappe.db.set_single_value(SETTINGS, "outbreak_multiplier", 2.5)
 
 	frappe.db.commit()
+
+
+# Diseases from the MOH 505 weekly IDSR form, added for facility data (2026-10).
+# key, disease name, priority, threshold (weekly count that raises an alert)
+EXTRA_DISEASES = [
+	("acute-jaundice", "Acute Jaundice Syndrome", "High", 1),
+	("dysentery", "Dysentery (Bacillary)", "High", 1),
+	("dengue", "Suspected Dengue", "High", 1),
+	("aefi", "Adverse Event Following Immunization (AEFI)", "High", 1),
+	("mdr-tb", "Suspected MDR/XDR Tuberculosis", "High", 1),
+	("neonatal-death", "Neonatal Death", "High", 1),
+	("typhoid", "Typhoid", "Standard", 1),
+	("malaria", "Suspected Malaria", "Standard", 999999),  # rise above usual level only
+	("acute-malnutrition", "Acute Malnutrition", "Standard", 999999),  # rise above usual level only
+	("neonatal-tetanus", "Neonatal Tetanus", "Critical", 1),
+	("plague", "Suspected Plague", "Critical", 1),
+	("guinea-worm", "Guinea Worm Disease (Dracunculiasis)", "Critical", 1),
+	("maternal-death", "Maternal Death", "Critical", 1),
+	("unclassified-illness", "Unclassified Illness Cluster", "High", 3),
+	("unusual-event", "Unusual Event / Emergency", "Critical", 1),
+]
+
+def seed_extra_diseases():
+	"""Add EXTRA_DISEASES that don't exist yet. Never changes existing ones, so edits made in the app stay."""
+	doctype = "Alert Threshold Config"
+	meta = frappe.get_meta(doctype)
+	added = []
+	for key, name, priority, threshold in EXTRA_DISEASES:
+		if frappe.db.exists(doctype, key):
+			continue
+		values = {"disease_name": name, "category": "Human", "threshold": threshold,
+			"priority": priority, "is_active": 1, "key": key, "disease_key": key}
+		doc = frappe.get_doc({"doctype": doctype, **{k: v for k, v in values.items() if meta.has_field(k)}})
+		doc.insert(ignore_permissions=True, set_name=key)
+		added.append(key)
+	if added:
+		frappe.db.commit()
+		print(f"Added diseases: {', '.join(added)}")
+	return added

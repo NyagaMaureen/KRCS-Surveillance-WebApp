@@ -93,7 +93,9 @@ after_migrate = [
 	"surveillance.alert_thresholds.seed_defaults",
 	"surveillance.case_definitions.seed_case_definitions",
 	"surveillance.locations.seed_sub_counties",
+	"surveillance.alert_thresholds.seed_extra_diseases", 
 	"surveillance.capabilities.after_migrate",
+	
 ]
 
 # Fixtures: shipped with the app and installed on every site on migrate
@@ -177,7 +179,7 @@ fixtures = [
 
 
 scheduler_events = {
-	"daily": ["surveillance.alerts.run_detection"],
+	"daily_long": ["surveillance.cbs_feed.daily"],
 }
 # scheduler_events = {
 # 	"all": [

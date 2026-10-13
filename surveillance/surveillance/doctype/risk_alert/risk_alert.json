@@ -1,21 +1,9 @@
 {
  "actions": [],
- "creation": "2026-10-06 12:30:00.000000",
- "modified": "2026-10-06 12:30:00.000000",
+ "autoname": "ALT-.#####",
+ "creation": "2026-10-06 12:30:00",
  "doctype": "DocType",
  "engine": "InnoDB",
- "links": [],
- "modified_by": "Administrator",
- "module": "Surveillance",
- "name": "Risk Alert",
- "owner": "Administrator",
- "sort_field": "modified",
- "sort_order": "DESC",
- "states": [],
- "autoname": "ALT-.#####",
- "naming_rule": "Expression (old style)",
- "title_field": "disease_name",
- "track_changes": 1,
  "field_order": [
   "disease",
   "disease_name",
@@ -32,6 +20,10 @@
   "baseline_mean",
   "level",
   "signal_strength",
+  "last_week",
+  "weeks_flagged",
+  "peak_signals",
+  "peak_week",
   "col2",
   "priority",
   "rules",
@@ -47,34 +39,34 @@
   {
    "fieldname": "disease",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Disease",
    "options": "Alert Threshold Config",
    "reqd": 1,
-   "in_standard_filter": 1,
    "search_index": 1
   },
   {
    "fieldname": "disease_name",
    "fieldtype": "Data",
-   "label": "Disease Name",
-   "in_list_view": 1
+   "in_list_view": 1,
+   "label": "Disease Name"
   },
   {
    "fieldname": "severity",
    "fieldtype": "Select",
-   "label": "Severity",
-   "options": "critical\nhigh\nmedium\nlow",
    "in_list_view": 1,
-   "in_standard_filter": 1
+   "in_standard_filter": 1,
+   "label": "Severity",
+   "options": "critical\nhigh\nmedium\nlow"
   },
   {
+   "default": "Pending",
    "fieldname": "status",
    "fieldtype": "Select",
-   "label": "Status",
-   "options": "Pending\nInvestigating\nConfirmed\nResolved\nRejected",
-   "default": "Pending",
    "in_list_view": 1,
-   "in_standard_filter": 1
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nInvestigating\nConfirmed\nResolved\nRejected"
   },
   {
    "fieldname": "col1",
@@ -83,15 +75,15 @@
   {
    "fieldname": "location",
    "fieldtype": "Data",
-   "label": "Location",
    "in_list_view": 1,
+   "label": "Location",
    "search_index": 1
   },
   {
    "fieldname": "county",
    "fieldtype": "Data",
-   "label": "County",
-   "in_standard_filter": 1
+   "in_standard_filter": 1,
+   "label": "County"
   },
   {
    "fieldname": "sub_county",
@@ -101,8 +93,8 @@
   {
    "fieldname": "week_start",
    "fieldtype": "Date",
-   "label": "Week Start",
    "in_list_view": 1,
+   "label": "Week Start",
    "search_index": 1
   },
   {
@@ -153,6 +145,7 @@
    "label": "Rules Fired"
   },
   {
+   "default": "0",
    "fieldname": "possible_reporting_surge",
    "fieldtype": "Check",
    "label": "Possible Reporting Surge"
@@ -189,26 +182,59 @@
    "fieldtype": "Table",
    "label": "Notes",
    "options": "Risk Alert Note"
-  }
- ],
- "permissions": [
-  {
-   "role": "System Manager",
-   "read": 1,
-   "report": 1,
-   "export": 1,
-   "write": 1,
-   "create": 1,
-   "delete": 1
   },
   {
-   "role": "HQ Admin",
+   "fieldname": "last_week",
+   "fieldtype": "Date",
+   "label": "Last Week"
+  },
+  {
+   "fieldname": "weeks_flagged",
+   "fieldtype": "Int",
+   "label": "Weeks Flagged"
+  },
+  {
+   "fieldname": "peak_signals",
+   "fieldtype": "Int",
+   "label": "Peak Cases"
+  },
+  {
+   "fieldname": "peak_week",
+   "fieldtype": "Date",
+   "label": "Peak Week"
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-12 14:41:29.188166",
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "Risk Alert",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
    "read": 1,
    "report": 1,
-   "export": 1,
-   "write": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
    "create": 1,
-   "delete": 1
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HQ Admin",
+   "write": 1
   }
- ]
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "disease_name",
+ "track_changes": 1
 }
