@@ -143,6 +143,19 @@ def group_episodes(week_alerts, gap_weeks=EPISODE_GAP_WEEKS):
 	return episodes
 
 
+DATA_ERROR_TAG = "POSSIBLE DATA ENTRY ERROR"
+
+
+def _with_data_check(text, weeks):
+	"""Keep the data-error warning on the episode even if it was raised in an earlier week."""
+	text = text or ""
+	flagged = [a for a in weeks if DATA_ERROR_TAG in (a.get("explanation") or "")]
+	if flagged and DATA_ERROR_TAG not in text:
+		a = flagged[0]
+		text += (f"; {DATA_ERROR_TAG} in week of {a['week_start']} ({a['signals']} cases); "
+			"confirm the number with the facility before acting")
+	return text
+
 def _episode(weeks):
 	first, last = weeks[0], weeks[-1]
 	peak = max(weeks, key=lambda a: a["signals"])
@@ -162,7 +175,7 @@ def _episode(weeks):
 		"rules": ",".join(sorted({r for a in weeks for r in a["rules"].split(",") if r})),
 		"possible_reporting_surge": int(any(a["possible_reporting_surge"] for a in weeks)),
 		"sources": ", ".join(sorted({s.strip() for a in weeks for s in a["sources"].split(",")})),
-		"explanation": last["explanation"],
+		"explanation": _with_data_check(last["explanation"], weeks),
 	}
 
 

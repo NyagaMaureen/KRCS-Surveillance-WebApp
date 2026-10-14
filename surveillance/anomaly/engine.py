@@ -34,7 +34,8 @@ EARS_C2_LIMIT = 3.0
 EARS_C3_LIMIT = 2.0
 SURGE_MULTIPLIER = 2.0  # location total >= 2x its usual weekly total ...
 SURGE_MIN_DISEASES = 3  # ... and at least this many diseases above their usual level
-
+DATA_ERROR_RATIO = 50   # a week this many times above its usual level ...
+DATA_ERROR_MIN = 20     # ... with at least this many cases looks like a typing error
 
 def complete_weeks(df, gap_as_missing=False):
     """Fill missing weeks for each series.
@@ -165,4 +166,8 @@ def _explain(r, multiplier):
         parts.append("statistically unusual rise compared with recent weeks")
     if r.possible_reporting_surge:
         parts.append("POSSIBLE REPORTING SURGE - several diseases rose together at this location; verify before acting")
+    usual = r.baseline_mean if pd.notna(r.baseline_mean) else 0
+    if r["count"] >= DATA_ERROR_MIN and r["count"] >= DATA_ERROR_RATIO * max(usual, EXPECTED_FLOOR):
+        parts.append(f"POSSIBLE DATA ENTRY ERROR - {int(r['count'])} is far above the usual level; "
+                     "confirm the number with the facility before acting")
     return "; ".join(parts)

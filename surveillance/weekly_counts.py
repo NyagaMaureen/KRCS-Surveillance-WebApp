@@ -118,10 +118,18 @@ def load_cbs_history(path):
 # ---------- MOH 505 (weekly IDSR) exports from KHIS ----------
 
 # Organisation unit name in the export -> (county, sub-county in our Sub County list).
-# Add a line here when KRCS sends files for new facilities.
+# One line per facility. A facility mapped to None is skipped (listed in the output) until its
+# location is confirmed. Add a line here when KRCS sends files for a new facility.
 UNIT_LOCATIONS = [
-	(r"\bifo\b|dagahaley|hagadera|dadaab", "Garissa", "Dadaab"),
-	(r"naregae|natukobenyo|kalobeyei", "Turkana", "Turkana West"),
+	# DRO (Dadaab)
+	(r"\bifo\b", "Garissa", "Dadaab"),
+	(r"abaqalaan", "Garissa", "Dadaab"),   
+	(r"balaambal", "Garissa", "Dadaab"),   
+	(r"darkenley", "Garissa", "Dadaab"),   
+	(r"wadajir", "Garissa", "Dadaab"),     
+	# KRO (Kalobeyei)
+	(r"naregae", "Turkana", "Turkana West"),
+	(r"natukobenyo", "Turkana", "Turkana West"),
 ]
 MOH505_COLUMN = re.compile(r"^(?:MOH[ _]505[^_]*_)?(?:IDSR )?(?P<name>.+?)\s*(?P<age>[<>]5 yrs)?,\s*(?P<kind>Cases|Deaths)$", re.I)
 MOH505_WEEK = re.compile(r"Week \d+ (\d{4}-\d{2}-\d{2})")
@@ -131,10 +139,36 @@ COUNT_DEATHS_AS_CASES = {"maternal-death", "neonatal-death"}  # the event itself
 
 
 def _unit_location(unit):
+	"""(county, sub_county) for a unit. (None, None) = listed but pending; raises if not listed at all."""
 	for rx, county, sub_county in UNIT_LOCATIONS:
 		if re.search(rx, unit or "", re.I):
 			return county, sub_county
-	return None, None
+	raise ValueError(f"Unknown organisation unit '{unit}'. Add it to UNIT_LOCATIONS.")
+
+
+def _is_reporting_file(path):
+	return os.path.basename(path).lower().startswith("reporting")
+
+
+def parse_reporting_file(path):
+	"""Read one KHIS reporting-rate export. Returns (unit, {week_start: reported(bool)})."""
+	import pandas as pd
+	raw = pd.read_excel(path, header=None)
+	unit = str(raw.iloc[0, 0]).strip()
+	header_row = next((i for i in range(min(10, len(raw))) if str(raw.iloc[i, 0]).strip().lower() == "periodname"), None)
+	if header_row is None:
+		raise ValueError(f"{path}: no 'periodname' header row found")
+	headers = [str(h) for h in raw.iloc[header_row].tolist()]
+	col = next((j for j, h in enumerate(headers) if re.search(r"actual reports$", h.strip(), re.I)), None)
+	if col is None:
+		raise ValueError(f"{path}: no 'Actual reports' column found")
+	weeks = {}
+	for i in range(header_row + 1, len(raw)):
+		wk = MOH505_WEEK.search(str(raw.iloc[i, 0]))
+		if wk:
+			v = pd.to_numeric(raw.iloc[i, col], errors="coerce")
+			weeks[wk.group(1)] = bool(v and v > 0)
+	return unit, weeks
 
 
 def parse_moh505_file(path):
@@ -149,7 +183,7 @@ def parse_moh505_file(path):
 		raise ValueError(f"{path}: no 'periodname' header row found")
 	county, sub_county = _unit_location(unit)
 	if not sub_county:
-		raise ValueError(f"{path}: unknown organisation unit '{unit}'. Add it to UNIT_LOCATIONS.")
+		return unit, None, set()  # location pending: caller skips this unit
 
 	columns, skipped = {}, set()
 	for j, h in enumerate(raw.iloc[header_row].tolist()[1:], start=1):
@@ -184,7 +218,11 @@ def parse_moh505_file(path):
 
 
 def load_moh505(folder):
-	"""Load every MOH 505 export (.xls/.xlsx) under folder as source IDSR. Safe to re-run: replaces all IDSR rows.
+	"""Load every MOH 505 export under folder as source IDSR. Safe to re-run: replaces all IDSR rows.
+
+	Expects one sub-folder per facility holding yearly case files (2025.xls) and reporting files
+	(reporting_25.xls). Reporting files tell a true zero week (facility reported, no cases) apart
+	from a week the facility did not report, which the engine leaves out of the baseline.
 
 	bench --site <site> execute surveillance.weekly_counts.load_moh505 --kwargs "{'folder': '/full/path/moh505'}"
 	"""
@@ -192,22 +230,54 @@ def load_moh505(folder):
 	files = sorted(glob.glob(os.path.join(folder, "**", "*.xls*"), recursive=True))
 	if not files:
 		frappe.throw(f"No .xls/.xlsx files found under {folder}")
-	rows, skipped, units, unknown = [], set(), {}, {}
+
+	rows, skipped, unknown = [], set(), {}
+	units, pending = {}, {}
+	reported = {}  # unit -> {week: bool}
 	for f in files:
+		if _is_reporting_file(f):
+			unit, weeks = parse_reporting_file(f)
+			reported.setdefault(unit, {}).update(weeks)
+			continue
 		unit, file_rows, file_skipped = parse_moh505_file(f)
+		if file_rows is None:
+			pending.setdefault(unit, []).append(os.path.basename(f))
+			continue
 		skipped |= file_skipped
+		units.setdefault(unit, []).append(os.path.basename(f))
 		for r in file_rows:
 			if r["disease"] not in known:
 				unknown[r["disease"]] = unknown.get(r["disease"], 0) + r["signals"]
 				continue
 			rows.append(r)
-		units.setdefault(unit, []).append(os.path.basename(f))
 
-	saved = replace_source("IDSR", rows)
+	# A sub-county week counts as reported when any of its facilities reported. For those weeks,
+	# add zero rows so the engine sees a true zero instead of "not reported".
+	loc_weeks, loc_diseases = {}, {}
+	for unit, weeks in reported.items():
+		try:
+			county, sub_county = _unit_location(unit)
+		except ValueError:
+			continue
+		if not sub_county:
+			continue
+		for w, ok in weeks.items():
+			if ok:
+				loc_weeks.setdefault((county, sub_county), set()).add(str(week_start(w)))
+	for r in rows:
+		loc_diseases.setdefault((r["county"], r["sub_county"]), set()).add(r["disease"])
+	zeros = [{"disease": d, "county": c, "sub_county": sc, "week_start": w, "signals": 0, "affected": 0, "deaths": 0}
+		for (c, sc), ws in loc_weeks.items() for w in ws for d in loc_diseases.get((c, sc), ())]
+
+	saved = replace_source("IDSR", rows + zeros)
 	weeks = sorted({str(week_start(r["week_start"])) for r in rows})
 	print(f"Files read         : {len(files)}")
 	for unit, names in units.items():
-		print(f"  {unit} -> {' / '.join(_unit_location(unit))}: {', '.join(names)}")
+		rep = reported.get(unit, {})
+		rate = f"{sum(rep.values())}/{len(rep)} weeks reported" if rep else "no reporting file"
+		print(f"  {unit} -> {' / '.join(_unit_location(unit))}: {len(names)} case files, {rate}")
+	for unit, names in pending.items():
+		print(f"  SKIPPED {unit}: location pending ({len(names)} case files). Set it in UNIT_LOCATIONS.")
 	print(f"Weekly Count rows  : {saved} (source IDSR)")
 	if weeks:
 		print(f"Weeks covered      : {weeks[0]} to {weeks[-1]}")
