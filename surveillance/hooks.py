@@ -166,6 +166,13 @@ fixtures = [
 # ---------------
 # Hook on document methods and events
 
+
+doc_events = {
+	"Case Report": {
+		"on_update": "surveillance.events.on_case_report",
+		"on_trash": "surveillance.events.on_case_report_trash",
+	},
+}
 # doc_events = {
 # 	"*": {
 # 		"on_update": "method",
@@ -174,12 +181,14 @@ fixtures = [
 # 	}
 # }
 
+
 # Scheduled Tasks
 # ---------------
 
 
 scheduler_events = {
 	"daily": ["surveillance.knowledge_base.retire_expired"],
+	"hourly_long": ["surveillance.cbs_feed.hourly"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }
 # scheduler_events = {

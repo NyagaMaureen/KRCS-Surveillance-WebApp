@@ -1,0 +1,152 @@
+{
+ "actions": [],
+ "creation": "2026-10-14 12:00:00.000000",
+ "modified": "2026-10-14 16:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Surveillance Signal",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "field_order": [
+  "source",
+  "ref",
+  "disease",
+  "reported",
+  "signal_date",
+  "cb1",
+  "county",
+  "sub_county",
+  "area",
+  "latitude",
+  "longitude",
+  "region",
+  "people",
+  "deaths",
+  "reason",
+  "event"
+ ],
+ "fields": [
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "CBS\nField\nEMR",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "ref",
+   "fieldtype": "Data",
+   "label": "Reference",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "CBS case number, Case Report ID or EMR visit code. No personal data."
+  },
+  {
+   "fieldname": "disease",
+   "fieldtype": "Link",
+   "label": "Disease",
+   "options": "Alert Threshold Config",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "reported",
+   "fieldtype": "Data",
+   "label": "What was reported"
+  },
+  {
+   "fieldname": "signal_date",
+   "fieldtype": "Datetime",
+   "label": "Date",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "county",
+   "fieldtype": "Data",
+   "label": "County"
+  },
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Data",
+   "label": "Sub-county"
+  },
+  {
+   "fieldname": "area",
+   "fieldtype": "Data",
+   "label": "Area",
+   "description": "Smallest place given, e.g. Community Health Unit"
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "label": "Latitude",
+   "precision": "6"
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "label": "Longitude",
+   "precision": "6"
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "people",
+   "fieldtype": "Int",
+   "label": "People"
+  },
+  {
+   "fieldname": "deaths",
+   "fieldtype": "Int",
+   "label": "Deaths"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "event",
+   "fieldtype": "Link",
+   "label": "Event",
+   "options": "Surveillance Event",
+   "search_index": 1,
+   "in_standard_filter": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "autoname": "format:{source}-{ref}",
+ "naming_rule": "Expression",
+ "in_create": 1,
+ "track_changes": 0,
+ "sort_field": "signal_date",
+ "sort_order": "DESC",
+ "title_field": "ref",
+ "description": "One de-identified report (CBS, field Case Report or EMR visit). Filled automatically; no names, phones or notes."
+}

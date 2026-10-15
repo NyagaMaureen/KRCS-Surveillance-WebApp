@@ -4,20 +4,19 @@ import { Search, Download, RefreshCw, MapPin, Calendar, Users, TrendingUp, Alert
 import AppShell from '../components/layout/AppShell'
 import { getAlertsSignals, getAlertRegions } from '../api/frappe'
 
-const SEVERITIES = ['critical', 'high', 'medium', 'low']
-const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 }
+const SEVERITIES = ['critical', 'high', 'standard']
+const SEVERITY_RANK = { critical: 0, high: 1, standard: 2 }
+const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
 
 const SEVERITY_STYLES = {
   critical: 'bg-red-600 text-white',
   high: 'bg-amber-400 text-white',
-  medium: 'bg-blue-500 text-white',
-  low: 'bg-emerald-500 text-white',
+  standard: 'bg-blue-500 text-white',
 }
 const SEVERITY_BAR = {
   critical: 'bg-red-600',
   high: 'bg-amber-400',
-  medium: 'bg-blue-500',
-  low: 'bg-emerald-500',
+  standard: 'bg-blue-500',
 }
 
 const STATUS_STYLES = {
@@ -366,6 +365,12 @@ export default function AlertsSignals() {
         <div>
           <h2 className="text-xl font-bold text-gray-900">Alerts & Signals</h2>
           <p className="text-sm text-gray-400">Outbreak alerts from community reports, app reports and facility data. Review, verify and respond.</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Individual reports waiting for verification are in the{' '}
+            <Link to="/review" className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+              Review Queue →
+            </Link>
+          </p>
         </div>
         <div className="flex gap-2">
           <button
@@ -417,12 +422,12 @@ export default function AlertsSignals() {
               onClick={() =>
                 setParam({ sev: (on ? severities.filter((x) => x !== s) : [...severities, s]).join(',') })
               }
-              className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium capitalize ${FOCUS} ${
+              className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium ${FOCUS} ${
                 on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
               }`}
             >
               <span className={`w-2.5 h-2.5 rounded-full ${SEVERITY_BAR[s]}`} aria-hidden="true" />
-              {s}
+              {SEVERITY_LABELS[s]}
               <span className={on ? 'text-white/80' : 'text-gray-400'}>{severityCounts[s]}</span>
             </button>
           )

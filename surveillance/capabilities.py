@@ -41,7 +41,17 @@ CAPABILITIES = [
 	            "Alert Threshold Settings": ["read", "write"]}},
 	{"key": "investigate_alerts", "name": "Investigate Alerts", "category": "Alerts & Risk",
 	 "description": "Change alert status and add investigation notes", "grants": {"Risk Alert": ["read", "write"]}},
+    
 
+		# Review Queue
+	{"key": "view_review_queue", "name": "View Review Queue", "category": "Review Queue",
+	 "description": "See reported events for your region",
+	 "grants": {"Surveillance Event": ["read"], "Surveillance Signal": ["read"]}},
+	{"key": "act_on_events", "name": "Act on Events", "category": "Review Queue",
+	 "description": "Verify, discard, escalate and close events",
+	 "grants": {"Surveillance Event": ["read", "write"]}},
+
+	 
 	# Response
 	{"key": "view_response_protocols", "name": "View Response Protocols", "category": "Response",
 	 "description": "View response protocols", "grants": {"Response Protocol Reference": ["read"]}},

@@ -35,20 +35,19 @@ EPISODE_GAP_WEEKS = 4          # up to 4 quiet weeks inside one outbreak; 5+ sta
 CLUSTER_AFFECTED = 10
 COMMUNITY_SOURCES = {"CBS", "Case Report"}   # cluster bump and zero-filling apply to these
 FACILITY_SOURCES = {"IDSR", "EMR"}           # empty weeks = not reported, not zero
-LEVELS = ["low", "medium", "high", "critical"]
+LEVELS = ["standard", "high", "critical"]
 STRENGTHS = ["normal", "threshold", "outbreak"]
 MATRIX = {
 	"Critical": {"normal": "critical", "threshold": "critical", "outbreak": "critical"},
 	"High": {"normal": "high", "threshold": "high", "outbreak": "critical"},
-	"Standard": {"normal": "low", "threshold": "medium", "outbreak": "high"},
+	"Standard": {"normal": "standard", "threshold": "standard", "outbreak": "high"},
 }
 STATUSES = ["Pending", "Investigating", "Confirmed", "Resolved", "Rejected"]
 CLOSED = {"Resolved", "Rejected"}
 RESPONSE = {
 	"critical": "Verify within 24 hours and notify the county surveillance team.",
 	"high": "Verify within 48 hours.",
-	"medium": "Verify within 72 hours.",
-	"low": "Review in the weekly surveillance meeting.",
+	"standard": "Verify within 72 hours.",
 }
 
 
@@ -230,10 +229,20 @@ def _disease_meta():
 
 
 def _load_weekly(source=None):
+	"""Weekly counts for the pilot sites only (Dadaab and Kalobeyei). All configured diseases are kept,
+	so everyday diseases like malaria still alert when they rise above their usual level.
+	Optional disease limit: bench --site <site> set-config alert_diseases '["measles", "malaria", ...]'"""
+	from surveillance.events import _scope
 	filters = {"source": source} if source else {}
-	return pd.DataFrame([dict(r) for r in frappe.get_all("Weekly Count", filters=filters,
+	df = pd.DataFrame([dict(r) for r in frappe.get_all("Weekly Count", filters=filters,
 		fields=["source", "disease", "location", "county", "sub_county", "week_start", "signals", "affected"],
 		limit_page_length=0)])
+	if df.empty:
+		return df
+	subs, _ = _scope()
+	df = df[df["sub_county"].fillna("").str.strip().str.lower().isin(subs)]
+	only = frappe.conf.get("alert_diseases")
+	return df[df["disease"].isin(set(only))] if only else df
 
 
 def _multiplier():
@@ -251,7 +260,7 @@ def _save_episode(a):
 	if open_alerts:
 		doc = frappe.get_doc(DOCTYPE, open_alerts[0].name)
 		old = doc.severity
-		new = max([old or "low", a["severity"]], key=LEVELS.index)
+		new = max([old if old in LEVELS else "standard", a["severity"]], key=LEVELS.index)
 		doc.update({**a, "severity": new, "last_detected": now_datetime()})
 		if old and new != old:
 			doc.append("notes", {"note": f"Severity raised from {old} to {new} by the alert engine.",

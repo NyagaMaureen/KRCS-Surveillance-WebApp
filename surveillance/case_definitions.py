@@ -214,7 +214,8 @@ def explain(defn, symptoms, age_group, animal_exposure, labels):
 	if defn["ages"]:
 		evidence.append(f"age group: {age_group}" if age_group else "age not recorded, so not used to rule out")
 	name = labels["disease"].get(defn["disease"], defn["disease"])
-	text = f"Suspected {name}. Matched: {'; '.join(evidence)}."
+	label = name if str(name).lower().startswith("suspected") else f"Suspected {name}"
+	text = f"{label}. Matched: {'; '.join(evidence)}."
 	if defn.get("lay_definition"):
 		text += f' {defn.get("source") or "MOH IDSR"} definition: "{defn["lay_definition"]}"'
 	return text

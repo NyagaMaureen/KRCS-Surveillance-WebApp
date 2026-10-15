@@ -2,7 +2,6 @@ export const STATUSES = ['Submitted', 'Reviewed', 'Investigating', 'Linked', 'Cl
 export const SEVERITIES = ['Mild', 'Moderate', 'Severe', 'Critical']
 export const AGE_BANDS = ['Under 5', '5-17', '18-59', '60+']
 export const CATEGORIES = ['Human Disease', 'Animal Disease', 'All Diseases']
-export const SEXES = ['Male', 'Female', 'Mixed']
 export const NATIONALITIES = ['Kenyan', 'Non-Kenyan', 'Refugee', 'Prefer not to say']
 export const CHANNELS = ['Web', 'Mobile', 'SMS', 'USSD', 'WhatsApp']
 
@@ -32,6 +31,26 @@ export const CHANNEL_COLORS = {
   SMS: 'bg-green-50 text-green-600',
   USSD: 'bg-amber-50 text-amber-600',
   WhatsApp: 'bg-gray-100 text-gray-600',
+}
+
+const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[ T]00:00:00(?:\.0+)?)?$/
+
+export function parseDateOnly(value) {
+  const m = DATE_ONLY_RE.exec(String(value || '').trim())
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null
+}
+
+export function formatDateOnly(d) {
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+export function relativeDays(d) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const days = Math.max(0, Math.round((today - d) / 86400000))
+  if (days === 0) return 'today'
+  if (days === 1) return 'yesterday'
+  return `${days} days ago`
 }
 
 export function formatDateTime(value) {

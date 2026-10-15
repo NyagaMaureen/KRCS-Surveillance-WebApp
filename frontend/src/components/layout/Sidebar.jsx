@@ -11,7 +11,7 @@ function iconFor(name) {
 
 export default function Sidebar() {
   const location = useLocation()
-  const currentPage = location.pathname.replace('/', '')
+  const currentPage = location.pathname.replace('/', '').split('/')[0]
 
   const { capabilities } = useCapabilities()
 

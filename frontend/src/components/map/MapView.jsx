@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Marker, Popup, ZoomControl, useMap } from 'react-leaflet'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { MapContainer, TileLayer, CircleMarker, Marker, Polyline, Popup, ZoomControl, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import { Link } from 'react-router-dom'
 import { Navigation, Share2, MessageCircle, AlertTriangle } from 'lucide-react'
@@ -19,9 +19,9 @@ const PILOT_ZOOM = 11
 const SEVERITY_BADGE = {
   critical: 'bg-red-600',
   high: 'bg-amber-400',
-  medium: 'bg-blue-500',
-  low: 'bg-emerald-500',
+  standard: 'bg-blue-500',
 }
+const SEVERITY_LABEL = { critical: 'Critical', high: 'High', standard: 'Standard' }
 
 const PULSE_CSS = `
 @keyframes map-critical-pulse { 0% { transform: scale(0.6); opacity: 0.7; } 100% { transform: scale(1.6); opacity: 0; } }
@@ -49,30 +49,22 @@ function pulseIcon(radius) {
   })
 }
 
-function whyFlagged(sources) {
-  const list = Array.isArray(sources) ? sources : sources ? [sources] : []
-  const reasons = []
-  for (const s of list) {
-    const key = String(s).toLowerCase()
-    let text = null
-    if (key.includes('threshold')) text = 'Reached alert threshold'
-    else if (key.includes('baseline')) text = 'Well above the usual level'
-    else if (key.startsWith('ears') || key.includes('ears_') || key === 'c2' || key === 'c3') text = 'Statistical methods: unusual rise'
-    if (text && !reasons.includes(text)) reasons.push(text)
-  }
-  return reasons
+function relTime(v) {
+  const t = new Date(String(v || '').replace(' ', 'T')).getTime()
+  if (Number.isNaN(t)) return ''
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60000))
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 48) return `${hrs}h ago`
+  return `${Math.round(hrs / 24)} days ago`
 }
 
-function periodText(a) {
-  const weeks = Number(a.weeks) || 0
-  const range = [a.startDate, a.date].filter(Boolean).join(' – ')
-  return `${range}${weeks ? ` · ${weeks} week${weeks === 1 ? '' : 's'}` : ''}`
-}
-
-function PopupCard({ alert: a, onToast }) {
-  const reasons = whyFlagged(a.sources)
+function PopupCard({ event: a, onToast }) {
   const mapsLink = `https://www.google.com/maps?q=${a.lat},${a.lng}`
-  const shareText = `${a.title} – ${a.location}`
+  const place = [a.area, a.subCounty].filter(Boolean).join(', ')
+  const shareText = `${a.title}${place ? ` – ${place}` : ''}`
+  const waiting = a.status === 'New' && Number(a.openHours) > 24
+  const sources = Array.isArray(a.sources) ? a.sources.join(', ') : a.sources
 
   async function share() {
     if (navigator.share) {
@@ -101,35 +93,35 @@ function PopupCard({ alert: a, onToast }) {
       </div>
       <div className="flex items-center flex-wrap gap-2 mb-4">
         <span className={['text-[10px] font-semibold text-white px-2 py-1 rounded-md uppercase tracking-wide', SEVERITY_BADGE[a.severity] || 'bg-gray-400'].join(' ')}>
-          {a.severity}
+          {SEVERITY_LABEL[a.severity] || a.severity}
         </span>
         {a.status && <span className="text-xs font-medium bg-gray-100 text-gray-700 rounded-full px-2.5 py-1">{a.status}</span>}
-        <span className={['text-xs font-medium rounded-full px-2.5 py-1', a.ongoing ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'].join(' ')}>
-          {a.ongoing ? 'Ongoing' : 'Ended'}
-        </span>
       </div>
       <div className="space-y-1.5 mb-4">
-        {a.location && <div className="text-sm font-medium text-gray-900">{a.location}</div>}
-        <div className="text-xs text-gray-500">{periodText(a)}</div>
         <div className="text-xs text-gray-500">
-          <span className="font-semibold text-gray-900">{a.affected ?? 0} cases</span>
-          {a.peak != null && ` · peak ${a.peak}/week`}
+          <span className="font-semibold text-gray-900">{a.people ?? 0} people</span>
+          {` · ${a.reports ?? 0} reports`}
+          {sources && ` · ${sources}`}
+          {Number(a.deaths) > 0 && <span className="font-semibold text-red-600">{` · ${a.deaths} ${Number(a.deaths) === 1 ? 'death' : 'deaths'}`}</span>}
+        </div>
+        {place && <div className="text-sm font-medium text-gray-900">{place}</div>}
+        <div className="flex items-center flex-wrap gap-2 text-xs text-gray-500">
+          <span>First reported {relTime(a.firstSeen)}</span>
+          {waiting && (
+            <span className="font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+              {Number(a.openHours) < 48 ? `Waiting ${a.openHours}h` : `Waiting ${Math.floor(a.openHours / 24)} days`}
+            </span>
+          )}
         </div>
       </div>
-      {reasons.length > 0 && (
-        <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2.5 mb-3">
-          <div className="font-medium text-gray-900 mb-0.5">Why flagged</div>
-          {reasons.join(', ')}
-        </div>
-      )}
-      {a.surge && (
+      {a.dataWarning && (
         <div className="flex items-center gap-2 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> Check reporting
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {a.dataWarning}
         </div>
       )}
       <div className="grid grid-cols-2 gap-2 mb-2">
-        <Link to={`/alerts-signals/${a.id}`} className="bg-red-600 !text-white rounded-lg px-3 py-2 text-xs font-medium text-center no-underline hover:bg-red-700">
-          View alert
+        <Link to={`/review/${a.id}`} className="bg-red-600 !text-white rounded-lg px-3 py-2 text-xs font-medium text-center no-underline hover:bg-red-700">
+          Open in Review Queue
         </Link>
         <a
           href={`https://www.google.com/maps/dir/?api=1&destination=${a.lat},${a.lng}`}
@@ -153,6 +145,13 @@ function PopupCard({ alert: a, onToast }) {
           <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
         </a>
       </div>
+      {a.linkedAlert && (
+        <div className="mt-3 text-xs">
+          <Link to={`/alerts-signals/${a.linkedAlert.id}`} className="font-medium !text-red-600 hover:underline">
+            Outbreak alert
+          </Link>
+        </div>
+      )}
       <div className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
         {Number(a.lat).toFixed(5)}, {Number(a.lng).toFixed(5)}
       </div>
@@ -175,27 +174,120 @@ function FitBounds({ markers }) {
   return null
 }
 
-function FocusController({ focus, markerRefs }) {
+const GROUP_METRES = 30
+const SPREAD_PX = 25
+
+function groupEvents(events) {
+  const groups = []
+  events.forEach((e) => {
+    const ll = L.latLng(Number(e.lat), Number(e.lng))
+    const g = groups.find((x) => x.center.distanceTo(ll) <= GROUP_METRES)
+    if (g) {
+      g.items.push(e)
+      const n = g.items.length
+      g.center = L.latLng(
+        g.items.reduce((sum, it) => sum + Number(it.lat), 0) / n,
+        g.items.reduce((sum, it) => sum + Number(it.lng), 0) / n
+      )
+    } else {
+      groups.push({ center: ll, items: [e] })
+    }
+  })
+  return groups
+}
+
+function FocusController({ focus, markerRefs, centersRef }) {
   const map = useMap()
 
   useEffect(() => {
     if (!focus) return
     const ref = markerRefs.current[focus.id]
-    if (!ref) return
-    const { lat, lng } = ref.getLatLng()
-    map.flyTo([lat, lng], Math.max(map.getZoom(), 13), { duration: 0.8 })
-    map.once('moveend', () => ref.openPopup())
-  }, [focus, map, markerRefs])
+    const center = centersRef.current[focus.id]
+    if (!ref || !center) return
+    map.flyTo(center, Math.max(map.getZoom(), 13), { duration: 0.8 })
+    map.once('moveend', () => setTimeout(() => ref.openPopup(), 50))
+  }, [focus, map, markerRefs, centersRef])
 
   return null
 }
 
-export default function MapView({ alerts = [], hoveredId = null, focus = null, onToast }) {
-  const markerRefs = useRef({})
+function Markers({ events, hoveredId, onToast, markerRefs, centersRef }) {
+  const map = useMap()
+  const [zoom, setZoom] = useState(map.getZoom())
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) })
 
-  const sorted = [...alerts].sort(
-    (a, b) => (a.severity === 'critical' ? 1 : 0) - (b.severity === 'critical' ? 1 : 0)
+  const groups = useMemo(() => groupEvents(events), [events])
+
+  const placed = []
+  const centers = {}
+  groups.forEach((g) => {
+    const n = g.items.length
+    const base = map.project(g.center, zoom)
+    g.items.forEach((a, i) => {
+      centers[a.id] = g.center
+      if (n === 1) {
+        placed.push({ a, pos: g.center, center: null })
+        return
+      }
+      const angle = (2 * Math.PI * i) / n - Math.PI / 2
+      const pt = L.point(base.x + SPREAD_PX * Math.cos(angle), base.y + SPREAD_PX * Math.sin(angle))
+      placed.push({ a, pos: map.unproject(pt, zoom), center: g.center })
+    })
+  })
+  centersRef.current = centers
+
+  const sorted = placed.sort(
+    (x, y) => (x.a.severity === 'critical' ? 1 : 0) - (y.a.severity === 'critical' ? 1 : 0)
   )
+
+  return (
+    <>
+      {sorted.filter((p) => p.center).map(({ a, pos, center }) => (
+        <Polyline
+          key={`line-${a.id}`}
+          positions={[center, pos]}
+          interactive={false}
+          pathOptions={{ color: '#9CA3AF', weight: 1, opacity: 0.9 }}
+        />
+      ))}
+      {sorted.map(({ a, pos }) => {
+        const radius = radiusFor(a.people, 8, 18)
+        const hovered = hoveredId === a.id
+        const escalated = a.status === 'Escalated'
+        return (
+          <Fragment key={a.id}>
+            {a.severity === 'critical' && a.status === 'New' && (
+              <Marker position={pos} icon={pulseIcon(radius)} interactive={false} keyboard={false} zIndexOffset={-100} />
+            )}
+            <CircleMarker
+              ref={(el) => {
+                if (el) markerRefs.current[a.id] = el
+                else delete markerRefs.current[a.id]
+              }}
+              center={pos}
+              radius={hovered ? radius + 3 : radius}
+              pathOptions={{
+                color: hovered || escalated ? '#111827' : '#fff',
+                weight: escalated ? (hovered ? 5 : 4) : hovered ? 3 : 2,
+                fillColor: a.color,
+                fillOpacity: 0.9,
+                opacity: 1,
+              }}
+            >
+              <Popup>
+                <PopupCard event={a} onToast={onToast} />
+              </Popup>
+            </CircleMarker>
+          </Fragment>
+        )
+      })}
+    </>
+  )
+}
+
+export default function MapView({ events = [], hoveredId = null, focus = null, onToast }) {
+  const markerRefs = useRef({})
+  const centersRef = useRef({})
 
   return (
     <>
@@ -203,40 +295,9 @@ export default function MapView({ alerts = [], hoveredId = null, focus = null, o
       <MapContainer center={PILOT_CENTER} zoom={PILOT_ZOOM} zoomControl={false} className="w-full h-full">
         <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
         <ZoomControl position="bottomright" />
-        <FitBounds markers={alerts} />
-        <FocusController focus={focus} markerRefs={markerRefs} />
-        {sorted.map((a) => {
-          const color = a.color
-          const radius = radiusFor(a.affected, 8, 18)
-          const hovered = hoveredId === a.id
-          const opacity = a.ongoing === false ? 0.5 : 1
-          return (
-            <Fragment key={a.id}>
-              {a.severity === 'critical' && a.ongoing !== false && (
-                <Marker position={[a.lat, a.lng]} icon={pulseIcon(radius)} interactive={false} keyboard={false} zIndexOffset={-100} />
-              )}
-              <CircleMarker
-                ref={(el) => {
-                  if (el) markerRefs.current[a.id] = el
-                  else delete markerRefs.current[a.id]
-                }}
-                center={[a.lat, a.lng]}
-                radius={hovered ? radius + 3 : radius}
-                pathOptions={{
-                  color: hovered ? '#111827' : '#fff',
-                  weight: hovered ? 3 : 2,
-                  fillColor: color,
-                  fillOpacity: 0.9 * opacity,
-                  opacity,
-                }}
-              >
-                <Popup>
-                  <PopupCard alert={a} onToast={onToast} />
-                </Popup>
-              </CircleMarker>
-            </Fragment>
-          )
-        })}
+        <FitBounds markers={events} />
+        <Markers events={events} hoveredId={hoveredId} onToast={onToast} markerRefs={markerRefs} centersRef={centersRef} />
+        <FocusController focus={focus} markerRefs={markerRefs} centersRef={centersRef} />
       </MapContainer>
     </>
   )

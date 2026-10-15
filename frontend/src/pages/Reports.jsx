@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions } from '../api/frappe'
-import { formatDateTime, STATUSES } from '../data/formOptions'
+import { formatDateTime, parseDateOnly, formatDateOnly, STATUSES } from '../data/formOptions'
 
 const PAGE_SIZE = 6
 
@@ -11,6 +11,7 @@ const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-g
 const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-600', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
 const channelColor = (c) => CHANNEL_COLORS[c] || 'bg-gray-100 text-gray-600'
+const EXPOSURE_TAGS = { 'Bite or scratch': 'Animal bite or scratch', 'Handled sick or dead animal': 'Handled sick or dead animal' }
 const symptomTags = (s) => (s || '').split(',').map((t) => t.trim()).filter(Boolean).slice(0, 3)
 
 export default function Reports() {
@@ -79,7 +80,7 @@ export default function Reports() {
   }
 
   function handleExport() {
-    exportExcel('Case Report', ['name', 'reporter_name', 'symptom_tags', 'location_name', 'channel', 'status', 'report_date'])
+    exportExcel('Case Report', ['name', 'reporter_name', 'symptom_tags', 'animal_exposure', 'location_name', 'channel', 'status', 'report_date'])
   }
 
   function openView(r) {
@@ -179,13 +180,16 @@ export default function Reports() {
                     {symptomTags(r.symptom_tags).map((s) => (
                       <span key={s} className="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full mr-1">{s}</span>
                     ))}
+                    {EXPOSURE_TAGS[r.animal_exposure] && (
+                      <span className="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full mr-1">{EXPOSURE_TAGS[r.animal_exposure]}</span>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-gray-700">{r.location_name}</td>
                   <td className="px-5 py-3 text-gray-700">{r.sub_county || '—'}</td>
                   <td className="px-5 py-3 text-gray-700">{diseaseName(r.suspected_disease)}</td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span></td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', statusColor(r.status)].join(' ')}>{r.status}</span></td>
-                  <td className="px-5 py-3 text-gray-500 whitespace-nowrap">{formatDateTime(r.creation)}</td>
+                  <td className="px-5 py-3 text-gray-500 whitespace-nowrap">{parseDateOnly(r.creation) ? formatDateOnly(parseDateOnly(r.creation)) : formatDateTime(r.creation)}</td>
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end">
                       <button

@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Trash2, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope, Check } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getSubCounties, getRegions } from '../api/frappe'
-import { STATUSES, CATEGORIES, SEXES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
+import { STATUSES, CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 const CLASSIFIED_BY_BADGES = {
@@ -83,7 +83,7 @@ export default function ReportDetail() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [mode, setMode] = useState('view')
-  const [editForm, setEditForm] = useState({ location_name: '', status: '', additional_notes: '', category: '', sex: '', onset_date: '', region: '', sub_county: '', latitude: null, longitude: null })
+  const [editForm, setEditForm] = useState({ location_name: '', status: '', additional_notes: '', category: '', onset_date: '', region: '', sub_county: '', latitude: null, longitude: null })
   const [editAttachments, setEditAttachments] = useState([])
   const [actionError, setActionError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -125,7 +125,6 @@ export default function ReportDetail() {
       { label: 'Region', value: regionMap[report.region] || report.region },
       { label: 'Sub-county', value: report.sub_county },
       { label: 'Category', value: report.category },
-      { label: 'Sex', value: report.sex },
       { label: 'Onset Date', value: formatReadableDate(report.onset_date) },
       { label: 'Affected Persons', value: report.affected_count },
       { label: 'Reported By', value: report.reporter_name || report.reported_by },
@@ -163,7 +162,6 @@ export default function ReportDetail() {
 
   const statusOptions = useMemo(() => withCurrentValue(STATUSES, report?.status), [report])
   const categoryOptions = useMemo(() => withCurrentValue(CATEGORIES, report?.category), [report])
-  const sexOptions = useMemo(() => withCurrentValue(SEXES, report?.sex), [report])
   const attachments = report?.attachments || []
 
   function startEdit() {
@@ -173,7 +171,6 @@ export default function ReportDetail() {
       status: report.status || '',
       additional_notes: report.additional_notes || '',
       category: report.category || '',
-      sex: report.sex || '',
       onset_date: report.onset_date || '',
       region: report.region || '',
       sub_county: report.sub_county || '',
@@ -228,7 +225,7 @@ export default function ReportDetail() {
   async function saveEdit() {
     setActionError('')
     if (!editForm.sub_county) {
-      setActionError('Please select a sub-county')
+      setActionError('Select a sub-county')
       return
     }
     setSaving(true)
@@ -364,7 +361,15 @@ export default function ReportDetail() {
                         ))}
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-400">—</span>
+                      <span className="text-sm text-gray-400">
+                        {report.animal_exposure && report.animal_exposure !== 'None' ? 'No symptoms recorded' : '—'}
+                      </span>
+                    )}
+                    {report.animal_exposure && report.animal_exposure !== 'None' && (
+                      <div className="flex justify-between border-t border-gray-100 mt-4 pt-3 text-sm">
+                        <span className="text-gray-400">Animal exposure</span>
+                        <span className="font-medium text-gray-900">{report.animal_exposure}</span>
+                      </div>
                     )}
                   </div>
 
@@ -470,7 +475,7 @@ export default function ReportDetail() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold mb-1">Sub-county</label>
+                      <label className="block text-sm font-semibold mb-1">Sub-county <span className="text-red-600">*</span></label>
                       <select
                         value={editForm.sub_county}
                         onChange={(e) => setEditForm({ ...editForm, sub_county: e.target.value })}
@@ -511,13 +516,6 @@ export default function ReportDetail() {
                       <select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100">
                         <option value="">Select category...</option>
                         {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-1">Sex</label>
-                      <select value={editForm.sex} onChange={(e) => setEditForm({ ...editForm, sex: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100">
-                        <option value="">Select sex...</option>
-                        {sexOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     <div>

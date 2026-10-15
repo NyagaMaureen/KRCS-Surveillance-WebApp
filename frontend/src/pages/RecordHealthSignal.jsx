@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { LocateFixed, Loader2, Camera, Mic, FileText, Paperclip, X, Stethoscope, CheckCircle2, AlertCircle, MapPin } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getList, createReport, getMyProfile, getSubCounties, uploadFile, classifyPreview } from '../api/frappe'
-import { CATEGORIES, SEXES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS } from '../data/formOptions'
+import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS } from '../data/formOptions'
 
 const steps = ['Reporter Info', 'Symptoms', 'Details', 'Review Report']
 
@@ -47,7 +47,7 @@ export default function RecordHealthSignal() {
   const [form, setForm] = useState({
     reported_by: '', reporter_name: '', phone_number: '',
     signal_type: '', category: '', region: '', sub_county: '', location_name: '',
-    latitude: null, longitude: null, affected_count: '', sex: '',
+    latitude: null, longitude: null, affected_count: '',
     symptoms: [], onset_date: '', attachments: [], additional_notes: '',
     age_group: '', animal_exposure: '', deaths_count: 0,
   })
@@ -157,7 +157,7 @@ export default function RecordHealthSignal() {
   async function submitReport() {
     setSubmitError('')
     if (!form.sub_county) {
-      setSubmitError('Please select a sub-county')
+      setSubmitError('Select a sub-county')
       return
     }
     setSubmitting(true)
@@ -166,7 +166,7 @@ export default function RecordHealthSignal() {
         reported_by: form.reported_by, reporter_name: form.reporter_name, phone_number: form.phone_number,
         signal_type: form.signal_type, category: form.category,
         region: form.region, sub_county: form.sub_county, location_name: form.location_name, latitude: form.latitude, longitude: form.longitude,
-        affected_count: form.affected_count, sex: form.sex,
+        affected_count: form.affected_count,
         symptoms: form.symptoms.map((s) => ({ symptom: s })),
         onset_date: form.onset_date, attachments: form.attachments,
         additional_notes: form.additional_notes, channel: 'Web', status: 'Submitted',
@@ -211,7 +211,7 @@ export default function RecordHealthSignal() {
 
   function goToStep2() {
     if (!form.sub_county) {
-      setLocationError('Please select a sub-county')
+      setLocationError('Select a sub-county')
       return
     }
     setLocationError('')
@@ -268,7 +268,7 @@ export default function RecordHealthSignal() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-1">Sub-county</label>
+                  <label className="block text-sm font-semibold mb-1">Sub-county <span className="text-red-600">*</span></label>
                   <select
                     value={form.sub_county}
                     onChange={(e) => { updateForm({ sub_county: e.target.value }); setLocationError('') }}
@@ -314,13 +314,6 @@ export default function RecordHealthSignal() {
                 <div>
                   <label className="block text-sm font-semibold mb-1">Number of Affected Persons</label>
                   <input value={form.affected_count} onChange={(e) => updateForm({ affected_count: e.target.value })} type="number" min="0" className="w-full bg-gray-50 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow" placeholder="Estimated count" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold mb-1">Sex</label>
-                  <select value={form.sex} onChange={(e) => updateForm({ sex: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow">
-                    <option value="">Select sex</option>
-                    {SEXES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
                 </div>
               </div>
 
@@ -509,7 +502,6 @@ export default function RecordHealthSignal() {
                  <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Sub-county</span><span className="font-medium">{(subCounties.find((s) => s.name === form.sub_county) || {}).sub_county_name || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Location</span><span className="font-medium">{form.location_name || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Affected Persons</span><span className="font-medium">{form.affected_count || '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Sex</span><span className="font-medium">{form.sex || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Onset Date</span><span className="font-medium">{formatReadableDate(form.onset_date)}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Supporting Information</span><span className="font-medium">{form.attachments.length ? `${form.attachments.length} items attached` : 'None'}</span></div>
               </div>
@@ -521,6 +513,9 @@ export default function RecordHealthSignal() {
                   ))
                 ) : (
                   <span className="text-sm text-gray-400">\u2014</span>
+                )}
+                {form.animal_exposure && form.animal_exposure !== 'None' && (
+                  <div className="flex justify-between text-sm mt-2"><span className="text-gray-400">Animal exposure</span><span className="font-medium">{(ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === form.animal_exposure) || {}).label}</span></div>
                 )}
               </div>
               <div className="mb-6">

@@ -13,9 +13,10 @@ import { useCapabilities } from '../context/CapabilitiesContext'
 const SEVERITY_ACCENT = {
   critical: { banner: 'bg-red-600', dot: 'bg-red-600' },
   high: { banner: 'bg-amber-500', dot: 'bg-amber-400' },
-  medium: { banner: 'bg-blue-500', dot: 'bg-blue-500' },
-  low: { banner: 'bg-emerald-500', dot: 'bg-emerald-500' },
+  standard: { banner: 'bg-blue-500', dot: 'bg-blue-500' },
 }
+
+const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
 
 const STATUS_STYLES = {
   Pending: 'border-amber-400 bg-amber-400/10 text-amber-500',
@@ -52,7 +53,7 @@ const NEXT_STEP = {
 const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2'
 
 function accentFor(severity) {
-  return SEVERITY_ACCENT[severity] || SEVERITY_ACCENT.medium
+  return SEVERITY_ACCENT[severity] || SEVERITY_ACCENT.standard
 }
 
 function fmtDate(v) {
@@ -324,8 +325,8 @@ export default function AlertDetail() {
                 <div className="min-w-0 pt-1">
                   <div className="flex items-center gap-3 flex-wrap mb-1.5">
                     <h1 className="text-xl sm:text-2xl font-semibold leading-tight">{alert.title}</h1>
-                    <span className="inline-flex items-center rounded-full border border-white/70 bg-white/20 px-3.5 py-1 text-xs font-medium uppercase tracking-wide">
-                      {alert.severity}
+                    <span className="inline-flex items-center rounded-full border border-white/70 bg-white/20 px-3.5 py-1 text-xs font-medium tracking-wide">
+                      {SEVERITY_LABELS[alert.severity] || SEVERITY_LABELS.standard}
                     </span>
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/10 px-3.5 py-1 text-xs font-medium">
                       {alert.ongoing && <span className="w-2 h-2 rounded-full bg-white animate-pulse" aria-hidden="true" />}
@@ -371,6 +372,15 @@ export default function AlertDetail() {
                 <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
                 <p>
                   <span className="font-semibold">Check reporting:</span> several diseases rose together at this location. This may be more reporting rather than more disease. Verify before acting.
+                </p>
+              </div>
+            )}
+
+            {(alert.insights || []).some((i) => /POSSIBLE DATA ENTRY ERROR/i.test(i)) && (
+              <div className="mt-5 flex items-start gap-3 rounded-xl bg-white border border-amber-400 p-4 text-sm text-gray-800">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
+                <p>
+                  <span className="font-semibold">Possible data entry error:</span> one week is far above the usual level. Confirm the number with the facility before acting.
                 </p>
               </div>
             )}

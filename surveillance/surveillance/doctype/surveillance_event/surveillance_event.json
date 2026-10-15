@@ -1,0 +1,221 @@
+{
+ "actions": [],
+ "creation": "2026-10-14 12:00:00.000000",
+ "modified": "2026-10-14 16:10:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Surveillance Event",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "field_order": [
+  "title",
+  "status",
+  "severity",
+  "disease",
+  "disease_name",
+  "priority",
+  "cb1",
+  "county",
+  "sub_county",
+  "area",
+  "group_key",
+  "region",
+  "latitude",
+  "longitude",
+  "sb1",
+  "people",
+  "deaths",
+  "reports",
+  "sources",
+  "cb2",
+  "first_reported",
+  "last_reported",
+  "reason",
+  "data_warning",
+  "linked_alert",
+  "sb2",
+  "actions"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "New\nVerifying\nVerified\nEscalated\nDiscarded\nClosed",
+   "default": "New",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "severity",
+   "fieldtype": "Select",
+   "label": "Severity",
+   "options": "critical\nhigh\nstandard",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "default": "standard"
+  },
+  {
+   "fieldname": "disease",
+   "fieldtype": "Link",
+   "label": "Disease",
+   "options": "Alert Threshold Config",
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "disease_name",
+   "fieldtype": "Data",
+   "label": "Disease Name"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Data",
+   "label": "Priority"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "county",
+   "fieldtype": "Data",
+   "label": "County"
+  },
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Data",
+   "label": "Sub-county",
+   "search_index": 1
+  },
+  {
+   "fieldname": "area",
+   "fieldtype": "Data",
+   "label": "Area"
+  },
+  {
+   "fieldname": "group_key",
+   "fieldtype": "Data",
+   "label": "Group Key",
+   "hidden": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "label": "Latitude",
+   "precision": "6"
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "label": "Longitude",
+   "precision": "6"
+  },
+  {
+   "fieldname": "sb1",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "people",
+   "fieldtype": "Int",
+   "label": "People",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "deaths",
+   "fieldtype": "Int",
+   "label": "Deaths"
+  },
+  {
+   "fieldname": "reports",
+   "fieldtype": "Int",
+   "label": "Reports"
+  },
+  {
+   "fieldname": "sources",
+   "fieldtype": "Data",
+   "label": "Sources"
+  },
+  {
+   "fieldname": "cb2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "first_reported",
+   "fieldtype": "Datetime",
+   "label": "First Reported"
+  },
+  {
+   "fieldname": "last_reported",
+   "fieldtype": "Datetime",
+   "label": "Last Reported",
+   "search_index": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "data_warning",
+   "fieldtype": "Small Text",
+   "label": "Data Warning"
+  },
+  {
+   "fieldname": "linked_alert",
+   "fieldtype": "Link",
+   "label": "Outbreak Alert",
+   "options": "Risk Alert"
+  },
+  {
+   "fieldname": "sb2",
+   "fieldtype": "Section Break",
+   "label": "Actions"
+  },
+  {
+   "fieldname": "actions",
+   "fieldtype": "Table",
+   "label": "Timeline",
+   "options": "Surveillance Event Action"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "autoname": "EVT-.#####",
+ "naming_rule": "Expression",
+ "track_changes": 1,
+ "sort_field": "last_reported",
+ "sort_order": "DESC",
+ "title_field": "title",
+ "description": "Signals of the same suspected disease in the same area within a few days, grouped for review by a Surveillance Officer."
+}

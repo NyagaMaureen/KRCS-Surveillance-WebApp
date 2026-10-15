@@ -23,7 +23,6 @@
   "channel",
   "status",
   "report_date",
-  "sex",
   "category",
   "reported_by",
   "onset_date",
@@ -139,13 +138,6 @@
    "label": "Date"
   },
   {
-   "fieldname": "sex",
-   "fieldtype": "Select",
-   "label": "Sex",
-   "options": "Male\nFemale\nMixed",
-   "reqd": 1
-  },
-  {
    "fieldname": "category",
    "fieldtype": "Select",
    "label": "Category",
@@ -211,7 +203,8 @@
    "fieldname": "sub_county",
    "fieldtype": "Link",
    "label": "Sub-county",
-   "options": "Sub County"
+   "options": "Sub County",
+   "reqd": 1
   },
   {
    "fieldname": "review_outcome",
@@ -236,7 +229,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-12 16:35:20.310447",
+ "modified": "2026-10-14 12:30:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",

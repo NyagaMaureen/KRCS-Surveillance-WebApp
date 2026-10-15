@@ -10,6 +10,7 @@ export const SIDEBAR_MENU = [
   { section: 'LIVE MONITORING', items: [
     { label: 'Surveillance Map', icon: 'Map', page: 'surveillance-map', requiresCapability: 'view_surveillance_map' },
     { label: 'Alerts & Signals', icon: 'Radio', page: 'alerts-signals', requiresCapability: 'view_alerts' },
+    { label: 'Review Queue', icon: 'ClipboardCheck', page: 'review', requiresCapability: null },
   ]},
   { section: 'DATA & INTELLIGENCE', items: [
     { label: 'Data Explorer', icon: 'FileSearch', page: 'data-explorer', requiresCapability: null },

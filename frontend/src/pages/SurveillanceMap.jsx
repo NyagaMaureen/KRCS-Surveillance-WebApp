@@ -1,40 +1,55 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, RefreshCw, Search, Filter, MapPin, AlertTriangle, Radio, CheckCheck, Maximize2, Minimize2, ChevronUp } from 'lucide-react'
+import { Download, RefreshCw, Search, Filter, MapPin, AlertTriangle, Clock, TrendingUp, Maximize2, Minimize2, ChevronUp } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import StatCard from '../components/analytics/StatCard'
 import MapView from '../components/map/MapView'
-import { getMapData, getDiseaseOptions, exportCsv } from '../api/frappe'
+import { getMapEvents, getDiseaseOptions, exportCsv } from '../api/frappe'
 
 const SEVERITY_COLORS = {
   critical: '#DC2626',
   high: '#F2C94C',
-  medium: '#3B82F6',
-  low: '#22C55E',
+  standard: '#3B82F6',
 }
 
-const SEVERITIES = ['critical', 'high', 'medium', 'low']
-const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 }
+const SEVERITIES = ['critical', 'high', 'standard']
+const SEVERITY_RANK = { critical: 0, high: 1, standard: 2 }
 
 const STATUS_OPTIONS = [
   { value: 'open', label: 'Open' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'resolved', label: 'Resolved' },
+  { value: 'New', label: 'New' },
+  { value: 'Verifying', label: 'Verifying' },
+  { value: 'Verified', label: 'Verified' },
+  { value: 'Escalated', label: 'Escalated' },
+  { value: 'Discarded', label: 'Discarded' },
+  { value: 'Closed', label: 'Closed' },
   { value: 'all', label: 'All' },
 ]
 
-const EMPTY_DATA = { alerts: [], unmapped_alerts: 0, stats: { total: 0, critical: 0, investigating: 0, resolved: 0 } }
+const PERIOD_OPTIONS = [
+  { value: 7, label: 'Last 7 days' },
+  { value: 30, label: 'Last 30 days' },
+  { value: 90, label: 'Last 90 days' },
+]
+
+const EMPTY_DATA = { events: [], unmapped: 0, stats: { open: 0, critical: 0, waiting: 0, escalated: 0 } }
 
 function cap(s) {
   return s ? s[0].toUpperCase() + s.slice(1) : s
 }
 
-function matchesStatus(alert, status) {
-  const s = String(alert.status || '').toLowerCase()
-  if (status === 'all') return true
-  if (status === 'open') return s === 'pending' || s === 'investigating'
-  return s === status
+function relTime(v) {
+  const t = new Date(String(v || '').replace(' ', 'T')).getTime()
+  if (Number.isNaN(t)) return ''
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60000))
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 48) return `${hrs}h ago`
+  return `${Math.round(hrs / 24)} days ago`
 }
+
+const isWaiting = (e) => e.status === 'New' && Number(e.openHours) > 24
+const hasCoords = (e) => Number.isFinite(Number(e.lat)) && Number.isFinite(Number(e.lng))
 
 function time(d) {
   const t = new Date(d).getTime()
@@ -54,7 +69,8 @@ export default function SurveillanceMap() {
   const [diseaseFilter, setDiseaseFilter] = useState('')
   const [severityFilter, setSeverityFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('open')
-  const [ongoingOnly, setOngoingOnly] = useState(false)
+  const [days, setDays] = useState(30)
+  const [waitingOnly, setWaitingOnly] = useState(false)
   const [hoveredId, setHoveredId] = useState(null)
   const [focus, setFocus] = useState(null)
   const [legendOpen, setLegendOpen] = useState(false)
@@ -72,14 +88,14 @@ export default function SurveillanceMap() {
   useEffect(() => () => clearTimeout(toastTimer.current), [])
 
   const load = useCallback(() => {
-    return getMapData()
+    return getMapEvents({ status: statusFilter, disease: diseaseFilter, days })
       .then((d) => {
-        setData({ ...EMPTY_DATA, ...d })
+        setData({ ...EMPTY_DATA, ...d, stats: { ...EMPTY_DATA.stats, ...(d?.stats || {}) } })
         setUpdatedAt(new Date())
       })
       .catch((e) => showToast(e.message || 'Could not load map data', true))
       .finally(() => setLoading(false))
-  }, [showToast])
+  }, [showToast, statusFilter, diseaseFilter, days])
 
   function refresh() {
     setLoading(true)
@@ -88,8 +104,11 @@ export default function SurveillanceMap() {
 
   useEffect(() => {
     load()
-    getDiseaseOptions().then(setDiseaseOptions)
   }, [load])
+
+  useEffect(() => {
+    getDiseaseOptions().then(setDiseaseOptions)
+  }, [])
 
   useEffect(() => {
     const onChange = () => setFullscreen(document.fullscreenElement === mapBoxRef.current)
@@ -104,17 +123,15 @@ export default function SurveillanceMap() {
 
   const baseFiltered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return (data.alerts || []).filter((a) => {
-      if (diseaseFilter && a.disease !== diseaseFilter) return false
-      if (!matchesStatus(a, statusFilter)) return false
-      if (ongoingOnly && !a.ongoing) return false
+    return (data.events || []).filter(hasCoords).filter((a) => {
+      if (waitingOnly && !isWaiting(a)) return false
       if (!q) return true
-      return `${a.title} ${a.location}`.toLowerCase().includes(q)
+      return `${a.title} ${a.area}`.toLowerCase().includes(q)
     })
-  }, [data.alerts, search, diseaseFilter, statusFilter, ongoingOnly])
+  }, [data.events, search, waitingOnly])
 
   const severityCounts = useMemo(() => {
-    const counts = { critical: 0, high: 0, medium: 0, low: 0 }
+    const counts = { critical: 0, high: 0, standard: 0 }
     baseFiltered.forEach((a) => { if (counts[a.severity] != null) counts[a.severity] += 1 })
     return counts
   }, [baseFiltered])
@@ -126,31 +143,36 @@ export default function SurveillanceMap() {
     [baseFiltered, severityFilter]
   )
 
+  const mapEvents = filteredAlerts
+  const mappedTotal = useMemo(() => (data.events || []).filter(hasCoords).length, [data.events])
+
   const listAlerts = useMemo(
     () => [...filteredAlerts].sort(
-      (a, b) => time(b.date) - time(a.date) || (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9)
+      (a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9) || time(b.firstSeen) - time(a.firstSeen)
     ),
     [filteredAlerts]
   )
 
-  const filtersActive = !!(search || diseaseFilter || severityFilter || ongoingOnly || statusFilter !== 'open')
+  const filtersActive = !!(search || diseaseFilter || severityFilter || waitingOnly || statusFilter !== 'open' || days !== 30)
 
   function clearFilters() {
     setSearch('')
     setDiseaseFilter('')
     setSeverityFilter('')
     setStatusFilter('open')
-    setOngoingOnly(false)
+    setDays(30)
+    setWaitingOnly(false)
   }
 
   function applyCard(card) {
     setSearch('')
     setDiseaseFilter('')
-    setOngoingOnly(false)
-    if (card === 'active') { setStatusFilter('open'); setSeverityFilter('') }
-    if (card === 'critical') { setStatusFilter('open'); setSeverityFilter('critical') }
-    if (card === 'investigating') { setStatusFilter('investigating'); setSeverityFilter('') }
-    if (card === 'resolved') { setStatusFilter('resolved'); setSeverityFilter('') }
+    setWaitingOnly(false)
+    setSeverityFilter('')
+    setStatusFilter('open')
+    if (card === 'critical') setSeverityFilter('critical')
+    if (card === 'waiting') { setStatusFilter('New'); setWaitingOnly(true) }
+    if (card === 'escalated') setStatusFilter('Escalated')
   }
 
   function selectFromList(id) {
@@ -158,19 +180,19 @@ export default function SurveillanceMap() {
   }
 
   function handleExportReport() {
-    exportCsv('surveillance-map-alerts.csv', filteredAlerts, [
+    exportCsv('surveillance-map-events.csv', filteredAlerts, [
       { label: 'ID', value: (a) => a.id },
       { label: 'Title', value: (a) => a.title },
-      { label: 'Location', value: (a) => a.location },
+      { label: 'Disease', value: (a) => a.diseaseName || a.disease },
+      { label: 'Area', value: (a) => a.area },
+      { label: 'Sub-county', value: (a) => a.subCounty },
       { label: 'Severity', value: (a) => a.severity },
       { label: 'Status', value: (a) => a.status },
-      { label: 'Affected', value: (a) => a.affected },
-      { label: 'Disease', value: (a) => a.disease },
-      { label: 'Date', value: (a) => a.date },
-      { label: 'Start week', value: (a) => a.startDate },
-      { label: 'Latest week', value: (a) => a.lastWeek },
-      { label: 'Weeks', value: (a) => a.weeks },
-      { label: 'Peak/week', value: (a) => a.peak },
+      { label: 'People', value: (a) => a.people },
+      { label: 'Reports', value: (a) => a.reports },
+      { label: 'Sources', value: (a) => (a.sources || []).join('; ') },
+      { label: 'First reported', value: (a) => a.firstSeen },
+      { label: 'Last reported', value: (a) => a.lastSeen },
       { label: 'Latitude', value: (a) => a.lat },
       { label: 'Longitude', value: (a) => a.lng },
     ])
@@ -179,14 +201,13 @@ export default function SurveillanceMap() {
   const { stats } = data
   const selectCls = 'appearance-none bg-gray-50 border border-gray-100 rounded-lg pl-10 pr-9 py-2.5 text-sm font-medium text-gray-900 min-w-[150px] focus:outline-none'
   const cardBtn = 'text-left rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-100 hover:shadow-sm transition-shadow'
-  const dynamicStatus = statusFilter === 'investigating'
 
   return (
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Surveillance Map</h2>
-          <p className="text-sm text-gray-400">Where active outbreak alerts are, coloured by severity.</p>
+          <p className="text-sm text-gray-400">Where reported events are in Dadaab and Kalobeyei, coloured by severity.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {updatedAt && <span className="text-xs text-gray-400">Updated {formatTime(updatedAt)}</span>}
@@ -207,17 +228,17 @@ export default function SurveillanceMap() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <button type="button" className={cardBtn} onClick={() => applyCard('active')}>
-          <StatCard icon={MapPin} label="Active Alerts" value={stats.total} />
+        <button type="button" className={cardBtn} onClick={() => applyCard('open')}>
+          <StatCard icon={MapPin} label="Open events" value={stats.open} />
         </button>
         <button type="button" className={cardBtn} onClick={() => applyCard('critical')}>
-          <StatCard icon={AlertTriangle} label="Critical Alerts" value={stats.critical} />
+          <StatCard icon={AlertTriangle} label="Critical" value={stats.critical} />
         </button>
-        <button type="button" className={cardBtn} onClick={() => applyCard('investigating')}>
-          <StatCard icon={Radio} label="Active Investigations" value={stats.investigating} />
+        <button type="button" className={cardBtn} onClick={() => applyCard('waiting')}>
+          <StatCard icon={Clock} label="Waiting over 24h" value={stats.waiting} />
         </button>
-        <button type="button" className={cardBtn} onClick={() => applyCard('resolved')}>
-          <StatCard icon={CheckCheck} label="Resolved" value={stats.resolved} />
+        <button type="button" className={cardBtn} onClick={() => applyCard('escalated')}>
+          <StatCard icon={TrendingUp} label="Escalated" value={stats.escalated} />
         </button>
       </div>
 
@@ -250,22 +271,18 @@ export default function SurveillanceMap() {
         </div>
 
         <div className="relative">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
-            {dynamicStatus && <option value="investigating">Investigating</option>}
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setWaitingOnly(false) }} className={selectCls} aria-label="Status">
             {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <Filter className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
-        <label className="flex items-center gap-2 text-sm font-medium text-gray-900 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={ongoingOnly}
-            onChange={(e) => setOngoingOnly(e.target.checked)}
-            className="w-4 h-4 accent-red-600"
-          />
-          Ongoing only
-        </label>
+        <div className="relative">
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={selectCls} aria-label="Period">
+            {PERIOD_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+          <Filter className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
 
         {filtersActive && (
           <button type="button" onClick={clearFilters} className="text-sm font-medium text-red-600 hover:underline">
@@ -274,7 +291,7 @@ export default function SurveillanceMap() {
         )}
 
         <span className="text-sm text-gray-400 ml-auto whitespace-nowrap">
-          Showing {filteredAlerts.length} of {data.alerts.length} alerts
+          Showing {filteredAlerts.length} of {mappedTotal} events
         </span>
       </div>
 
@@ -284,7 +301,7 @@ export default function SurveillanceMap() {
           className="bg-white rounded-2xl border border-gray-100 overflow-hidden relative flex-1 min-w-0 h-[420px] lg:h-[600px]"
         >
           <div className="absolute inset-0">
-            <MapView alerts={filteredAlerts} hoveredId={hoveredId} focus={focus} onToast={showToast} />
+            <MapView events={mapEvents} hoveredId={hoveredId} focus={focus} onToast={showToast} />
           </div>
 
           <button
@@ -340,11 +357,11 @@ export default function SurveillanceMap() {
             </div>
           )}
 
-          {!loading && filteredAlerts.length === 0 && (
+          {!loading && mapEvents.length === 0 && (
             <div className="absolute inset-0 z-[900] flex items-center justify-center pointer-events-none p-4">
               <div className="bg-white border border-gray-100 rounded-2xl shadow-lg px-8 py-6 text-center">
                 <MapPin className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-                <div className="text-sm font-semibold text-gray-900">No active outbreaks on the map</div>
+                <div className="text-sm font-semibold text-gray-900">No events on the map</div>
                 {filtersActive && <div className="text-xs text-gray-400 mt-1">Try clearing the filters.</div>}
               </div>
             </div>
@@ -353,7 +370,7 @@ export default function SurveillanceMap() {
 
         <aside className="bg-white rounded-2xl border border-gray-100 lg:w-80 lg:shrink-0 lg:h-[600px] max-h-[420px] lg:max-h-none overflow-y-auto">
           {listAlerts.length === 0 ? (
-            <p className="p-5 text-sm text-gray-400">No alerts to list.</p>
+            <p className="p-5 text-sm text-gray-400">No events to list.</p>
           ) : (
             <ul className="divide-y divide-gray-100">
               {listAlerts.map((a) => (
@@ -368,13 +385,18 @@ export default function SurveillanceMap() {
                     className="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-gray-50"
                   >
                     <span
-                      className={['w-3 h-3 rounded-full mt-1 shrink-0', a.ongoing === false ? 'opacity-50' : ''].join(' ')}
+                      className="w-3 h-3 rounded-full mt-1 shrink-0"
                       style={{ backgroundColor: a.color }}
                     />
                     <span className="min-w-0">
                       <span className="block text-sm font-medium text-gray-900 truncate">{a.title}</span>
-                      <span className="block text-xs text-gray-400 truncate">{a.location}</span>
-                      <span className="block text-[11px] text-gray-400">{a.date}</span>
+                      <span className="block text-xs text-gray-400 truncate">{a.area}</span>
+                      <span className="block text-[11px] text-gray-400">{relTime(a.firstSeen)}</span>
+                      {isWaiting(a) && (
+                        <span className="inline-block mt-1 text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                          {Number(a.openHours) < 48 ? `Waiting ${a.openHours}h` : `Waiting ${Math.floor(a.openHours / 24)} days`}
+                        </span>
+                      )}
                     </span>
                   </button>
                 </li>
@@ -384,10 +406,10 @@ export default function SurveillanceMap() {
         </aside>
       </div>
 
-      {data.unmapped_alerts > 0 && (
+      {data.unmapped > 0 && (
         <p className="text-sm text-gray-400 mt-3">
-          {data.unmapped_alerts} alerts are in locations without map coordinates.{' '}
-          <Link to="/alerts-signals" className="text-red-600 font-medium hover:underline">View them in Alerts &amp; Signals</Link>
+          {data.unmapped} events have no map location.{' '}
+          <Link to="/review" className="text-red-600 font-medium hover:underline">View them in the Review Queue.</Link>
         </p>
       )}
 

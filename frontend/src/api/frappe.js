@@ -740,6 +740,14 @@ export async function addAlertNote(id, note) {
 export async function getMapData(weeks = 8) {
   return callMethod(`/api/method/surveillance.alerts.get_map_data?weeks=${weeks}`)
 }
+export async function getMapEvents(params = {}) {
+  const q = new URLSearchParams({
+    status: params.status || 'open',
+    days: String(params.days || 30),
+  })
+  if (params.disease) q.set('disease', params.disease)
+  return callMethod(`/api/method/surveillance.events.get_map_events?${q.toString()}`)
+}
 /*
 |--------------------------------------------------------------------------
 | Data Explorer
@@ -985,6 +993,22 @@ export const searchKnowledgeBase = ({ query, limit = 5, disease, category, langu
 export const getKbPassage = (id) => kbRequest('get_passage', { id })
 
 export const getDiseaseVocabulary = () => kbRequest('get_disease_vocabulary')
+
+export async function getReviewEvents(params = {}) {
+  const qs = new URLSearchParams()
+  Object.entries({ status: 'New', ...params }).forEach(([k, v]) => {
+    if (v !== '' && v != null) qs.set(k, v)
+  })
+  return callMethod(`/api/method/surveillance.events.get_events?${qs}`)
+}
+
+export async function getReviewEvent(id) {
+  return callMethod('/api/method/surveillance.events.get_event?event=' + encodeURIComponent(id))
+}
+
+export async function setEventStatus(id, action, note) {
+  return callMethodPost('/api/method/surveillance.events.set_status', { event: id, action, note })
+}
 
 // export async function getRegions() {
 //   const res = await fetch('/api/resource/Region?fields=["name","region_name"]&limit_page_length=0', {
