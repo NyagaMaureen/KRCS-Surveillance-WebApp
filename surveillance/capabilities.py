@@ -54,10 +54,10 @@ CAPABILITIES = [
 	 
 	# Response
 	{"key": "view_response_protocols", "name": "View Response Protocols", "category": "Response",
-	 "description": "View response protocols", "grants": {"Response Protocol Reference": ["read"]}},
+	 "description": "View response protocols", "grants": {"Response Protocol": ["read"]}},
 	{"key": "manage_response_protocols", "name": "Manage Response Protocols", "category": "Response",
-	 "description": "Create and edit response protocol content",
-	 "grants": {"Response Protocol Reference": ["read", "write", "create"]}},
+	 "description": "Create, edit and approve response protocols",
+	 "grants": {"Response Protocol": ["read", "write", "create", "delete"]}},
 	{"key": "view_chatbot_logs", "name": "View Chatbot Query Log", "category": "Response",
 	 "description": "View questions asked to the response chatbot", "grants": {"Chatbot Query Log": ["read"]}},
 

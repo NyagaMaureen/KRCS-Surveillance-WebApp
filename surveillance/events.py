@@ -516,3 +516,17 @@ def get_map_events(status="open", disease=None, days=30):
 		"waiting": sum(1 for e in events if e["status"] == "New" and e["openHours"] > 24),
 		"escalated": sum(1 for e in events if e["status"] == "Escalated")}
 	return {"events": mapped, "unmapped": len(events) - len(mapped), "stats": counts}
+
+
+@frappe.whitelist(methods=["POST"])
+def add_note(event, note):
+	"""Add an investigation note to an event without changing its status."""
+	require_capability(ACT)
+	note = (note or "").strip()
+	if not note:
+		frappe.throw(_("Please write a note."))
+	doc = frappe.get_doc("Surveillance Event", event)
+	_check_access(doc)
+	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Note", "note": note})
+	doc.save(ignore_permissions=True)
+	return _shape(doc, detail=True)

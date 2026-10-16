@@ -39,7 +39,7 @@ const SEVERITY_STYLES = {
 }
 
 const QUICK_ACTIONS = [
-  { label: 'View All Alerts', icon: Radio, to: '/alerts-signals', color: '#3E85C5', bg: 'rgba(62, 133, 197, 0.05)' },
+  { label: 'View All Alerts', icon: Radio, to: '/epi-trends', color: '#3E85C5', bg: 'rgba(62, 133, 197, 0.05)' },
   { label: 'Analytics', icon: TrendingUp, to: '/analytics', color: '#28A745', bg: 'rgba(40, 167, 69, 0.05)' },
   { label: 'Surveillance Map', icon: Map, to: '/surveillance-map', color: '#9810FA', bg: 'rgba(152, 16, 250, 0.05)' },
   { label: 'KRCS AI Data Assistant', icon: Sparkles, to: '/ai-data-assistant', color: '#FFC107', bg: 'rgba(255, 193, 7, 0.05)' },
@@ -220,7 +220,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-sm sm:text-base font-medium text-gray-900">Alerts & Signals</h3>
-            <Link to="/alerts-signals" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700">
+            <Link to="/epi-trends" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700">
               View all <ArrowRight className="w-4 h-4" />
             </Link>
           </div>

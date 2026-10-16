@@ -1,54 +1,97 @@
-import { useState } from 'react'
-import { FileText, Copy, Check, ChevronDown } from 'lucide-react'
+import { useState, Children, cloneElement, isValidElement } from 'react'
+import ReactMarkdown from 'react-markdown'
+import { Copy, Check, AlertTriangle } from 'lucide-react'
 
-const LABEL_LINE = /^(\s*)([A-Za-z][^:\n]{0,50}):(\s+\S.*)$/
+const CITE = /\[(\d+)\]/g
 
-function confidenceOf(passage, thresholds) {
-  if (passage?.confidence) return String(passage.confidence).toLowerCase()
-  const score = Number(passage?.score)
-  if (thresholds && Number.isFinite(score)) {
-    if (score >= thresholds.high) return 'high'
-    if (score >= thresholds.medium) return 'medium'
-  }
-  return 'low'
+function locationOf(s) {
+  return s.section || (s.page ? `p. ${s.page}` : '')
 }
 
-function VerbatimText({ text }) {
-  const lines = String(text ?? '').split('\n')
+function shortTitle(title) {
+  const t = String(title ?? '').replace(/\.[A-Za-z0-9]{1,5}$/, '')
+  return t.length > 30 ? `${t.slice(0, 30)}…` : t
+}
+
+function CiteChip({ source, n, onJump }) {
+  const [open, setOpen] = useState(false)
+  const loc = locationOf(source)
   return (
-    <p className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
-      {lines.map((line, i) => {
-        const m = line.match(LABEL_LINE)
-        return (
-          <span key={i}>
-            {m ? (
-              <>
-                {m[1]}
-                <strong className="font-semibold text-gray-900">{m[2]}:</strong>
-                {m[3]}
-              </>
-            ) : (
-              line
-            )}
-            {i < lines.length - 1 ? '\n' : ''}
-          </span>
-        )
-      })}
-    </p>
+    <span className="relative inline align-middle" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        onClick={() => onJump(n)}
+        aria-label={`Source ${n}: ${source.title}${loc ? `, ${loc}` : ''}`}
+        className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded bg-gray-100 px-1 align-middle text-[10px] font-medium leading-none text-gray-600 hover:bg-gray-200"
+      >
+        {n}
+      </button>
+      {open && (
+        <span role="tooltip" className="absolute bottom-full left-1/2 z-20 mb-1 block w-56 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-2 text-left text-xs font-normal leading-snug text-gray-600 shadow-lg">
+          <span className="block font-semibold text-gray-900">{source.title}</span>
+          {loc && <span className="block text-gray-500">{loc}</span>}
+        </span>
+      )}
+    </span>
   )
 }
 
-function citationText(p) {
-  const parts = [p.title, p.section].filter(Boolean)
-  return `Source: ${parts.join(', ')}${p.version ? `, v${p.version}` : ''}`
-}
-
-function Passage({ passage }) {
+export default function KbAnswer({ result }) {
   const [copied, setCopied] = useState(false)
+  const [showAll, setShowAll] = useState(false)
+  const [openN, setOpenN] = useState(null)
+
+  const answer = result?.answer ?? (result?.passages || []).map((p) => p.text).join('\n\n')
+  const sources = Array.isArray(result?.sources) ? result.sources : []
+  const usedSet = new Set(result?.used_sources || [])
+  const used = sources.filter((s) => usedSet.has(s.n))
+  const unused = sources.filter((s) => !usedSet.has(s.n))
+  const byN = new Map(sources.map((s) => [s.n, s]))
+  const notFound = result?.mode === 'not_found'
+
+  function jump(n) {
+    setOpenN(n)
+    if (!usedSet.has(n)) setShowAll(true)
+  }
+
+  function withCites(children) {
+    return Children.map(children, (child) => {
+      if (typeof child === 'string') {
+        const out = []
+        let last = 0
+        for (const m of child.matchAll(CITE)) {
+          const source = byN.get(Number(m[1]))
+          if (!source) continue
+          if (m.index > last) out.push(child.slice(last, m.index))
+          out.push(<CiteChip key={`${m.index}`} source={source} n={source.n} onJump={jump} />)
+          last = m.index + m[0].length
+        }
+        if (!out.length) return child
+        if (last < child.length) out.push(child.slice(last))
+        return out
+      }
+      if (isValidElement(child) && child.props.children) {
+        return cloneElement(child, undefined, withCites(child.props.children))
+      }
+      return child
+    })
+  }
+
+  const components = {
+    p: ({ children }) => <p className="mb-3 last:mb-0">{withCites(children)}</p>,
+    li: ({ children }) => <li>{withCites(children)}</li>,
+    ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5">{children}</ul>,
+    ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5">{children}</ol>,
+    strong: ({ children }) => <strong className="font-semibold">{withCites(children)}</strong>,
+    h1: ({ children }) => <p className="mb-3 font-semibold">{children}</p>,
+    h2: ({ children }) => <p className="mb-3 font-semibold">{children}</p>,
+    h3: ({ children }) => <p className="mb-3 font-semibold">{children}</p>,
+    a: ({ children }) => <span>{children}</span>,
+  }
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(`${passage.text}\n\n${citationText(passage)}`)
+      await navigator.clipboard.writeText(answer)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -56,124 +99,75 @@ function Passage({ passage }) {
     }
   }
 
+  const footer = [
+    result?.detected_disease,
+    Number.isFinite(Number(result?.took_ms)) && result?.took_ms != null ? `Answered in ${(Number(result.took_ms) / 1000).toFixed(1)} s` : null,
+  ].filter(Boolean)
+
+  const visibleSources = notFound ? [] : showAll ? [...used, ...unused] : used
+  const openSource = visibleSources.find((s) => s.n === openN)
+  const detail = openSource
+    ? [openSource.section && `Section: ${openSource.section}`, openSource.page && `Page ${openSource.page}`, openSource.version && `Version ${openSource.version}`].filter(Boolean).join(' · ')
+    : ''
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="px-4 py-3">
-        <VerbatimText text={passage.text} />
+    <div className="min-w-0 max-w-2xl text-[15px] leading-7 text-gray-800">
+      {result?.mode === 'passages' && (
+        <div className="mb-2 flex items-center gap-1.5 text-xs text-amber-700">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          The answer model is unavailable, so these are the most relevant passages.
+        </div>
+      )}
+
+      <div className={notFound ? 'text-gray-500' : ''}>
+        <ReactMarkdown components={components}>{answer}</ReactMarkdown>
       </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-500">
-        <FileText className="w-3.5 h-3.5 shrink-0" />
-        <span className="font-medium text-gray-700">{passage.title}</span>
-        {passage.version && <span>v{passage.version}</span>}
-        {passage.section && <span>{'\u2022'} {passage.section}</span>}
-        {passage.page && <span>{'\u2022'} page {passage.page}</span>}
-        {passage.language && (
-          <span className="border border-gray-200 bg-white rounded px-1.5 py-0.5 text-[11px] text-gray-600">{passage.language}</span>
-        )}
-        {passage.review_date && <span>{'\u2022'} Reviewed {passage.review_date}</span>}
+
+      {(visibleSources.length > 0 || (!notFound && unused.length > 0)) && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {visibleSources.map((s) => (
+            <button
+              key={s.n}
+              type="button"
+              onClick={() => setOpenN((cur) => (cur === s.n ? null : s.n))}
+              aria-expanded={openN === s.n}
+              title={s.title}
+              className={`rounded-full border px-2.5 py-1 text-xs leading-4 text-gray-600 hover:bg-gray-50 ${openN === s.n ? 'border-gray-400 bg-gray-50' : 'border-gray-200'}`}
+            >
+              {s.n} · {shortTitle(s.title)}
+            </button>
+          ))}
+          {!notFound && unused.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="text-xs text-gray-500 underline-offset-2 hover:text-gray-700 hover:underline"
+            >
+              {showAll ? 'Hide unused sources' : 'Show all sources'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {openSource && (
+        <div className="mt-2 rounded-lg bg-gray-50 p-3 text-sm leading-normal text-gray-600">
+          {detail && <p className="mb-1.5 text-xs text-gray-500">{detail}</p>}
+          <p className="whitespace-pre-wrap">{openSource.text}</p>
+        </div>
+      )}
+
+      <div className="mt-2 flex items-center justify-between gap-3 text-xs leading-5 text-gray-400">
+        <span>{footer.join(' · ')}</span>
         <button
           type="button"
           onClick={copy}
-          className="ml-auto flex items-center gap-1 text-gray-500 hover:text-gray-800"
-          aria-label="Copy passage with citation"
+          aria-label="Copy answer"
+          title={copied ? 'Copied' : 'Copy'}
+          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
         >
-          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
       </div>
-    </div>
-  )
-}
-
-function CollapsiblePassage({ passage }) {
-  const [open, setOpen] = useState(false)
-  const pct = Number.isFinite(Number(passage.score)) ? Math.round(Number(passage.score) * 100) : null
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="w-full flex items-center justify-between gap-3 border border-gray-200 rounded-xl px-4 py-2.5 text-left hover:bg-gray-50"
-      >
-        <span className="min-w-0 text-sm text-gray-800 truncate">
-          {passage.title}{passage.section ? ` \u2022 ${passage.section}` : ''}
-        </span>
-        <span className="flex items-center gap-2 shrink-0">
-          {pct !== null && (
-            <span title="How closely this passage matches your question" className="text-xs text-gray-500 border border-gray-200 rounded-full px-2 py-0.5">
-              {pct}%
-            </span>
-          )}
-          <ChevronDown className={['w-4 h-4 text-gray-400 transition-transform', open ? 'rotate-180' : ''].join(' ')} />
-        </span>
-      </button>
-      {open && <div className="mt-2"><Passage passage={passage} /></div>}
-    </div>
-  )
-}
-
-const CHIPS = {
-  high: { label: 'Strong match', cls: 'bg-green-50 text-green-700 border-green-200' },
-  medium: { label: 'Partial match', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  low: { label: 'No clear match', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
-}
-
-export default function KbAnswer({ result }) {
-  const [showClosest, setShowClosest] = useState(false)
-  const results = result?.results || []
-  const top = results[0]
-  const level = top ? confidenceOf(top, result?.confidence_thresholds) : 'low'
-  const chip = CHIPS[level] || CHIPS.low
-  const disease = result?.detected_disease
-
-  let header = 'I couldn\u2019t find a clear answer in the approved documents.'
-  if (level === 'high') header = `From ${top.title}`
-  else if (level === 'medium') header = 'Possible matches. Check which one answers your question'
-
-  return (
-    <div className="space-y-3">
-      <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-800 leading-relaxed">
-        <div className="flex flex-wrap items-center gap-2">
-          <span>{header}</span>
-          <span className={['text-xs font-medium border rounded-full px-2 py-0.5', chip.cls].join(' ')}>{chip.label}</span>
-          {disease?.name && (
-            <span className="text-xs text-gray-600 border border-gray-200 bg-white rounded-full px-2 py-0.5">Topic: {disease.name}</span>
-          )}
-        </div>
-      </div>
-
-      {level === 'low' ? (
-        <>
-          {results.length > 0 && (
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => setShowClosest((v) => !v)}
-                aria-expanded={showClosest}
-                className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900"
-              >
-                <ChevronDown className={['w-4 h-4 transition-transform', showClosest ? 'rotate-180' : ''].join(' ')} />
-                Show closest passages
-              </button>
-              {showClosest && results.slice(0, 3).map((p, i) => <Passage key={p.id || i} passage={p} />)}
-            </div>
-          )}
-          <p className="text-xs text-gray-500">Try different words, or ask a surveillance officer.</p>
-        </>
-      ) : (
-        <>
-          <Passage passage={top} />
-          {results.length > 1 && (
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-gray-500">Other relevant passages ({results.length - 1})</div>
-              {results.slice(1).map((p, i) => <CollapsiblePassage key={p.id || i} passage={p} />)}
-            </div>
-          )}
-        </>
-      )}
-
-      <p className="text-xs text-gray-400">Quoted from approved KRCS documents. Confirm with a health worker before acting.</p>
     </div>
   )
 }

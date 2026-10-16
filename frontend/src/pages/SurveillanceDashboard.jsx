@@ -101,7 +101,7 @@ export default function SurveillanceDashboard() {
         <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-sm sm:text-base font-medium text-gray-900">Priority Alert Queue</h3>
-            <Link to="/alerts-signals" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700">
+            <Link to="/epi-trends" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700">
               View all <ArrowRight className="w-4 h-4" />
             </Link>
           </div>

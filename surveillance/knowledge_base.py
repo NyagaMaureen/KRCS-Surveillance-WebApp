@@ -1,4 +1,4 @@
-"""AI Knowledge Base: upload KRCS documents, extract text, chunk, embed and store vectors in Qdrant.
+"""AI Knowledge Base: upload KRCS documents, index them in Qdrant, and answer questions from them.
 
 Flow: upload file -> Knowledge Document (status Processing, approval Draft) -> background job:
       extract sections -> split into chunks -> embed locally (fastembed, nothing leaves the server)
@@ -7,16 +7,33 @@ An approver then sets approval to Approved; only Approved documents are searchab
 filtered by audience role (applied_to). Approval, audience and diseases are copied onto every
 chunk's payload and kept in sync without re-indexing.
 
-Search contract (used by the AI Data Assistant page and the chatbot): see search() and get_passage().
+Answering (retrieval-augmented generation, all open source, nothing leaves the server):
+    1. question  -> disease detection and synonym expansion (Alert Threshold Config synonyms)
+    2. hybrid search in Qdrant: dense vectors (meaning) + BM25 sparse vectors (exact words such as
+       "AWD", "505", drug names), merged with reciprocal rank fusion
+    3. re-rank the top candidates with a multilingual cross-encoder and keep the best few
+    4. a local LLM (Qwen via Ollama) writes ONE answer using only those passages, citing them [1] [2];
+       if the passages do not cover the question it says so instead of guessing
+    5. the answer can stream to the browser word by word (Frappe realtime)
+If the LLM is unreachable, ask() still returns the best passages (mode "passages").
+
+APIs: ask() for the assistant page; search() and get_passage() for the chatbot (David).
 
 Site config (bench --site <site> set-config <key> <value>):
     qdrant_url            default http://localhost:6333
-    kb_score_high         default 0.60  (score at or above = confidence "high")
-    kb_score_low          default 0.45  (score below = confidence "low")
     qdrant_api_key        optional
-    kb_collection         default krcs_knowledge_base
+    kb_collection         default krcs_kb_v2 (hybrid collection; run reindex_all after first install)
     kb_embedding_model    default sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+    kb_sparse_model       default Qdrant/bm25
+    kb_reranker_model     default jinaai/jina-reranker-v2-base-multilingual ("off" to disable)
+    kb_llm_url            default http://localhost:11434 (Ollama)
+    kb_llm_model          default qwen3:4b
+    kb_llm_timeout        default 120 (seconds)
+    kb_min_rerank_score   default 0.15 (below this the question is treated as not covered)
+    kb_score_high         default 0.60  (dense score at or above = confidence "high")
+    kb_score_low          default 0.45  (dense score below = confidence "low")
 """
+import json
 import os
 import re
 import time
@@ -44,9 +61,21 @@ MAX_BYTES = 25 * 1024 * 1024
 CHUNK_CHARS = 1000
 CHUNK_OVERLAP = 150
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"  # English + Kiswahili
+DEFAULT_SPARSE = "Qdrant/bm25"
+DEFAULT_RERANKER = "jinaai/jina-reranker-v2-base-multilingual"
+DEFAULT_LLM = "qwen3:4b"
+DENSE, SPARSE = "dense", "bm25"   # named vectors in the hybrid collection
+CANDIDATES = 30                   # passages fetched before re-ranking
+CONTEXT_PASSAGES = 5              # passages given to the LLM
+NOT_FOUND = {
+	"English": "I couldn't find this in the approved KRCS documents. Please check with your supervisor or the relevant guideline.",
+	"Kiswahili": "Sikupata jibu la swali hili katika nyaraka zilizoidhinishwa za KRCS. Tafadhali wasiliana na msimamizi wako au mwongozo husika.",
+}
 INDEXED_FIELDS = ("doc", "category", "approval_status", "applied_to", "diseases", "regions", "language")
 
 _model = None
+_sparse_model = None
+_reranker = None
 
 
 class KBUnavailable(frappe.ValidationError):
@@ -61,7 +90,7 @@ def _conf(key, default=None):
 
 
 def _collection():
-	return _conf("kb_collection", "krcs_knowledge_base")
+	return _conf("kb_collection", "krcs_kb_v2")
 
 
 def _qdrant():
@@ -78,15 +107,53 @@ def _embedder():
 	return _model
 
 
+def _cache_dir():
+	return os.path.join(frappe.get_site_path(), "private", "fastembed_cache")
+
+
 def embed(texts):
 	return [list(map(float, v)) for v in _embedder().embed(texts)]
 
 
+def _sparse():
+	global _sparse_model
+	if _sparse_model is None:
+		from fastembed import SparseTextEmbedding
+		_sparse_model = SparseTextEmbedding(model_name=_conf("kb_sparse_model", DEFAULT_SPARSE), cache_dir=_cache_dir())
+	return _sparse_model
+
+
+def sparse_embed(texts, query=False):
+	from qdrant_client.models import SparseVector
+	model = _sparse()
+	vecs = model.query_embed(texts) if query else model.embed(texts)
+	return [SparseVector(indices=v.indices.tolist(), values=v.values.tolist()) for v in vecs]
+
+
+def _rerank_model():
+	"""Cross-encoder re-ranker, or None if disabled or not loadable (search still works without it)."""
+	global _reranker
+	name = _conf("kb_reranker_model", DEFAULT_RERANKER)
+	if name == "off":
+		return None
+	if _reranker is None:
+		try:
+			from fastembed.rerank.cross_encoder import TextCrossEncoder
+			_reranker = TextCrossEncoder(model_name=name, cache_dir=_cache_dir())
+		except Exception:
+			frappe.log_error(title="Knowledge Base: re-ranker could not load")
+			_reranker = False
+	return _reranker or None
+
+
 def _ensure_collection(client, size):
-	from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
+	from qdrant_client.models import (Distance, Modifier, PayloadSchemaType, SparseVectorParams,
+		VectorParams)
 	name = _collection()
 	if not client.collection_exists(name):
-		client.create_collection(name, vectors_config=VectorParams(size=size, distance=Distance.COSINE))
+		client.create_collection(name,
+			vectors_config={DENSE: VectorParams(size=size, distance=Distance.COSINE)},
+			sparse_vectors_config={SPARSE: SparseVectorParams(modifier=Modifier.IDF)})
 	for field in INDEXED_FIELDS:  # also adds new indexes to an existing collection
 		try:
 			client.create_payload_index(name, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
@@ -277,15 +344,17 @@ def index_document(docname):
 		batch = 64
 		for start in range(0, len(chunks), batch):
 			part = chunks[start:start + batch]
-			vectors = embed([c["text"] for c in part])
+			# the title and section are embedded with each chunk so a passage keeps its context
+			texts = [f"{doc.title} | {c['section']}\n{c['text']}" for c in part]
+			vectors, sparse = embed(texts), sparse_embed(texts)
 			collection = _ensure_collection(client, len(vectors[0]))
 			client.upsert(collection, points=[
 				PointStruct(
 					id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{docname}:{start + i}")),
-					vector=v,
+					vector={DENSE: v, SPARSE: sv},
 					payload={"doc": docname, "title": doc.title, "category": doc.category, "version": doc.version,
 						"chunk": start + i, "section": c["section"], "page": c["page"], "text": c["text"], **access},
-				) for i, (c, v) in enumerate(zip(part, vectors))
+				) for i, (c, v, sv) in enumerate(zip(part, vectors, sparse))
 			])
 		doc.db_set({"status": "Indexed", "chunks": len(chunks), "error": ""})
 	except Exception as e:
@@ -584,9 +653,67 @@ def _client():
 		frappe.throw(_("The knowledge base is temporarily unavailable. Please try again shortly."), KBUnavailable)
 
 
+def _retrieve(query, ctx, category=None, disease=None, language=None, limit=CONTEXT_PASSAGES):
+	"""Hybrid search + re-rank. Returns (detected_disease, [(rank_score, point)]) best first."""
+	from qdrant_client.models import Fusion, FusionQuery, Prefetch
+	detected = _detect_disease(query)
+	expanded = f"{query} ({detected['name']})" if detected else query  # e.g. "kipindupindu" -> cholera
+	client = _client()
+	if not client.collection_exists(_collection()):
+		return detected, []
+	flt = _filter(ctx, category, disease)
+	try:
+		hits = client.query_points(_collection(),
+			prefetch=[
+				Prefetch(query=embed([expanded])[0], using=DENSE, filter=flt, limit=CANDIDATES),
+				Prefetch(query=sparse_embed([expanded], query=True)[0], using=SPARSE, filter=flt, limit=CANDIDATES),
+			],
+			query=FusionQuery(fusion=Fusion.RRF), limit=CANDIDATES, with_payload=True).points
+	except Exception:
+		frappe.log_error(title="Knowledge Base: search failed")
+		frappe.throw(_("The knowledge base is temporarily unavailable. Please try again shortly."), KBUnavailable)
+
+	hits = [h for h in hits if not _expired(h.payload)]
+	if not hits:
+		return detected, []
+	reranker = _rerank_model()
+	if reranker:
+		import math
+		# cross-encoder logits -> 0-1 relevance
+		scores = [1 / (1 + math.exp(-float(x))) for x in reranker.rerank(query, [h.payload.get("text") or "" for h in hits])]
+	else:
+		scores = [h.score for h in hits]
+	ranked = []
+	for h, sc in zip(hits, scores):
+		boost = LANGUAGE_BOOST if language and h.payload.get("language") == language else 0
+		ranked.append((float(sc) + boost, h))
+	ranked.sort(key=lambda x: -x[0])
+
+	# keep the best passages, at most 2 per document section so one long section can't crowd out the rest
+	out, per_section = [], {}
+	for sc, h in ranked:
+		key = (h.payload.get("doc"), h.payload.get("section"))
+		if per_section.get(key, 0) >= 2:
+			continue
+		per_section[key] = per_section.get(key, 0) + 1
+		out.append((sc, h))
+		if len(out) >= limit:
+			break
+	return detected, out
+
+
+def _dense_scores(query, points):
+	"""Cosine similarity (0-1) of each passage to the question, for the confidence label."""
+	import numpy as np
+	q = np.array(embed([query])[0])
+	vecs = np.array(embed([p.payload.get("text") or "" for p in points]))
+	sims = vecs @ q / (np.linalg.norm(vecs, axis=1) * np.linalg.norm(q) + 1e-9)
+	return [float(x) for x in sims]
+
+
 @frappe.whitelist()
 def search(query, limit=5, category=None, disease=None, audience=None, region=None, language=None, include_drafts=0):
-	"""Semantic search over approved, unexpired passages the asker may see. Passages are returned verbatim."""
+	"""Best passages for a question (hybrid search + re-rank), returned verbatim. Used by the chatbot."""
 	started = time.monotonic()
 	ctx = _access_context(audience, region, include_drafts)
 	query = (query or "").strip()
@@ -596,28 +723,11 @@ def search(query, limit=5, category=None, disease=None, audience=None, region=No
 		frappe.throw(_("Language must be one of: {0}").format(", ".join(LANGUAGES)))
 	limit = max(1, min(cint(limit) or 5, MAX_LIMIT))
 	t = _thresholds()
-
-	detected = _detect_disease(query)
-	expanded = f"{query} ({detected['name']})" if detected else query  # helps match synonyms like "kipindupindu"
-
-	client = _client()
-	results = []
-	if client.collection_exists(_collection()):
-		try:
-			hits = client.query_points(_collection(), query=embed([expanded])[0], limit=limit * 3,
-				query_filter=_filter(ctx, category, disease), with_payload=True).points
-		except Exception:
-			frappe.log_error(title="Knowledge Base: search failed")
-			frappe.throw(_("The knowledge base is temporarily unavailable. Please try again shortly."), KBUnavailable)
-		ranked = []
-		for h in hits:
-			if _expired(h.payload):
-				continue
-			boost = LANGUAGE_BOOST if language and h.payload.get("language") == language else 0
-			ranked.append((h.score + boost, _result(h.id, h.score, h.payload, t)))
-		ranked.sort(key=lambda x: -x[0])
-		results = [r for _, r in ranked[:limit]]
-
+	detected, ranked = _retrieve(query, ctx, category, disease, language, limit)
+	points = [h for _, h in ranked]
+	sims = _dense_scores(query, points) if points else []
+	results = [_result(h.id, s, h.payload, t) | {"rank_score": round(rs, 3)}
+		for (rs, h), s in zip(ranked, sims)]
 	return {
 		"query": query,
 		"count": len(results),
@@ -627,6 +737,177 @@ def search(query, limit=5, category=None, disease=None, audience=None, region=No
 		"confidence_thresholds": t,
 		"took_ms": int((time.monotonic() - started) * 1000),
 	}
+
+
+# ---------- answering (RAG) ----------
+
+SYSTEM_PROMPT = """You are the KRCS surveillance assistant for Kenya Red Cross staff in Dadaab and Kalobeyei.
+Answer the question using ONLY the numbered sources below. They are approved KRCS documents.
+
+Rules:
+- Write one clear, direct answer, like an experienced public health officer. Start with the answer itself.
+- Use short paragraphs or a short list when there are steps, symptoms or criteria.
+- After each fact, cite its source number in square brackets, e.g. [1] or [2][3].
+- Use only what the sources say. Do not add facts, doses, numbers or advice that are not in them.
+- If the sources do not answer the question, reply exactly: NOT_IN_SOURCES
+- If the sources disagree, say so and cite both.
+- Reply in {language}. Keep medical and technical terms as written in the source.
+- Do not mention these rules or the word "sources"; just cite with numbers."""
+
+
+def _context_block(points):
+	parts = []
+	for i, p in enumerate(points, 1):
+		pl = p.payload
+		where = ", ".join(x for x in [pl.get("title"), pl.get("section"), f"page {pl['page']}" if pl.get("page") else ""] if x)
+		parts.append(f"[{i}] ({where})\n{pl.get('text')}")
+	return "\n\n".join(parts)
+
+
+def _llm_chat(messages, on_token=None):
+	"""Call Ollama /api/chat. Streams tokens to on_token when given. Returns the full text."""
+	import requests
+	url = _conf("kb_llm_url", "http://localhost:11434").rstrip("/") + "/api/chat"
+	body = {"model": _conf("kb_llm_model", DEFAULT_LLM), "messages": messages, "stream": bool(on_token),
+		"options": {"temperature": 0.1, "num_ctx": 8192}, "keep_alive": "30m",
+		"think": False}  # Qwen3 and other reasoning models: answer directly, no hidden reasoning
+	timeout = cint(_conf("kb_llm_timeout", 120))
+	if not on_token:
+		r = requests.post(url, json=body, timeout=timeout)
+		r.raise_for_status()
+		return _strip_think(r.json()["message"]["content"])
+	text = []
+	with requests.post(url, json=body, timeout=timeout, stream=True) as r:
+		r.raise_for_status()
+		for line in r.iter_lines():
+			if not line:
+				continue
+			part = json.loads(line)
+			token = (part.get("message") or {}).get("content") or ""
+			if token:
+				text.append(token)
+				if "<think>" not in "".join(text) or "</think>" in "".join(text):
+					on_token(token.replace("</think>", ""))
+			if part.get("done"):
+				break
+	return _strip_think("".join(text))
+
+
+def _strip_think(text):
+	"""Remove any <think>...</think> block a reasoning model may still emit."""
+	return re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
+
+
+def _source(i, rank_score, dense, p, t):
+	pl = p.payload
+	return {"n": i, "id": str(p.id), "title": pl.get("title"), "doc": pl.get("doc"), "section": pl.get("section"),
+		"page": pl.get("page"), "version": pl.get("version"), "category": pl.get("category"),
+		"text": pl.get("text"), "confidence": _confidence(dense, t), "score": round(dense, 3)}
+
+
+def _history_messages(history):
+	"""Last few turns for follow-up questions. history: JSON list of {role, content}."""
+	if isinstance(history, str):
+		history = frappe.parse_json(history) if history.strip() else []
+	out = []
+	for m in (history or [])[-6:]:
+		if m.get("role") in ("user", "assistant") and m.get("content"):
+			out.append({"role": m["role"], "content": str(m["content"])[:2000]})
+	return out
+
+
+@frappe.whitelist(methods=["POST"])
+def ask(query, language=None, history=None, stream_id=None, category=None, disease=None,
+		audience=None, region=None, include_drafts=0):
+	"""One grounded answer to a question, with the sources it used.
+
+	stream_id: when given, tokens are pushed live to this user over realtime event "kb_answer"
+	           as {stream_id, delta} and finally {stream_id, done: true}.
+	Returns {query, answer, mode, sources, used_sources, detected_disease, language, took_ms}
+	mode: "answer" (LLM answer) | "not_found" | "passages" (LLM unavailable: best passages only)
+	"""
+	started = time.monotonic()
+	ctx = _access_context(audience, region, include_drafts)
+	query = (query or "").strip()
+	if not query:
+		frappe.throw(_("Query is empty."))
+	language = language if language in LANGUAGES else "English"
+	t = _thresholds()
+	hist = _history_messages(history)
+
+	# short follow-ups ("what about children?") are searched together with the previous question
+	last_user = next((m["content"] for m in reversed(hist) if m["role"] == "user"), "")
+	search_q = f"{last_user} {query}" if last_user and len(query.split()) <= 6 else query
+	detected, ranked = _retrieve(search_q, ctx, category, disease, language, CONTEXT_PASSAGES)
+
+	def push(payload):
+		if stream_id:
+			frappe.publish_realtime("kb_answer", {"stream_id": stream_id, **payload}, user=frappe.session.user)
+
+	def finish(answer, mode, sources, used):
+		push({"done": True, "mode": mode})
+		return {"query": query, "answer": answer, "mode": mode, "sources": sources, "used_sources": used,
+			"detected_disease": {"key": detected["key"], "name": detected["name"]} if detected else None,
+			"language": language, "took_ms": int((time.monotonic() - started) * 1000)}
+
+	min_score = float(_conf("kb_min_rerank_score", 0.15))
+	if not ranked or (_rerank_model() and ranked[0][0] < min_score):
+		answer = NOT_FOUND[language]
+		push({"delta": answer})
+		return finish(answer, "not_found", [], [])
+
+	points = [h for _, h in ranked]
+	dense = _dense_scores(query, points)
+	sources = [_source(i, rs, d, p, t) for i, ((rs, p), d) in enumerate(zip(ranked, dense), 1)]
+
+	messages = [{"role": "system", "content": SYSTEM_PROMPT.format(language=language)}, *hist,
+		{"role": "user", "content": f"Sources:\n\n{_context_block(points)}\n\nQuestion: {query}"}]
+
+	buffer = {"text": "", "held": True}
+
+	def on_token(tok):
+		# hold the first few characters so a NOT_IN_SOURCES reply is never streamed to the user
+		buffer["text"] += tok
+		if buffer["held"]:
+			if len(buffer["text"]) < 16 and "NOT_IN_SOURCES".startswith(buffer["text"].strip()[:14]):
+				return
+			buffer["held"] = False
+			push({"delta": buffer["text"]})
+		else:
+			push({"delta": tok})
+
+	try:
+		answer = _llm_chat(messages, on_token if stream_id else None).strip()
+	except Exception:
+		frappe.log_error(title="Knowledge Base: LLM unavailable, returned passages only")
+		answer = "\n\n".join(f"{s['text']} [{s['n']}]" for s in sources[:2])
+		push({"delta": answer})
+		return finish(answer, "passages", sources, [s["n"] for s in sources[:2]])
+
+	if "NOT_IN_SOURCES" in answer:
+		answer = NOT_FOUND[language]
+		push({"delta": answer})
+		return finish(answer, "not_found", [], [])
+	if buffer["held"] and stream_id:
+		push({"delta": answer})
+
+	used = sorted({int(n) for n in re.findall(r"\[(\d+)\]", answer) if 0 < int(n) <= len(sources)})
+	return finish(answer, "answer", sources, used or [s["n"] for s in sources[:1]])
+
+
+@frappe.whitelist()
+def llm_status():
+	"""Health check for the answer model: is Ollama reachable and is the model pulled?"""
+	require_capability(CAPABILITY)
+	import requests
+	url = _conf("kb_llm_url", "http://localhost:11434").rstrip("/")
+	model = _conf("kb_llm_model", DEFAULT_LLM)
+	try:
+		tags = requests.get(f"{url}/api/tags", timeout=5).json().get("models", [])
+		names = [m.get("name") for m in tags]
+		return {"reachable": True, "model": model, "pulled": model in names, "available": names}
+	except Exception as e:
+		return {"reachable": False, "model": model, "error": str(e)[:200]}
 
 
 @frappe.whitelist()

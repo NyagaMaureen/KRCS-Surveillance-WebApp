@@ -18,10 +18,12 @@ import SurveillanceDashboard from '../pages/SurveillanceDashboard'
 import AiGovernanceDashboard from '../pages/AiGovernanceDashboard'
 import Investigations from '../pages/Investigations'
 import Response from '../pages/Response'
+import ResponseProtocols from '../pages/ResponseProtocols'
 import EventLifecycle from '../pages/EventLifecycle'
 import AlertsSignals from '../pages/AlertsSignals'
 import AlertDetail from '../pages/AlertDetail'
-import ReviewQueue from '../pages/ReviewQueue'
+import AlertsSignalsQueue from '../pages/AlertsSignalsQueue'
+import EventDetail from '../pages/EventDetail'
 import SurveillanceMap from '../pages/SurveillanceMap'
 
 const rawRoutes = [
@@ -31,10 +33,12 @@ const rawRoutes = [
   { path: '/ai-governance-dashboard', name: 'ai-governance-dashboard', element: AiGovernanceDashboard },
   { path: '/investigations', name: 'investigations', element: Investigations },
   { path: '/response', name: 'response', element: Response },
+  { path: '/response-protocols', name: 'response-protocols', element: ResponseProtocols },
   { path: '/event-lifecycle', name: 'event-lifecycle', element: EventLifecycle },
-  { path: '/alerts-signals', name: 'alerts-signals', element: AlertsSignals },
-  { path: '/alerts-signals/:id', name: 'alert-detail', element: AlertDetail },
-  { path: '/review/:id?', name: 'review', element: ReviewQueue },
+  { path: '/epi-trends', name: 'epi-trends', element: AlertsSignals },
+  { path: '/epi-trends/:id', name: 'alert-detail', element: AlertDetail },
+  { path: '/alerts-signals', name: 'alerts-signals', element: AlertsSignalsQueue },
+  { path: '/alerts-signals/:id', name: 'alerts-signals-detail', element: EventDetail },
   { path: '/surveillance-map', name: 'surveillance-map', element: SurveillanceMap },
   { path: '/analytics', name: 'analytics', element: Analytics },
   { path: '/data-explorer', name: 'data-explorer', element: DataExplorer },

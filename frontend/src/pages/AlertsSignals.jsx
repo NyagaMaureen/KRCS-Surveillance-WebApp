@@ -187,7 +187,7 @@ function AlertCard({ alert, onOpen }) {
         )}
       </div>
       <Link
-        to={`/alerts-signals/${alert.id}`}
+        to={`/epi-trends/${alert.id}`}
         onClick={(e) => e.stopPropagation()}
         className={`border border-gray-200 bg-white rounded-lg px-5 py-2 text-xs font-medium text-gray-900 hover:bg-gray-50 shrink-0 ${FOCUS}`}
       >
@@ -350,7 +350,7 @@ export default function AlertsSignals() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = 'alerts-signals-report.csv'
+    link.download = 'epi-trends-report.csv'
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -363,12 +363,12 @@ export default function AlertsSignals() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Alerts & Signals</h2>
-          <p className="text-sm text-gray-400">Outbreak alerts from community reports, app reports and facility data. Review, verify and respond.</p>
+          <h2 className="text-xl font-bold text-gray-900">Epi Trends</h2>
+          <p className="text-sm text-gray-400">Weekly case counts compared with what is normal for each area. Use this to spot rising diseases and confirm outbreaks.</p>
           <p className="text-sm text-gray-500 mt-1">
             Individual reports waiting for verification are in the{' '}
-            <Link to="/review" className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
-              Review Queue →
+            <Link to="/alerts-signals" className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+              Alerts & Signals →
             </Link>
           </p>
         </div>
@@ -527,7 +527,7 @@ export default function AlertsSignals() {
               )}
               {section.items.map((alert, i) => (
                 <div key={alert.id} className={i !== 0 ? 'border-t border-gray-100' : ''}>
-                  <AlertCard alert={alert} onOpen={() => navigate(`/alerts-signals/${alert.id}`)} />
+                  <AlertCard alert={alert} onOpen={() => navigate(`/epi-trends/${alert.id}`)} />
                 </div>
               ))}
             </div>

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Search, Plus, Pencil, Trash2, X, UserRound, Users, CheckCircle2, UserX, Ban, ShieldCheck } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import RolesPermissions from '../components/settings/RolesPermissions'
-import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels } from '../api/frappe'
+import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles } from '../api/frappe'
 
 const tabs = [
   { key: 'users', label: 'Users', icon: Users },
@@ -51,6 +51,7 @@ export default function UserManagement() {
   const [form, setForm] = useState(emptyForm())
   const [lastCreatedPassword, setLastCreatedPassword] = useState('')
   const [regionMap, setRegionMap] = useState({})
+  const [userRolesMap, setUserRolesMap] = useState({})
 
   function updateForm(fields) {
     setForm((prev) => ({ ...prev, ...fields }))
@@ -88,6 +89,18 @@ export default function UserManagement() {
 
   const lastPage = Math.max(0, Math.ceil(filteredUsers.length / PAGE_SIZE) - 1)
   const pagedUsers = filteredUsers.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+  useEffect(() => {
+    let cancelled = false
+    Promise.all(
+      pagedUsers.map((u) =>
+        getUserRoles(u.name).then((r) => [u.name, r]).catch(() => [u.name, null])
+      )
+    ).then((entries) => {
+      if (!cancelled) setUserRolesMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }))
+    })
+    return () => { cancelled = true }
+  }, [users, page, search, roleFilter, statusFilter, regionFilter])
+
   const paginationLabel = (() => {
     if (!filteredUsers.length) return 'Showing 0 of 0'
     const start = page * PAGE_SIZE + 1
@@ -294,7 +307,14 @@ export default function UserManagement() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-3"><span className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900">{u.primary_role || '—'}</span></td>
+                    <td className="px-5 py-3"><span className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900">{u.primary_role || '—'}</span>
+                      <div className="mt-1 text-xs text-gray-400">
+                        Frappe roles: {userRolesMap[u.name] ? (userRolesMap[u.name].join(', ') || 'none') : '…'}
+                      </div>
+                      {userRolesMap[u.name] && u.primary_role && !userRolesMap[u.name].includes(u.primary_role) && (
+                        <div className="text-[10px] font-medium text-amber-600">Mismatch: primary role not in Frappe roles</div>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-gray-700">
                       <span>{regionInfo(u.assigned_region).label}</span>
                       {regionInfo(u.assigned_region).unresolved && (

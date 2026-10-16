@@ -1,0 +1,132 @@
+{
+ "actions": [],
+ "creation": "2026-10-16 11:00:00.000000",
+ "modified": "2026-10-16 11:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Response Protocol",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "field_order": [
+  "title",
+  "disease",
+  "status",
+  "version",
+  "cb1",
+  "source",
+  "source_url",
+  "review_date",
+  "approved_by",
+  "approved_on",
+  "sb1",
+  "summary",
+  "steps"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "reqd": 1,
+   "in_list_view": 1,
+   "label": "Title"
+  },
+  {
+   "fieldname": "disease",
+   "fieldtype": "Link",
+   "options": "Alert Threshold Config",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "label": "Disease"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "options": "Draft\nApproved\nRetired",
+   "default": "Draft",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status"
+  },
+  {
+   "fieldname": "version",
+   "fieldtype": "Data",
+   "default": "v1.0",
+   "label": "Version"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "description": "e.g. MOH IDSR Technical Guidelines, 3rd edition",
+   "label": "Source"
+  },
+  {
+   "fieldname": "source_url",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "Source Link"
+  },
+  {
+   "fieldname": "review_date",
+   "fieldtype": "Date",
+   "label": "Next Review"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "read_only": 1,
+   "label": "Approved By"
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "read_only": 1,
+   "label": "Approved On"
+  },
+  {
+   "fieldname": "sb1",
+   "fieldtype": "Section Break",
+   "label": "Protocol"
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Small Text",
+   "description": "One or two sentences: when this protocol applies",
+   "label": "Summary"
+  },
+  {
+   "fieldname": "steps",
+   "fieldtype": "Table",
+   "options": "Response Protocol Step",
+   "label": "Response Steps"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "autoname": "hash",
+ "naming_rule": "Random",
+ "track_changes": 1,
+ "title_field": "title",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "description": "Standard operating procedure for responding to one disease or event."
+}

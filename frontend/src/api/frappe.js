@@ -251,6 +251,7 @@ export async function createUser(userData) {
     last_name: userData.last_name || '',
     user_type: 'System User',
 
+    primary_role: userData.primary_role || '',
     roles: userData.primary_role
       ? [{ role: userData.primary_role }]
       : [],
@@ -295,12 +296,34 @@ export async function updateDoc(doctype, name, fields) {
 }
 
 
+export async function getUserRoles(name) {
+  const doc = await getDoc('User', name)
+  return (doc.roles || []).map((r) => r.role)
+}
+
 export async function updateUser(name, userData) {
+  const newRole = userData.primary_role || ''
+  if (newRole === 'System Manager') {
+    throw new Error('System Manager cannot be assigned from this form.')
+  }
+
+  const existing = await getDoc('User', name)
+  const oldRole = existing.primary_role || ''
+  let roles = existing.roles || []
+
+  if (newRole !== oldRole) {
+    roles = roles.filter((r) => r.role !== oldRole)
+    if (newRole && !roles.some((r) => r.role === newRole)) {
+      roles = [...roles, { role: newRole }]
+    }
+  }
+
   return updateDoc('User', name, {
     first_name: userData.first_name,
     last_name: userData.last_name || '',
 
-    primary_role: userData.primary_role || '',
+    primary_role: newRole,
+    roles,
     assigned_region: userData.assigned_region || '',
     account_status: userData.account_status || 'Active',
 
@@ -990,6 +1013,9 @@ export const deleteKbDocument = (name) => kbRequest('delete_document', { name },
 export const searchKnowledgeBase = ({ query, limit = 5, disease, category, language, includeDrafts } = {}) =>
   kbRequest('search', { query, limit, disease, category, language, include_drafts: includeDrafts ? 1 : undefined })
 
+export const askKnowledgeBase = ({ query, language, history = [], streamId } = {}) =>
+  kbRequest('ask', { query, language, history: JSON.stringify(history), stream_id: streamId }, 'POST')
+
 export const getKbPassage = (id) => kbRequest('get_passage', { id })
 
 export const getDiseaseVocabulary = () => kbRequest('get_disease_vocabulary')
@@ -1006,8 +1032,62 @@ export async function getReviewEvent(id) {
   return callMethod('/api/method/surveillance.events.get_event?event=' + encodeURIComponent(id))
 }
 
+export async function addEventNote(id, note) {
+  return callMethodPost('/api/method/surveillance.events.add_note', { event: id, note })
+}
+
 export async function setEventStatus(id, action, note) {
   return callMethodPost('/api/method/surveillance.events.set_status', { event: id, action, note })
+}
+
+// ---------- Response Protocols ----------
+
+export async function getProtocols({ search, disease, status } = {}) {
+  const qs = new URLSearchParams()
+  if (search) qs.set('search', search)
+  if (disease) qs.set('disease', disease)
+  if (status) qs.set('status', status)
+  const q = qs.toString()
+  return callMethod(`/api/method/surveillance.protocols.list_protocols${q ? `?${q}` : ''}`)
+}
+
+export async function getProtocol(id) {
+  return callMethod('/api/method/surveillance.protocols.get_protocol?name=' + encodeURIComponent(id))
+}
+
+export async function getProtocolForDisease(disease) {
+  return callMethod('/api/method/surveillance.protocols.get_protocol_for_disease?disease=' + encodeURIComponent(disease))
+}
+
+export async function saveProtocol(data) {
+  const body = {
+    title: data.title,
+    disease: data.disease,
+    summary: data.summary,
+    version: data.version,
+    source: data.source,
+    source_url: data.source_url,
+    review_date: data.review_date,
+    steps: JSON.stringify(data.steps || []),
+  }
+  if (data.name) body.name = data.name
+  return callMethodPost('/api/method/surveillance.protocols.save_protocol', body)
+}
+
+export async function setProtocolStatus(id, status) {
+  return callMethodPost('/api/method/surveillance.protocols.set_protocol_status', { name: id, status })
+}
+
+export async function deleteProtocol(id) {
+  return callMethodPost('/api/method/surveillance.protocols.delete_protocol', { name: id })
+}
+
+export async function getEventChecklist(eventId) {
+  return callMethod('/api/method/surveillance.protocols.get_event_checklist?event=' + encodeURIComponent(eventId))
+}
+
+export async function toggleEventStep(eventId, n, done) {
+  return callMethodPost('/api/method/surveillance.protocols.toggle_event_step', { event: eventId, step_no: n, done })
 }
 
 // export async function getRegions() {

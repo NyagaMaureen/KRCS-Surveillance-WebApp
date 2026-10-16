@@ -3,16 +3,14 @@ export const SIDEBAR_MENU = [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
   ]},
   { section: 'FIELD ACTIVITIES', items: [
-    { label: 'Case Management', icon: 'Folder', page: 'case-management', requiresCapability: null },
     { label: 'Reports', icon: 'FileText', page: 'reports', requiresCapability: 'view_reports' },
-    { label: 'Response Protocols', icon: 'Layers', page: 'response-protocols', requiresCapability: 'view_response_protocols' },
-  ]},
-  { section: 'LIVE MONITORING', items: [
+    { label: 'Case Management', icon: 'Folder', page: 'case-management', requiresCapability: null },
+    { label: 'Alerts & Signals', icon: 'BellRing', page: 'alerts-signals', requiresCapability: null },
+    { label: 'Epi Trends', icon: 'TrendingUp', page: 'epi-trends', requiresCapability: 'view_alerts' },
     { label: 'Surveillance Map', icon: 'Map', page: 'surveillance-map', requiresCapability: 'view_surveillance_map' },
-    { label: 'Alerts & Signals', icon: 'Radio', page: 'alerts-signals', requiresCapability: 'view_alerts' },
-    { label: 'Review Queue', icon: 'ClipboardCheck', page: 'review', requiresCapability: null },
   ]},
   { section: 'DATA & INTELLIGENCE', items: [
+    { label: 'Response Protocols', icon: 'Layers', page: 'response-protocols', requiresCapability: 'view_response_protocols' },
     { label: 'Data Explorer', icon: 'FileSearch', page: 'data-explorer', requiresCapability: null },
     { label: 'Analytics', icon: 'TrendingUp', page: 'analytics', requiresCapability: 'view_analytics' },
     { label: 'AI Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },

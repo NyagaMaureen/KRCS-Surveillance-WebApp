@@ -1,0 +1,60 @@
+{
+ "actions": [],
+ "creation": "2026-10-16 11:00:00.000000",
+ "modified": "2026-10-16 11:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Surveillance Event Step",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "field_order": [
+  "step_no",
+  "step",
+  "timeframe",
+  "done",
+  "done_by",
+  "done_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "step_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "No."
+  },
+  {
+   "fieldname": "step",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Step"
+  },
+  {
+   "fieldname": "timeframe",
+   "fieldtype": "Data",
+   "label": "Timeframe"
+  },
+  {
+   "fieldname": "done",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Done"
+  },
+  {
+   "fieldname": "done_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Done By"
+  },
+  {
+   "fieldname": "done_on",
+   "fieldtype": "Datetime",
+   "label": "Done On"
+  }
+ ],
+ "permissions": [],
+ "istable": 1
+}

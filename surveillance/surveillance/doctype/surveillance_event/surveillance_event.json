@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-14 12:00:00.000000",
- "modified": "2026-10-14 16:10:00.000000",
+ "modified": "2026-10-16 11:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -37,6 +37,9 @@
   "reason",
   "data_warning",
   "linked_alert",
+  "sb_protocol",
+  "protocol",
+  "checklist",
   "sb2",
   "actions"
  ],
@@ -187,6 +190,23 @@
    "fieldtype": "Link",
    "label": "Outbreak Alert",
    "options": "Risk Alert"
+  },
+  {
+   "fieldname": "sb_protocol",
+   "fieldtype": "Section Break",
+   "label": "Response checklist"
+  },
+  {
+   "fieldname": "protocol",
+   "fieldtype": "Link",
+   "label": "Response Protocol",
+   "options": "Response Protocol"
+  },
+  {
+   "fieldname": "checklist",
+   "fieldtype": "Table",
+   "label": "Checklist",
+   "options": "Surveillance Event Step"
   },
   {
    "fieldname": "sb2",

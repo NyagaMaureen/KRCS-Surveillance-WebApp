@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { Plus, History, Trash2, Sparkles, Mic, ArrowUp } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import KbAnswer from '../components/assistant/KbAnswer'
-import { queryAiAssistant, searchKnowledgeBase } from '../api/frappe'
+import { queryAiAssistant, askKnowledgeBase } from '../api/frappe'
 
 const STORAGE_KEY = 'krcs_ai_assistant_chats'
 const MAX_CHATS = 50
@@ -43,6 +43,18 @@ function loadChats() {
   } catch {
     return []
   }
+}
+
+function kbHistory(messages) {
+  return messages.slice(-6).map((m) => ({
+    role: m.role,
+    content: m.kind === 'kb' ? m.result?.answer || m.content || '' : m.content || '',
+  }))
+}
+
+function getRealtime() {
+  const rt = typeof window !== 'undefined' ? window.frappe?.realtime : null
+  return rt && typeof rt.on === 'function' ? rt : null
 }
 
 function buildErrorReply(e, question, source, language) {
@@ -88,12 +100,13 @@ const voiceSupported = typeof window !== 'undefined' && !!(window.SpeechRecognit
 export default function AiDataAssistant() {
   const [chats, setChats] = useState(loadChats)
   const [currentChatId, setCurrentChatId] = useState(null)
-  const [inputText, setInputText] = useState('')
+  const [inputText, setInputText] = useState(() => new URLSearchParams(window.location.search).get('q') || '')
   const [isLoading, setIsLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [draftSource, setDraftSource] = useState('documents')
   const [draftLanguage, setDraftLanguage] = useState(defaultLanguage)
+  const [live, setLive] = useState(null)
 
   const scrollAreaRef = useRef(null)
   const textareaRef = useRef(null)
@@ -188,8 +201,29 @@ export default function AiDataAssistant() {
         const result = await queryAiAssistant(question)
         reply = { role: 'assistant', content: result.answer, table: result.table }
       } else {
-        const result = await searchKnowledgeBase({ query: question, limit: 5, language: queryLanguage })
-        reply = { role: 'assistant', kind: 'kb', result }
+        const history = kbHistory(chatsRef.current.find((c) => c.id === chatId)?.messages.slice(0, -1) || [])
+        const streamId = crypto.randomUUID()
+        const rt = getRealtime()
+        const handler = (data) => {
+          if (!data || data.stream_id !== streamId) return
+          if (data.done) {
+            rt.off?.('kb_answer', handler)
+            return
+          }
+          if (data.delta) {
+            setLive((prev) => ({ streamId, text: (prev?.streamId === streamId ? prev.text : '') + data.delta }))
+            scrollToBottom()
+          }
+        }
+        if (rt) rt.on('kb_answer', handler)
+        let result
+        try {
+          result = await askKnowledgeBase({ query: question, language: queryLanguage, history, streamId })
+        } finally {
+          rt?.off?.('kb_answer', handler)
+          setLive(null)
+        }
+        reply = { role: 'assistant', kind: 'kb', result, content: result.answer }
       }
     } catch (e) {
       reply = buildErrorReply(e, question, querySource, queryLanguage)
@@ -222,6 +256,7 @@ export default function AiDataAssistant() {
     chats0 = capChats(chats0.map((c) =>
       c.id === chatId ? { ...c, messages: [...c.messages, { role: 'user', content: question }], updatedAt: Date.now() } : c
     ))
+    chatsRef.current = chats0
     setChats(chats0)
     setInputText('')
     autoGrowTextarea()
@@ -238,6 +273,7 @@ export default function AiDataAssistant() {
     const next = chatsRef.current.map((c) =>
       c.id === currentChat.id ? { ...c, messages: c.messages.filter((_, i) => i !== index) } : c
     )
+    chatsRef.current = next
     setChats(next)
     persistChats(next)
     runQuery(currentChat.id, msg.question, msg.source, msg.language)
@@ -334,14 +370,14 @@ export default function AiDataAssistant() {
           </div>
         </div>
 
-        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-4 sm:px-6">
+        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-4 pt-6 sm:px-6">
           {!messages.length ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-4 py-10">
               <img src="/assets/surveillance/images/logo.png" alt="KRCS" className="w-20 h-18 object-contain mb-5" />
               <h2 className="text-2xl sm:text-3xl font-medium text-gray-900 mb-3">Welcome to KRCS AI DataAssistant</h2>
               <p className="text-gray-500 text-base sm:text-lg max-w-2xl mb-8">
                 {source === 'documents'
-                  ? 'Ask about KRCS protocols, case definitions and guidelines. Answers are quoted word for word from approved documents, with their source.'
+                  ? 'Ask about KRCS protocols, case definitions and guidelines. Answers are written from approved KRCS documents, with their sources.'
                   : 'Ask me about community health data, disease trends, alerts, or reports. I\'ll query the database and show you results.'}
               </p>
               <div className="flex flex-wrap justify-center gap-2 max-w-2xl">
@@ -357,19 +393,19 @@ export default function AiDataAssistant() {
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto py-6 space-y-6">
+            <div className="max-w-3xl mx-auto pb-6 space-y-6">
               {messages.map((m, i) => (
                 <div key={i} className={['flex', m.role === 'user' ? 'justify-end' : 'justify-start'].join(' ')}>
                   {m.role === 'assistant' ? (
-                    <div className="flex gap-3 max-w-[85%]">
-                      <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center shrink-0">
-                        <Sparkles className="w-4 h-4 text-white" />
+                    <div className="flex gap-3 min-w-0">
+                      <div className="w-7 h-7 mt-1 rounded-full bg-red-600 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-3.5 h-3.5 text-white" />
                       </div>
                       <div className="space-y-3 min-w-0">
                         {m.kind === 'kb' ? (
                           <KbAnswer result={m.result} />
                         ) : (
-                        <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-800 leading-relaxed">
+                        <div className="max-w-2xl text-[15px] leading-7 text-gray-800">
                           {m.content}
                           {m.retryable && i === messages.length - 1 && (
                             <div className="mt-2">
@@ -410,19 +446,28 @@ export default function AiDataAssistant() {
                       </div>
                     </div>
                   ) : (
-                    <div className="max-w-[85%] bg-red-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
+                    <div className="max-w-[75%] bg-red-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-6 break-words whitespace-pre-wrap">
                       {m.content}
                     </div>
                   )}
                 </div>
               ))}
 
-              {isLoading && (
+              {isLoading && live?.text && (
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-4 h-4 text-white" />
+                  <div className="w-7 h-7 mt-1 rounded-full bg-red-600 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-3.5 h-3.5 text-white" />
                   </div>
-                  <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5">
+                  <div className="max-w-2xl text-[15px] leading-7 text-gray-800 whitespace-pre-wrap">{live.text}</div>
+                </div>
+              )}
+
+              {isLoading && !live?.text && (
+                <div className="flex gap-3">
+                  <div className="w-7 h-7 mt-1 rounded-full bg-red-600 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="py-3 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
                     <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
                     <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }}></span>

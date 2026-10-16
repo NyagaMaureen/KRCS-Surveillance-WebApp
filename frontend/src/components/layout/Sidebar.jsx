@@ -1,9 +1,9 @@
-import { useMemo } from 'react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import * as icons from 'lucide-react'
 import { SIDEBAR_MENU } from '../../data/sidebarMenu'
 import { useCapabilities } from '../../context/CapabilitiesContext'
+import { getReviewEvents } from '../../api/frappe'
 
 function iconFor(name) {
   return icons[name] || icons.Circle
@@ -22,6 +22,17 @@ export default function Sidebar() {
     })).filter(group => group.items.length > 0),
     [capabilities]
   )
+
+  const [newCount, setNewCount] = useState(0)
+  useEffect(() => {
+    let active = true
+    const load = () => getReviewEvents({ limit: 1 })
+      .then((res) => { if (active) setNewCount(res?.counts?.new || 0) })
+      .catch(() => {})
+    load()
+    const timer = setInterval(load, 5 * 60 * 1000)
+    return () => { active = false; clearInterval(timer) }
+  }, [])
 
   const [collapsed, setCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true')
   function toggle() {
@@ -60,11 +71,16 @@ export default function Sidebar() {
                 <Link
                   key={item.page}
                   to={`/${item.page}`}
-                  className={['flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1',
+                  className={['relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1',
                     currentPage === item.page ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50'].join(' ')}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
+                  {item.page === 'alerts-signals' && newCount > 0 && (
+                    <span className={['bg-red-600 text-white text-[10px] font-semibold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center', collapsed ? 'absolute top-1 right-1 ring-2 ring-white' : 'ml-auto'].join(' ')}>
+                      {newCount > 99 ? '99+' : newCount}
+                    </span>
+                  )}
                 </Link>
               )
             })}

@@ -1,7 +1,13 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import { routes } from './router'
 import { CapabilitiesProvider } from './context/CapabilitiesContext'
 import RequireCapability from './components/RequireCapability'
+
+function ReviewRedirect() {
+  const { id } = useParams()
+  const { search } = useLocation()
+  return <Navigate to={{ pathname: id ? `/alerts-signals/${id}` : '/alerts-signals', search }} replace />
+}
 
 function App() {
   return (
@@ -23,6 +29,8 @@ function App() {
               }
             />
           ))}
+          <Route path="/review" element={<ReviewRedirect />} />
+          <Route path="/review/:id" element={<ReviewRedirect />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>

@@ -409,7 +409,7 @@ export default function SurveillanceMap() {
       {data.unmapped > 0 && (
         <p className="text-sm text-gray-400 mt-3">
           {data.unmapped} events have no map location.{' '}
-          <Link to="/review" className="text-red-600 font-medium hover:underline">View them in the Review Queue.</Link>
+          <Link to="/alerts-signals" className="text-red-600 font-medium hover:underline">View them in Alerts & Signals.</Link>
         </p>
       )}
 

@@ -301,7 +301,7 @@ export default function AlertDetail() {
   return (
     <AppShell>
       <button
-        onClick={() => navigate('/alerts-signals')}
+        onClick={() => navigate('/epi-trends')}
         className={`inline-flex items-center gap-1.5 border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors mb-6 ${FOCUS}`}
       >
         <ArrowLeft className="w-4 h-4" /> Back
@@ -312,7 +312,7 @@ export default function AlertDetail() {
       ) : loadError ? (
         <div className="bg-white rounded-2xl border border-gray-100 py-24 text-center">
           <p className="text-sm text-red-500 mb-4">{loadError}</p>
-          <Link to="/alerts-signals" className="text-sm font-semibold text-red-600 hover:underline">Return to Alerts & Signals</Link>
+          <Link to="/epi-trends" className="text-sm font-semibold text-red-600 hover:underline">Return to Epi Trends</Link>
         </div>
       ) : alert && (
         <div className="flex flex-col gap-6">
@@ -575,7 +575,7 @@ export default function AlertDetail() {
                   return related.id ? (
                     <Link
                       key={related.id}
-                      to={`/alerts-signals/${related.id}`}
+                      to={`/epi-trends/${related.id}`}
                       className={`block px-5 py-4 hover:bg-gray-100 first:rounded-t-xl last:rounded-b-xl ${FOCUS}`}
                     >
                       {body}
