@@ -48,7 +48,8 @@
   {
    "fieldname": "phone_number",
    "fieldtype": "Data",
-   "label": "Phone Number"
+   "label": "Phone Number",
+   "reqd": 1
   },
   {
    "fieldname": "signal_type",
@@ -67,19 +68,22 @@
   {
    "fieldname": "location_name",
    "fieldtype": "Data",
-   "label": "Location"
+   "label": "Location",
+   "reqd": 1
   },
   {
    "fieldname": "latitude",
    "fieldtype": "Float",
    "label": "Latitude",
-   "precision": "6"
+   "precision": "6",
+   "reqd": 1
   },
   {
    "fieldname": "longitude",
    "fieldtype": "Float",
    "label": "Longitude",
-   "precision": "6"
+   "precision": "6",
+   "reqd": 1
   },
   {
    "fieldname": "affected_count",
@@ -135,7 +139,8 @@
    "default": "Today",
    "fieldname": "report_date",
    "fieldtype": "Date",
-   "label": "Date"
+   "label": "Date",
+   "reqd": 1
   },
   {
    "fieldname": "category",

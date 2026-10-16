@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye } from 'lucide-react'
+import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye, Camera, Mic } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions } from '../api/frappe'
+import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc } from '../api/frappe'
 import { formatDateTime, parseDateOnly, formatDateOnly, STATUSES } from '../data/formOptions'
 
 const PAGE_SIZE = 6
@@ -26,6 +26,7 @@ export default function Reports() {
   const [regions, setRegions] = useState({})
   const [diseaseOptions, setDiseaseOptions] = useState([])
   const [search, setSearch] = useState('')
+  const [mediaByReport, setMediaByReport] = useState({})
 
   const diseaseMap = useMemo(() => Object.fromEntries(diseaseOptions.map((d) => [d.key, d.name])), [diseaseOptions])
   const diseaseName = (key) => diseaseMap[key] || '—'
@@ -71,6 +72,10 @@ export default function Reports() {
       { limit: PAGE_SIZE, start: p * PAGE_SIZE, orderBy: 'creation desc', filters }
     )
     setReports(list)
+    Promise.all(list.map((r) => getDoc('Case Report', r.name).then((doc) => {
+      const types = (doc.attachments || []).map((a) => a.attachment_type)
+      return [r.name, { photo: types.includes('Photo'), voice: types.includes('Voice Note') }]
+    }).catch(() => [r.name, {}]))).then((pairs) => setMediaByReport((prev) => ({ ...prev, ...Object.fromEntries(pairs) })))
   }
 
   function goToPage(n) {
@@ -174,7 +179,13 @@ export default function Reports() {
             <tbody>
               {reports.map((r) => (
                 <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-5 py-3 font-medium text-gray-900">{r.name}</td>
+                  <td className="px-5 py-3 font-medium text-gray-900">
+                    <span className="inline-flex items-center gap-1.5">
+                      {r.name}
+                      {mediaByReport[r.name]?.photo && <Camera className="w-3.5 h-3.5 text-gray-400" aria-label="Has photo" />}
+                      {mediaByReport[r.name]?.voice && <Mic className="w-3.5 h-3.5 text-gray-400" aria-label="Has voice note" />}
+                    </span>
+                  </td>
                   <td className="px-5 py-3 text-gray-700">{r.reporter_name}</td>
                   <td className="px-5 py-3">
                     {symptomTags(r.symptom_tags).map((s) => (

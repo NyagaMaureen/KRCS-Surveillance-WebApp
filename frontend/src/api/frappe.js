@@ -892,7 +892,16 @@ export async function getReport(name) {
 }
 
 export async function createReport(fields) {
-  return insertDoc({ doctype: 'Case Report', ...fields })
+  const res = await fetch(`${BASE}/api/method/frappe.client.insert`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken() },
+    body: JSON.stringify({ doc: { doctype: 'Case Report', ...fields } }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(data).replace(/<[^>]+>/g, ''))
+  }
+  return data.message
 }
 
 export async function updateReport(name, fields) {
@@ -933,6 +942,19 @@ export async function getMyProfile() {
   return data.message || { name: '', full_name: '', phone_number: '' }
 }
 
+export async function getLoggedInUserPhone() {
+  try {
+    const res = await fetch('/api/method/frappe.auth.get_logged_user', { credentials: 'include' })
+    const data = await res.json()
+    const user = data.message
+    if (!user || user === 'Guest') return ''
+    const doc = await getDoc('User', user)
+    return doc.mobile_no || ''
+  } catch {
+    return ''
+  }
+}
+
 export async function uploadFile(file, isPrivate = 1) {
   const formData = new FormData()
   formData.append('file', file)
@@ -949,6 +971,34 @@ export async function uploadFile(file, isPrivate = 1) {
   }
   const data = await res.json()
   return data.message.file_url
+}
+
+
+export function uploadFileWithProgress(file, { fileName, isPrivate = 1, onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData()
+    formData.append('file', file, fileName || file.name)
+    formData.append('is_private', isPrivate)
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/method/upload_file')
+    xhr.setRequestHeader('X-Frappe-CSRF-Token', window.FRAPPE_CSRF_TOKEN || '')
+    xhr.withCredentials = true
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onerror = () => reject(new Error('Network error. Check your connection and retry.'))
+    xhr.onload = () => {
+      let data = {}
+      try { data = JSON.parse(xhr.responseText) } catch { /* non-JSON response */ }
+      if (xhr.status >= 200 && xhr.status < 300 && data.message && data.message.file_url) {
+        resolve(data.message.file_url)
+      } else {
+        reject(new Error(extractErrorMessage(data).replace(/<[^>]+>/g, '') || 'File upload failed'))
+      }
+    }
+    xhr.send(formData)
+  })
 }
 
 

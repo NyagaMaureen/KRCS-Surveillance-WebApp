@@ -169,6 +169,7 @@ fixtures = [
 
 doc_events = {
 	"Case Report": {
+		"validate": "surveillance.case_report_rules.validate_complete",
 		"on_update": "surveillance.events.on_case_report",
 		"on_trash": "surveillance.events.on_case_report_trash",
 	},

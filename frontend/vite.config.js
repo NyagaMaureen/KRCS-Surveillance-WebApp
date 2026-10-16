@@ -28,6 +28,15 @@ export default defineConfig(({ command }) => ({
         target: 'http://surveillance.local:8000',
         changeOrigin: true,
       },
+            '/files': {
+        target: 'http://surveillance.local:8000',
+        changeOrigin: true,
+      },
+
+      '/private/files': {
+        target: 'http://surveillance.local:8000',
+        changeOrigin: true,
+      },
     },
   },
 

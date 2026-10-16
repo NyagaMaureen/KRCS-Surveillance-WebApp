@@ -60,7 +60,7 @@ function SupportingInfoItem({ item, onOpenImage, onRemove }) {
         </button>
       )}
       {item.attachment_type === 'Voice Note' && (
-        <audio controls src={item.file} className="max-w-full" />
+        <audio controls preload="metadata" src={item.file} className="w-full max-w-full" />
       )}
       {item.attachment_type === 'Text Note' && (
         <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.text_content}</p>
@@ -338,7 +338,7 @@ export default function ReportDetail() {
                     </div>
                   </div>
                                     <div className="mb-8 -mt-4 text-sm">
-                    {Number(report.latitude) && Number(report.longitude) ? (
+                    {report.latitude != null && report.longitude != null && (Number(report.latitude) || Number(report.longitude)) ? (
                       <a
                         href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`}
                         target="_blank"
@@ -448,15 +448,42 @@ export default function ReportDetail() {
                   </div>
 
                   <div className="pt-6 border-t border-gray-100">
-                    <div className="text-xs font-medium text-gray-400 mb-2">Supporting Information</div>
+                    <div className="text-xs font-medium text-gray-400 mb-2">Attachments</div>
                     {attachments.length ? (
-                      <div className="flex flex-wrap gap-3">
-                        {attachments.map((item, i) => (
-                          <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
-                        ))}
+                      <div className="space-y-4">
+                        {attachments.some((a) => a.attachment_type === 'Photo') && (
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1.5">Photos</div>
+                            <div className="flex flex-wrap gap-3">
+                              {attachments.filter((a) => a.attachment_type === 'Photo').map((item, i) => (
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {attachments.some((a) => a.attachment_type === 'Voice Note') && (
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1.5">Voice notes</div>
+                            <div className="flex flex-col gap-2 max-w-md">
+                              {attachments.filter((a) => a.attachment_type === 'Voice Note').map((item, i) => (
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {attachments.some((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note') && (
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1.5">Other</div>
+                            <div className="flex flex-wrap gap-3">
+                              {attachments.filter((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note').map((item, i) => (
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-400">No supporting information attached.</span>
+                      <span className="text-sm text-gray-400">No attachments.</span>
                     )}
                   </div>
                 </>
