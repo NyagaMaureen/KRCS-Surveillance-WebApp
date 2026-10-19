@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "creation": "2026-10-19 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Response Protocol Question",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "fields": [
+  {
+   "fieldname": "question",
+   "fieldtype": "Small Text",
+   "reqd": 1,
+   "in_list_view": 1,
+   "label": "Question"
+  },
+  {
+   "fieldname": "why",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Why we ask"
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "options": "Case definition\nSupports\nRed flag",
+   "default": "Supports",
+   "in_list_view": 1,
+   "label": "Kind",
+   "description": "Case definition: No means it is probably not this disease. Supports: Yes makes a real event more likely. Red flag: Yes means escalate now."
+  }
+ ],
+ "permissions": [],
+ "istable": 1,
+ "description": "Verification question asked by the officer, answered Yes / No / Not sure.",
+ "modified": "2026-10-19 12:00:00.000000",
+ "field_order": [
+  "question",
+  "why",
+  "kind"
+ ]
+}

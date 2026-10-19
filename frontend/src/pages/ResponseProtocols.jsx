@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  Plus, Download, ClipboardList, ChevronDown, X, ArrowUp, ArrowDown, Search,
+  Plus, Download, ClipboardList, ChevronRight, ArrowLeft, X, ArrowUp, ArrowDown, Search,
   CheckCircle2, FileEdit, Stethoscope, CalendarClock, AlertTriangle, ExternalLink,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
@@ -27,6 +27,13 @@ const card = 'bg-white rounded-2xl border border-gray-100'
 const inputCls = `w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 ${FOCUS}`
 const btnSecondary = `border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-50 ${FOCUS}`
 const btnPrimary = `bg-red-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50 ${FOCUS}`
+
+const PHASES = ['Investigation', 'Response']
+const KINDS = ['Case definition', 'Supports', 'Red flag']
+const KIND_TAG = {
+  'Case definition': 'bg-blue-50 text-blue-600',
+  'Red flag': 'bg-red-50 text-red-600',
+}
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 const isOverdue = (p) => p.status !== 'Retired' && !!p.reviewDate && String(p.reviewDate).slice(0, 10) < todayIso()
@@ -62,11 +69,11 @@ function Skeleton() {
   )
 }
 
-function ProtocolCard({ protocol: p, expanded, onToggle, canManage, busy, onEdit, onStatus, onDelete, cardRef }) {
+const TABS = [...PHASES, 'Verification questions']
+
+function ProtocolHeader({ p }) {
   const retired = p.status === 'Retired'
   return (
-    <div ref={cardRef} className={`${card} ${retired ? 'opacity-80' : ''}`}>
-      <div className="p-5 sm:p-6">
         <div className="flex items-start gap-4">
           <span className="w-12 h-12 shrink-0 rounded-full bg-red-50 flex items-center justify-center">
             <ClipboardList className="w-5 h-5 text-red-600" aria-hidden="true" />
@@ -76,7 +83,7 @@ function ProtocolCard({ protocol: p, expanded, onToggle, canManage, busy, onEdit
             <p className="text-sm text-gray-400 mt-0.5">
               {p.diseaseName} · {p.version} · updated {fmtDateTime(p.updated)} · by {p.owner || '—'}
             </p>
-            {p.summary && <p className="text-sm text-gray-500 mt-1.5 line-clamp-1">{p.summary}</p>}
+            {p.summary && <p className="text-sm text-gray-500 mt-1.5">{p.summary}</p>}
           </div>
           <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
             <span className={`px-3 h-6 inline-flex items-center rounded-full text-xs font-medium ${PRIORITY_BADGE[p.priority] || PRIORITY_BADGE.Standard}`}>
@@ -85,9 +92,51 @@ function ProtocolCard({ protocol: p, expanded, onToggle, canManage, busy, onEdit
             <span className={`px-3 h-6 inline-flex items-center rounded-full text-xs font-medium ${STATUS_BADGE[p.status] || STATUS_BADGE.Draft}`}>
               {p.status}
             </span>
+            {p.notifyImmediately && (
+              <span className="px-3 h-6 inline-flex items-center rounded-full text-xs font-medium bg-red-100 text-red-700">
+                Single case is an emergency
+              </span>
+            )}
           </div>
         </div>
+  )
+}
 
+function ProtocolCard({ protocol: p, onOpen, cardRef }) {
+  const retired = p.status === 'Retired'
+  const qCount = (p.questions || []).length
+  return (
+    <div ref={cardRef} className={`${card} ${retired ? 'opacity-80' : ''}`}>
+      <div
+        role="link"
+        tabIndex={0}
+        onClick={() => onOpen(p)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(p) } }}
+        className={`p-5 sm:p-6 cursor-pointer rounded-2xl hover:bg-gray-50/60 ${FOCUS}`}
+      >
+        <ProtocolHeader p={p} />
+        <div className="mt-4 flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-900">
+            {p.stepCount} response steps{qCount > 0 ? ` · ${qCount} verification questions` : ''}
+          </span>
+          <ChevronRight className="w-5 h-5 text-gray-500" aria-hidden="true" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProtocolDetail({ protocol: p, canManage, busy, onBack, onEdit, onStatus, onDelete }) {
+  const [tab, setTab] = useState('Investigation')
+  const retired = p.status === 'Retired'
+  return (
+    <div>
+      <button type="button" onClick={onBack} className={`mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 rounded ${FOCUS}`}>
+        <ArrowLeft className="w-4 h-4" aria-hidden="true" /> All protocols
+      </button>
+      <div className={`${card} ${retired ? 'opacity-80' : ''}`}>
+      <div className="p-5 sm:p-6">
+        <ProtocolHeader p={p} />
         {p.status === 'Draft' && (
           <p className="mt-4 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
             <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -95,32 +144,69 @@ function ProtocolCard({ protocol: p, expanded, onToggle, canManage, busy, onEdit
           </p>
         )}
 
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          className={`mt-4 w-full flex items-center justify-between text-left rounded ${FOCUS}`}
-        >
-          <span className="text-sm font-medium text-gray-900">{p.stepCount} response steps</span>
-          <ChevronDown className={`w-5 h-5 text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
-        </button>
+        {(
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <div role="tablist" aria-label="Protocol sections" className="flex gap-1 border-b border-gray-100 mb-4 overflow-x-auto">
+              {TABS.map((t) => {
+                const count = t === 'Verification questions'
+                  ? (p.questions || []).length
+                  : p.steps.filter((s) => (s.phase || 'Investigation') === t).length
+                const active = tab === t
+                return (
+                  <button key={t} type="button" role="tab" aria-selected={active} onClick={() => setTab(t)}
+                    className={`px-4 py-2 -mb-px text-sm font-medium whitespace-nowrap border-b-2 rounded-t ${FOCUS} ${active ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
+                    {t}<span className="ml-1.5 text-xs opacity-70">{count}</span>
+                  </button>
+                )
+              })}
+            </div>
 
-        {expanded && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <ol className="flex flex-col gap-3">
-              {p.steps.map((s) => (
-                <li key={s.n} className="flex gap-3">
-                  <span className="w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{s.n}</span>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm text-gray-900">{s.step}</span>
-                      {s.timeframe && <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{s.timeframe}</span>}
-                    </div>
-                    {s.responsible && <p className="text-xs text-gray-400 mt-0.5">Responsible: {s.responsible}</p>}
-                  </div>
-                </li>
-              ))}
-            </ol>
+            {PHASES.includes(tab) && (() => {
+              const group = p.steps.filter((s) => (s.phase || 'Investigation') === tab)
+              if (group.length === 0) return <p className="text-sm text-gray-400">No {tab.toLowerCase()} steps.</p>
+              return (
+                <div role="tabpanel">
+                  <ol className="flex flex-col gap-3">
+                    {group.map((s) => (
+                      <li key={s.n} className="flex gap-3">
+                        <span className="w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{s.n}</span>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm text-gray-900">{s.step}</span>
+                            {s.timeframe && <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{s.timeframe}</span>}
+                          </div>
+                          {s.responsible && <p className="text-xs text-gray-400 mt-0.5">Responsible: {s.responsible}</p>}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )
+            })()}
+
+            {tab === 'Verification questions' && (!p.questions || p.questions.length === 0) && (
+              <p className="text-sm text-gray-400">No verification questions.</p>
+            )}
+            {tab === 'Verification questions' && p.questions?.length > 0 && (
+              <div role="tabpanel">
+                <ol className="flex flex-col gap-3">
+                  {p.questions.map((q, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{i + 1}</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm text-gray-900">{q.question}</span>
+                          {KIND_TAG[q.kind] && (
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${KIND_TAG[q.kind]}`}>{q.kind}</span>
+                          )}
+                        </div>
+                        {q.why && <p className="text-xs text-gray-400 mt-0.5">Why we ask: {q.why}</p>}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
 
             <div className="mt-5 pt-4 border-t border-gray-100 flex flex-col gap-3">
               <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400">
@@ -159,6 +245,7 @@ function ProtocolCard({ protocol: p, expanded, onToggle, canManage, busy, onEdit
           </div>
         )}
       </div>
+      </div>
     </div>
   )
 }
@@ -189,7 +276,8 @@ function Label({ text, required, children }) {
   )
 }
 
-const blankStep = () => ({ step: '', timeframe: '', responsible: '' })
+const blankStep = () => ({ step: '', timeframe: '', responsible: '', phase: 'Investigation' })
+const blankQuestion = () => ({ question: '', why: '', kind: 'Case definition' })
 
 function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved }) {
   const editing = !!protocol
@@ -206,8 +294,10 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
     source_url: protocol?.sourceUrl || '',
     review_date: protocol?.reviewDate ? String(protocol.reviewDate).slice(0, 10) : '',
     steps: protocol?.steps?.length
-      ? protocol.steps.map((s) => ({ step: s.step, timeframe: s.timeframe || '', responsible: s.responsible || '' }))
+      ? protocol.steps.map((s) => ({ step: s.step, timeframe: s.timeframe || '', responsible: s.responsible || '', phase: s.phase || 'Investigation' }))
       : [blankStep()],
+    questions: (protocol?.questions || []).map((q) => ({ question: q.question || '', why: q.why || '', kind: q.kind || 'Case definition' })),
+    notifyImmediately: !!protocol?.notifyImmediately,
   }))
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -221,6 +311,15 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
     set({ steps: next })
   }
 
+  const setQuestion = (i, patch) => set({ questions: form.questions.map((q, idx) => (idx === i ? { ...q, ...patch } : q)) })
+  const moveQuestion = (i, dir) => {
+    const j = i + dir
+    if (j < 0 || j >= form.questions.length) return
+    const next = [...form.questions]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    set({ questions: next })
+  }
+
   function onDisease(key) {
     const prevAuto = autoTitle(form.disease)
     const patch = { disease: key }
@@ -231,8 +330,11 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
   async function submit(e) {
     e.preventDefault()
     const steps = form.steps
-      .map((s) => ({ step: s.step.trim(), timeframe: s.timeframe.trim(), responsible: s.responsible.trim() }))
+      .map((s) => ({ step: s.step.trim(), timeframe: s.timeframe.trim(), responsible: s.responsible.trim(), phase: s.phase }))
       .filter((s) => s.step)
+    const questions = form.questions
+      .map((q) => ({ question: q.question.trim(), why: q.why.trim(), kind: q.kind }))
+      .filter((q) => q.question)
     if (!form.disease) return setError('Choose a disease.')
     if (!form.title.trim()) return setError('Title is required.')
     if (steps.length === 0) return setError('Add at least one response step.')
@@ -247,6 +349,8 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
         ...form,
         title: form.title.trim(),
         steps,
+        questions,
+        notifyImmediately: form.notifyImmediately,
       })
       onSaved(saved)
     } catch (err) {
@@ -306,13 +410,19 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
 
         <div className="flex flex-col gap-2">
           <span className="text-sm font-medium text-gray-900">Steps <span className="text-red-600">*</span></span>
+          <p className="text-xs text-gray-500">
+            Investigation steps are done during field investigation (including first treatment and isolation). Response steps open after the outbreak is confirmed or escalated.
+          </p>
           {form.steps.map((s, i) => (
             <div key={i} className="flex items-start gap-2 rounded-xl border border-gray-100 p-3">
               <span className="w-6 h-6 mt-1.5 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{i + 1}</span>
               <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <input aria-label={`Step ${i + 1}`} className={`${inputCls} sm:col-span-3`} placeholder="Step" value={s.step} onChange={(e) => setStep(i, { step: e.target.value })} />
                 <input aria-label={`Timeframe for step ${i + 1}`} className={inputCls} placeholder="Timeframe (e.g. within 24 h)" value={s.timeframe} onChange={(e) => setStep(i, { timeframe: e.target.value })} />
-                <input aria-label={`Responsible for step ${i + 1}`} className={`${inputCls} sm:col-span-2`} placeholder="Responsible" value={s.responsible} onChange={(e) => setStep(i, { responsible: e.target.value })} />
+                <input aria-label={`Responsible for step ${i + 1}`} className={inputCls} placeholder="Responsible" value={s.responsible} onChange={(e) => setStep(i, { responsible: e.target.value })} />
+                <select aria-label={`Phase for step ${i + 1}`} className={inputCls} value={s.phase} onChange={(e) => setStep(i, { phase: e.target.value })}>
+                  {PHASES.map((ph) => <option key={ph} value={ph}>{ph}</option>)}
+                </select>
               </div>
               <div className="flex flex-col gap-0.5 text-gray-400">
                 <button type="button" aria-label="Move step up" disabled={i === 0} onClick={() => move(i, -1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowUp className="w-4 h-4" /></button>
@@ -328,6 +438,43 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
             + Add step
           </button>
         </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-gray-900">Verification questions</span>
+          <p className="text-xs text-gray-500">
+            Officers answer each question Yes / No / Not sure. Case definition: No suggests discarding. Red flag: Yes suggests escalating at once. Supports: Yes makes a real event more likely.
+          </p>
+          {form.questions.map((q, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-xl border border-gray-100 p-3">
+              <span className="w-6 h-6 mt-1.5 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{i + 1}</span>
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <textarea rows={2} aria-label={`Question ${i + 1}`} className={`${inputCls} sm:col-span-3`} placeholder="Question" value={q.question} onChange={(e) => setQuestion(i, { question: e.target.value })} />
+                <input aria-label={`Why we ask question ${i + 1}`} className={`${inputCls} sm:col-span-2`} placeholder="Why we ask" value={q.why} onChange={(e) => setQuestion(i, { why: e.target.value })} />
+                <select aria-label={`Kind for question ${i + 1}`} className={inputCls} value={q.kind} onChange={(e) => setQuestion(i, { kind: e.target.value })}>
+                  {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-0.5 text-gray-400">
+                <button type="button" aria-label="Move question up" disabled={i === 0} onClick={() => moveQuestion(i, -1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowUp className="w-4 h-4" /></button>
+                <button type="button" aria-label="Move question down" disabled={i === form.questions.length - 1} onClick={() => moveQuestion(i, 1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowDown className="w-4 h-4" /></button>
+                <button type="button" aria-label="Remove question" onClick={() => set({ questions: form.questions.filter((_, idx) => idx !== i) })}
+                  className={`p-1 rounded hover:text-red-600 ${FOCUS}`}><X className="w-4 h-4" /></button>
+              </div>
+            </div>
+          ))}
+          <button type="button" onClick={() => set({ questions: [...form.questions, blankQuestion()] })}
+            className={`self-start text-sm font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+            + Add question
+          </button>
+        </div>
+
+        <label className="flex items-start gap-2 text-sm text-gray-900">
+          <input type="checkbox" className="mt-0.5 accent-red-600" checked={form.notifyImmediately} onChange={(e) => set({ notifyImmediately: e.target.checked })} />
+          <span>
+            <span className="font-medium">Single case is an emergency</span>
+            <span className="block text-xs text-gray-500">One case meeting the case definition is escalated immediately (e.g. VHF, polio).</span>
+          </span>
+        </label>
 
         {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
@@ -381,11 +528,8 @@ export default function ResponseProtocols() {
   const [search, setSearch] = useState('')
   const [disease, setDisease] = useState('')
   const [status, setStatus] = useState('')
-  const [expandedId, setExpandedId] = useState(params.get('protocol') || null)
   const [modal, setModal] = useState(null)
   const [deleting, setDeleting] = useState(null)
-  const scrolledFor = useRef(null)
-  const cardRefs = useRef({})
   const newHandled = useRef(false)
 
   const load = useCallback(() => {
@@ -429,16 +573,19 @@ export default function ResponseProtocols() {
         (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3) || a.title.localeCompare(b.title))
   }, [protocols, disease, status, search])
 
-  const deepLinkId = params.get('protocol')
-  useEffect(() => {
-    if (!deepLinkId || scrolledFor.current === deepLinkId) return
-    const el = cardRefs.current[deepLinkId]
-    if (el) {
-      scrolledFor.current = deepLinkId
-      setExpandedId(deepLinkId)
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [deepLinkId, visible])
+  const openId = params.get('protocol')
+  const openProtocol = openId ? protocols.find((p) => p.id === openId) : null
+  const openDetail = (id) => {
+    const next = new URLSearchParams(params)
+    next.set('protocol', id)
+    setParams(next)
+    window.scrollTo({ top: 0 })
+  }
+  const closeDetail = () => {
+    const next = new URLSearchParams(params)
+    next.delete('protocol')
+    setParams(next)
+  }
 
   const diseasesCovered = useMemo(
     () => new Set(protocols.filter((p) => p.status === 'Approved').map((p) => p.disease)).size,
@@ -462,13 +609,14 @@ export default function ResponseProtocols() {
   async function confirmDelete() {
     await deleteProtocol(deleting.id)
     setDeleting(null)
+    if (openId === deleting.id) closeDetail()
     await load()
   }
 
   async function onSaved(saved) {
     setModal(null)
     await load()
-    if (saved?.id) setExpandedId(saved.id)
+    if (saved?.id) openDetail(saved.id)
   }
 
   function exportVisible() {
@@ -486,6 +634,40 @@ export default function ResponseProtocols() {
 
   const chips = [['', 'All'], ['Approved', 'Approved'], ...(canManage ? [['Draft', 'Draft'], ['Retired', 'Retired']] : [])]
   const chipCount = (k) => (k === '' ? counts.approved + counts.draft + counts.retired : counts[k.toLowerCase()])
+
+  const dialogs = (
+    <>
+      {modal && (
+        <ProtocolModal
+          protocol={modal.protocol}
+          initialDisease={modal.disease}
+          diseases={diseases}
+          onClose={() => setModal(null)}
+          onSaved={onSaved}
+        />
+      )}
+      {deleting && <DeleteDialog protocol={deleting} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />}
+    </>
+  )
+
+  if (openProtocol) {
+    return (
+      <AppShell>
+        {actionError && <p role="alert" className="mb-4 text-sm text-red-600">{actionError}</p>}
+        <ProtocolDetail
+          key={openProtocol.id}
+          protocol={openProtocol}
+          canManage={canManage}
+          busy={busy}
+          onBack={closeDetail}
+          onEdit={(proto) => setModal({ protocol: proto, disease: '' })}
+          onStatus={changeStatus}
+          onDelete={setDeleting}
+        />
+        {dialogs}
+      </AppShell>
+    )
+  }
 
   return (
     <AppShell>
@@ -564,29 +746,13 @@ export default function ResponseProtocols() {
             <ProtocolCard
               key={p.id}
               protocol={p}
-              cardRef={(el) => { cardRefs.current[p.id] = el }}
-              expanded={expandedId === p.id}
-              onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
-              canManage={canManage}
-              busy={busy}
-              onEdit={(proto) => setModal({ protocol: proto, disease: '' })}
-              onStatus={changeStatus}
-              onDelete={setDeleting}
+              onOpen={(proto) => openDetail(proto.id)}
             />
           ))}
         </div>
       )}
 
-      {modal && (
-        <ProtocolModal
-          protocol={modal.protocol}
-          initialDisease={modal.disease}
-          diseases={diseases}
-          onClose={() => setModal(null)}
-          onSaved={onSaved}
-        />
-      )}
-      {deleting && <DeleteDialog protocol={deleting} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />}
+      {dialogs}
     </AppShell>
   )
 }

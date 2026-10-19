@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-16 11:00:00.000000",
- "modified": "2026-10-16 11:00:00.000000",
+ "modified": "2026-10-19 12:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -15,6 +15,9 @@
   "step_no",
   "step",
   "timeframe",
+  "phase",
+  "outcome",
+  "reason",
   "done",
   "done_by",
   "done_on"
@@ -36,6 +39,26 @@
    "fieldname": "timeframe",
    "fieldtype": "Data",
    "label": "Timeframe"
+  },
+  {
+   "fieldname": "phase",
+   "fieldtype": "Select",
+   "options": "Investigation\nResponse",
+   "default": "Investigation",
+   "in_list_view": 1,
+   "label": "Phase"
+  },
+  {
+   "fieldname": "outcome",
+   "fieldtype": "Select",
+   "options": "\nDone\nNot done\nNot applicable",
+   "in_list_view": 1,
+   "label": "Outcome"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason (if not done)"
   },
   {
    "fieldname": "done",

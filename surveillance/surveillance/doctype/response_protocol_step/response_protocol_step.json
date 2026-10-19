@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-16 11:00:00.000000",
- "modified": "2026-10-16 11:00:00.000000",
+ "modified": "2026-10-19 12:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -14,7 +14,8 @@
  "field_order": [
   "step",
   "timeframe",
-  "responsible"
+  "responsible",
+  "phase"
  ],
  "fields": [
   {
@@ -36,6 +37,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Responsible"
+  },
+  {
+   "fieldname": "phase",
+   "fieldtype": "Select",
+   "options": "Investigation\nResponse",
+   "default": "Investigation",
+   "in_list_view": 1,
+   "label": "Phase"
   }
  ],
  "permissions": [],

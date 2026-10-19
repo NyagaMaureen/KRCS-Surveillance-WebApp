@@ -1119,6 +1119,8 @@ export async function saveProtocol(data) {
     source_url: data.source_url,
     review_date: data.review_date,
     steps: JSON.stringify(data.steps || []),
+    questions: JSON.stringify(data.questions || []),
+    notify_immediately: data.notifyImmediately ? 1 : 0,
   }
   if (data.name) body.name = data.name
   return callMethodPost('/api/method/surveillance.protocols.save_protocol', body)
@@ -1138,6 +1140,40 @@ export async function getEventChecklist(eventId) {
 
 export async function toggleEventStep(eventId, n, done) {
   return callMethodPost('/api/method/surveillance.protocols.toggle_event_step', { event: eventId, step_no: n, done })
+}
+
+export async function getInvestigation(eventId) {
+  return callMethod('/api/method/surveillance.investigation.get_investigation?event=' + encodeURIComponent(eventId))
+}
+
+export async function answerVerification(eventId, questionNo, answer) {
+  return callMethodPost('/api/method/surveillance.investigation.answer_question', { event: eventId, question_no: questionNo, answer })
+}
+
+export async function setStepOutcome(eventId, stepNo, outcome, reason) {
+  return callMethodPost('/api/method/surveillance.investigation.set_step_outcome', { event: eventId, step_no: stepNo, outcome: outcome || '', reason: reason || '' })
+}
+
+export async function saveFindings(eventId, findings) {
+  return callMethodPost('/api/method/surveillance.investigation.save_findings', { event: eventId, findings })
+}
+
+export async function addEvidence(eventId, attachmentType, fileUrl, text) {
+  return callMethodPost('/api/method/surveillance.investigation.add_evidence', { event: eventId, attachment_type: attachmentType, file_url: fileUrl || '', text: text || '' })
+}
+
+export async function removeEvidence(eventId, evidenceId) {
+  return callMethodPost('/api/method/surveillance.investigation.remove_evidence', { event: eventId, evidence_id: evidenceId })
+}
+
+export async function checkReport(eventId, signalId, reached, meetsCaseDefinition, note) {
+  return callMethodPost('/api/method/surveillance.investigation.check_report', {
+    event: eventId, signal: signalId, reached: reached || '', meets_case_definition: meetsCaseDefinition || '', note: note || '',
+  })
+}
+
+export async function splitReport(eventId, signalId, reason) {
+  return callMethodPost('/api/method/surveillance.investigation.split_report', { event: eventId, signal: signalId, reason })
 }
 
 // export async function getRegions() {

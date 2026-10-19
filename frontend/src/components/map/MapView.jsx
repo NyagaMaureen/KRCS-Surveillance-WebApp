@@ -6,10 +6,10 @@ import { Navigation, Share2, MessageCircle, AlertTriangle } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY
-const TILE_URL = MAPTILER_KEY
+export const TILE_URL = MAPTILER_KEY
   ? `https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`
   : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-const TILE_ATTRIBUTION = MAPTILER_KEY
+export const TILE_ATTRIBUTION = MAPTILER_KEY
   ? '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 

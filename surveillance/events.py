@@ -6,7 +6,8 @@ Signal = one de-identified report: a CBS report, a field Case Report, or (later)
 Event  = signals of the same disease in the same place within WINDOW_DAYS of each other.
          CBS signals group by Community Health Unit (area); field reports, which only have a
          sub-county, join the latest open event for that disease in their sub-county.
-An officer works the event: start verification, confirm, discard, escalate, close, reopen.
+An officer works the event through the investigation workflow (investigation.py):
+verify (questions), investigate (protocol steps), decide (confirm / discard / escalate), respond and close.
 
 Officers see events for their assigned region only (User.assigned_region); users without a
 region see every region.
@@ -57,23 +58,25 @@ def in_scope(disease, sub_county, source=None):
 		return source == "Field"
 	return sub_county.strip().lower() in subs
 
-OPEN = ["New", "Verifying", "Verified", "Escalated"]
+OPEN = ["New", "Verifying", "Investigating", "Verified", "Escalated"]
 CLOSED = ["Discarded", "Closed"]
 LEVELS = ["standard", "high", "critical"]   # same three levels as disease priority and Risk Alerts
 PRIORITY_SEVERITY = {"critical": "critical", "high": "high", "standard": "standard"}
 SOURCE_ORDER = ["EMR", "Field", "CBS"]
 
-# action -> (allowed from, new status, note required)
+# action -> (allowed from, new status, note required). Gates (answers, steps) are in investigation.check_gate.
 ACTIONS = {
 	"start": (["New"], "Verifying", False),
-	"confirm": (["New", "Verifying"], "Verified", False),
-	"escalate": (OPEN, "Escalated", True),
-	"discard": (OPEN, "Discarded", True),
-	"close": (OPEN, "Closed", False),
+	"investigate": (["Verifying"], "Investigating", False),
+	"confirm": (["Investigating"], "Verified", True),
+	"escalate": (["New", "Verifying", "Investigating", "Verified"], "Escalated", True),
+	"discard": (["New", "Verifying", "Investigating"], "Discarded", True),
+	"close": (["Verified", "Escalated"], "Closed", True),
 	"reopen": (CLOSED, "Verifying", False),
 }
-ACTION_LABEL = {"start": "Verification started", "confirm": "Confirmed", "escalate": "Escalated",
-	"discard": "Discarded", "close": "Closed", "reopen": "Reopened"}
+ACTION_LABEL = {"start": "Verification started", "investigate": "Field investigation started",
+	"confirm": "Confirmed", "escalate": "Escalated to county / MoH", "discard": "Discarded",
+	"close": "Closed", "reopen": "Reopened"}
 
 
 # ---------- signals in ----------
@@ -147,11 +150,8 @@ def _assign(sig):
 	since = add_days(sig.signal_date, -WINDOW_DAYS)
 	base = {"disease": sig.disease, "sub_county": sig.sub_county or "", "status": ["in", OPEN],
 		"last_reported": [">=", since]}
-	if sig.source == "Field":
-		match = frappe.get_all("Surveillance Event", filters=base, pluck="name", order_by="last_reported desc", limit=1)
-	else:
-		match = frappe.get_all("Surveillance Event", filters={**base, "group_key": _group_key(sig)},
-			pluck="name", order_by="last_reported desc", limit=1)
+		# any source joins the open event for the same disease + sub-county; the event lists every report
+	match = frappe.get_all("Surveillance Event", filters=base, pluck="name", order_by="last_reported desc", limit=1)
 
 	if match:
 		event = match[0]
@@ -177,8 +177,8 @@ def recompute_event(event):
 	if not frappe.db.exists("Surveillance Event", event):
 		return
 	sigs = frappe.get_all("Surveillance Signal", filters={"event": event},
-		fields=["source", "ref", "signal_date", "area", "people", "deaths", "reason", "reported", "latitude", "longitude"],
-		order_by="signal_date asc")
+		fields=["source", "ref", "signal_date", "area", "people", "deaths", "reason", "reported", "latitude", "longitude",
+			"check_status"], order_by="signal_date asc")
 	doc = frappe.get_doc("Surveillance Event", event)
 	if not sigs:
 		if doc.status == "New" and len(doc.actions or []) <= 1:
@@ -191,10 +191,11 @@ def recompute_event(event):
 	sources = sorted({s.source for s in sigs}, key=SOURCE_ORDER.index)
 
 	meta = frappe.db.get_value("Alert Threshold Config", doc.disease, ["threshold", "priority", "disease_name"], as_dict=True) or {}
-	people = sum(s.people or 0 for s in sigs)
+	counted = [s for s in sigs if s.check_status != "Not a case"]   # reports checked as "Not a case" stay listed but are not counted
+	people = sum(s.people or 0 for s in counted)
 	computed = PRIORITY_SEVERITY.get((meta.get("priority") or "").lower(), "standard")
 	threshold = cint(meta.get("threshold"))
-	if (threshold > 1 and people >= threshold) or len(sigs) >= 3:
+	if (threshold > 1 and people >= threshold) or len(counted) >= 3:
 		computed = LEVELS[min(LEVELS.index(computed) + 1, len(LEVELS) - 1)]
 	severity = max([doc.severity if doc.severity in LEVELS else "standard", computed], key=LEVELS.index)  # never lowered automatically
 
@@ -211,7 +212,7 @@ def recompute_event(event):
 		"disease_name": meta.get("disease_name") or doc.disease_name,
 		"priority": meta.get("priority") or doc.priority,
 		"area": areas[0] if len(areas) == 1 else ("" if not areas else f"{len(areas)} areas"),
-		"people": people, "deaths": sum(s.deaths or 0 for s in sigs), "reports": len(sigs),
+		"people": people, "deaths": sum(s.deaths or 0 for s in counted), "reports": len(sigs),
 		"sources": ", ".join(sources),
 		"first_reported": sigs[0].signal_date, "last_reported": sigs[-1].signal_date,
 		"severity": severity, "reason": _reason(sigs), "data_warning": warning,
@@ -378,6 +379,26 @@ def _check_access(doc):
 
 # ---------- API ----------
 
+def _signal_shape(s, can_act):
+	"""One report in an event. Field reports show their reporter's name and phone to officers who can act,
+	so they can call to verify. These come from the Case Report (our own CHP users); they are not copied onto
+	the signal. CBS reporters' contacts are never stored, so officers use the CBS case number in CBS."""
+	out = {"id": s.name, "source": s.source, "ref": s.ref, "date": str(s.signal_date), "area": s.area,
+		"people": s.people or 0, "deaths": s.deaths or 0, "reported": s.reported, "reason": s.reason,
+		"lat": s.latitude, "lng": s.longitude,
+		"check": {"reached": s.check_reached or None, "meetsCaseDefinition": s.check_case_definition or None,
+			"status": s.check_status or "Not checked",
+			"by": frappe.utils.get_fullname(s.checked_by) if s.checked_by else None,
+			"on": str(s.checked_on) if s.checked_on else None},
+		"reporter": None}
+	if s.source == "Field" and can_act and frappe.db.exists("Case Report", s.ref):
+		cr = frappe.db.get_value("Case Report", s.ref, ["reporter_name", "phone_number", "reported_by"], as_dict=True)
+		phone = cr.phone_number or (frappe.db.get_value("User", cr.reported_by, "mobile_no") if cr.reported_by else None)
+		out["reporter"] = {"name": cr.reporter_name or (frappe.utils.get_fullname(cr.reported_by) if cr.reported_by else None),
+			"phone": phone or None}
+	return out
+
+
 FIELDS = ["name", "title", "disease", "disease_name", "priority", "severity", "status", "county", "sub_county",
 	"area", "region", "people", "deaths", "reports", "sources", "reason", "first_reported", "last_reported",
 	"linked_alert", "data_warning", "latitude", "longitude"]
@@ -399,11 +420,11 @@ def _shape(d, detail=False):
 		"lat": d.latitude, "lng": d.longitude,
 	}
 	if detail:
-		out["signals"] = [{"id": s.name, "source": s.source, "ref": s.ref, "date": str(s.signal_date),
-			"area": s.area, "people": s.people or 0, "deaths": s.deaths or 0, "reported": s.reported, "reason": s.reason}
-			for s in frappe.get_all("Surveillance Signal", filters={"event": d.name},
-				fields=["name", "source", "ref", "signal_date", "area", "people", "deaths", "reported", "reason"],
-				order_by="signal_date desc")]
+		can_act = has_capability(ACT)
+		out["signals"] = [_signal_shape(s, can_act) for s in frappe.get_all("Surveillance Signal", filters={"event": d.name},
+			fields=["name", "source", "ref", "signal_date", "area", "people", "deaths", "reported", "reason",
+				"latitude", "longitude", "check_reached", "check_case_definition", "check_status", "checked_by", "checked_on"],
+			order_by="signal_date desc")]
 		out["timeline"] = [{"at": str(a.at), "user": a.user, "action": a.action, "note": a.note}
 			for a in sorted(d.actions or [], key=lambda a: a.at or now_datetime(), reverse=True)]
 		out["canAct"] = has_capability(ACT)
@@ -412,7 +433,7 @@ def _shape(d, detail=False):
 
 @frappe.whitelist()
 def get_events(status=None, disease=None, region=None, source=None, search=None, limit=200):
-	"""List events for the Review Queue. status: New|Verifying|Verified|Escalated|Discarded|Closed|All."""
+	"""List events for the Review Queue. status: New|Verifying|Investigating|Verified|Escalated|Discarded|Closed|All."""
 	scope = _scope_filters()
 	base = dict(scope)
 	if region and not scope:
@@ -456,7 +477,9 @@ def get_event(event):
 
 @frappe.whitelist(methods=["POST"])
 def set_status(event, action, note=None):
-	"""Officer action on an event: start, confirm, escalate, discard, close, reopen."""
+	"""Officer action on an event: start, investigate, confirm, escalate, discard, close, reopen.
+	confirm / escalate / discard need a reason and close needs a closing summary (kept for audit)."""
+	from surveillance import investigation
 	require_capability(ACT)
 	if action not in ACTIONS:
 		frappe.throw(_("Unknown action: {0}").format(action))
@@ -467,12 +490,15 @@ def set_status(event, action, note=None):
 		frappe.throw(_("Cannot {0} an event that is {1}.").format(action, doc.status))
 	note = (note or "").strip()
 	if needs_note and not note:
-		frappe.throw(_("Please add a note."))
+		frappe.throw(_("Please add a closing summary.") if action == "close" else _("Please give a reason."))
+	investigation.check_gate(doc, action)
 
 	doc.status = new_status
+	investigation.after_status(doc, action, note)
 	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user,
 		"action": ACTION_LABEL[action], "note": note})
 	doc.save(ignore_permissions=True)
+	investigation.sync_reports(doc, action, note)
 
 	if action == "discard" and doc.disease == UNCLASSIFIED:
 		_dismiss_unclassified(doc.name, note)
@@ -497,7 +523,7 @@ def _dismiss_unclassified(event, note):
 @frappe.whitelist()
 def get_map_events(status="open", disease=None, days=30):
 	"""Review Queue events for the Surveillance Map (same region rules as the queue).
-	status: "open" (New, Verifying, Verified, Escalated) | "all" | one status name."""
+	status: "open" (New, Verifying, Investigating, Verified, Escalated) | "all" | one status name."""
 	filters = dict(_scope_filters())
 	if status == "open":
 		filters["status"] = ["in", OPEN]

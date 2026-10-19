@@ -1,0 +1,69 @@
+{
+ "actions": [],
+ "creation": "2026-10-19 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Surveillance Event Answer",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "fields": [
+  {
+   "fieldname": "question_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "No."
+  },
+  {
+   "fieldname": "question",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Question"
+  },
+  {
+   "fieldname": "why",
+   "fieldtype": "Data",
+   "label": "Why we ask"
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "options": "Case definition\nSupports\nRed flag",
+   "label": "Kind"
+  },
+  {
+   "fieldname": "answer",
+   "fieldtype": "Select",
+   "options": "\nYes\nNo\nNot sure",
+   "in_list_view": 1,
+   "label": "Answer"
+  },
+  {
+   "fieldname": "answered_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Answered By"
+  },
+  {
+   "fieldname": "answered_on",
+   "fieldtype": "Datetime",
+   "label": "Answered On"
+  }
+ ],
+ "permissions": [],
+ "istable": 1,
+ "description": "One verification answer on one event.",
+ "modified": "2026-10-19 12:00:00.000000",
+ "field_order": [
+  "question_no",
+  "question",
+  "why",
+  "kind",
+  "answer",
+  "answered_by",
+  "answered_on"
+ ]
+}

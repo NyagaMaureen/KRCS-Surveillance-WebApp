@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-14 12:00:00.000000",
- "modified": "2026-10-14 16:00:00.000000",
+ "modified": "2026-10-19 13:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -27,7 +27,14 @@
   "people",
   "deaths",
   "reason",
-  "event"
+  "event",
+  "sb_check",
+  "check_reached",
+  "check_case_definition",
+  "cb_check",
+  "check_status",
+  "checked_by",
+  "checked_on"
  ],
  "fields": [
   {
@@ -128,6 +135,47 @@
    "options": "Surveillance Event",
    "search_index": 1,
    "in_standard_filter": 1
+  },
+  {
+   "fieldname": "sb_check",
+   "fieldtype": "Section Break",
+   "label": "Verification of this report"
+  },
+  {
+   "fieldname": "check_reached",
+   "fieldtype": "Select",
+   "options": "\nYes\nNo",
+   "label": "Reporter reached"
+  },
+  {
+   "fieldname": "check_case_definition",
+   "fieldtype": "Select",
+   "options": "\nYes\nNo\nNot sure",
+   "label": "Meets case definition"
+  },
+  {
+   "fieldname": "cb_check",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "check_status",
+   "fieldtype": "Select",
+   "options": "Not checked\nVerified\nUnconfirmed\nNot a case",
+   "default": "Not checked",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Check status"
+  },
+  {
+   "fieldname": "checked_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Checked by"
+  },
+  {
+   "fieldname": "checked_on",
+   "fieldtype": "Datetime",
+   "label": "Checked on"
   }
  ],
  "permissions": [

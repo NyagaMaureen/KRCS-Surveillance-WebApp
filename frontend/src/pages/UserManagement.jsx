@@ -308,9 +308,7 @@ export default function UserManagement() {
                       </div>
                     </td>
                     <td className="px-5 py-3"><span className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900">{u.primary_role || '—'}</span>
-                      <div className="mt-1 text-xs text-gray-400">
-                        Frappe roles: {userRolesMap[u.name] ? (userRolesMap[u.name].join(', ') || 'none') : '…'}
-                      </div>
+                     
                       {userRolesMap[u.name] && u.primary_role && !userRolesMap[u.name].includes(u.primary_role) && (
                         <div className="text-[10px] font-medium text-amber-600">Mismatch: primary role not in Frappe roles</div>
                       )}

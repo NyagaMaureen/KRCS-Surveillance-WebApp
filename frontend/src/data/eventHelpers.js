@@ -11,6 +11,7 @@ export const SEVERITY_STYLES = {
 export const STATUS_STYLES = {
   New: 'border-amber-400 bg-amber-400/10 text-amber-500',
   Verifying: 'border-purple-400 bg-purple-400/10 text-purple-500',
+  Investigating: 'border-purple-400 bg-purple-400/10 text-purple-600',
   Verified: 'border-blue-500 bg-blue-500/10 text-blue-600',
   Escalated: 'border-red-500 bg-red-500/10 text-red-600',
   Discarded: 'border-gray-300 bg-gray-100 text-gray-500',

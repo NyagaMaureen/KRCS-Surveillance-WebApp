@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-14 12:00:00.000000",
- "modified": "2026-10-16 11:00:00.000000",
+ "modified": "2026-10-19 12:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -40,6 +40,19 @@
   "sb_protocol",
   "protocol",
   "checklist",
+  "sb_investigation",
+  "verification",
+  "findings",
+  "evidence",
+  "sb_decision",
+  "decision",
+  "decision_reason",
+  "decided_by",
+  "decided_on",
+  "cb_decision",
+  "closing_summary",
+  "closed_by",
+  "closed_on",
   "sb2",
   "actions"
  ],
@@ -54,7 +67,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "New\nVerifying\nVerified\nEscalated\nDiscarded\nClosed",
+   "options": "New\nVerifying\nInvestigating\nVerified\nEscalated\nDiscarded\nClosed",
    "default": "New",
    "in_list_view": 1,
    "in_standard_filter": 1,
@@ -207,6 +220,75 @@
    "fieldtype": "Table",
    "label": "Checklist",
    "options": "Surveillance Event Step"
+  },
+  {
+   "fieldname": "sb_investigation",
+   "fieldtype": "Section Break",
+   "label": "Investigation"
+  },
+  {
+   "fieldname": "verification",
+   "fieldtype": "Table",
+   "options": "Surveillance Event Answer",
+   "label": "Verification answers"
+  },
+  {
+   "fieldname": "findings",
+   "fieldtype": "Text",
+   "label": "Field findings"
+  },
+  {
+   "fieldname": "evidence",
+   "fieldtype": "Table",
+   "options": "Surveillance Event Attachment",
+   "label": "Evidence"
+  },
+  {
+   "fieldname": "sb_decision",
+   "fieldtype": "Section Break",
+   "label": "Decision and closure"
+  },
+  {
+   "fieldname": "decision",
+   "fieldtype": "Select",
+   "options": "\nConfirmed\nDiscarded\nEscalated",
+   "label": "Decision"
+  },
+  {
+   "fieldname": "decision_reason",
+   "fieldtype": "Small Text",
+   "label": "Reason for decision"
+  },
+  {
+   "fieldname": "decided_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Decided By"
+  },
+  {
+   "fieldname": "decided_on",
+   "fieldtype": "Datetime",
+   "label": "Decided On"
+  },
+  {
+   "fieldname": "cb_decision",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "closing_summary",
+   "fieldtype": "Small Text",
+   "label": "Closing summary"
+  },
+  {
+   "fieldname": "closed_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Closed By"
+  },
+  {
+   "fieldname": "closed_on",
+   "fieldtype": "Datetime",
+   "label": "Closed On"
   },
   {
    "fieldname": "sb2",

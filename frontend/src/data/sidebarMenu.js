@@ -4,8 +4,7 @@ export const SIDEBAR_MENU = [
   ]},
   { section: 'FIELD ACTIVITIES', items: [
     { label: 'Reports', icon: 'FileText', page: 'reports', requiresCapability: 'view_reports' },
-    { label: 'Case Management', icon: 'Folder', page: 'case-management', requiresCapability: null },
-    { label: 'Alerts & Signals', icon: 'BellRing', page: 'alerts-signals', requiresCapability: null },
+    { label: 'Alerts & Signals', icon: 'BellRing', page: 'alerts-signals', requiresCapability: 'view_review_queue' },
     { label: 'Epi Trends', icon: 'TrendingUp', page: 'epi-trends', requiresCapability: 'view_alerts' },
     { label: 'Surveillance Map', icon: 'Map', page: 'surveillance-map', requiresCapability: 'view_surveillance_map' },
   ]},

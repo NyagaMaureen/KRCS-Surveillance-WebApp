@@ -1,0 +1,55 @@
+{
+ "actions": [],
+ "creation": "2026-10-19 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Surveillance Event Attachment",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "fields": [
+  {
+   "fieldname": "attachment_type",
+   "fieldtype": "Select",
+   "options": "Photo\nVoice Note\nText Note\nAttachment",
+   "in_list_view": 1,
+   "label": "Type"
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "File"
+  },
+  {
+   "fieldname": "text_content",
+   "fieldtype": "Small Text",
+   "label": "Text"
+  },
+  {
+   "fieldname": "added_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Added By"
+  },
+  {
+   "fieldname": "added_on",
+   "fieldtype": "Datetime",
+   "label": "Added On"
+  }
+ ],
+ "permissions": [],
+ "istable": 1,
+ "description": "Evidence collected during an investigation.",
+ "modified": "2026-10-19 12:00:00.000000",
+ "field_order": [
+  "attachment_type",
+  "file",
+  "text_content",
+  "added_by",
+  "added_on"
+ ]
+}

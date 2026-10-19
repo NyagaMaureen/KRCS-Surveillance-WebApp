@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Trash2, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope, Check } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getSubCounties, getRegions } from '../api/frappe'
-import { STATUSES, CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
+import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 const CLASSIFIED_BY_BADGES = {
@@ -160,7 +160,6 @@ export default function ReportDetail() {
     }
   }
 
-  const statusOptions = useMemo(() => withCurrentValue(STATUSES, report?.status), [report])
   const categoryOptions = useMemo(() => withCurrentValue(CATEGORIES, report?.category), [report])
   const attachments = report?.attachments || []
 
@@ -534,9 +533,7 @@ export default function ReportDetail() {
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-1">Status</label>
-                      <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100">
-                        {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                      <input type="text" value={editForm.status} disabled readOnly className="w-full bg-gray-100 text-gray-500 rounded-lg px-4 py-2.5 text-sm cursor-not-allowed" />
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-1">Category</label>

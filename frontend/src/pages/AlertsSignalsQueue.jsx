@@ -19,6 +19,7 @@ const SOURCES = ['CBS', 'Field']
 const TABS = [
   { key: 'new', label: 'New', statuses: ['New'] },
   { key: 'verifying', label: 'Verifying', statuses: ['Verifying'] },
+  { key: 'investigating', label: 'In the field', statuses: ['Investigating'] },
   { key: 'verified', label: 'Verified', statuses: ['Verified'] },
   { key: 'escalated', label: 'Escalated', statuses: ['Escalated'] },
   { key: 'closed', label: 'Closed & discarded', statuses: ['Discarded', 'Closed'] },
@@ -34,6 +35,7 @@ const SORTS = [
 const EMPTY_TEXT = {
   new: 'No new reports to review. New CBS reports arrive every hour; field reports arrive as soon as they are submitted.',
   verifying: 'No events are being verified right now. Start verification on a new report to see it here.',
+  investigating: 'No field investigations under way.',
   verified: 'No verified events.',
   escalated: 'No escalated events.',
   closed: 'No closed or discarded events.',
@@ -313,7 +315,7 @@ export default function AlertsSignalsQueue() {
             <SummaryCard label="Need review" value={sumCounts?.new} active={tab === 'new' && !waitingOnly} onClick={() => setParam({ tab: '', wait: '' })} />
             <SummaryCard label="Being verified" value={sumCounts?.verifying} active={tab === 'verifying'} onClick={() => setParam({ tab: 'verifying', wait: '' })} />
             <SummaryCard label="Waiting over 24h" value={summary?.waiting} active={waitingOnly} onClick={() => setParam({ tab: '', wait: '1' })} />
-            <SummaryCard label="Escalated" value={sumCounts?.escalated} active={tab === 'escalated'} onClick={() => setParam({ tab: 'escalated', wait: '' })} />
+            <SummaryCard label="In the field" value={sumCounts?.investigating} active={tab === 'investigating'} onClick={() => setParam({ tab: 'investigating', wait: '' })} />
           </div>
 
           <div role="tablist" aria-label="Event status" className="flex gap-1 border-b border-gray-200 mb-4 overflow-x-auto">

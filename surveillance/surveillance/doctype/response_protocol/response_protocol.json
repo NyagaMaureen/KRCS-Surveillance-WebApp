@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-16 11:00:00.000000",
- "modified": "2026-10-16 11:00:00.000000",
+ "modified": "2026-10-19 12:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -16,6 +16,7 @@
   "disease",
   "status",
   "version",
+  "notify_immediately",
   "cb1",
   "source",
   "source_url",
@@ -24,6 +25,7 @@
   "approved_on",
   "sb1",
   "summary",
+  "verification_questions",
   "steps"
  ],
  "fields": [
@@ -58,6 +60,12 @@
    "fieldtype": "Data",
    "default": "v1.0",
    "label": "Version"
+  },
+  {
+   "fieldname": "notify_immediately",
+   "fieldtype": "Check",
+   "label": "Single case is an emergency",
+   "description": "Tick for diseases where one case meeting the case definition must be escalated at once (e.g. VHF, polio)."
   },
   {
    "fieldname": "cb1",
@@ -103,6 +111,12 @@
    "fieldtype": "Small Text",
    "description": "One or two sentences: when this protocol applies",
    "label": "Summary"
+  },
+  {
+   "fieldname": "verification_questions",
+   "fieldtype": "Table",
+   "options": "Response Protocol Question",
+   "label": "Verification questions"
   },
   {
    "fieldname": "steps",

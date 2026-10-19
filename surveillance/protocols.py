@@ -3,8 +3,11 @@
 Protocol  = reference SOP for a disease: summary, ordered steps (with timeframe and who is responsible),
             source, version, review date. Draft -> Approved -> Retired. The creator (Frappe "owner") is the
             logged-in user; approval records who approved and when.
-Checklist = the protocol's steps copied onto ONE Surveillance Event the first time an officer opens or
-            ticks it, so ticking a step for one outbreak never changes the protocol or other events.
+            Each step has a phase: Investigation (done in step 4) or Response (done in step 6 after the decision).
+            Verification questions (Yes / No / Not sure) are asked in step 3; "Single case is an emergency" makes
+            one case meeting the case definition an immediate escalation (VHF, polio...).
+Checklist = the protocol's steps and questions copied onto ONE Surveillance Event the first time an officer
+            opens it, so answering for one outbreak never changes the protocol or other events.
 
 Capabilities: view_response_protocols (read), manage_response_protocols (create, edit, approve, delete).
 Ticking an event checklist needs act_on_events.
@@ -19,6 +22,8 @@ DOCTYPE = "Response Protocol"
 VIEW = "view_response_protocols"
 MANAGE = "manage_response_protocols"
 STATUSES = ("Draft", "Approved", "Retired")
+PHASES = ("Investigation", "Response")
+KINDS = ("Case definition", "Supports", "Red flag")
 GENERIC_EVENT = "unusual-event"   # protocol used for unusual illness/death events with no protocol of their own
 
 
@@ -42,10 +47,13 @@ def _shape(doc, steps=True):
 		"approvedOn": str(doc.approved_on) if doc.approved_on else None,
 		"updated": str(doc.modified)[:10],
 		"stepCount": len(doc.get("steps") or []),
+		"notifyImmediately": bool(doc.get("notify_immediately")),
 	}
 	if steps:
-		out["steps"] = [{"n": i, "step": s.step, "timeframe": s.timeframe, "responsible": s.responsible}
-			for i, s in enumerate(doc.get("steps") or [], 1)]
+		out["steps"] = [{"n": i, "step": s.step, "timeframe": s.timeframe, "responsible": s.responsible,
+			"phase": s.get("phase") or "Investigation"} for i, s in enumerate(doc.get("steps") or [], 1)]
+		out["questions"] = [{"n": i, "question": q.question, "why": q.why, "kind": q.kind or "Supports"}
+			for i, q in enumerate(doc.get("verification_questions") or [], 1)]
 	return out
 
 
@@ -86,7 +94,8 @@ def get_protocol(name):
 
 def approved_for(disease):
 	"""Approved protocol for a disease; unusual illness/death events fall back to the unusual-event protocol."""
-	for key in (disease, GENERIC_EVENT if (disease or "").startswith("unusual-") else None):
+	generic = (disease or "").startswith("unusual-") or disease == "unclassified-illness"
+	for key in (disease, GENERIC_EVENT if generic else None):
 		if key:
 			name = frappe.db.get_value(DOCTYPE, {"disease": key, "status": "Approved"}, "name", order_by="modified desc")
 			if name:
@@ -111,14 +120,29 @@ def _clean_steps(steps):
 			s = {"step": s}
 		text = (s.get("step") or "").strip()
 		if text:
+			phase = s.get("phase") if s.get("phase") in PHASES else "Investigation"
 			out.append({"step": text, "timeframe": (s.get("timeframe") or "").strip(),
-				"responsible": (s.get("responsible") or "").strip()})
+				"responsible": (s.get("responsible") or "").strip(), "phase": phase})
+	return out
+
+
+def _clean_questions(questions):
+	if isinstance(questions, str):
+		questions = frappe.parse_json(questions)
+	out = []
+	for q in questions or []:
+		if isinstance(q, str):
+			q = {"question": q}
+		text = (q.get("question") or "").strip()
+		if text:
+			kind = q.get("kind") if q.get("kind") in KINDS else "Supports"
+			out.append({"question": text, "why": (q.get("why") or "").strip(), "kind": kind})
 	return out
 
 
 @frappe.whitelist(methods=["POST"])
 def save_protocol(title, disease, steps, summary=None, version=None, source=None, source_url=None,
-		review_date=None, name=None):
+		review_date=None, name=None, questions=None, notify_immediately=None):
 	"""Create (name empty) or update a protocol. The creator becomes its owner automatically.
 	Editing an Approved protocol sends it back to Draft so it is approved again."""
 	require_capability(MANAGE)
@@ -134,6 +158,10 @@ def save_protocol(title, disease, steps, summary=None, version=None, source=None
 	doc.update({"title": title.strip(), "disease": disease, "summary": summary, "version": version or doc.version or "v1.0",
 		"source": source, "source_url": source_url, "review_date": review_date or None})
 	doc.set("steps", steps)
+	if questions is not None:
+		doc.set("verification_questions", _clean_questions(questions))
+	if notify_immediately is not None:
+		doc.notify_immediately = 1 if str(notify_immediately).lower() in ("1", "true", "yes") else 0
 	if was_approved:
 		doc.status, doc.approved_by, doc.approved_on = "Draft", None, None
 	doc.save(ignore_permissions=True) if name else doc.insert(ignore_permissions=True)
@@ -169,7 +197,8 @@ def delete_protocol(name):
 # ---------- API: event checklist ----------
 
 def _checklist(doc):
-	return [{"n": s.step_no, "step": s.step, "timeframe": s.timeframe, "done": bool(s.done),
+	return [{"n": s.step_no, "step": s.step, "timeframe": s.timeframe, "phase": s.phase or "Investigation",
+		"outcome": s.outcome or ("Done" if s.done else None), "done": bool(s.done),
 		"doneBy": get_fullname(s.done_by) if s.done_by else None, "doneOn": str(s.done_on) if s.done_on else None}
 		for s in (doc.get("checklist") or [])]
 
@@ -183,7 +212,8 @@ def _ensure_checklist(event_doc):
 		return False
 	event_doc.protocol = proto.name
 	for i, s in enumerate(proto.steps or [], 1):
-		event_doc.append("checklist", {"step_no": i, "step": s.step, "timeframe": s.timeframe})
+		event_doc.append("checklist", {"step_no": i, "step": s.step, "timeframe": s.timeframe,
+			"phase": s.get("phase") or "Investigation"})
 	return True
 
 
@@ -215,6 +245,7 @@ def toggle_event_step(event, step_no, done):
 	if not row:
 		frappe.throw(_("Step not found."))
 	row.done = 1 if done else 0
+	row.outcome = "Done" if done else None
 	row.done_by = frappe.session.user if done else None
 	row.done_on = now_datetime() if done else None
 	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user,
@@ -345,9 +376,136 @@ def seed_protocols(overwrite=0):
 		doc.update({"title": title, "disease": key, "summary": summary, "status": "Draft", "version": "v0.1",
 			"source": SEED_SOURCE, "source_url": "https://www.health.go.ke"})
 		for s, t, r in steps:
-			doc.append("steps", {"step": s, "timeframe": t, "responsible": r})
+			doc.append("steps", {"step": s, "timeframe": t, "responsible": r, "phase": phase_for(s, t)})
+		for q, w, k in questions_for(key, summary, title):
+			doc.append("verification_questions", {"question": q, "why": w, "kind": k})
+		doc.notify_immediately = 1 if key in EMERGENCY else 0
 		doc.insert(ignore_permissions=True)
 		made += 1
 	frappe.db.commit()
 	print(f"Draft protocols created: {made}")
 	return made
+
+
+# ---------- phases, verification questions and emergency flag for the seeded protocols ----------
+
+# Investigation = what the team does while finding out (notify, verify, sample, line-list, search) plus anything
+# that must happen immediately to protect patients (first treatment, isolation), so it never waits for the decision.
+# Response = what follows the decision (control measures, campaigns, contact follow-up, ongoing reporting).
+RESPONSE_WORDS = ("vaccinat", "chlorinat", "treatment unit", "ors points", "hygiene", "messaging", "burial",
+	"mosquito control", "community engagement", "vitamin a", "follow them up", "monitor them", "report cases and deaths daily",
+	"follow up the case at 60", "monitor weekly", "isolate the case until", "infection prevention advice",
+	"preventive antibiotics", "do not open", "carcasses", "advise against", "track admissions", "support dog",
+	"support animal", "start oral rehydration", "give vitamin", "refer the patient", "refer human",
+	"wash the wound", "isolate cases", "isolate the patient", "advise the community")
+INVESTIGATION_START = ("check ", "refer ", "line-list", "investigate ", "list and monitor")
+
+EMERGENCY = {"vhf", "bvd", "afp-polio", "yellow-fever", "mpox"}
+
+EXTRA_QUESTIONS = {
+	"awd-cholera": [
+		("Was a cholera RDT done on any case, and was it positive?", "A positive RDT strongly supports cholera", "Supports"),
+		("Do the cases share a water source that is not chlorinated?", "Shared unsafe water drives cholera spread", "Supports"),
+		("Is any case severely dehydrated (lethargic, unable to drink)?", "Severe dehydration can kill within hours", "Red flag"),
+	],
+	"measles": [
+		("Are most cases unvaccinated or of unknown vaccination status?", "Low vaccination makes spread likely", "Supports"),
+		("Are there cases with pneumonia, severe diarrhoea or malnutrition?", "Complications drive measles deaths", "Red flag"),
+	],
+	"afp-polio": [
+		("Did the paralysis start in the last 14 days?", "Stool samples are only useful within 14 days", "Supports"),
+		("Is the child's polio vaccination incomplete or unknown?", "Unvaccinated children are at highest risk", "Supports"),
+	],
+	"vhf": [
+		("Did the case have contact with a sick or dead person or animal, or travel to an area with VHF?", "Exposure history supports VHF", "Supports"),
+		("Is there unexplained bleeding?", "Bleeding with fever is a VHF warning sign", "Red flag"),
+	],
+	"bvd": [
+		("Did the case have contact with a sick or dead person, or travel to an area reporting Bundibugyo virus?", "Exposure history supports BVD", "Supports"),
+		("Is there unexplained bleeding?", "Bleeding with fever is an Ebola-type warning sign", "Red flag"),
+	],
+	"mpox": [
+		("Did the case have close contact with a known or suspected mpox case?", "Contact history supports mpox", "Supports"),
+	],
+	"yellow-fever": [
+		("Is the case unvaccinated against yellow fever?", "Unvaccinated people are at risk", "Supports"),
+	],
+	"meningococcal-meningitis": [
+		("Has a health worker confirmed stiff neck or bulging soft spot?", "Clinical signs confirm suspected meningitis", "Supports"),
+		("Is there a purple rash that does not fade when pressed?", "A non-blanching rash means life-threatening infection", "Red flag"),
+	],
+	"anthrax": [
+		("Did the cases touch or eat meat or skins from animals that died suddenly?", "Animal exposure supports anthrax", "Supports"),
+		("Are animals dying suddenly in the area?", "Animal deaths point to an anthrax source", "Supports"),
+	],
+	"rift-valley-fever": [
+		("Are livestock abortions or deaths being reported nearby?", "Animal cases usually come first", "Supports"),
+		("Has there been heavy rain or flooding in the last 2 months?", "Floods drive mosquito breeding", "Supports"),
+	],
+	"covid-sari": [
+		("Do any cases need oxygen or admission?", "Severe respiratory illness needs urgent care", "Red flag"),
+	],
+	"rabies": [
+		("Was the animal stray, unvaccinated, sick, or did it die or disappear?", "These animals are most likely rabid", "Supports"),
+		("Is the bite on the head, neck or hands, or are there several bites?", "These bites need urgent vaccine and immunoglobulin", "Red flag"),
+		("Does anyone show signs of rabies (fear of water, agitation)?", "Clinical rabies is almost always fatal", "Red flag"),
+	],
+	"unusual-event": [
+		("Is the cause still unknown after speaking to the reporter?", "Unknown causes need investigation", "Supports"),
+		("Are animals also sick or dying in the area?", "Points to a One Health event", "Supports"),
+	],
+}
+
+
+def phase_for(step_text, timeframe=None):
+	t = (step_text or "").lower()
+	if "campaign" in t:
+		return "Response"
+	if (timeframe or "").strip().lower() == "immediately" or t.startswith(INVESTIGATION_START):
+		return "Investigation"
+	return "Response" if any(w in t for w in RESPONSE_WORDS) else "Investigation"
+
+
+def questions_for(key, summary, disease_name=None):
+	from surveillance.investigation import COMMON_QUESTIONS, case_definition_question
+	return [case_definition_question(summary, disease_name)] + COMMON_QUESTIONS + EXTRA_QUESTIONS.get(key, [])
+
+
+def upgrade_protocols(overwrite=0):
+	"""One-off after adding the investigation workflow. Keeps each protocol's status (Approved stays Approved).
+	  - sets each step's phase (Investigation / Response) where it is not set yet
+	  - adds verification questions to protocols that have none
+	  - ticks "Single case is an emergency" for VHF, BVD, polio, yellow fever and mpox
+	  - refreshes the copied checklist on open events where nobody has recorded anything yet
+	bench --site <site> execute surveillance.protocols.upgrade_protocols
+	Review the result in Response Protocols and adjust phases / questions there if KRCS wants changes."""
+	overwrite = cint(overwrite)
+	for name in frappe.get_all(DOCTYPE, pluck="name"):
+		doc = frappe.get_doc(DOCTYPE, name)
+		for s in doc.steps:
+			if overwrite or not s.get("phase") or s.phase == "Investigation":
+				s.phase = phase_for(s.step, s.timeframe)
+		if overwrite or not doc.get("verification_questions"):
+			meta = _disease_meta(doc.disease)
+			doc.set("verification_questions", [{"question": q, "why": w, "kind": k}
+				for q, w, k in questions_for(doc.disease, doc.summary, meta.get("disease_name"))])
+		if doc.disease in EMERGENCY:
+			doc.notify_immediately = 1
+		doc.flags.ignore_validate_update_after_submit = True
+		doc.save(ignore_permissions=True)
+		print(f"{doc.title} [{doc.status}]")
+		for s in doc.steps:
+			print(f"   {s.phase:<13} {s.step[:80]}")
+	refreshed = 0
+	for ev in frappe.get_all("Surveillance Event", filters={"status": ["not in", ["Closed", "Discarded"]]}, pluck="name"):
+		doc = frappe.get_doc("Surveillance Event", ev)
+		untouched = not any(s.done or s.get("outcome") for s in (doc.get("checklist") or [])) and not any(
+			a.answer for a in (doc.get("verification") or []))
+		if untouched and (doc.get("checklist") or doc.get("verification")):
+			doc.set("checklist", [])
+			doc.set("verification", [])
+			doc.protocol = None
+			doc.save(ignore_permissions=True)
+			refreshed += 1
+	frappe.db.commit()
+	print(f"Open events reset to pick up the new steps and questions: {refreshed}")
