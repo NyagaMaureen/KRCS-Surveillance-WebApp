@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, AlertTriangle, Check, ShieldAlert, Sparkles, X, ExternalLink,
-  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Radio, Users, Activity,
+  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Radio, Users, HeartCrack, Building2,
 } from 'lucide-react'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -10,14 +10,15 @@ import 'leaflet/dist/leaflet.css'
 import AppShell from '../components/layout/AppShell'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
-  getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification,
+  getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
   setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { FOCUS, parseDate, fmtDateTime, relTime } from '../data/eventHelpers'
+import { FOCUS, statusLabel, parseDate, fmtDateTime, relTime } from '../data/eventHelpers'
 
 const BANNER = { critical: 'bg-red-600', high: 'bg-amber-500', standard: 'bg-blue-500' }
 const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
+
 
 const PRIMARY = 'bg-red-600 text-white hover:bg-red-700 border-red-600'
 const SECONDARY = 'bg-white text-gray-900 border-gray-200 hover:bg-gray-50'
@@ -28,7 +29,7 @@ const ACTION_LABELS = {
   start: 'Start verification',
   investigate: 'Proceed to field investigation',
   confirm: 'Confirm',
-  escalate: 'Escalate',
+  escalate: 'Escalation',
   discard: 'Discard',
   close: 'Close',
   reopen: 'Reopen',
@@ -64,7 +65,7 @@ function computeSteps(event, inv) {
     current = 3
   } else if (status === 'Investigating') {
     if (canConfirm) { mark(4); states[4] = 'current'; current = 5 } else { mark(3); states[3] = 'current'; current = 4 }
-  } else if (status === 'Verified' || status === 'Escalated') {
+  } else if (status === 'Confirmed' || status === 'Escalated') {
     mark(5)
     states[5] = 'current'
     current = 6
@@ -821,15 +822,29 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
 }
 
 const DECISION_OPTIONS = [
-  { value: 'confirm', title: 'Confirm outbreak', icon: Check, enabled: (s, g) => s === 'Investigating' && g?.canConfirm },
+  { value: 'confirm', title: 'Confirm outbreak', icon: Check, enabled: (s, g, inv) => s === 'Investigating' && g?.canConfirm && !inv?.mustEscalate },
   { value: 'discard', title: 'Discard signal', icon: X, enabled: (s) => ['New', 'Verifying', 'Investigating'].includes(s) },
-  { value: 'escalate', title: 'Escalate to County/MoH', icon: ExternalLink, enabled: (s) => ['New', 'Verifying', 'Investigating', 'Verified'].includes(s) },
+  { value: 'escalate', title: 'Escalate to County/MoH', icon: ExternalLink, enabled: (s) => ['New', 'Verifying', 'Investigating', 'Confirmed'].includes(s) },
 ]
 
 function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit }) {
   const [reason, setReason] = useState('')
-  const canDecide = editable && DECISION_OPTIONS.some((o) => o.enabled(event.status, inv.gates))
-  const ready = !!choice && reason.trim().length > 0 && !busy
+  const [facility, setFacility] = useState(inv.nearestFacility || '')
+  const [preview, setPreview] = useState(null)
+  const canDecide = editable && DECISION_OPTIONS.some((o) => o.enabled(event.status, inv.gates, inv))
+  const escalating = choice === 'escalate'
+  const ready = !!choice && reason.trim().length > 0 && (!escalating || facility.trim().length > 0) && !busy
+
+  useEffect(() => {
+    if (!escalating || preview) return
+    getEscalationPreview(event.id)
+      .then((p) => {
+        setPreview(p)
+        if (!facility && p?.nearestFacility) setFacility(p.nearestFacility)
+      })
+      .catch(() => setPreview({ contacts: [], facilities: [] }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [escalating])
   return (
     <div className={card}>
       <PanelHeader title="Decision making" sub="Confirm, discard or escalate. Human sign-off." />
@@ -847,11 +862,20 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
           </p>
         </div>
       )}
+      {inv.mustEscalate && event.status !== 'Escalated' && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-4 mb-5 text-sm text-red-700">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+          <p>
+            One case of {event.diseaseName || event.disease} is an emergency: it must be escalated to County / National MOH,
+            who lead the investigation. Confirming locally is not available.
+          </p>
+        </div>
+      )}
       {canDecide && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5" role="group" aria-label="Decision">
             {DECISION_OPTIONS.map((o) => {
-              const enabled = o.enabled(event.status, inv.gates)
+              const enabled = o.enabled(event.status, inv.gates, inv)
               const selected = choice === o.value
               const Icon = o.icon
               return (
@@ -876,8 +900,46 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
             </span>
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className={INPUT} />
           </label>
-          <button type="button" aria-label="Sign off decision" disabled={!ready} onClick={() => onSubmit(choice, reason.trim())} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
-            Sign off decision
+          {escalating && (
+            <div className="mb-5 rounded-xl border border-gray-100 bg-gray-50 p-4 flex flex-col gap-4">
+              <label className="block">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-gray-900 mb-1.5">
+                  <Building2 className="w-4 h-4 text-gray-500" aria-hidden="true" />
+                  Nearest health facility<span className="text-red-600"> *</span>
+                </span>
+                <input
+                  value={facility}
+                  onChange={(e) => setFacility(e.target.value)}
+                  list="facility-options"
+                  placeholder="e.g. Dagahaley Hospital"
+                  className={INPUT}
+                />
+                <datalist id="facility-options">
+                  {(preview?.facilities || []).map((f) => <option key={f} value={f} />)}
+                </datalist>
+              </label>
+              <div className="text-sm">
+                <p className="font-medium text-gray-900 mb-1">This will notify</p>
+                {!preview ? (
+                  <p className="text-gray-400">Loading…</p>
+                ) : preview.contacts.length === 0 ? (
+                  <p className="text-amber-700">No active County / National MOH contacts. Add them under Escalation Contacts first, or nobody will be emailed.</p>
+                ) : (
+                  <ul className="text-gray-600 space-y-0.5">
+                    {preview.contacts.map((c, i) => (
+                      <li key={i}>{c.name} · {c.level}{c.county ? ` (${c.county})` : ''}{!c.hasEmail ? ' · no email' : ''}</li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-xs text-gray-400 mt-2">
+                  They receive the disease, signs and symptoms, cases, deaths, dates, location, nearest facility, reporter contacts,
+                  and your name and reason.
+                </p>
+              </div>
+            </div>
+          )}
+          <button type="button" aria-label="Sign off decision" disabled={!ready} onClick={() => onSubmit(choice, reason.trim(), facility.trim())} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
+            {escalating ? 'Sign off and escalate' : 'Sign off decision'}
           </button>
         </>
       )}
@@ -890,7 +952,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
   const steps = inv.responseSteps || []
   const open = inv.gates?.openResponseSteps || []
   const status = event.status
-  const active = status === 'Verified' || status === 'Escalated'
+  const active = status === 'Confirmed' || status === 'Escalated'
   const canClose = inv.gates?.canClose && summary.trim().length > 0 && !busy
 
   return (
@@ -939,7 +1001,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
             <button type="button" aria-label="Close event and notify field reporters" disabled={!canClose} onClick={() => onAction('close', summary.trim())} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
               Close event and notify field reporters
             </button>
-            {status === 'Verified' && (
+            {status === 'Confirmed' && (
               <button type="button" aria-label="Escalate to County/MoH" disabled={busy} onClick={() => onDecide('escalate')} className={`${BTN} ${SECONDARY} ${FOCUS}`}>
                 Escalate to County/MoH
               </button>
@@ -1262,10 +1324,10 @@ export default function EventDetail() {
     }
   }
 
-  async function runAction(action, text) {
+  async function runAction(action, text, facility) {
     setBusy(true)
     try {
-      const updated = await setEventStatus(event.id, action, text || '')
+      const updated = await setEventStatus(event.id, action, text || '', facility || '')
       setEvent(updated)
       setInv(await getInvestigation(event.id))
       setChoice(null)
@@ -1473,7 +1535,7 @@ export default function EventDetail() {
                 {SEVERITY_LABELS[event.severity] || SEVERITY_LABELS.standard}
               </span>
               <span className="inline-flex items-center rounded-full border border-white/70 bg-white/10 px-3.5 py-1 text-xs font-medium">
-                {event.status}
+                {statusLabel(event.status)}
               </span>
             </div>
             <p className="text-sm font-medium text-white/90">
@@ -1515,7 +1577,7 @@ export default function EventDetail() {
               <Field icon={Calendar} label="Reported" value={fmtDateTime(event.firstSeen)} />
               <Field icon={Radio} label="Sources" value={(event.sources || []).join(', ') || '—'} />
               <Field icon={Users} label="Affected people" value={event.people ?? 0} />
-              <Field icon={Activity} label="Deaths" value={event.deaths ?? 0} danger={event.deaths > 0} />
+              <Field icon={HeartCrack} label="Deaths" value={event.deaths ?? 0} danger={event.deaths > 0} />
               <Field icon={FileText} label="Reports" value={event.reports ?? 0} />
               {singleReporter && (
                 <Field

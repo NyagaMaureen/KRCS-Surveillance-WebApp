@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-do
 import { Search, RefreshCw, AlertTriangle, Clock, ShieldAlert } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getReviewEvents, getDiseaseOptions } from '../api/frappe'
-import { FOCUS, STATUS_STYLES, parseDate, relTime } from '../data/eventHelpers'
+import { FOCUS, STATUS_STYLES, statusLabel, parseDate, relTime } from '../data/eventHelpers'
 
 const SELECT_CLS = `appearance-none bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-900 ${FOCUS}`
 
@@ -20,7 +20,7 @@ const TABS = [
   { key: 'new', label: 'New', statuses: ['New'] },
   { key: 'verifying', label: 'Verifying', statuses: ['Verifying'] },
   { key: 'investigating', label: 'In the field', statuses: ['Investigating'] },
-  { key: 'verified', label: 'Verified', statuses: ['Verified'] },
+  { key: 'confirmed', label: 'Confirmed', statuses: ['Confirmed'] },
   { key: 'escalated', label: 'Escalated', statuses: ['Escalated'] },
   { key: 'closed', label: 'Closed & discarded', statuses: ['Discarded', 'Closed'] },
   { key: 'all', label: 'All', statuses: null },
@@ -36,7 +36,7 @@ const EMPTY_TEXT = {
   new: 'No new reports to review. New CBS reports arrive every hour; field reports arrive as soon as they are submitted.',
   verifying: 'No events are being verified right now. Start verification on a new report to see it here.',
   investigating: 'No field investigations under way.',
-  verified: 'No verified events.',
+  confirmed: 'No confirmed events.',
   escalated: 'No escalated events.',
   closed: 'No closed or discarded events.',
   all: 'No events to show yet.',
@@ -103,7 +103,7 @@ function EventRow({ event, search }) {
             {(event.severity || '').toUpperCase()}
           </span>
           <span className={`inline-flex items-center text-[10px] font-medium px-2.5 py-1 rounded-full border ${STATUS_STYLES[event.status] || 'border-gray-200 bg-gray-50 text-gray-500'}`}>
-            {event.status}
+            {statusLabel(event.status)}
           </span>
           <h3 className="text-base font-bold text-gray-900">{event.title}</h3>
           {event.dataWarning && (

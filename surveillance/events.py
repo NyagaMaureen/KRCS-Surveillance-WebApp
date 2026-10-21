@@ -58,7 +58,7 @@ def in_scope(disease, sub_county, source=None):
 		return source == "Field"
 	return sub_county.strip().lower() in subs
 
-OPEN = ["New", "Verifying", "Investigating", "Verified", "Escalated"]
+OPEN = ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]
 CLOSED = ["Discarded", "Closed"]
 LEVELS = ["standard", "high", "critical"]   # same three levels as disease priority and Risk Alerts
 PRIORITY_SEVERITY = {"critical": "critical", "high": "high", "standard": "standard"}
@@ -68,10 +68,10 @@ SOURCE_ORDER = ["EMR", "Field", "CBS"]
 ACTIONS = {
 	"start": (["New"], "Verifying", False),
 	"investigate": (["Verifying"], "Investigating", False),
-	"confirm": (["Investigating"], "Verified", True),
-	"escalate": (["New", "Verifying", "Investigating", "Verified"], "Escalated", True),
+	"confirm": (["Investigating"], "Confirmed", True),
+	"escalate": (["New", "Verifying", "Investigating", "Confirmed"], "Escalated", True),
 	"discard": (["New", "Verifying", "Investigating"], "Discarded", True),
-	"close": (["Verified", "Escalated"], "Closed", True),
+	"close": (["Confirmed", "Escalated"], "Closed", True),
 	"reopen": (CLOSED, "Verifying", False),
 }
 ACTION_LABEL = {"start": "Verification started", "investigate": "Field investigation started",
@@ -168,6 +168,8 @@ def _assign(sig):
 			"note": f"Event started from {sig.source} report {sig.ref}."})
 		ev.insert(ignore_permissions=True)
 		event = ev.name
+		from surveillance import notifications
+		notifications.on_new_event(ev.name, sig.signal_date)
 	frappe.db.set_value("Surveillance Signal", sig.name, "event", event, update_modified=False)
 	recompute_event(event)
 
@@ -433,7 +435,7 @@ def _shape(d, detail=False):
 
 @frappe.whitelist()
 def get_events(status=None, disease=None, region=None, source=None, search=None, limit=200):
-	"""List events for the Review Queue. status: New|Verifying|Investigating|Verified|Escalated|Discarded|Closed|All."""
+	"""List events for the Review Queue. status: New|Verifying|Investigating|Confirmed|Escalated|Discarded|Closed|All."""
 	scope = _scope_filters()
 	base = dict(scope)
 	if region and not scope:
@@ -476,7 +478,7 @@ def get_event(event):
 
 
 @frappe.whitelist(methods=["POST"])
-def set_status(event, action, note=None):
+def set_status(event, action, note=None, facility=None):
 	"""Officer action on an event: start, investigate, confirm, escalate, discard, close, reopen.
 	confirm / escalate / discard need a reason and close needs a closing summary (kept for audit)."""
 	from surveillance import investigation
@@ -492,6 +494,11 @@ def set_status(event, action, note=None):
 	if needs_note and not note:
 		frappe.throw(_("Please add a closing summary.") if action == "close" else _("Please give a reason."))
 	investigation.check_gate(doc, action)
+	if action == "escalate":
+		facility = (facility or "").strip()
+		if not facility:
+			frappe.throw(_("Enter the nearest health facility. County and National MOH need it."))
+		doc.nearest_facility = facility
 
 	doc.status = new_status
 	investigation.after_status(doc, action, note)
@@ -499,6 +506,11 @@ def set_status(event, action, note=None):
 		"action": ACTION_LABEL[action], "note": note})
 	doc.save(ignore_permissions=True)
 	investigation.sync_reports(doc, action, note)
+	if action == "confirm":
+		investigation.sync_epi_trends(doc, note)
+	if action == "escalate":
+		from surveillance import notifications
+		notifications.on_escalation(doc, note)
 
 	if action == "discard" and doc.disease == UNCLASSIFIED:
 		_dismiss_unclassified(doc.name, note)
@@ -523,7 +535,7 @@ def _dismiss_unclassified(event, note):
 @frappe.whitelist()
 def get_map_events(status="open", disease=None, days=30):
 	"""Review Queue events for the Surveillance Map (same region rules as the queue).
-	status: "open" (New, Verifying, Investigating, Verified, Escalated) | "all" | one status name."""
+	status: "open" (New, Verifying, Investigating, Confirmed, Escalated) | "all" | one status name."""
 	filters = dict(_scope_filters())
 	if status == "open":
 		filters["status"] = ["in", OPEN]

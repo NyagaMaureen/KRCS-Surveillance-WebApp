@@ -257,6 +257,7 @@ export async function createUser(userData) {
       : [],
 
     assigned_region: userData.assigned_region || '',
+    assigned_sub_county: userData.assigned_sub_county || '',
     account_status: userData.account_status || 'Active',
 
     enabled:
@@ -325,6 +326,7 @@ export async function updateUser(name, userData) {
     primary_role: newRole,
     roles,
     assigned_region: userData.assigned_region || '',
+    assigned_sub_county: userData.assigned_sub_county || '',
     account_status: userData.account_status || 'Active',
 
     enabled: userData.account_status !== 'Inactive' &&
@@ -1086,8 +1088,20 @@ export async function addEventNote(id, note) {
   return callMethodPost('/api/method/surveillance.events.add_note', { event: id, note })
 }
 
-export async function setEventStatus(id, action, note) {
-  return callMethodPost('/api/method/surveillance.events.set_status', { event: id, action, note })
+export async function setEventStatus(id, action, note, facility) {
+  return callMethodPost('/api/method/surveillance.events.set_status', { event: id, action, note, facility: facility || '' })
+}
+
+export async function getMyNotifications(limit = 20) {
+  return callMethod(`/api/method/surveillance.notifications.get_my_notifications?limit=${limit}`)
+}
+
+export async function markNotificationsRead(name) {
+  return callMethodPost('/api/method/surveillance.notifications.mark_notifications_read', name ? { name } : {})
+}
+
+export async function getEscalationPreview(eventId) {
+  return callMethod('/api/method/surveillance.notifications.get_escalation_preview?event=' + encodeURIComponent(eventId))
 }
 
 // ---------- Response Protocols ----------

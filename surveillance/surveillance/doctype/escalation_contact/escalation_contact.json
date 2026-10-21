@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "creation": "2026-10-19 17:00:00.000000",
+ "modified": "2026-10-19 17:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Escalation Contact",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "autoname": "hash",
+ "naming_rule": "Random",
+ "title_field": "contact_name",
+ "show_title_field_in_link": 1,
+ "track_changes": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "description": "County and National MOH people notified by email (and SMS when enabled) when an event is escalated.",
+ "fields": [
+  {
+   "fieldname": "contact_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "level",
+   "fieldtype": "Select",
+   "options": "County\nNational",
+   "default": "County",
+   "label": "Level",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "county",
+   "fieldtype": "Data",
+   "label": "County",
+   "in_list_view": 1,
+   "description": "For County contacts: the county they cover (e.g. Garissa). Leave empty to receive escalations from every county."
+  },
+  {
+   "fieldname": "role_title",
+   "fieldtype": "Data",
+   "label": "Role / title",
+   "description": "e.g. County Disease Surveillance Coordinator"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "options": "Email",
+   "label": "Email",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "Phone (for SMS)",
+   "description": "International format, e.g. +2547..."
+  },
+  {
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "default": "1",
+   "label": "Active",
+   "in_list_view": 1
+  }
+ ],
+ "field_order": [
+  "contact_name",
+  "level",
+  "county",
+  "role_title",
+  "cb1",
+  "email",
+  "phone",
+  "active"
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

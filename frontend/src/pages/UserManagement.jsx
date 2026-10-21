@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Search, Plus, Pencil, Trash2, X, UserRound, Users, CheckCircle2, UserX, Ban, ShieldCheck } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import RolesPermissions from '../components/settings/RolesPermissions'
-import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles } from '../api/frappe'
+import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties } from '../api/frappe'
 
 const tabs = [
   { key: 'users', label: 'Users', icon: Users },
@@ -25,6 +25,7 @@ const emptyForm = () => ({
   last_name: '',
   primary_role: '',
   assigned_region: '',
+  assigned_sub_county: '',
   account_status: 'Active',
   password: '',
 })
@@ -35,6 +36,8 @@ export default function UserManagement() {
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
   const [regions, setRegions] = useState([])
+  const [subCounties, setSubCounties] = useState([])
+  const [subCountyMap, setSubCountyMap] = useState({})
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -56,6 +59,19 @@ export default function UserManagement() {
   function updateForm(fields) {
     setForm((prev) => ({ ...prev, ...fields }))
   }
+
+  useEffect(() => {
+    getSubCounties('').then((list) => {
+      setSubCountyMap(Object.fromEntries(list.map((s) => [s.name, s.sub_county_name])))
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!form.assigned_region) { setSubCounties([]); return }
+    let cancelled = false
+    getSubCounties(form.assigned_region).then((list) => { if (!cancelled) setSubCounties(list) }).catch(() => { if (!cancelled) setSubCounties([]) })
+    return () => { cancelled = true }
+  }, [form.assigned_region])
 
   useEffect(() => {
     getReferenceLabels().then((labels) => setRegionMap(labels.regions))
@@ -135,6 +151,7 @@ export default function UserManagement() {
       last_name: u.last_name || '',
       primary_role: u.primary_role || '',
       assigned_region: u.assigned_region || '',
+      assigned_sub_county: u.assigned_sub_county || '',
       account_status: u.account_status || 'Active',
       password: '',
     })
@@ -290,6 +307,7 @@ export default function UserManagement() {
                   <th className="px-5 py-3 font-medium">User</th>
                   <th className="px-5 py-3 font-medium">Role</th>
                   <th className="px-5 py-3 font-medium">Region</th>
+                  <th className="px-5 py-3 font-medium">Sub-county</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium">Last Login</th>
                   <th className="px-5 py-3 font-medium">Actions</th>
@@ -319,6 +337,7 @@ export default function UserManagement() {
                         <span className="ml-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full align-middle">unresolved</span>
                       )}
                     </td>
+                    <td className="px-5 py-3 text-gray-700">{u.assigned_sub_county ? (subCountyMap[u.assigned_sub_county] || u.assigned_sub_county) : '—'}</td>
                     <td className="px-5 py-3"><span className={['text-xs font-medium px-3 py-1 rounded-full', statusColor(u.account_status)].join(' ')}>{u.account_status || 'Active'}</span></td>
                     <td className="px-5 py-3 text-gray-500">{formatDate(u.last_login)}</td>
                     <td className="px-5 py-3">
@@ -331,7 +350,7 @@ export default function UserManagement() {
                 ))}
                 {!pagedUsers.length && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-10 text-center text-gray-400">No users found</td>
+                    <td colSpan={7} className="px-5 py-10 text-center text-gray-400">No users found</td>
                   </tr>
                 )}
               </tbody>
@@ -389,10 +408,17 @@ export default function UserManagement() {
                 </select>
 
                 <label className="block text-sm font-semibold mb-1">Region</label>
-                <select value={form.assigned_region} onChange={(e) => updateForm({ assigned_region: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-4 text-sm">
+                <select value={form.assigned_region} onChange={(e) => updateForm({ assigned_region: e.target.value, assigned_sub_county: '' })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-4 text-sm">
                   <option value="">Select a region</option>
                   {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
                 </select>
+
+                <label className="block text-sm font-semibold mb-1">Sub-county <span className="font-normal text-gray-400">(optional)</span></label>
+                <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-1 text-sm">
+                  <option value="">No sub-county</option>
+                  {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}
+                </select>
+                <p className="text-xs text-gray-500 mb-4">CHA / SCDSC: receives alerts for new signals in this sub-county.</p>
 
                 <label className="block text-sm font-semibold mb-1">Status</label>
                 <select value={form.account_status} onChange={(e) => updateForm({ account_status: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-6 text-sm">

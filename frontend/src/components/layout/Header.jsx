@@ -12,8 +12,11 @@ import {
 import {
   currentUserFullName,
   getMyCapabilities,
+  getMyNotifications,
+  markNotificationsRead,
   logout
 } from '../../api/frappe'
+import { FOCUS, relTime } from '../../data/eventHelpers'
 
 export default function Header() {
   const navigate = useNavigate()
@@ -40,6 +43,53 @@ export default function Header() {
 
   const [notifOpen, setNotifOpen] = useState(false)
   const notifRef = useRef(null)
+  const [notif, setNotif] = useState({ unread: 0, items: [] })
+
+  async function loadNotifications() {
+    try {
+      const data = await getMyNotifications()
+      setNotif({ unread: data?.unread || 0, items: data?.items || [] })
+    } catch {
+      // bell keeps working without a badge
+    }
+  }
+
+  useEffect(() => {
+    loadNotifications()
+    const poll = setInterval(() => {
+      if (document.visibilityState === 'visible') loadNotifications()
+    }, 60000)
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setNotifOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      clearInterval(poll)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [])
+
+  async function markAllRead() {
+    try {
+      await markNotificationsRead()
+    } catch {
+      return
+    }
+    loadNotifications()
+  }
+
+  async function openNotification(item) {
+    setNotifOpen(false)
+    try {
+      await markNotificationsRead(item.id)
+      loadNotifications()
+    } catch {
+      // ignore
+    }
+    if (item.link) navigate(item.link)
+  }
 
   useEffect(() => {
     getMyCapabilities()
@@ -128,16 +178,52 @@ export default function Header() {
         <div className="bg-gray-100 rounded-full h-11 flex items-center gap-1.5 px-1.5">
           <div ref={notifRef} className="relative">
             <button
-              className="w-8 h-8 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-colors cursor-pointer"
+              aria-label="Notifications"
+              aria-expanded={notifOpen}
+              className={`relative w-8 h-8 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-colors cursor-pointer ${FOCUS}`}
               onClick={() => setNotifOpen(!notifOpen)}
             >
               <Bell className="w-4 h-4 text-gray-600" />
+              {notif.unread > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold flex items-center justify-center">
+                  {notif.unread > 9 ? '9+' : notif.unread}
+                </span>
+              )}
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 top-[calc(100%+8px)] w-64 bg-white rounded-xl shadow-lg border border-gray-100 py-3 z-50">
-                <p className="px-4 pb-2 text-sm font-semibold text-gray-900">Notifications</p>
-                <p className="px-4 py-3 text-sm text-gray-400">You're all caught up. No new notifications.</p>
+              <div className="absolute right-0 top-[calc(100%+8px)] w-80 max-h-96 overflow-y-auto bg-white rounded-xl shadow-lg border border-gray-100 py-3 z-50">
+                <div className="flex items-center justify-between px-4 pb-2">
+                  <p className="text-sm font-semibold text-gray-900">Notifications</p>
+                  <button
+                    type="button"
+                    onClick={markAllRead}
+                    className={`text-xs font-medium text-red-600 hover:text-red-700 rounded ${FOCUS}`}
+                  >
+                    Mark all as read
+                  </button>
+                </div>
+                {notif.items.length === 0 ? (
+                  <p className="px-4 py-3 text-sm text-gray-400">No notifications yet.</p>
+                ) : (
+                  <ul>
+                    {notif.items.map((item) => (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => openNotification(item)}
+                          className={`w-full flex items-start gap-2 px-4 py-2.5 text-left hover:bg-gray-50 ${item.read ? '' : 'bg-red-50'} ${FOCUS}`}
+                        >
+                          <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${item.read ? 'bg-transparent' : 'bg-red-600'}`} />
+                          <span className="min-w-0">
+                            <span className="block text-sm text-gray-900">{item.text}</span>
+                            <span className="block text-xs text-gray-400 mt-0.5">{relTime(item.at)}</span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
           </div>

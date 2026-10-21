@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-14 12:00:00.000000",
- "modified": "2026-10-19 12:00:00.000000",
+ "modified": "2026-10-19 17:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -49,6 +49,7 @@
   "decision_reason",
   "decided_by",
   "decided_on",
+  "nearest_facility",
   "cb_decision",
   "closing_summary",
   "closed_by",
@@ -67,7 +68,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "New\nVerifying\nInvestigating\nVerified\nEscalated\nDiscarded\nClosed",
+   "options": "New\nVerifying\nInvestigating\nConfirmed\nEscalated\nDiscarded\nClosed",
    "default": "New",
    "in_list_view": 1,
    "in_standard_filter": 1,
@@ -269,6 +270,12 @@
    "fieldname": "decided_on",
    "fieldtype": "Datetime",
    "label": "Decided On"
+  },
+  {
+   "fieldname": "nearest_facility",
+   "fieldtype": "Data",
+   "label": "Nearest health facility",
+   "description": "Entered by the officer when escalating; sent to County / National MOH."
   },
   {
    "fieldname": "cb_decision",

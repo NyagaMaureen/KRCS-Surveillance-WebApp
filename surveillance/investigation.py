@@ -9,7 +9,7 @@ Steps shown to the officer:
   5 Decision             confirm, discard or escalate, with a reason (human sign-off)
   6 Response and close   protocol steps with phase "Response", closing summary, feedback to field reporters
 
-Statuses: New -> Verifying -> Investigating -> Verified / Escalated -> Closed   (Discarded at any open step)
+Statuses: New -> Verifying -> Investigating ("In the field") -> Confirmed / Escalated -> Closed   (Discarded at any open step)
 
 The verification suggestion is rule-based and shows its reasons; it never decides. The officer decides.
 Every answer, step outcome, upload and decision is written to the event timeline.
@@ -180,6 +180,13 @@ def _outcome(s):
 	return s.outcome or ("Done" if s.done else "")
 
 
+def must_escalate(doc):
+	"""Diseases where one case is an emergency (protocol "Single case is an emergency": VHF, BVD, polio,
+	yellow fever, mpox) cannot be confirmed locally: National MOH leads, so they must be escalated."""
+	proto = _protocol(doc)
+	return bool(proto and proto.get("notify_immediately"))
+
+
 def gates(doc):
 	unanswered = [a.question_no for a in (doc.get("verification") or []) if not a.answer]
 	inv_open = [s.step_no for s in _steps(doc, "Investigation") if not _outcome(s)]
@@ -190,7 +197,7 @@ def gates(doc):
 		"openResponseSteps": resp_open,
 		"canStartInvestigation": doc.status == "Verifying" and not unanswered,
 		"canConfirm": doc.status == "Investigating" and not inv_open,
-		"canClose": doc.status in ("Verified", "Escalated") and not resp_open,
+		"canClose": doc.status in ("Confirmed", "Escalated") and not resp_open,
 	}
 
 
@@ -201,6 +208,9 @@ def check_gate(doc, action):
 	if action == "investigate" and g["unansweredQuestions"]:
 		frappe.throw(_("Check at least one report and answer all verification questions first (Not sure is an answer). Missing: {0}").format(
 			", ".join(str(n) for n in g["unansweredQuestions"])))
+	if action == "confirm" and must_escalate(doc):
+		frappe.throw(_("{0} must be escalated to County / National MOH. Use Escalate instead of Confirm.").format(
+			doc.disease_name or doc.disease))
 	if action == "confirm" and g["openInvestigationSteps"]:
 		frappe.throw(_("Record an outcome for every investigation step first. Missing steps: {0}").format(
 			", ".join(str(n) for n in g["openInvestigationSteps"])))
@@ -222,7 +232,7 @@ def after_status(doc, action, note):
 		doc.closing_summary = doc.closed_by = doc.closed_on = None
 
 
-REPORT_STATUS = {"Verifying": "Investigating", "Investigating": "Investigating", "Verified": "Investigating",
+REPORT_STATUS = {"Verifying": "Investigating", "Investigating": "Investigating", "Confirmed": "Investigating",
 	"Escalated": "Investigating", "Closed": "Closed", "Discarded": "Closed", "New": "Submitted"}
 
 
@@ -281,6 +291,8 @@ def _shape(doc):
 		"event": doc.name, "status": doc.status,
 		"protocol": protocol_shape(proto, steps=False) if proto else None,
 		"notifyImmediately": bool(proto and proto.get("notify_immediately")),
+		"mustEscalate": bool(proto and proto.get("notify_immediately")),
+		"nearestFacility": doc.get("nearest_facility") or None,
 		"questions": questions,
 		"suggestion": suggestion(questions, bool(proto and proto.get("notify_immediately")), doc.disease_name),
 		"investigationSteps": [s for s in steps if s["phase"] == "Investigation"],
@@ -347,9 +359,9 @@ def set_step_outcome(event, step_no, outcome=None, reason=None):
 		frappe.throw(_("Outcome must be Done, Not done or Not applicable."))
 	if outcome == "Not done" and not reason:
 		frappe.throw(_("Say why this step was not done."))
-	if (row.phase or "Investigation") == "Investigation" and doc.status not in ("Investigating", "Verified", "Escalated"):
+	if (row.phase or "Investigation") == "Investigation" and doc.status not in ("Investigating", "Confirmed", "Escalated"):
 		frappe.throw(_("Start the field investigation first."))
-	if (row.phase or "Investigation") == "Response" and doc.status not in ("Verified", "Escalated"):
+	if (row.phase or "Investigation") == "Response" and doc.status not in ("Confirmed", "Escalated"):
 		frappe.throw(_("Response steps open after the decision (confirm or escalate)."))
 	row.outcome, row.reason = outcome, (reason if outcome in ("Not done", "Not applicable") else None)
 	row.done = 1 if outcome == "Done" else 0
@@ -523,3 +535,16 @@ def move_checks_to_reports():
 			doc.save(ignore_permissions=True)
 	frappe.db.commit()
 	print(f"Protocols updated: {protos} | open events updated: {events}")
+
+
+def sync_epi_trends(doc, note):
+	"""Confirming an event also confirms the linked Epi Trends alert (if it is still open)."""
+	if not doc.linked_alert or not frappe.db.exists("Risk Alert", doc.linked_alert):
+		return
+	alert = frappe.get_doc("Risk Alert", doc.linked_alert)
+	if alert.status in ("Confirmed", "Resolved", "Rejected"):
+		return
+	alert.status = "Confirmed"
+	alert.append("notes", {"note": f"Confirmed from Alerts & Signals event {doc.name}: {note}"[:1000],
+		"added_by": frappe.session.user, "created_at": now_datetime()})
+	alert.save(ignore_permissions=True)
