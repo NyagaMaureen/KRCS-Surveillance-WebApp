@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-14 12:00:00.000000",
- "modified": "2026-10-19 17:00:00.000000",
+ "modified": "2026-10-21 13:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -37,6 +37,7 @@
   "reason",
   "data_warning",
   "linked_alert",
+  "from_alert",
   "sb_protocol",
   "protocol",
   "checklist",
@@ -204,6 +205,14 @@
    "fieldtype": "Link",
    "label": "Outbreak Alert",
    "options": "Risk Alert"
+  },
+  {
+   "fieldname": "from_alert",
+   "fieldtype": "Link",
+   "options": "Risk Alert",
+   "label": "Started from Epi Trends alert",
+   "read_only": 1,
+   "description": "Set when the investigation was opened from an Epi Trends alert (e.g. a facility MOH 505 rise). Such events can have no individual reports."
   },
   {
    "fieldname": "sb_protocol",

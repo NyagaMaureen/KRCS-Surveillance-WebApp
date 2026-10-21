@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Search, Download, MoreHorizontal, Eye, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import { getAuditLogs, exportCsv } from '../api/frappe'
 
-const PAGE_SIZE = 7
+const PAGE_SIZE = 20
 
 const CATEGORY_COLORS = {
+  Investigation: 'bg-purple-50 text-purple-700',
   Auth: 'bg-[#DB2424]/10 text-[#DB2424]',
   Alert: 'bg-[#F2C94C]/10 text-[#F2C94C]',
   Report: 'bg-[#27AE60]/10 text-[#27AE60]',
@@ -191,6 +193,7 @@ export default function AuditLog() {
                 <td className="px-5 py-4 text-gray-500 whitespace-nowrap">{log.role}</td>
                 <td className="px-5 py-4 text-gray-500 max-w-xs">
                   {log.details}
+                  {log.link && <Link to={log.link} className="ml-2 text-xs text-[#DB2424] hover:underline">Open</Link>}
                   {log.changes?.length > 0 && (
                     <>
                       {' '}
@@ -247,7 +250,7 @@ export default function AuditLog() {
               <div className="flex justify-between gap-4"><dt className="text-gray-400">Action</dt><dd className="text-gray-900 font-medium">{detailsLog.action}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-gray-400">User</dt><dd className="text-gray-900 font-medium">{detailsLog.user}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-gray-400">Role</dt><dd className="text-gray-900 font-medium">{detailsLog.role}</dd></div>
-              <div><dt className="text-gray-400 mb-1">Details</dt><dd className="text-gray-700 break-words whitespace-pre-wrap">{detailsLog.details}</dd></div>
+              <div><dt className="text-gray-400 mb-1">Details</dt><dd className="text-gray-700 break-words whitespace-pre-wrap">{detailsLog.details}{detailsLog.link && <Link to={detailsLog.link} className="ml-2 text-xs text-[#DB2424] hover:underline">Open</Link>}</dd></div>
             </dl>
             {detailsLog.changes?.length > 0 && (
               <div className="mt-4">

@@ -31,9 +31,11 @@ const TABS = [
   { key: 'open', label: 'Open', match: (a) => a.status === 'Pending' || a.status === 'Investigating' },
   { key: 'confirmed', label: 'Confirmed', match: (a) => a.status === 'Confirmed' },
   { key: 'resolved', label: 'Resolved', match: (a) => a.status === 'Resolved' },
-  { key: 'rejected', label: 'Rejected', match: (a) => a.status === 'Rejected' },
+  { key: 'rejected', label: 'Dismissed', match: (a) => a.status === 'Rejected' },
   { key: 'all', label: 'All', match: () => true },
 ]
+
+const STATUS_LABELS = { Pending: 'New', Investigating: 'Under investigation', Confirmed: 'Confirmed', Resolved: 'Resolved', Rejected: 'Dismissed' }
 
 const SOURCE_LABELS = {
   CBS: 'Community (CBS)',
@@ -136,8 +138,13 @@ function AlertCard({ alert, onOpen }) {
             {alert.severity}
           </span>
           <span className={`inline-flex items-center text-[10px] font-medium px-2.5 py-1 rounded-full border ${STATUS_STYLES[alert.status] || 'border-gray-200 bg-gray-50 text-gray-500'}`}>
-            {alert.status}
+            {STATUS_LABELS[alert.status] || alert.status}
           </span>
+          {alert.openEvents > 0 && (
+            <span className="inline-flex items-center text-[10px] font-medium px-2.5 py-1 rounded-full border border-purple-300 bg-purple-50 text-purple-600">
+              {alert.openEvents === 1 ? 'Investigation open' : `${alert.openEvents} investigations open`}
+            </span>
+          )}
           {alert.ongoing ? (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
               <span className="relative flex w-2 h-2" aria-hidden="true">
@@ -333,7 +340,7 @@ export default function AlertsSignals() {
         diseaseOf(a),
         a.location,
         a.severity,
-        a.status,
+        STATUS_LABELS[a.status] || a.status,
         a.startWeek,
         a.lastWeek,
         a.weeks,

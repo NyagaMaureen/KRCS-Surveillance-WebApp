@@ -1,5 +1,12 @@
 """Alert engine: weekly counts -> anomaly detection -> outbreak episodes -> Risk Alert records.
 
+Epi Trends is for MONITORING. Investigations happen only in Alerts & Signals:
+  - "Investigate in Alerts & Signals" (investigate_alert) opens an event from a trend, linked to it,
+    or returns the open event that already covers the same disease and sub-county.
+  - The trend's status follows its events (sync_alert): open event -> Investigating ("Under investigation"),
+    confirmed or escalated -> Confirmed, all closed -> Resolved, all discarded -> Rejected (No action needed).
+  - Reviewed without an investigation: review_alert -> Rejected with outcome "No action needed" or "Data error".
+
 Runs daily (hooks.scheduler_events) and on demand:
     bench --site <site> execute surveillance.alerts.run_detection
 
@@ -23,10 +30,10 @@ import frappe
 import pandas as pd
 import json
 from frappe import _
-from frappe.utils import add_days, getdate, now_datetime, today
+from frappe.utils import add_days, get_fullname, getdate, now_datetime, today
 
 from surveillance.anomaly.engine import detect
-from surveillance.capabilities import require_capability
+from surveillance.capabilities import has_capability, require_capability
 from surveillance.weekly_counts import replace_source, week_start
 
 DOCTYPE = "Risk Alert"
@@ -43,6 +50,9 @@ MATRIX = {
 	"Standard": {"normal": "standard", "threshold": "standard", "outbreak": "high"},
 }
 STATUSES = ["Pending", "Investigating", "Confirmed", "Resolved", "Rejected"]
+STATUS_LABELS = {"Pending": "New", "Investigating": "Under investigation", "Confirmed": "Confirmed",
+	"Resolved": "Resolved", "Rejected": "Dismissed"}
+EVENT_OPEN = ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]
 CLOSED = {"Resolved", "Rejected"}
 RESPONSE = {
 	"critical": "Verify within 24 hours and notify the county surveillance team.",
@@ -381,6 +391,11 @@ def _shape(d, notes=None, related=None):
 		"insights": insights,
 		"notes": notes or [],
 		"relatedAlerts": related or [],
+		"statusLabel": STATUS_LABELS.get(d.status, d.status),
+		"reviewOutcome": d.get("review_outcome") or None,
+		"reviewNote": d.get("review_note") or None,
+		"reviewedBy": get_fullname(d.reviewed_by) if d.get("reviewed_by") else None,
+		"reviewedOn": str(d.reviewed_on) if d.get("reviewed_on") else None,
 	}
 def _trend(doc, before_weeks=8):
 	"""Weekly counts for this disease and place, from 8 weeks before the outbreak to its latest week, per source."""
@@ -424,7 +439,17 @@ def get_alerts(limit=500):
 	rows = frappe.get_all(DOCTYPE, fields=["*"], order_by="last_week desc, modified desc", limit_page_length=int(limit))
 	order = {s: i for i, s in enumerate(reversed(LEVELS))}
 	rows.sort(key=lambda d: (d.status not in ("Pending", "Investigating"), order.get(d.severity, 9)))
-	return [_shape(d) for d in rows]
+	open_counts = {}
+	for e in frappe.get_all("Surveillance Event", filters={"status": ["in", EVENT_OPEN]},
+			fields=["linked_alert", "from_alert"]):
+		for a in {e.linked_alert, e.from_alert} - {None, ""}:
+			open_counts[a] = open_counts.get(a, 0) + 1
+	out = []
+	for d in rows:
+		shaped = _shape(d)
+		shaped["openEvents"] = open_counts.get(d.name, 0)
+		out.append(shaped)
+	return out
 
 
 @frappe.whitelist()
@@ -436,6 +461,7 @@ def get_alert_regions():
 @frappe.whitelist()
 def get_alert(name):
 	require_capability("view_alerts")
+	sync_alert(name)   # bring the status in line with its Alerts & Signals events (also fixes older trends)
 	doc = frappe.get_doc(DOCTYPE, name)
 	notes = [{"text": n.note, "createdAt": str(n.created_at),
 		"by": "Alert engine" if n.added_by == "Administrator" else frappe.utils.get_fullname(n.added_by)} for n in doc.notes]
@@ -445,6 +471,9 @@ def get_alert(name):
 			"last_week": [">=", add_days(doc.last_week or doc.week_start, -56)]},
 			fields=["name", "disease_name", "severity", "signals", "week_start", "last_week"], order_by="last_week desc", limit_page_length=5)]
 	shaped = _shape(doc, notes, related)
+	events = _related_events(doc)
+	shaped.update({"events": events, "openEvent": next((e["id"] for e in events if e["status"] in EVENT_OPEN), None),
+		"canInvestigate": has_capability("act_on_events"), "canReview": has_capability("investigate_alerts")})
 	shaped.update({"trend": _trend(doc), "timeline": _timeline(doc),
 		"firstDetected": str(doc.first_detected or ""), "lastDetected": str(doc.last_detected or "")})
 	return shaped
@@ -518,3 +547,141 @@ def get_map_data(weeks=8):
 			"resolved": sum(1 for a in recent if a.status == "Resolved"),
 		},
 	}
+
+# ---------- Epi Trends -> Alerts & Signals ----------
+
+def _related_events(doc):
+	"""Alerts & Signals events for this trend: linked to it, started from it, or same disease + sub-county
+	reported during the trend's weeks."""
+	names = set(frappe.get_all("Surveillance Event", filters={"linked_alert": doc.name}, pluck="name"))
+	names |= set(frappe.get_all("Surveillance Event", filters={"from_alert": doc.name}, pluck="name"))
+	if doc.sub_county:
+		names |= set(frappe.get_all("Surveillance Event", filters={"disease": doc.disease, "sub_county": doc.sub_county,
+			"last_reported": [">=", doc.week_start]}, pluck="name"))
+	rows = frappe.get_all("Surveillance Event", filters={"name": ["in", list(names) or [""]]},
+		fields=["name", "title", "status", "severity", "reports", "people", "deaths", "last_reported", "from_alert"],
+		order_by="last_reported desc")
+	return [{"id": r.name, "title": r.title, "status": r.status, "severity": r.severity, "reports": r.reports or 0,
+		"people": r.people or 0, "deaths": r.deaths or 0, "lastSeen": str(r.last_reported or ""),
+		"fromTrend": r.from_alert == doc.name} for r in rows]
+
+
+def _note(doc, text):
+	doc.append("notes", {"note": text[:1000], "added_by": frappe.session.user, "created_at": now_datetime()})
+
+
+@frappe.whitelist(methods=["POST"])
+def investigate_alert(name):
+	"""Open (or reuse) an Alerts & Signals event for this trend. Returns {"event": id, "created": bool}.
+	Works for any disease, including common ones (e.g. malaria) that do not create events from single reports."""
+	require_capability("view_alerts")
+	require_capability("act_on_events")
+	doc = frappe.get_doc(DOCTYPE, name)
+	existing = frappe.get_all("Surveillance Event", filters={"status": ["in", EVENT_OPEN], "disease": doc.disease,
+		"sub_county": doc.sub_county or ""}, pluck="name", order_by="last_reported desc", limit=1)
+	if existing:
+		frappe.db.set_value("Surveillance Event", existing[0], "linked_alert", doc.name, update_modified=False)
+		sync_alert(doc.name)
+		return {"event": existing[0], "created": False}
+
+	region = None
+	if doc.sub_county:
+		region = frappe.db.get_value("Sub County", {"sub_county_name": doc.sub_county, "county": doc.county}, "region") \
+			or frappe.db.get_value("Sub County", {"sub_county_name": doc.sub_county}, "region")
+	weeks = doc.get("weeks_flagged") or 1
+	reason = (f"Epi Trends: {doc.disease_name} in {doc.sub_county or doc.location}, {doc.signals} case(s) over {weeks} week(s) "
+		f"from {doc.week_start} to {doc.last_week or doc.week_start} ({doc.sources or 'weekly counts'}). No individual reports: "
+		f"verify with the facility or community.")
+	ev = frappe.get_doc({
+		"doctype": "Surveillance Event", "status": "New", "disease": doc.disease, "disease_name": doc.disease_name,
+		"priority": doc.priority, "county": doc.county, "sub_county": doc.sub_county or "", "area": "",
+		"group_key": f"trend|{doc.name}", "region": region, "severity": doc.severity or "standard",
+		"first_reported": now_datetime(), "last_reported": now_datetime(),
+		"people": doc.affected or doc.signals or 0, "reports": 0, "sources": doc.sources or "",
+		"title": f"{doc.disease_name} · {doc.sub_county or doc.location} (from Epi Trends)",
+		"reason": reason, "linked_alert": doc.name, "from_alert": doc.name,
+	})
+	ev.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Created from Epi Trends",
+		"note": f"Investigation opened from trend alert {doc.name}."})
+	ev.insert(ignore_permissions=True)
+	_note(doc, f"Investigation opened in Alerts & Signals: {ev.name}")
+	doc.save(ignore_permissions=True)
+	sync_alert(doc.name)
+	return {"event": ev.name, "created": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def review_alert(name, outcome, note):
+	"""Dismiss a trend without an investigation: outcome "No action needed" (e.g. seasonal) or "Data error"."""
+	require_capability("investigate_alerts")
+	note = (note or "").strip()
+	if outcome not in ("No action needed", "Data error"):
+		frappe.throw(_("Outcome must be No action needed or Data error."))
+	if not note:
+		frappe.throw(_("Say why (kept for audit)."))
+	doc = frappe.get_doc(DOCTYPE, name)
+	if doc.status != "Pending":
+		frappe.throw(_("Only new trends can be marked as reviewed. This one is {0}.").format(STATUS_LABELS.get(doc.status, doc.status)))
+	if any(e["status"] in EVENT_OPEN for e in _related_events(doc)):
+		frappe.throw(_("An investigation is open for this trend in Alerts & Signals. Close or discard it there first."))
+	doc.update({"status": "Rejected", "review_outcome": outcome, "review_note": note,
+		"reviewed_by": frappe.session.user, "reviewed_on": now_datetime()})
+	_note(doc, f"Reviewed: {outcome}. {note}")
+	doc.save(ignore_permissions=True)
+	return get_alert(name)
+
+
+@frappe.whitelist(methods=["POST"])
+def reopen_alert(name):
+	require_capability("investigate_alerts")
+	doc = frappe.get_doc(DOCTYPE, name)
+	doc.update({"status": "Pending", "review_outcome": None, "review_note": None, "reviewed_by": None, "reviewed_on": None})
+	_note(doc, "Reopened for review.")
+	doc.save(ignore_permissions=True)
+	return get_alert(name)
+
+
+def sync_alert(name):
+	"""Set a trend's status from its Alerts & Signals events. Dismissed trends are left alone."""
+	if not name or not frappe.db.exists(DOCTYPE, name):
+		return
+	doc = frappe.get_doc(DOCTYPE, name)
+	if doc.status == "Rejected" and doc.get("review_outcome"):
+		return
+	statuses = [e["status"] for e in _related_events(doc)]
+	if not statuses:
+		return
+	if any(s in ("Confirmed", "Escalated") for s in statuses) and any(s in EVENT_OPEN for s in statuses):
+		new = "Confirmed"
+	elif any(s in EVENT_OPEN for s in statuses):
+		new = "Investigating"
+	elif "Closed" in statuses:
+		new = "Resolved"
+	else:
+		new = "Rejected"
+		doc.review_outcome = "No action needed"
+		doc.review_note = "All related events were discarded in Alerts & Signals."
+	if new != doc.status:
+		old = doc.status
+		doc.status = new
+		_note(doc, f"Status {STATUS_LABELS.get(old, old)} -> {STATUS_LABELS.get(new, new)} (from Alerts & Signals).")
+		doc.save(ignore_permissions=True)
+
+
+def sync_alert_for_event(event_doc):
+	for name in {event_doc.get("linked_alert"), event_doc.get("from_alert")} - {None, ""}:
+		sync_alert(name)
+
+
+def sync_all_alerts():
+	"""One-off (safe to repeat): update every trend's status from its Alerts & Signals events.
+	bench --site <site> execute surveillance.alerts.sync_all_alerts"""
+	before = {a.name: a.status for a in frappe.get_all(DOCTYPE, fields=["name", "status"])}
+	for name in before:
+		sync_alert(name)
+	frappe.db.commit()
+	changed = [(n, before[n], frappe.db.get_value(DOCTYPE, n, "status")) for n in before
+		if frappe.db.get_value(DOCTYPE, n, "status") != before[n]]
+	for n, old, new in changed:
+		print(f"{n}: {STATUS_LABELS.get(old, old)} -> {STATUS_LABELS.get(new, new)}")
+	print(f"Trends updated: {len(changed)} of {len(before)}")

@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { Bar } from 'react-chartjs-2'
 import {
-  ArrowLeft, MoreHorizontal, MapPin, CalendarDays, Users, Layers, ExternalLink,
-  AlertTriangle, FileText, XCircle, CheckCircle2, Clock, Radio, Check, Search, ShieldCheck,
+  ArrowLeft, MapPin, CalendarDays, Users, Layers, ExternalLink,
+  AlertTriangle, FileText, CheckCircle2, Clock, Radio, Check, Search, ArrowRight, XCircle,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { CHART_FONT } from '../charts/chartSetup'
-import { getAlertSignal, updateAlertStatus, addAlertNote } from '../api/frappe'
+import { getAlertSignal, addAlertNote, investigateAlert, reviewAlert, reopenAlert } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 const SEVERITY_ACCENT = {
@@ -26,11 +26,13 @@ const STATUS_STYLES = {
   Rejected: 'border-red-500 bg-red-500/10 text-red-600',
 }
 
-const STATUSES = ['Pending', 'Investigating', 'Confirmed', 'Resolved', 'Rejected']
-const CONFIRM_STATUSES = {
-  Resolved: 'Mark this alert as resolved?',
-  Rejected: 'Reject this alert as a false alarm?',
-}
+const STATUS_LABELS = { Pending: 'New', Investigating: 'Under investigation', Confirmed: 'Confirmed', Resolved: 'Resolved', Rejected: 'Dismissed' }
+const EVENT_STATUS_LABELS = { Investigating: 'In the field' }
+const EVENT_OPEN = ['New', 'Verifying', 'Investigating', 'Confirmed', 'Escalated']
+const REVIEW_OUTCOMES = [
+  { value: 'No action needed', label: 'Reviewed – no action needed', help: 'Expected or explained (e.g. seasonal rise, known cause).' },
+  { value: 'Data error', label: 'Data error', help: 'The numbers are wrong (e.g. a facility entry mistake).' },
+]
 
 const SOURCE_LABELS = {
   CBS: 'Community (CBS)',
@@ -45,9 +47,9 @@ const SOURCE_COLORS = {
 const SOURCE_KEYS = ['CBS', 'Case Report', 'IDSR']
 
 const NEXT_STEP = {
-  Pending: 'Assign an officer to verify',
-  Investigating: 'Confirm or reject after verification',
-  Confirmed: 'Respond and resolve when controlled',
+  Pending: 'Review the trend. Investigate it in Alerts & Signals, or mark it as reviewed if no action is needed.',
+  Investigating: 'An investigation is open in Alerts & Signals. This trend updates automatically.',
+  Confirmed: 'Confirmed in Alerts & Signals. The response is under way there.',
 }
 
 const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2'
@@ -187,9 +189,11 @@ export default function AlertDetail() {
   const [note, setNote] = useState('')
   const [savingNote, setSavingNote] = useState(false)
   const [actionPending, setActionPending] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewOutcome, setReviewOutcome] = useState('')
+  const [reviewNote, setReviewNote] = useState('')
   const { has } = useCapabilities()
-  const canInvestigate = has('investigate_alerts')
+  const canReview = has('investigate_alerts')
   const [toast, setToast] = useState({ show: false, message: '', error: false })
   const toastTimer = useRef(null)
 
@@ -215,23 +219,40 @@ export default function AlertDetail() {
   const accent = accentFor(alert?.severity)
   const reasons = useMemo(() => reasonsFor(alert?.tags, true), [alert])
 
-  async function handleStatusChange(status) {
-    setMenuOpen(false)
-    if (!alert || alert.status === status) return
-    if (CONFIRM_STATUSES[status] && !window.confirm(CONFIRM_STATUSES[status])) return
-    setActionPending(status)
+  async function handleInvestigate() {
+    setActionPending('investigate')
     try {
-      const updated = await updateAlertStatus(id, status)
-      setAlert((prev) => ({ ...prev, ...updated, status }))
-      showToast(`Status changed to ${status}`)
-      try {
-        const fresh = await getAlertSignal(id)
-        setAlert(fresh)
-      } catch {
-        /* keep the in-place update if the refresh fails */
-      }
+      const res = await investigateAlert(id)
+      navigate(`/alerts-signals/${encodeURIComponent(res.event)}`)
     } catch (e) {
-      showToast(e.message || 'Could not update status', true)
+      showToast(e.message || 'Could not open the investigation', true)
+      setActionPending('')
+    }
+  }
+
+  async function handleReview() {
+    setActionPending('review')
+    try {
+      const fresh = await reviewAlert(id, reviewOutcome, reviewNote.trim())
+      setAlert(fresh)
+      setReviewOpen(false)
+      setReviewOutcome('')
+      setReviewNote('')
+      showToast('Marked as reviewed')
+    } catch (e) {
+      showToast(e.message || 'Could not save the review', true)
+    } finally {
+      setActionPending('')
+    }
+  }
+
+  async function handleReopen() {
+    setActionPending('reopen')
+    try {
+      setAlert(await reopenAlert(id))
+      showToast('Reopened for review')
+    } catch (e) {
+      showToast(e.message || 'Could not reopen', true)
     } finally {
       setActionPending('')
     }
@@ -243,7 +264,7 @@ export default function AlertDetail() {
       `ID: ${alert.id}`,
       `Title: ${alert.title}`,
       `Severity: ${alert.severity}`,
-      `Status: ${alert.status}`,
+      `Status: ${STATUS_LABELS[alert.status] || alert.status}`,
       `Location: ${alert.location}`,
       `Period: ${alert.startDate} – ${alert.date}`,
       `Weeks: ${alert.weeks}`,
@@ -286,13 +307,6 @@ export default function AlertDetail() {
       setSavingNote(false)
     }
   }
-
-  const actions = [
-    { status: 'Investigating', label: 'Start investigation', Icon: Search, tone: 'purple', color: 'text-purple-500', bg: 'bg-purple-400/5 hover:bg-purple-400/10' },
-    { status: 'Confirmed', label: 'Confirm outbreak', Icon: ShieldCheck, tone: 'blue', color: 'text-blue-600', bg: 'bg-blue-500/5 hover:bg-blue-500/10' },
-    { status: 'Resolved', label: 'Mark resolved', Icon: CheckCircle2, tone: 'emerald', color: 'text-emerald-600', bg: 'bg-emerald-500/5 hover:bg-emerald-500/10' },
-    { status: 'Rejected', label: 'Reject (false alarm)', Icon: XCircle, tone: 'red', color: 'text-red-600', bg: 'bg-red-500/5 hover:bg-red-500/10' },
-  ]
 
   const timeline = alert?.timeline || []
   const nextStep = alert ? NEXT_STEP[alert.status] : null
@@ -339,32 +353,6 @@ export default function AlertDetail() {
                 </div>
               </div>
 
-              {canInvestigate && <div className="relative shrink-0">
-                <button
-                  onClick={() => setMenuOpen((v) => !v)}
-                  aria-label="Change status"
-                  aria-haspopup="menu"
-                  aria-expanded={menuOpen}
-                  className="w-10 h-10 rounded-lg border border-white/70 flex items-center justify-center hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                >
-                  <MoreHorizontal className="w-5 h-5" />
-                </button>
-                {menuOpen && (
-                  <div role="menu" className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-10 text-gray-900">
-                    {STATUSES.map((s) => (
-                      <button
-                        key={s}
-                        role="menuitem"
-                        onClick={() => handleStatusChange(s)}
-                        disabled={actionPending === s || alert.status === s}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed focus:outline-none focus-visible:bg-gray-100"
-                      >
-                        Set status: {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>}
             </div>
 
             {alert.surge && (
@@ -391,7 +379,7 @@ export default function AlertDetail() {
               <div className="flex items-center gap-3 flex-wrap mb-2">
                 <h2 className="text-xl font-semibold text-gray-900">What's happening</h2>
                 <span className={`inline-flex items-center text-[10px] font-medium px-2.5 py-1 rounded-full border ${STATUS_STYLES[alert.status] || 'border-gray-200 bg-gray-50 text-gray-500'}`}>
-                  {alert.status}
+                  {STATUS_LABELS[alert.status] || alert.status}
                 </span>
               </div>
               {alert.insights?.[0] && <p className="text-sm text-gray-500 leading-relaxed">{alert.insights[0]}</p>}
@@ -492,40 +480,149 @@ export default function AlertDetail() {
           </div>
 
           <div className={card}>
-            <h2 className="text-xl font-semibold text-gray-900 mb-5">Actions</h2>
-            {!canInvestigate && (
-              <p className="text-sm text-gray-400 mb-4">You can view this alert. Ask a surveillance officer to change its status.</p>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-              {canInvestigate && actions.map(({ status, label, Icon, color, bg }) => (
-                <button
-                  key={status}
-                  onClick={() => handleStatusChange(status)}
-                  disabled={!!actionPending || alert.status === status}
-                  className={`rounded-xl transition-colors py-7 px-2 flex flex-col items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed ${bg} ${FOCUS}`}
-                >
-                  <Icon className={`w-8 h-8 ${color}`} aria-hidden="true" />
-                  <span className={`text-sm font-medium text-center ${color}`}>{label}</span>
-                </button>
-              ))}
+            <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+              <h2 className="text-xl font-semibold text-gray-900">Investigation</h2>
               <button
                 onClick={handleGenerateReport}
-                className={`rounded-xl bg-gray-500/5 hover:bg-gray-500/10 transition-colors py-7 px-2 flex flex-col items-center gap-3 ${FOCUS}`}
+                className={`inline-flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 ${FOCUS}`}
               >
-                <FileText className="w-8 h-8 text-gray-600" aria-hidden="true" />
-                <span className="text-sm font-medium text-gray-600">Generate Report</span>
+                <FileText className="w-3.5 h-3.5" aria-hidden="true" /> Generate report
               </button>
             </div>
+            <p className="text-sm text-gray-500 mb-5">
+              Investigations happen in Alerts &amp; Signals. This trend's status follows them.
+            </p>
+
+            {(alert.events || []).length > 0 ? (
+              <ul className="border border-gray-100 rounded-xl divide-y divide-gray-100 mb-5">
+                {alert.events.map((e) => (
+                  <li key={e.id}>
+                    <Link
+                      to={`/alerts-signals/${encodeURIComponent(e.id)}`}
+                      className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 ${FOCUS}`}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-gray-900 truncate">{e.title}</span>
+                        <span className="block text-xs text-gray-500">
+                          {e.id} · {e.reports} report(s) · {e.people} people{e.deaths ? ` · ${e.deaths} deaths` : ''}
+                          {e.fromTrend ? ' · opened from this trend' : ''}
+                        </span>
+                      </span>
+                      <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full border ${EVENT_OPEN.includes(e.status) ? 'border-purple-300 bg-purple-50 text-purple-600' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+                        {EVENT_STATUS_LABELS[e.status] || e.status}
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-gray-400" aria-hidden="true" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-400 mb-5">No investigation yet for this disease and place.</p>
+            )}
+
+            {alert.status === 'Rejected' && alert.reviewOutcome ? (
+              <div className="rounded-xl bg-gray-50 border border-gray-100 p-4">
+                <p className="text-sm font-semibold text-gray-900">Dismissed: {alert.reviewOutcome}</p>
+                {alert.reviewNote && <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{alert.reviewNote}</p>}
+                {alert.reviewedBy && (
+                  <p className="text-xs text-gray-400 mt-1">by {alert.reviewedBy}, {fmtDateTime(alert.reviewedOn)}</p>
+                )}
+                {canReview && (
+                  <button
+                    onClick={handleReopen}
+                    disabled={!!actionPending}
+                    className={`mt-3 border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-900 hover:bg-white disabled:opacity-50 ${FOCUS}`}
+                  >
+                    Reopen for review
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex gap-3 flex-wrap">
+                {alert.openEvent ? (
+                  <Link
+                    to={`/alerts-signals/${encodeURIComponent(alert.openEvent)}`}
+                    className={`inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white rounded-lg px-5 py-2.5 text-sm font-medium ${FOCUS}`}
+                  >
+                    <Search className="w-4 h-4" aria-hidden="true" /> Open the investigation
+                  </Link>
+                ) : alert.canInvestigate && ['Pending', 'Investigating', 'Confirmed'].includes(alert.status) ? (
+                  <button
+                    onClick={handleInvestigate}
+                    disabled={!!actionPending}
+                    className={`inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-5 py-2.5 text-sm font-medium ${FOCUS}`}
+                  >
+                    <Search className="w-4 h-4" aria-hidden="true" />
+                    {actionPending === 'investigate' ? 'Opening…' : 'Investigate in Alerts & Signals'}
+                  </button>
+                ) : null}
+                {canReview && !alert.openEvent && alert.status === 'Pending' && (
+                  <button
+                    onClick={() => setReviewOpen((v) => !v)}
+                    aria-expanded={reviewOpen}
+                    className={`inline-flex items-center gap-2 border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 ${FOCUS}`}
+                  >
+                    <XCircle className="w-4 h-4 text-gray-500" aria-hidden="true" /> Mark as reviewed
+                  </button>
+                )}
+              </div>
+            )}
+
+            {reviewOpen && (
+              <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 p-4 flex flex-col gap-3">
+                <div className="flex flex-col gap-2" role="radiogroup" aria-label="Review outcome">
+                  {REVIEW_OUTCOMES.map((o) => (
+                    <label key={o.value} className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="review-outcome"
+                        value={o.value}
+                        checked={reviewOutcome === o.value}
+                        onChange={() => setReviewOutcome(o.value)}
+                        className="mt-1 accent-red-600"
+                      />
+                      <span>
+                        <span className="font-medium text-gray-900">{o.label}</span>
+                        <span className="block text-xs text-gray-500">{o.help}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  value={reviewNote}
+                  onChange={(e) => setReviewNote(e.target.value)}
+                  rows={3}
+                  aria-label="Reason"
+                  placeholder="Why? (required, kept for audit)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-100"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleReview}
+                    disabled={!reviewOutcome || !reviewNote.trim() || !!actionPending}
+                    className={`bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg px-5 py-2 text-sm font-medium ${FOCUS}`}
+                  >
+                    {actionPending === 'review' ? 'Saving…' : 'Save review'}
+                  </button>
+                  <button
+                    onClick={() => setReviewOpen(false)}
+                    className={`border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white ${FOCUS}`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className={card}>
-            <h2 className="text-xl font-semibold text-gray-900 mb-5">Add Investigation Note</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-5">Notes</h2>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={4}
               aria-label="Investigation note"
-              placeholder="Document findings, actions taken, or next steps..."
+              placeholder="Add a note about this trend..."
               className="w-full border border-gray-200 rounded-lg px-4 py-3.5 text-sm text-gray-700 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-red-100 mb-4"
             />
             <button

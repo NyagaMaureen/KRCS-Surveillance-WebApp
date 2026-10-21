@@ -16,10 +16,22 @@ def get_reference_labels():
 
 
 @frappe.whitelist()
-def get_audit_logs(limit=500):
+def get_audit_logs(limit=1000, days=None):
+    """One audit trail for the whole system, newest first.
+
+    Sources:
+      - created / updated records (Frappe Version log) for reports, users, configuration,
+        response protocols, escalation contacts and Epi Trends alerts
+      - every action on an Alerts & Signals event (its own timeline: checks, answers, steps, evidence,
+        decisions, escalations, closures, splits, notes), category "Investigation"
+      - Epi Trends notes (investigation opened, reviewed, reopened, status changes), category "Alert"
+      - logins and logouts
+    days: only entries from the last N days (optional).
+    """
     require_capability("view_audit_log")
 
-    limit = int(limit)
+    limit = min(int(limit or 1000), 5000)
+    since = frappe.utils.add_days(frappe.utils.now_datetime(), -int(days)) if days else None
     results = []
 
     CATEGORY_MAP = {
@@ -28,10 +40,16 @@ def get_audit_logs(limit=500):
         "Surveillance Role": "User",
         "Symptom": "Config",
         "Region": "Config",
+        "Response Protocol": "Config",
+        "Escalation Contact": "Config",
+        "Alert Threshold Config": "Config",
+        "Risk Alert": "Alert",
     }
+    CREATED_LABEL = {"Risk Alert": "Alert raised"}
 
     # DocTypes whose IDs are random hashes: show a readable name instead
-    TITLE_FIELDS = {"Symptom": "symptom_name", "Region": "region_name", "User": "full_name"}
+    TITLE_FIELDS = {"Symptom": "symptom_name", "Region": "region_name", "User": "full_name",
+        "Response Protocol": "title", "Escalation Contact": "contact_name", "Risk Alert": "disease_name"}
     title_cache = {}
 
     def display_name(doctype, name, title=None):
@@ -41,13 +59,14 @@ def get_audit_logs(limit=500):
         key = (doctype, name)
         if key not in title_cache:
             title_cache[key] = title if title is not None else frappe.db.get_value(doctype, name, field)
-        return title_cache[key] or name
+        label = title_cache[key]
+        return f"{label} ({name})" if label and doctype == "Risk Alert" else (label or name)
 
     role_cache = {}
 
     def user_role(user):
         if user not in role_cache:
-            role_cache[user] = frappe.db.get_value("User", user, "primary_role") or "—"
+            role_cache[user] = frappe.db.get_value("User", user, "primary_role") or ("System" if user == "Administrator" else "—")
         return role_cache[user]
 
     labels_cache = {}
@@ -61,27 +80,33 @@ def get_audit_logs(limit=500):
         text = "" if value is None else str(value)
         return text if len(text) <= 200 else text[:200] + "…"
 
+    def since_filter(field="creation"):
+        return {field: [">=", since]} if since else {}
+
     # Created records
     for doctype, category in CATEGORY_MAP.items():
+        if not frappe.db.table_exists(doctype):
+            continue
         title_field = TITLE_FIELDS.get(doctype)
         fields = ["name", "owner", "creation"] + ([title_field] if title_field else [])
-        records = frappe.get_all(doctype, fields=fields, limit_page_length=limit, order_by="creation desc")
+        records = frappe.get_all(doctype, filters=since_filter(), fields=fields, limit_page_length=limit, order_by="creation desc")
         for r in records:
             title = r.get(title_field) if title_field else None
+            action = CREATED_LABEL.get(doctype, "Created")
             results.append({
                 "name": f"create-{doctype}-{r.name}",
                 "timestamp": r.creation,
                 "category": category,
-                "action": "Created",
+                "action": action,
                 "user": r.owner,
                 "role": user_role(r.owner),
-                "details": f"Created {doctype} {display_name(doctype, r.name, title)}",
+                "details": f"{'Alert engine raised' if doctype == 'Risk Alert' else 'Created'} {doctype} {display_name(doctype, r.name, title)}",
             })
 
     # Updates (Frappe Version log; needs Track Changes on the DocType)
     versions = frappe.get_all(
         "Version",
-        filters={"ref_doctype": ["in", list(CATEGORY_MAP.keys())]},
+        filters={"ref_doctype": ["in", list(CATEGORY_MAP.keys())], **since_filter()},
         fields=["name", "ref_doctype", "docname", "owner", "creation", "data"],
         order_by="creation desc",
         limit_page_length=limit,
@@ -99,26 +124,76 @@ def get_audit_logs(limit=500):
         except Exception:
             pass
         names = [c["field"] for c in changes]
-        if names:
-            summary = ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
-            details = f"Changed {summary} on {v.ref_doctype} {label}"
-        else:
-            details = f"{v.ref_doctype} {label} was updated"
+        if not names:
+            continue   # child-table-only saves (e.g. notes) are covered by the entries below
+        summary = ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
+        status = next((c for c in changes if c["field"] in ("Status",)), None)
+        action = f"Status: {status['from']} → {status['to']}" if status and len(changes) == 1 else "Updated"
         results.append({
             "name": v.name,
             "timestamp": v.creation,
             "category": category,
-            "action": "Updated",
+            "action": action,
             "user": v.owner,
             "role": user_role(v.owner),
-            "details": details,
+            "details": f"Changed {summary} on {v.ref_doctype} {label}",
             "changes": changes,
         })
+
+    # Alerts & Signals: every action on every event (the investigation's own timeline)
+    if frappe.db.table_exists("Surveillance Event Action"):
+        cond = "and a.`at` >= %(since)s" if since else ""
+        actions = frappe.db.sql(f"""
+            select a.name, a.parent, a.`at`, a.`user`, a.action, a.note, e.title
+            from `tabSurveillance Event Action` a
+            left join `tabSurveillance Event` e on e.name = a.parent
+            where a.parenttype = 'Surveillance Event' {cond}
+            order by a.`at` desc limit %(limit)s
+        """, {"since": since, "limit": limit}, as_dict=True)
+        for a in actions:
+            user = a.user or "Administrator"
+            results.append({
+                "name": f"event-{a.name}",
+                "timestamp": a.at,
+                "category": "Investigation",
+                "action": a.action or "Updated",
+                "user": user,
+                "role": user_role(user),
+                "details": f"{a.parent}" + (f" · {a.title}" if a.title else "") + (f": {short(a.note)}" if a.note else ""),
+                "link": f"/alerts-signals/{a.parent}",
+            })
+
+    # Epi Trends notes (investigation opened, reviewed, reopened, status changes, officer notes)
+    if frappe.db.table_exists("Risk Alert Note"):
+        cond = "and n.created_at >= %(since)s" if since else ""
+        notes = frappe.db.sql(f"""
+            select n.name, n.parent, n.created_at, n.added_by, n.note, r.disease_name, r.sub_county
+            from `tabRisk Alert Note` n
+            left join `tabRisk Alert` r on r.name = n.parent
+            where n.parenttype = 'Risk Alert' {cond}
+            order by n.created_at desc limit %(limit)s
+        """, {"since": since, "limit": limit}, as_dict=True)
+        for n in notes:
+            user = n.added_by or "Administrator"
+            text = n.note or ""
+            action = ("Investigation opened" if text.startswith("Investigation opened")
+                else "Reviewed" if text.startswith("Reviewed") else "Reopened" if text.startswith("Reopened")
+                else "Status changed" if text.startswith("Status ") else "Note")
+            results.append({
+                "name": f"alertnote-{n.name}",
+                "timestamp": n.created_at,
+                "category": "Alert",
+                "action": action,
+                "user": user,
+                "role": user_role(user),
+                "details": f"{n.parent} · {n.disease_name or ''}{', ' + n.sub_county if n.sub_county else ''}: {short(text)}",
+                "link": f"/epi-trends/{n.parent}",
+            })
 
     # Logins and logouts
     logins = frappe.get_all(
         "Activity Log",
-        filters={"operation": ["in", ["Login", "Logout"]]},
+        filters={"operation": ["in", ["Login", "Logout"]], **since_filter()},
         fields=["name", "user", "operation", "creation", "status"],
         order_by="creation desc",
         limit_page_length=limit,
@@ -134,7 +209,8 @@ def get_audit_logs(limit=500):
             "details": f"{l.operation} - {l.status}",
         })
 
-    results.sort(key=lambda r: r["timestamp"], reverse=True)
+    results = [r for r in results if r["timestamp"]]
+    results.sort(key=lambda r: frappe.utils.get_datetime(r["timestamp"]), reverse=True)
     return results[:limit]
 
 

@@ -759,6 +759,15 @@ export async function getAlertSignal(id) {
 export async function updateAlertStatus(id, status) {
   return callMethodPost('/api/method/surveillance.alerts.update_alert_status', { name: id, status })
 }
+export async function investigateAlert(id) {
+  return callMethodPost('/api/method/surveillance.alerts.investigate_alert', { name: id })
+}
+export async function reviewAlert(id, outcome, note) {
+  return callMethodPost('/api/method/surveillance.alerts.review_alert', { name: id, outcome, note })
+}
+export async function reopenAlert(id) {
+  return callMethodPost('/api/method/surveillance.alerts.reopen_alert', { name: id })
+}
 export async function addAlertNote(id, note) {
   return callMethodPost('/api/method/surveillance.alerts.add_alert_note', { name: id, note })
 }
@@ -883,7 +892,7 @@ export async function getReferenceLabels() {
 }
 
 export async function getAuditLogs(opts = {}) {
-  const res = await fetch(`/api/method/surveillance.surveillance.api.get_audit_logs?limit=${opts.limit || 500}`)
+  const res = await fetch(`/api/method/surveillance.surveillance.api.get_audit_logs?limit=${opts.limit || 1000}`)
   const data = await res.json()
   return data.message || []
 }

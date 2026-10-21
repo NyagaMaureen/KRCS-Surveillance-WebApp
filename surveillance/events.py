@@ -183,6 +183,8 @@ def recompute_event(event):
 			"check_status"], order_by="signal_date asc")
 	doc = frappe.get_doc("Surveillance Event", event)
 	if not sigs:
+		if doc.get("from_alert"):
+			return   # opened from an Epi Trends alert: no individual reports, keep its own totals
 		if doc.status == "New" and len(doc.actions or []) <= 1:
 			frappe.delete_doc("Surveillance Event", event, ignore_permissions=True, force=True)
 		return
@@ -218,7 +220,7 @@ def recompute_event(event):
 		"sources": ", ".join(sources),
 		"first_reported": sigs[0].signal_date, "last_reported": sigs[-1].signal_date,
 		"severity": severity, "reason": _reason(sigs), "data_warning": warning,
-		"linked_alert": _linked_alert(doc.disease, doc.sub_county),
+		"linked_alert": doc.get("from_alert") or _linked_alert(doc.disease, doc.sub_county),
 		**_event_point(sigs),
 	})
 	doc.save(ignore_permissions=True)
@@ -403,7 +405,7 @@ def _signal_shape(s, can_act):
 
 FIELDS = ["name", "title", "disease", "disease_name", "priority", "severity", "status", "county", "sub_county",
 	"area", "region", "people", "deaths", "reports", "sources", "reason", "first_reported", "last_reported",
-	"linked_alert", "data_warning", "latitude", "longitude"]
+	"linked_alert", "data_warning", "latitude", "longitude", "from_alert"]
 
 
 def _shape(d, detail=False):
@@ -419,6 +421,7 @@ def _shape(d, detail=False):
 		"linkedAlert": ({"id": d.linked_alert, "severity": frappe.db.get_value("Risk Alert", d.linked_alert, "severity")}
 			if d.linked_alert else None),
 		"dataWarning": d.data_warning or None,
+		"fromAlert": d.get("from_alert") or None,
 		"lat": d.latitude, "lng": d.longitude,
 	}
 	if detail:
@@ -506,8 +509,8 @@ def set_status(event, action, note=None, facility=None):
 		"action": ACTION_LABEL[action], "note": note})
 	doc.save(ignore_permissions=True)
 	investigation.sync_reports(doc, action, note)
-	if action == "confirm":
-		investigation.sync_epi_trends(doc, note)
+	from surveillance.alerts import sync_alert_for_event
+	sync_alert_for_event(doc)   # Epi Trends status follows the event (confirm, escalate, close, discard)
 	if action == "escalate":
 		from surveillance import notifications
 		notifications.on_escalation(doc, note)

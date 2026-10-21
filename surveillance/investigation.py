@@ -98,6 +98,8 @@ def sync_case_definition(doc):
 		return False
 	checks = frappe.get_all("Surveillance Signal", filters={"event": doc.name}, fields=["check_status", "checked_by", "checked_on"],
 		order_by="checked_on desc")
+	if not checks:
+		return False   # event opened from an Epi Trends alert: the officer answers this question directly
 	done = [c for c in checks if c.check_status and c.check_status != "Not checked"]
 	if any(c.check_status == "Verified" for c in done):
 		answer = "Yes"
@@ -330,7 +332,7 @@ def answer_question(event, question_no, answer):
 	row = next((a for a in doc.verification if cint(a.question_no) == cint(question_no)), None)
 	if not row:
 		frappe.throw(_("Question not found."))
-	if row.kind == "Case definition":
+	if row.kind == "Case definition" and frappe.db.count("Surveillance Signal", {"event": doc.name}):
 		frappe.throw(_("This question is answered from the report checks. Check each report instead."))
 	if row.answer == answer:
 		return _shape(doc)

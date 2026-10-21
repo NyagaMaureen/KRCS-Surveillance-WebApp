@@ -14,11 +14,11 @@ import {
   setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { FOCUS, statusLabel, parseDate, fmtDateTime, relTime } from '../data/eventHelpers'
+import { FOCUS, parseDate, fmtDateTime, relTime } from '../data/eventHelpers'
 
 const BANNER = { critical: 'bg-red-600', high: 'bg-amber-500', standard: 'bg-blue-500' }
 const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
-
+const STATUS_LABELS = { Investigating: 'In the field' }
 
 const PRIMARY = 'bg-red-600 text-white hover:bg-red-700 border-red-600'
 const SECONDARY = 'bg-white text-gray-900 border-gray-200 hover:bg-gray-50'
@@ -326,9 +326,10 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
   const unanswered = inv.gates?.unansweredQuestions || []
   const open = event.status === 'New' || event.status === 'Verifying'
   const action = inv.suggestion?.action
-  const reportsDone = checkedCount > 0
+  const fromTrend = signals.length === 0 && !!event.fromAlert
+  const reportsDone = fromTrend ? !!caseQ?.answer : checkedCount > 0
   const questionsDone = answered === questions.length
-  const next = !reportsDone ? 'Check at least one report in A.'
+  const next = !reportsDone ? (fromTrend ? 'Answer the case definition question in A.' : 'Check at least one report in A.')
     : !questionsDone ? `Answer the ${questions.length - answered} remaining question(s) in B (Not sure is fine).`
       : 'Ready. Read the suggestion and continue.'
 
@@ -336,6 +337,34 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
     <div className={card}>
       <PanelHeader title="Guided verification" sub="A: check the reports. B: answer questions about the situation. C: decide the next step." />
 
+      {fromTrend && (
+        <section aria-label="Check the trend" className="mb-8">
+          <SectionHeading letter="A" title="Check the trend" sub="This investigation was opened from Epi Trends: there are no individual reports. Call the facility or the CHA to check the cases." done={caseQ?.answer ? 1 : 0} total={1} />
+          <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 text-sm text-purple-900 mb-3">
+            <p>{event.reason}</p>
+            <Link to={`/epi-trends/${encodeURIComponent(event.fromAlert)}`} className={`inline-block mt-2 text-xs font-semibold text-purple-700 hover:underline rounded ${FOCUS}`}>
+              View the trend and chart
+            </Link>
+          </div>
+          {caseQ && (
+            <div className="border border-gray-100 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-900">After speaking to the facility or community, do the cases meet the case definition?</p>
+                {definition && <p className="text-xs text-gray-400 mt-0.5">{definition}</p>}
+              </div>
+              <MiniSeg
+                label="Case definition"
+                options={['Yes', 'No', 'Not sure']}
+                value={caseQ.answer}
+                disabled={!editable || busy || busyKey === `q-${caseQ.n}`}
+                onChange={(v) => onAnswer(caseQ.n, v)}
+              />
+            </div>
+          )}
+        </section>
+      )}
+
+      {!fromTrend && (
       <section aria-label="Check the reports" className="mb-8">
         <SectionHeading letter="A" title="Check the reports" sub="Call each reporter and confirm the case. You need at least one checked report." done={checkedCount} total={signals.length} />
         {definition && (
@@ -382,6 +411,8 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
         </p>
       </section>
 
+      )}
+
       <section aria-label="Questions about the situation" className={`mb-8 ${!reportsDone ? 'opacity-50' : ''}`}>
         <SectionHeading
           letter="B"
@@ -390,7 +421,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
           done={answered}
           total={questions.length}
         />
-        {!reportsDone && <p className="mb-3 text-sm text-gray-500">Check a report in A first.</p>}
+        {!reportsDone && <p className="mb-3 text-sm text-gray-500">{fromTrend ? 'Answer A first.' : 'Check a report in A first.'}</p>}
         {questions.length === 0 ? (
           <p className="text-sm text-gray-400">No other questions for this event.</p>
         ) : (
@@ -1535,7 +1566,7 @@ export default function EventDetail() {
                 {SEVERITY_LABELS[event.severity] || SEVERITY_LABELS.standard}
               </span>
               <span className="inline-flex items-center rounded-full border border-white/70 bg-white/10 px-3.5 py-1 text-xs font-medium">
-                {statusLabel(event.status)}
+                {STATUS_LABELS[event.status] || event.status}
               </span>
             </div>
             <p className="text-sm font-medium text-white/90">
