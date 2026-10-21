@@ -1,39 +1,23 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Search, ChevronDown, Bell, Check } from 'lucide-react'
+import { Search, Check, Lock } from 'lucide-react'
 import { getRoleCapabilities, setRoleCapability } from '../../api/frappe'
 
-const NOTIFICATION_PREFS = [
-  { key: 'email_new_alert', name: 'Email me on new alerts', description: 'Get an email whenever a new alert is created in your region.' },
-  { key: 'weekly_summary', name: 'Weekly summary email', description: 'Receive a weekly digest of surveillance activity.' },
-  { key: 'sms_critical', name: 'SMS for critical cases', description: 'Get a text message when a case is marked critical.' },
-]
-const PREFS_STORAGE_KEY = 'krcs_notification_prefs'
-
-function loadPrefs() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(PREFS_STORAGE_KEY) || '{}')
-    return Object.fromEntries(NOTIFICATION_PREFS.map((p) => [p.key, !!saved[p.key]]))
-  } catch (e) {
-    return Object.fromEntries(NOTIFICATION_PREFS.map((p) => [p.key, false]))
-  }
-}
-
-export default function RolesPermissions({ roles = [], users = [] }) {
+export default function RolesPermissions({ roles = [], users = [], initialRole = '', onRoleChange }) {
   const [search, setSearch] = useState('')
   const [selectedRole, setSelectedRole] = useState(null)
   const [loading, setLoading] = useState(false)
   const [rawCapabilities, setRawCapabilities] = useState([])
   const [capState, setCapState] = useState({})
-  const [openCategories, setOpenCategories] = useState({})
-  const [prefState, setPrefState] = useState(loadPrefs)
   const [locked, setLocked] = useState(false)
+  const [capFilter, setCapFilter] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const categories = useMemo(() => {
     const byCategory = new Map()
     for (const cap of rawCapabilities) {
       if (!byCategory.has(cap.category)) byCategory.set(cap.category, new Map())
       const byDoctype = byCategory.get(cap.category)
-            const groupKey = cap.target_doctype || 'all'
+      const groupKey = cap.target_doctype || 'all'
       if (!byDoctype.has(groupKey)) byDoctype.set(groupKey, [])
       byDoctype.get(groupKey).push(cap)
     }
@@ -46,15 +30,6 @@ export default function RolesPermissions({ roles = [], users = [] }) {
       .sort((a, b) => a.label.localeCompare(b.label))
   }, [rawCapabilities])
 
-  function toggleNotificationPref(key) {
-    setPrefState((prev) => {
-      const next = { ...prev, [key]: !prev[key] }
-      localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(next))
-      return next
-    })
-    showToast('Preference saved')
-  }
-
   const roleUserCounts = useMemo(() => {
     const counts = {}
     users.forEach((u) => {
@@ -66,7 +41,7 @@ export default function RolesPermissions({ roles = [], users = [] }) {
   const roleCards = useMemo(() =>
     roles.map((r) => {
       const count = roleUserCounts[r.role] || 0
-      return { name: r.name, role: r.role, subtitle: count === 1 ? '1 user assigned' : `${count} users assigned` }
+      return { name: r.name, role: r.role, countLabel: count === 1 ? '1 user' : `${count} users` }
     }),
     [roles, roleUserCounts]
   )
@@ -77,6 +52,25 @@ export default function RolesPermissions({ roles = [], users = [] }) {
     return roleCards.filter((r) => r.role.toLowerCase().includes(q))
   }, [search, roleCards])
 
+  const enabledTotal = rawCapabilities.filter((c) => capState[c.key]).length
+
+  const visibleCategories = useMemo(() => {
+    const q = capFilter.trim().toLowerCase()
+    return categories
+      .map((cat) => ({
+        ...cat,
+        groups: cat.groups
+          .map((g) => ({
+            ...g,
+            capabilities: q
+              ? g.capabilities.filter((c) => `${c.name} ${c.description || ''}`.toLowerCase().includes(q))
+              : g.capabilities,
+          }))
+          .filter((g) => g.capabilities.length),
+      }))
+      .filter((cat) => cat.groups.length)
+  }, [categories, capFilter])
+
   const [toast, setToast] = useState({ show: false, message: '', error: false })
   const toastTimer = useRef(null)
   function showToast(message, error = false) {
@@ -85,16 +79,16 @@ export default function RolesPermissions({ roles = [], users = [] }) {
     toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 2000)
   }
 
-  function toggleCategory(key) {
-    setOpenCategories((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }))
-  }
-
   function selectRole(r) {
     setSelectedRole(r)
   }
 
+  function pickRole(r) {
+    selectRole(r)
+    onRoleChange?.(r.role)
+  }
 
-    async function loadCapabilities(role) {
+  async function loadCapabilities(role) {
     setLoading(true)
     try {
       const res = await getRoleCapabilities(role)
@@ -124,22 +118,101 @@ export default function RolesPermissions({ roles = [], users = [] }) {
       showToast(err.message || 'Failed to update capability', true)
     }
   }
+
+  function categoryCaps(cat) {
+    return cat.groups.flatMap((g) => g.capabilities)
+  }
+
+  async function bulkToggle(cat) {
+    const caps = categoryCaps(cat)
+    const target = !caps.every((c) => capState[c.key])
+    setBulkBusy(true)
+    try {
+      for (const cap of caps) {
+        if (!!capState[cap.key] !== target) {
+          await toggleCapability(cap, { target: { checked: target } })
+        }
+      }
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  function bulkLabel(cat) {
+    return categoryCaps(cat).every((c) => capState[c.key]) ? 'Disable all' : 'Enable all'
+  }
+
   useEffect(() => {
     if (selectedRole) loadCapabilities(selectedRole.role)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRole])
 
   useEffect(() => {
-    if (!selectedRole && roles.length) {
+    if (!roles.length) return
+    const match = initialRole && roles.find((r) => r.role === initialRole || r.name === initialRole)
+    if (match) {
+      setSelectedRole((cur) => (cur && cur.name === match.name ? cur : { name: match.name, role: match.role }))
+    } else if (!selectedRole) {
       selectRole({ name: roles[0].name, role: roles[0].role })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roles])
+  }, [roles, initialRole])
+
+  const isSelected = (r) => selectedRole && selectedRole.name === r.name
+
+  function renderTile(cap) {
+    const on = !!capState[cap.key]
+    return (
+      <button
+        key={cap.key}
+        type="button"
+        role="switch"
+        aria-checked={on}
+        disabled={locked}
+        onClick={() => toggleCapability(cap, { target: { checked: !capState[cap.key] } })}
+        className={[
+          'flex items-start justify-between gap-3 text-left border rounded-lg p-3 transition-colors',
+          on ? 'border-red-200 bg-red-50/30' : 'border-gray-100 hover:border-gray-200',
+          locked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+        ].join(' ')}
+      >
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-gray-900">{cap.name}</div>
+          <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{cap.description}</div>
+        </div>
+        <span className={['w-10 h-5 rounded-full relative transition-colors shrink-0 mt-0.5', on ? 'bg-red-600' : 'bg-gray-200'].join(' ')}>
+          <span className={['absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform', on ? 'translate-x-5' : ''].join(' ')}></span>
+        </span>
+      </button>
+    )
+  }
+
+  function renderGroups(cat) {
+    return cat.groups.map((group) => (
+      <div key={group.recordType} className="contents">
+        {cat.groups.length > 1 && (
+          <div className="col-span-full pt-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{group.recordType}</div>
+        )}
+        {group.capabilities.map(renderTile)}
+      </div>
+    ))
+  }
+
+  const bulkButton = (cat) => !locked && (
+    <button
+      type="button"
+      onClick={() => bulkToggle(cat)}
+      disabled={bulkBusy}
+      className="text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-50"
+    >
+      {bulkLabel(cat)}
+    </button>
+  )
 
   return (
-    <div className="flex gap-5 items-start">
-      <div className="bg-white rounded-xl border border-gray-100 w-72 shrink-0 flex flex-col max-h-[calc(100vh-160px)]">
-        <div className="p-4 border-b border-gray-100">
+    <div className="flex flex-col lg:flex-row gap-5 h-[calc(100vh-220px)] min-h-[520px]">
+      <div className="hidden lg:flex bg-white rounded-xl border border-gray-100 w-64 shrink-0 flex-col min-h-0">
+        <div className="p-4 border-b border-gray-100 shrink-0">
           <h3 className="font-bold text-gray-900 mb-3">Roles</h3>
           <div className="relative">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -152,20 +225,18 @@ export default function RolesPermissions({ roles = [], users = [] }) {
             />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
           {filteredRoles.map((r) => (
             <button
               key={r.name}
-              onClick={() => selectRole(r)}
+              onClick={() => pickRole(r)}
               className={[
-                'w-full text-left rounded-lg px-3 py-2.5 border transition-colors',
-                selectedRole && selectedRole.name === r.name
-                  ? 'border-red-600 bg-red-50'
-                  : 'border-transparent hover:bg-gray-50',
+                'w-full text-left rounded-lg px-3 py-2.5 border transition-colors flex items-center justify-between gap-2',
+                isSelected(r) ? 'border-red-600 bg-red-50' : 'border-transparent hover:bg-gray-50',
               ].join(' ')}
             >
-              <div className={['text-sm font-semibold', selectedRole && selectedRole.name === r.name ? 'text-red-600' : 'text-gray-900'].join(' ')}>{r.role}</div>
-              <div className="text-xs text-gray-400">{r.subtitle}</div>
+              <span className={['text-sm font-semibold truncate', isSelected(r) ? 'text-red-600' : 'text-gray-900'].join(' ')}>{r.role}</span>
+              <span className="text-[11px] text-gray-500 bg-gray-100 rounded-full px-2 py-0.5 shrink-0">{r.countLabel}</span>
             </button>
           ))}
           {!filteredRoles.length && (
@@ -174,88 +245,75 @@ export default function RolesPermissions({ roles = [], users = [] }) {
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 space-y-4">
+      <div className="lg:hidden flex gap-2 overflow-x-auto shrink-0 pb-1">
+        {roleCards.map((r) => (
+          <button
+            key={r.name}
+            onClick={() => pickRole(r)}
+            className={[
+              'whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium border',
+              isSelected(r) ? 'border-red-600 bg-red-50 text-red-600' : 'border-gray-200 bg-white text-gray-700',
+            ].join(' ')}
+          >
+            {r.role} <span className="text-xs text-gray-400">{r.countLabel}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 min-w-0 min-h-0 bg-white rounded-xl border border-gray-100 flex flex-col overflow-hidden">
         {selectedRole ? (
           <>
-            <div className="bg-white rounded-xl border border-gray-100 p-5">
-              <h2 className="text-lg font-bold text-gray-900">{selectedRole.role}</h2>
-              <p className="text-sm text-gray-500 mt-1">Configure what {selectedRole.role} can view, create, and manage across the platform.</p>
+            <div className="px-5 pt-4 pb-3 border-b border-gray-100 shrink-0">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-lg font-bold text-gray-900">{selectedRole.role}</h2>
+                    {locked && (
+                      <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full px-2.5 py-1">
+                        <Lock className="w-3 h-3" /> System role · full access
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500">{enabledTotal} of {rawCapabilities.length} permissions enabled</p>
+                </div>
+                <div className="relative w-48 shrink-0">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={capFilter}
+                    onChange={(e) => setCapFilter(e.target.value)}
+                    type="text"
+                    placeholder="Filter permissions"
+                    className="w-full bg-gray-50 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none"
+                  />
+                </div>
+              </div>
+
             </div>
 
-
-            {locked && (
-              <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-sm text-gray-500">
-                System roles always have full access and can't be edited here.
-              </div>
-            )}
-            {loading ? (
-              <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-sm text-gray-400">Loading permissions…</div>
-            ) : !categories.length ? (
-              <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-sm text-gray-400">No capabilities found for this role.</div>
-            ) : (
-              categories.map((cat) => (
-                <div key={cat.key} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                  <button onClick={() => toggleCategory(cat.key)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50">
-                    <span className="font-semibold text-gray-900">{cat.label}</span>
-                    <ChevronDown className={['w-4 h-4 text-gray-400 transition-transform', (openCategories[cat.key] ?? true) ? 'rotate-180' : ''].join(' ')} />
-                  </button>
-                  {(openCategories[cat.key] ?? true) && (
-                    <div className="border-t border-gray-100 px-5 divide-y divide-gray-50">
-                      {cat.groups.map((group) => (
-                        <div key={group.recordType}>
-                          {cat.groups.length > 1 && (
-                            <div className="pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{group.recordType}</div>
-                          )}
-                          {group.capabilities.map((cap) => (
-                                                       <label key={cap.key} className={['flex items-start gap-3 py-3', locked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'].join(' ')}>
-                              <input
-                                type="checkbox"
-                                className="mt-1 w-4 h-4 rounded border-gray-300 accent-red-600 focus:ring-red-500 cursor-pointer"
-                                checked={!!capState[cap.key]}
-                                disabled={locked}
-                                onChange={(e) => toggleCapability(cap, e)}
-                              />
-                              <div>
-                                <div className="text-sm font-bold text-gray-900">{cap.name}</div>
-                                <div className="text-xs text-gray-400 mt-0.5">{cap.description}</div>
-                              </div>
-                            </label>
-                          ))}
-                        </div>
-                      ))}
+            <div className="flex-1 min-h-0 overflow-y-auto p-5">
+              {loading ? (
+                <div className="h-full flex items-center justify-center text-sm text-gray-400">Loading permissions…</div>
+              ) : !categories.length ? (
+                <div className="h-full flex items-center justify-center text-sm text-gray-400">No capabilities found for this role.</div>
+              ) : !visibleCategories.length ? (
+                <div className="h-full flex items-center justify-center text-sm text-gray-400">No permissions match your filter.</div>
+              ) : (
+                <div className="space-y-6">
+                  {visibleCategories.map((cat) => (
+                    <div key={cat.key}>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{cat.label}</h4>
+                        {bulkButton(cat)}
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{renderGroups(cat)}</div>
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))
-            )}
-
-            <div className="bg-gray-50 rounded-xl border border-gray-200 border-dashed p-5">
-              <div className="flex items-center gap-2 mb-1">
-                <Bell className="w-4 h-4 text-gray-500" />
-                <h3 className="font-semibold text-gray-900">Notifications</h3>
-              </div>
-              <p className="text-xs text-gray-400 mb-4">Personal preferences for your own account — these don't affect role permissions.</p>
-              <div className="divide-y divide-gray-200/70">
-                {NOTIFICATION_PREFS.map((pref) => (
-                  <div key={pref.key} className="flex items-center justify-between py-3">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{pref.name}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{pref.description}</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => toggleNotificationPref(pref.key)}
-                      className={['w-10 h-5 rounded-full relative transition-colors shrink-0', prefState[pref.key] ? 'bg-red-600' : 'bg-gray-200'].join(' ')}
-                    >
-                      <span className={['absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform', prefState[pref.key] ? 'translate-x-5' : ''].join(' ')}></span>
-                    </button>
-                  </div>
-                ))}
-              </div>
+              )}
             </div>
           </>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-100 p-10 text-center text-sm text-gray-400">Select a role to view its permissions</div>
+          <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Select a role to view its permissions</div>
         )}
       </div>
 

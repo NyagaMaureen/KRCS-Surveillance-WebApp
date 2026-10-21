@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Doughnut } from 'react-chartjs-2'
-import { Smartphone, MessageCircle, Globe } from 'lucide-react'
+import { Smartphone, MessageCircle, Globe, Users, Building2, Info } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getChannelStats } from '../api/frappe'
+import { getChannelStats, getSourceStats } from '../api/frappe'
 import { CHART_FONT } from '../charts/chartSetup'
 
 // Fixed list of supported channels. Values match the Case Report "channel" field.
@@ -11,7 +11,30 @@ const CHANNELS = [
   { value: 'Mobile', label: 'Mobile App', icon: Smartphone, color: '#D62728', description: 'Mobile application for structured health signal reporting.' },
   { value: 'Web', label: 'Web App', icon: Globe, color: '#F2C94C', description: 'Browser-based reporting and review.' },
 ]
+const SOURCES = [
+  { value: 'CBS', label: 'Community-Based Surveillance (CBS)', icon: Users, color: '#2563EB', description: 'Weekly signal counts from the KRCS CBS system, loaded in batches.' },
+  { value: 'IDSR', label: 'Facility weekly reports (MOH 505)', icon: Building2, color: '#7C3AED', description: 'Weekly IDSR cases from facility exports in KHIS.' },
+]
 const PERIODS = [7, 30, 90]
+
+function formatWeek(value) {
+  if (!value) return null
+  const d = new Date(String(value).replace(' ', 'T'))
+  if (isNaN(d)) return null
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function hoursSince(value) {
+  if (!value) return null
+  const t = new Date(String(value).replace(' ', 'T').slice(0, 19)).getTime()
+  return isNaN(t) ? null : (Date.now() - t) / 36e5
+}
+function updatedAgo(hours) {
+  if (hours === null) return 'never'
+  if (hours < 1) return 'under an hour ago'
+  if (hours < 24) return `${Math.floor(hours / 1)}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
 
 function timeAgo(value) {
   if (!value) return 'No reports yet'
@@ -26,6 +49,8 @@ export default function Channels() {
   const [stats, setStats] = useState({ channels: [], total: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [sourceStats, setSourceStats] = useState({ sources: [] })
+  const [sourceError, setSourceError] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -33,6 +58,12 @@ export default function Channels() {
       .then((s) => { setStats(s); setError('') })
       .catch((e) => setError(e.message || 'Could not load channel statistics'))
       .finally(() => setLoading(false))
+  }, [days])
+
+  useEffect(() => {
+    getSourceStats(days)
+      .then((s) => { setSourceStats(s || { sources: [] }); setSourceError(false) })
+      .catch(() => { setSourceStats({ sources: [] }); setSourceError(true) })
   }, [days])
 
   const channels = useMemo(() => {
@@ -81,7 +112,7 @@ export default function Channels() {
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Reporting Channels</h2>
-          <p className="text-sm text-gray-400">How health signals are reaching the system, from submitted reports</p>
+          <p className="text-sm text-gray-400">How health signals are reaching the system, from submitted reports and connected data sources</p>
         </div>
         <div className="bg-gray-50 border border-gray-100 rounded-lg p-1 flex gap-1">
           {PERIODS.map((p) => (
@@ -144,6 +175,59 @@ export default function Channels() {
                 </div>
               )
             })}
+          </div>
+
+          <div className="mt-10">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Other data sources</h3>
+            <p className="text-xs text-gray-400 mb-6">Weekly counts loaded from existing systems. Not included in the channel distribution above.</p>
+            {sourceError ? (
+              <p className="text-xs text-gray-400">Data sources unavailable</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {SOURCES.map((src) => {
+                  const Icon = src.icon
+                  const s = (sourceStats.sources || []).find((x) => x.source === src.value) || {}
+                  const signals = s.signals || 0
+                  const pilot = s.pilot_signals || 0
+                  const weeks = s.weeks_loaded || 0
+                  const lastWeek = formatWeek(s.last_week)
+                  const updatedHours = hoursSince(s.last_updated)
+                  const stale = src.value === 'CBS' && updatedHours !== null && updatedHours > 3
+                  const loaded = weeks > 0
+                  return (
+                    <div key={src.value} className="bg-white rounded-2xl border border-gray-200 p-6">
+                      <div className="flex items-start justify-between mb-6">
+                        <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center">
+                          <Icon className="w-6 h-6" style={{ color: src.color }} />
+                        </div>
+                        <span className={['text-[10px] font-medium px-3 py-1 rounded-full text-white', loaded ? 'bg-green-500' : 'bg-gray-400'].join(' ')}>
+                          {loaded ? 'Loaded' : 'Not loaded'}
+                        </span>
+                      </div>
+                      <h4 className="text-lg font-medium text-gray-900 mb-1">{src.label}</h4>
+                      <p className="text-xs text-gray-400 mb-6 leading-relaxed">{src.description}</p>
+                      <div className="grid grid-cols-3 gap-2 text-xs border-t border-gray-100 pt-4 mb-2">
+                        <div><div className="text-gray-400">Pilot sites</div><div className="font-semibold text-gray-900">{pilot}</div><div className="text-gray-400">signals · last {days} days</div></div>
+                        <div><div className="text-gray-400">All areas</div><div className="font-semibold text-gray-900">{signals}</div><div className="text-gray-400">signals · last {days} days</div></div>
+                        <div><div className="text-gray-400">Weeks loaded</div><div className="font-semibold text-gray-900">{weeks}</div></div>
+                      </div>
+                      <p className={['text-xs', stale ? 'text-amber-600' : 'text-gray-400'].join(' ')}>
+                        Last updated {updatedAgo(updatedHours)}{stale ? ` · ${src.value} sync may be failing` : ''}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Latest week with signals: {lastWeek ? `week of ${lastWeek}` : 'None'}
+                      </p>
+                      {signals > 0 && pilot === 0 && (
+                        <div className="flex items-start gap-2 bg-blue-50 text-blue-700 text-xs rounded-lg px-3 py-2 mt-4">
+                          <Info className="w-4 h-4 shrink-0" />
+                          <span>No reports from Dadaab or Kalobeyei in this period. These counts are from other areas.</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </>
       )}

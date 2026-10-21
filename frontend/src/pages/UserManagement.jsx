@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Search, Plus, Pencil, Trash2, X, UserRound, Users, CheckCircle2, UserX, Ban, ShieldCheck } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { rolePermissionsLink } from '../utils/links'
+import { Search, Plus, Pencil, Trash2, X, UserRound, UserPlus, AlertCircle, Loader2, Users, CheckCircle2, UserX, Ban, ShieldCheck } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import RolesPermissions from '../components/settings/RolesPermissions'
 import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties } from '../api/frappe'
@@ -19,10 +21,21 @@ const STATUS_COLORS = {
 }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
 
+const STATUS_SELECTED = {
+  Active: 'bg-green-50 border-green-500 text-green-700',
+  Inactive: 'bg-amber-50 border-amber-500 text-amber-700',
+  Suspended: 'bg-red-50 border-red-500 text-red-700',
+}
+
+const labelCls = 'block text-sm font-medium text-gray-700 mb-1.5'
+const inputCls = 'w-full bg-white border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500'
+const req = <span className="text-red-500 ml-0.5">*</span>
+
 const emptyForm = () => ({
   email: '',
   first_name: '',
   last_name: '',
+  mobile_no: '',
   primary_role: '',
   assigned_region: '',
   assigned_sub_county: '',
@@ -31,7 +44,10 @@ const emptyForm = () => ({
 })
 
 export default function UserManagement() {
-  const [activeTab, setActiveTab] = useState('users')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') === 'roles' ? 'roles' : 'users'
+  const roleParam = searchParams.get('role') || ''
+  const [roleNotice, setRoleNotice] = useState('')
 
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
@@ -48,6 +64,7 @@ export default function UserManagement() {
   const [showRoleModal, setShowRoleModal] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
   const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [roleError, setRoleError] = useState('')
   const [newRole, setNewRole] = useState('')
 
@@ -149,6 +166,7 @@ export default function UserManagement() {
       email: u.name,
       first_name: u.first_name,
       last_name: u.last_name || '',
+      mobile_no: u.mobile_no || '',
       primary_role: u.primary_role || '',
       assigned_region: u.assigned_region || '',
       assigned_sub_county: u.assigned_sub_county || '',
@@ -162,12 +180,25 @@ export default function UserManagement() {
     setShowUserModal(false)
   }
 
+  useEffect(() => {
+    if (!showUserModal) return
+    const onKey = (e) => { if (e.key === 'Escape') setShowUserModal(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showUserModal])
+
   async function saveUser() {
     setFormError('')
     if (!editingUser && !form.password) {
       setFormError('Set a temporary password before adding this user.')
       return
     }
+    const phone = (form.mobile_no || '').replace(/\s+/g, '')
+    if (phone && !/^\+?\d{9,15}$/.test(phone)) {
+      setFormError('Enter a valid phone number, e.g. +254712345678')
+      return
+    }
+    setSaving(true)
     try {
       if (editingUser) {
         await updateUser(editingUser.name, form)
@@ -179,6 +210,8 @@ export default function UserManagement() {
       await loadUsers()
     } catch (e) {
       setFormError(e.message || 'Something went wrong saving the user.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -206,6 +239,9 @@ export default function UserManagement() {
       await createRole(role)
       setShowRoleModal(false)
       await loadRoles()
+      setSearchParams({ tab: 'roles', role })
+      setRoleNotice('Role created. Choose what it can do.')
+      setTimeout(() => setRoleNotice(''), 4000)
     } catch (e) {
       setRoleError(e.message || 'Could not create that role.')
     }
@@ -238,23 +274,27 @@ export default function UserManagement() {
           <h2 className="text-xl font-bold text-gray-900">User Management</h2>
           <p className="text-sm text-gray-400">Control users, roles, permissions, and platform access</p>
         </div>
-        {activeTab === 'users' && (
-          <div className="flex gap-3">
-            <button onClick={openRoleModal} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-500 flex items-center gap-2 hover:bg-gray-50">
-              <Plus className="w-4 h-4" /> Add Role
-            </button>
+        <div className="flex gap-3">
+          <button onClick={openRoleModal} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-500 flex items-center gap-2 hover:bg-gray-50">
+            <Plus className="w-4 h-4" /> Add Role
+          </button>
+          {activeTab === 'users' && (
             <button onClick={openAddUser} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add User
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
+
+      {roleNotice && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">{roleNotice}</div>
+      )}
 
       <div className="flex w-full gap-1 bg-white border border-gray-100 rounded-2xl p-1.5 mb-6">
         {tabs.map((tab) => (
           <div key={tab.key} className="flex flex-1 justify-center">
             <button
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => setSearchParams({ tab: tab.key })}
               className={['flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap',
                 activeTab === tab.key ? 'bg-red-600 text-white' : 'text-gray-900 hover:bg-gray-50'].join(' ')}
             >
@@ -266,7 +306,12 @@ export default function UserManagement() {
       </div>
 
       {activeTab === 'roles' ? (
-        <RolesPermissions roles={roles} users={users} />
+        <RolesPermissions
+          roles={roles}
+          users={users}
+          initialRole={roleParam}
+          onRoleChange={(role) => setSearchParams({ tab: 'roles', role }, { replace: true })}
+        />
       ) : (
         <>
           <div className="grid grid-cols-4 gap-4 mb-6">
@@ -322,10 +367,15 @@ export default function UserManagement() {
                         <div>
                           <div className="text-gray-900">{u.full_name || `${u.first_name} ${u.last_name || ''}`.trim()}</div>
                           <div className="text-xs text-gray-400">{u.name}</div>
+                          {u.mobile_no && <div className="text-xs text-gray-400">{u.mobile_no}</div>}
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-3"><span className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900">{u.primary_role || '—'}</span>
+                    <td className="px-5 py-3">{u.primary_role ? (
+                      <Link to={rolePermissionsLink(u.primary_role)} title="View permissions for this role" className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900 hover:border-red-300 hover:text-red-600">{u.primary_role}</Link>
+                    ) : (
+                      <span className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900">—</span>
+                    )}
                      
                       {userRolesMap[u.name] && u.primary_role && !userRolesMap[u.name].includes(u.primary_role) && (
                         <div className="text-[10px] font-medium text-amber-600">Mismatch: primary role not in Frappe roles</div>
@@ -371,65 +421,115 @@ export default function UserManagement() {
 
           {showUserModal && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) closeUserModal() }}>
-              <div className="bg-white rounded-xl w-full max-w-md p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-gray-900">{editingUser ? 'Edit User' : 'Add User'}</h3>
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                    {editingUser ? <Pencil className="w-5 h-5 text-red-600" /> : <UserPlus className="w-5 h-5 text-red-600" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-gray-900">{editingUser ? 'Edit user' : 'Add user'}</h3>
+                    <p className="text-sm text-gray-500 truncate">{editingUser ? editingUser.name : 'Create an account and assign their role and area'}</p>
+                  </div>
                   <button onClick={closeUserModal} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
                 </div>
 
-                <label className="block text-sm font-semibold mb-1">Email</label>
-                <input value={form.email} onChange={(e) => updateForm({ email: e.target.value })} disabled={!!editingUser} type="email" className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-4 text-sm disabled:text-gray-400" placeholder="name@krcs.org" />
-
-                {!editingUser && (
-                  <>
-                    <label className="block text-sm font-semibold mb-1">Temporary Password</label>
-                    <div className="flex gap-2 mb-4">
-                      <input value={form.password} onChange={(e) => updateForm({ password: e.target.value })} type="text" className="flex-1 bg-gray-50 rounded-lg px-4 py-2.5 text-sm" placeholder="Set a temporary password" />
-                      <button type="button" onClick={generatePassword} className="border border-gray-200 rounded-lg px-4 text-sm font-medium text-gray-600 hover:bg-gray-50">Generate</button>
+                <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+                  <section>
+                    <h4 className="text-xs font-semibold tracking-wide text-gray-500 uppercase mb-3">Account details</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>First name{req}</label>
+                        <input value={form.first_name} onChange={(e) => updateForm({ first_name: e.target.value })} className={inputCls} placeholder="First name" />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Last name</label>
+                        <input value={form.last_name} onChange={(e) => updateForm({ last_name: e.target.value })} className={inputCls} placeholder="Last name" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className={labelCls}>Email{req}</label>
+                        <input value={form.email} onChange={(e) => updateForm({ email: e.target.value })} disabled={!!editingUser} type="email" className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`} placeholder="name@krcs.org" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className={labelCls}>Phone number</label>
+                        <input value={form.mobile_no} onChange={(e) => updateForm({ mobile_no: e.target.value })} type="tel" className={inputCls} placeholder="+2547XXXXXXXX" />
+                        <p className="text-xs text-gray-500 mt-1.5">Used for SMS alerts. Include the country code.</p>
+                      </div>
+                      {!editingUser && (
+                        <div className="md:col-span-2">
+                          <label className={labelCls}>Temporary password{req}</label>
+                          <div className="flex gap-2">
+                            <input value={form.password} onChange={(e) => updateForm({ password: e.target.value })} type="text" className={`${inputCls} flex-1`} placeholder="Set a temporary password" />
+                            <button type="button" onClick={generatePassword} className="border border-gray-200 rounded-lg px-4 text-sm font-medium text-gray-600 hover:bg-gray-50">Generate</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </>
-                )}
+                  </section>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">First Name</label>
-                    <input value={form.first_name} onChange={(e) => updateForm({ first_name: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-4 text-sm" placeholder="First name" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Last Name</label>
-                    <input value={form.last_name} onChange={(e) => updateForm({ last_name: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-4 text-sm" placeholder="Last name" />
-                  </div>
+                  <section>
+                    <h4 className="text-xs font-semibold tracking-wide text-gray-500 uppercase mb-3">Role &amp; access</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>Role{req}</label>
+                        <select value={form.primary_role} onChange={(e) => updateForm({ primary_role: e.target.value })} className={inputCls}>
+                          <option value="">Select a role</option>
+                          {roles.map((r) => <option key={r.name} value={r.name}>{r.role_name || r.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>Status</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {STATUSES.map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => updateForm({ account_status: s })}
+                              className={['rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
+                                form.account_status === s ? STATUS_SELECTED[s] : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'].join(' ')}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section>
+                    <h4 className="text-xs font-semibold tracking-wide text-gray-500 uppercase mb-3">Area assignment</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>Region</label>
+                        <select value={form.assigned_region} onChange={(e) => updateForm({ assigned_region: e.target.value, assigned_sub_county: '' })} className={inputCls}>
+                          <option value="">Select a region</option>
+                          {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>Sub-county <span className="font-normal text-gray-400">(optional)</span></label>
+                        <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value })} disabled={!form.assigned_region} className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`}>
+                          <option value="">{form.assigned_region ? 'No sub-county' : 'Select a region first'}</option>
+                          {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1.5">CHA / SCDSC: receives alerts for new signals in this sub-county.</p>
+                      </div>
+                    </div>
+                  </section>
                 </div>
 
-                <label className="block text-sm font-semibold mb-1">Role</label>
-                <select value={form.primary_role} onChange={(e) => updateForm({ primary_role: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-4 text-sm">
-                  <option value="">Select a role</option>
-                  {roles.map((r) => <option key={r.name} value={r.name}>{r.role_name || r.name}</option>)}
-                </select>
+                {formError && (
+                  <div className="mx-6 mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700 shrink-0">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
 
-                <label className="block text-sm font-semibold mb-1">Region</label>
-                <select value={form.assigned_region} onChange={(e) => updateForm({ assigned_region: e.target.value, assigned_sub_county: '' })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-4 text-sm">
-                  <option value="">Select a region</option>
-                  {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
-                </select>
-
-                <label className="block text-sm font-semibold mb-1">Sub-county <span className="font-normal text-gray-400">(optional)</span></label>
-                <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-1 text-sm">
-                  <option value="">No sub-county</option>
-                  {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}
-                </select>
-                <p className="text-xs text-gray-500 mb-4">CHA / SCDSC: receives alerts for new signals in this sub-county.</p>
-
-                <label className="block text-sm font-semibold mb-1">Status</label>
-                <select value={form.account_status} onChange={(e) => updateForm({ account_status: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-6 text-sm">
-                  {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-
-                {formError && <p className="text-red-600 text-sm mb-4">{formError}</p>}
-
-                <div className="flex justify-end gap-3">
-                  <button onClick={closeUserModal} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold">Cancel</button>
-                  <button onClick={saveUser} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">{editingUser ? 'Save Changes' : 'Add User'}</button>
+                <div className="flex justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-100 shrink-0">
+                  <button onClick={closeUserModal} className="border border-gray-200 bg-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
+                  <button onClick={saveUser} disabled={saving} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg px-5 py-2.5 text-sm font-semibold flex items-center gap-2">
+                    {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {editingUser ? 'Save changes' : 'Add user'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -446,27 +546,28 @@ export default function UserManagement() {
             </div>
           )}
 
-          {showRoleModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowRoleModal(false) }}>
-              <div className="bg-white rounded-xl w-full max-w-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-gray-900">Add Role</h3>
-                  <button onClick={() => setShowRoleModal(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
-                </div>
-
-                <label className="block text-sm font-semibold mb-1">Role Name</label>
-                <input value={newRole} onChange={(e) => setNewRole(e.target.value)} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-2 text-sm" placeholder="e.g. Field Supervisor" />
-
-                {roleError && <p className="text-red-600 text-sm mb-4">{roleError}</p>}
-
-                <div className="flex justify-end gap-3">
-                  <button onClick={() => setShowRoleModal(false)} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold">Cancel</button>
-                  <button onClick={addRole} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">Add Role</button>
-                </div>
-              </div>
-            </div>
-          )}
         </>
+      )}
+
+      {showRoleModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowRoleModal(false) }}>
+          <div className="bg-white rounded-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-900">Add Role</h3>
+              <button onClick={() => setShowRoleModal(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
+            </div>
+
+            <label className="block text-sm font-semibold mb-1">Role Name</label>
+            <input value={newRole} onChange={(e) => setNewRole(e.target.value)} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-2 text-sm" placeholder="e.g. Field Supervisor" />
+
+            {roleError && <p className="text-red-600 text-sm mb-4">{roleError}</p>}
+
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowRoleModal(false)} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold">Cancel</button>
+              <button onClick={addRole} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">Add Role</button>
+            </div>
+          </div>
+        </div>
       )}
     </AppShell>
   )

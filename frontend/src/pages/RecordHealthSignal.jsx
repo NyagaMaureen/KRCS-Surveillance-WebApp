@@ -390,7 +390,7 @@ export default function RecordHealthSignal() {
     <p className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1.5">
       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
       Add your phone number to your profile before submitting.
-      <a href={`/app/user/${encodeURIComponent(form.reported_by)}`} target="_blank" rel="noopener noreferrer" className="font-semibold underline">Open profile</a>
+      <a href={`${import.meta.env.BASE_URL.replace(/\/$/, '')}/settings`} target="_blank" rel="noopener noreferrer" className="font-semibold underline">Open settings</a>
     </p>
   )
   const optionalHint = <span className="text-xs font-normal text-gray-400">(optional, but helps verification)</span>

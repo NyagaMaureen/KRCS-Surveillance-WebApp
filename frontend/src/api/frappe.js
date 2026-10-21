@@ -258,6 +258,7 @@ export async function createUser(userData) {
 
     assigned_region: userData.assigned_region || '',
     assigned_sub_county: userData.assigned_sub_county || '',
+    mobile_no: (userData.mobile_no || '').trim(),
     account_status: userData.account_status || 'Active',
 
     enabled:
@@ -327,6 +328,7 @@ export async function updateUser(name, userData) {
     roles,
     assigned_region: userData.assigned_region || '',
     assigned_sub_county: userData.assigned_sub_county || '',
+    mobile_no: (userData.mobile_no || '').trim(),
     account_status: userData.account_status || 'Active',
 
     enabled: userData.account_status !== 'Inactive' &&
@@ -365,7 +367,6 @@ export async function deleteUser(name) {
   return deleteDoc('User', name)
 }
 
-
 export async function getUsers(opts = {}) {
   return getList(
     'User',
@@ -377,6 +378,8 @@ export async function getUsers(opts = {}) {
       'user_image',
       'primary_role',
       'assigned_region',
+      'assigned_sub_county',
+      'mobile_no',
       'account_status',
       'last_login',
       'enabled'
@@ -388,6 +391,7 @@ export async function getUsers(opts = {}) {
     }
   )
 }
+
 
 export async function getRoles() {
   return getList(
@@ -600,6 +604,13 @@ export async function getDiseaseTrends() {
 
 export async function getChannelStats(days = 30) {
   return (await callMethod(`/api/method/surveillance.surveillance.api.get_channel_stats?days=${days}`)) || { channels: [], total: 0, days }
+}
+
+export async function getSourceStats(days = 30) {
+  const res = await fetch(`/api/method/surveillance.surveillance.api.get_source_stats?days=${days}`, { credentials: 'include' })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data?._server_messages || data?.exception || 'Could not load data sources')
+  return data.message || { sources: [] }
 }
 
 export async function getFacilityResponseTime() {

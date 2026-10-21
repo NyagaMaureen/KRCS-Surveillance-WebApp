@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff, Search, X } from 'lucide-react'
+import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff, Search, X, Lock } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getCurrentUser, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds, searchIcd11, setIcd11 } from '../api/frappe'
+import { getCurrentUser, getMyProfile, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds, searchIcd11, setIcd11 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 const TABS = [
@@ -177,8 +177,9 @@ export default function Settings() {
   const [profileError, setProfileError] = useState('')
   const [password, setPassword] = useState({ current: '', next: '', confirm: '' })
   const [showPassword, setShowPassword] = useState({ current: false, next: false, confirm: false })
-  const emptyForm = () => ({ first_name: '', middle_name: '', last_name: '', mobile_no: '', assigned_region: '' })
+  const emptyForm = () => ({ first_name: '', middle_name: '', last_name: '', mobile_no: '' })
   const [form, setForm] = useState(emptyForm)
+  const [area, setArea] = useState({})
 
   const [aiFeatures, setAiFeatures] = useState(INITIAL_AI_FEATURES)
   const [notificationPrefs, setNotificationPrefs] = useState(INITIAL_NOTIFICATION_PREFS)
@@ -208,7 +209,6 @@ export default function Settings() {
       middle_name: u?.middle_name || '',
       last_name: u?.last_name || '',
       mobile_no: u?.mobile_no || '',
-      assigned_region: u?.assigned_region || '',
     })
   }
 
@@ -378,8 +378,13 @@ export default function Settings() {
 
   async function saveProfile() {
     setProfileError('')
+    const phone = (form.mobile_no || '').replace(/\s+/g, '')
+    if (phone && !/^\+?\d{9,15}$/.test(phone)) {
+      setProfileError('Enter a valid phone number, e.g. +254712345678')
+      return
+    }
     try {
-      const updated = await updateDoc('User', user.name, { ...form })
+      const updated = await updateDoc('User', user.name, { ...form, mobile_no: phone })
       setUser(updated)
       syncForm(updated)
       setEditing(false)
@@ -456,6 +461,7 @@ export default function Settings() {
       setSurveillanceRegions(regionList.map((r) => ({ name: r.region_name, active: true })))
       syncForm(me)
     })
+    getMyProfile().then(setArea).catch(() => {})
     loadThresholds()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -519,7 +525,8 @@ export default function Settings() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-1.5">Phone Number</label>
-                <input value={form.mobile_no} onChange={(e) => setForm({ ...form, mobile_no: e.target.value })} disabled={!editing} className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
+                <input value={form.mobile_no} onChange={(e) => setForm({ ...form, mobile_no: e.target.value })} disabled={!editing} type="tel" placeholder="+2547XXXXXXXX" className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
+                <p className="text-xs text-gray-500 mt-1">Used for SMS alerts. Include the country code.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-1.5">Email Address</label>
@@ -527,14 +534,20 @@ export default function Settings() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-1.5">Region</label>
-                <select value={form.assigned_region} onChange={(e) => setForm({ ...form, assigned_region: e.target.value })} disabled={!editing} className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200">
-                  <option value="">Unassigned</option>
-                  {regions.map((r) => (
-                    <option key={r.name} value={r.name}>{r.region_name}</option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between w-full rounded-lg border border-gray-200 bg-gray-100 px-4 py-3 text-sm text-gray-500">
+                  <span>{area.region_name || 'Not assigned'}</span>
+                  <Lock className="w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-1.5">Sub-county</label>
+                <div className="flex items-center justify-between w-full rounded-lg border border-gray-200 bg-gray-100 px-4 py-3 text-sm text-gray-500">
+                  <span>{area.sub_county_name || 'Not assigned'}</span>
+                  <Lock className="w-4 h-4 text-gray-400" />
+                </div>
               </div>
             </div>
+            <p className="text-xs text-gray-500 -mt-3 mb-6">Your area is set by an administrator. Contact them to change it.</p>
 
             {profileError && <p className="text-red-600 text-sm mb-4">{profileError}</p>}
 
