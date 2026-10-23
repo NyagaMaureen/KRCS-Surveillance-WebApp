@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "creation": "2026-10-21 16:30:00.000000",
+ "modified": "2026-10-21 16:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "IDSR Facility Week",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "autoname": "hash",
+ "naming_rule": "Random",
+ "in_create": 1,
+ "description": "Weekly MOH 505 cases per facility and disease. Filled by uploads; rolled up into Weekly Count (source IDSR).",
+ "fields": [
+  {
+   "fieldname": "facility",
+   "fieldtype": "Link",
+   "label": "Facility",
+   "options": "Reporting Facility",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "disease",
+   "fieldtype": "Data",
+   "label": "Disease",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "week_start",
+   "fieldtype": "Date",
+   "label": "Week starting",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "cases",
+   "fieldtype": "Int",
+   "label": "Cases",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "deaths",
+   "fieldtype": "Int",
+   "label": "Deaths",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "upload",
+   "fieldtype": "Link",
+   "label": "Upload",
+   "options": "IDSR Upload",
+   "read_only": 1
+  }
+ ],
+ "field_order": [
+  "facility",
+  "disease",
+  "week_start",
+  "cases",
+  "deaths",
+  "upload"
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

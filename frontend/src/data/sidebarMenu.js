@@ -14,6 +14,8 @@ export const SIDEBAR_MENU = [
     { label: 'Analytics', icon: 'TrendingUp', page: 'analytics', requiresCapability: 'view_analytics' },
     { label: 'AI Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },
     { label: 'Knowledge Base', icon: 'BookOpen', page: 'knowledge-base', requiresCapability: null },
+    { label: 'Facility Data', icon: 'FileSpreadsheet', page: 'facility-data', requiresCapability: 'upload_facility_data' },
+
   ]},
   { section: 'COMMUNICATION', items: [
     { label: 'Channels', icon: 'Radar', page: 'channels', requiresCapability: null },

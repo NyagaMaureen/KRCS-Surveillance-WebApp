@@ -1,0 +1,94 @@
+{
+ "actions": [],
+ "creation": "2026-10-21 16:30:00.000000",
+ "modified": "2026-10-21 16:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Reporting Facility",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "autoname": "field:facility_name",
+ "naming_rule": "By fieldname",
+ "track_changes": 1,
+ "title_field": "facility_name",
+ "description": "Health facilities that send MOH 505 (IDSR) weekly reports, and the sub-county their cases count under.",
+ "fields": [
+  {
+   "fieldname": "facility_name",
+   "fieldtype": "Data",
+   "label": "Facility name",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "khis_match",
+   "fieldtype": "Data",
+   "label": "Name in KHIS files",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Words that identify this facility in the organisation unit name at the top of its KHIS exports, e.g. ifo or wadajir. Not case-sensitive. Advanced: a regular expression."
+  },
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Link",
+   "label": "Sub-county",
+   "options": "Sub County",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "county",
+   "fieldtype": "Data",
+   "label": "County",
+   "fetch_from": "sub_county.county",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sub_county_name",
+   "fieldtype": "Data",
+   "label": "Sub-county name",
+   "fetch_from": "sub_county.sub_county_name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Active",
+   "default": "1",
+   "in_list_view": 1
+  }
+ ],
+ "field_order": [
+  "facility_name",
+  "khis_match",
+  "sub_county",
+  "cb1",
+  "county",
+  "sub_county_name",
+  "is_active"
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

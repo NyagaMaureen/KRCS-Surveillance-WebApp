@@ -1,0 +1,174 @@
+{
+ "actions": [],
+ "creation": "2026-10-21 16:30:00.000000",
+ "modified": "2026-10-21 16:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "IDSR Upload",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "autoname": "format:IDSR-UP-{#####}",
+ "naming_rule": "Expression",
+ "track_changes": 1,
+ "in_create": 1,
+ "description": "One uploaded KHIS MOH 505 export (cases or reporting-rate file) and what happened to it.",
+ "fields": [
+  {
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "label": "File",
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_name",
+   "fieldtype": "Data",
+   "label": "File name",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_type",
+   "fieldtype": "Select",
+   "label": "File type",
+   "options": "\nCases\nReporting",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Ready\nIngested\nFailed\nDiscarded",
+   "default": "Ready",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "khis_unit",
+   "fieldtype": "Data",
+   "label": "Organisation unit in file",
+   "read_only": 1
+  },
+  {
+   "fieldname": "facility",
+   "fieldtype": "Link",
+   "label": "Facility",
+   "options": "Reporting Facility",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "first_week",
+   "fieldtype": "Date",
+   "label": "First week",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_week",
+   "fieldtype": "Date",
+   "label": "Last week",
+   "read_only": 1
+  },
+  {
+   "fieldname": "weeks",
+   "fieldtype": "Int",
+   "label": "Weeks in file",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_cases",
+   "fieldtype": "Int",
+   "label": "Cases",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_deaths",
+   "fieldtype": "Int",
+   "label": "Deaths",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb1",
+   "fieldtype": "Section Break",
+   "label": "Details"
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Code",
+   "label": "Summary (JSON)",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Problem",
+   "read_only": 1
+  },
+  {
+   "fieldname": "uploaded_by",
+   "fieldtype": "Link",
+   "label": "Uploaded by",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ingested_by",
+   "fieldtype": "Link",
+   "label": "Ingested by",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ingested_on",
+   "fieldtype": "Datetime",
+   "label": "Ingested on",
+   "read_only": 1
+  }
+ ],
+ "field_order": [
+  "file",
+  "file_name",
+  "file_type",
+  "status",
+  "khis_unit",
+  "facility",
+  "cb1",
+  "first_week",
+  "last_week",
+  "weeks",
+  "total_cases",
+  "total_deaths",
+  "sb1",
+  "summary",
+  "error",
+  "uploaded_by",
+  "ingested_by",
+  "ingested_on"
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { Doughnut } from 'react-chartjs-2'
 import { Smartphone, MessageCircle, Globe, Users, Building2, Info } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getChannelStats, getSourceStats } from '../api/frappe'
 import { CHART_FONT } from '../charts/chartSetup'
+import { useCapabilities } from '../context/CapabilitiesContext'
 
 // Fixed list of supported channels. Values match the Case Report "channel" field.
 const CHANNELS = [
@@ -45,6 +47,7 @@ function timeAgo(value) {
 }
 
 export default function Channels() {
+  const { has } = useCapabilities()
   const [days, setDays] = useState(30)
   const [stats, setStats] = useState({ channels: [], total: 0 })
   const [loading, setLoading] = useState(true)
@@ -217,6 +220,9 @@ export default function Channels() {
                       <p className="text-xs text-gray-400">
                         Latest week with signals: {lastWeek ? `week of ${lastWeek}` : 'None'}
                       </p>
+                      {src.value === 'IDSR' && has('upload_facility_data') && (
+                        <Link to="/facility-data" className="text-xs font-semibold text-red-600 hover:underline">Upload files →</Link>
+                      )}
                       {signals > 0 && pilot === 0 && (
                         <div className="flex items-start gap-2 bg-blue-50 text-blue-700 text-xs rounded-lg px-3 py-2 mt-4">
                           <Info className="w-4 h-4 shrink-0" />

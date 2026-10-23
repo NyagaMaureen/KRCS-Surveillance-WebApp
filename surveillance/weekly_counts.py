@@ -114,22 +114,30 @@ def load_cbs_history(path):
 			print(f"  {n:5}  {name}")
 	return saved
 
-
 # ---------- MOH 505 (weekly IDSR) exports from KHIS ----------
+#
+# Facility-level data is kept in two tables, filled by uploads (Facility Data page) or by load_moh505:
+#   IDSR Facility Week   facility, disease, week, cases, deaths
+#   IDSR Reporting Week  facility, week, reported yes/no (from KHIS reporting-rate files)
+# An upload replaces only the weeks in that file for that facility. rebuild_idsr() then rolls the
+# facilities up to sub-county weeks in Weekly Count (source IDSR), which is what the engine reads.
 
-# Organisation unit name in the export -> (county, sub-county in our Sub County list).
-# One line per facility. A facility mapped to None is skipped (listed in the output) until its
-# location is confirmed. Add a line here when KRCS sends files for a new facility.
-UNIT_LOCATIONS = [
+FACILITY = "Reporting Facility"
+FACILITY_WEEK = "IDSR Facility Week"
+REPORTING_WEEK = "IDSR Reporting Week"
+
+# Starting list for Reporting Facility (after_migrate adds any that are missing; edits in the app are kept).
+# (facility name, words/regex found in the KHIS organisation unit name, county, sub-county)
+DEFAULT_FACILITIES = [
 	# DRO (Dadaab)
-	(r"\bifo\b", "Garissa", "Dadaab"),
-	(r"abaqalaan", "Garissa", "Dadaab"),   
-	(r"balaambal", "Garissa", "Dadaab"),   
-	(r"darkenley", "Garissa", "Dadaab"),   
-	(r"wadajir", "Garissa", "Dadaab"),     
+	("Ifo", r"\bifo\b", "Garissa", "Dadaab"),
+	("Abaqalaan", r"abaqalaan", "Garissa", "Dadaab"),
+	("Balaambal", r"balaambal", "Garissa", "Dadaab"),
+	("Darkenley", r"darkenley", "Garissa", "Dadaab"),
+	("Wadajir", r"wadajir", "Garissa", "Dadaab"),
 	# KRO (Kalobeyei)
-	(r"naregae", "Turkana", "Turkana West"),
-	(r"natukobenyo", "Turkana", "Turkana West"),
+	("Naregae", r"naregae", "Turkana", "Turkana West"),
+	("Natukobenyo", r"natukobenyo", "Turkana", "Turkana West"),
 ]
 MOH505_COLUMN = re.compile(r"^(?:MOH[ _]505[^_]*_)?(?:IDSR )?(?P<name>.+?)\s*(?P<age>[<>]5 yrs)?,\s*(?P<kind>Cases|Deaths)$", re.I)
 MOH505_WEEK = re.compile(r"Week \d+ (\d{4}-\d{2}-\d{2})")
@@ -138,52 +146,89 @@ MOH505_SKIP = re.compile(r"^deaths due to|other cases|tested|positive", re.I)
 COUNT_DEATHS_AS_CASES = {"maternal-death", "neonatal-death"}  # the event itself is the death
 
 
-def _unit_location(unit):
-	"""(county, sub_county) for a unit. (None, None) = listed but pending; raises if not listed at all."""
-	for rx, county, sub_county in UNIT_LOCATIONS:
-		if re.search(rx, unit or "", re.I):
-			return county, sub_county
-	raise ValueError(f"Unknown organisation unit '{unit}'. Add it to UNIT_LOCATIONS.")
+class UnknownFacility(ValueError):
+	def __init__(self, unit):
+		self.unit = unit
+		super().__init__(f"Unknown organisation unit '{unit}'. Add it under Facility Data > Facilities.")
 
 
-def _is_reporting_file(path):
-	return os.path.basename(path).lower().startswith("reporting")
+def seed_reporting_facilities():
+	"""after_migrate: add missing default facilities. Never changes facilities edited in the app."""
+	subs = {((s.county or "").lower(), (s.sub_county_name or "").lower()): s.name
+		for s in frappe.get_all("Sub County", fields=["name", "county", "sub_county_name"])}
+	for name, match, county, sub_county in DEFAULT_FACILITIES:
+		if frappe.db.exists(FACILITY, name):
+			continue
+		sc = subs.get((county.lower(), sub_county.lower()))
+		if not sc:
+			print(f"Reporting Facility {name} skipped: no Sub County {county} / {sub_county}")
+			continue
+		frappe.get_doc({"doctype": FACILITY, "facility_name": name, "khis_match": match,
+			"sub_county": sc, "is_active": 1}).insert(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def find_facility(unit):
+	"""The Reporting Facility whose 'Name in KHIS files' matches the unit. Raises UnknownFacility."""
+	for f in frappe.get_all(FACILITY, filters={"is_active": 1}, fields=["name", "khis_match"]):
+		pattern = (f.khis_match or "").strip()
+		if not pattern:
+			continue
+		try:
+			hit = re.search(pattern, unit or "", re.I)
+		except re.error:
+			hit = pattern.lower() in (unit or "").lower()
+		if hit:
+			return f.name
+	raise UnknownFacility(unit)
+
+
+def _read_sheet(path):
+	"""(unit, raw dataframe, header row index) for a KHIS export."""
+	import pandas as pd
+	raw = pd.read_excel(path, header=None)
+	unit = str(raw.iloc[0, 0]).strip()
+	header_row = next((i for i in range(min(10, len(raw))) if str(raw.iloc[i, 0]).strip().lower() == "periodname"), None)
+	if header_row is None:
+		raise ValueError("This doesn't look like a KHIS export: no 'periodname' row in the first 10 rows.")
+	return unit, raw, header_row
+
+
+def file_kind(path, file_name=None):
+	"""'Reporting' for a KHIS reporting-rate export, 'Cases' for an MOH 505 cases export."""
+	if os.path.basename(file_name or path).lower().startswith("reporting"):
+		return "Reporting"
+	_, raw, header_row = _read_sheet(path)
+	headers = [str(h).strip() for h in raw.iloc[header_row].tolist()]
+	return "Reporting" if any(re.search(r"actual reports$", h, re.I) for h in headers) else "Cases"
 
 
 def parse_reporting_file(path):
 	"""Read one KHIS reporting-rate export. Returns (unit, {week_start: reported(bool)})."""
 	import pandas as pd
-	raw = pd.read_excel(path, header=None)
-	unit = str(raw.iloc[0, 0]).strip()
-	header_row = next((i for i in range(min(10, len(raw))) if str(raw.iloc[i, 0]).strip().lower() == "periodname"), None)
-	if header_row is None:
-		raise ValueError(f"{path}: no 'periodname' header row found")
+	unit, raw, header_row = _read_sheet(path)
 	headers = [str(h) for h in raw.iloc[header_row].tolist()]
 	col = next((j for j, h in enumerate(headers) if re.search(r"actual reports$", h.strip(), re.I)), None)
 	if col is None:
-		raise ValueError(f"{path}: no 'Actual reports' column found")
+		raise ValueError("No 'Actual reports' column found in this reporting-rate file.")
 	weeks = {}
 	for i in range(header_row + 1, len(raw)):
 		wk = MOH505_WEEK.search(str(raw.iloc[i, 0]))
 		if wk:
 			v = pd.to_numeric(raw.iloc[i, col], errors="coerce")
-			weeks[wk.group(1)] = bool(v and v > 0)
+			weeks[week_start(wk.group(1))] = bool(v and v > 0)
 	return unit, weeks
 
 
 def parse_moh505_file(path):
-	"""Read one KHIS MOH 505 export (weeks as rows, disease x age x cases/deaths as columns).
-	Returns (unit, rows, skipped_column_names). <5 and >5 are added together.
-	A week where every cell is blank produces no rows: the engine treats it as "not reported"."""
+	"""Read one KHIS MOH 505 export (weeks as rows, disease x age x cases/deaths as columns). <5 and >5 are added.
+
+	Returns (unit, rows, weeks_with_data, skipped_column_names):
+	  rows: [{disease, week_start, cases, deaths}] for diseases we map (zero rows left out)
+	  weeks_with_data: weeks with at least one filled cell. These are the weeks an upload replaces;
+	  a week where every cell is blank counts as "not reported" and is left alone."""
 	import pandas as pd
-	raw = pd.read_excel(path, header=None)
-	unit = str(raw.iloc[0, 0]).strip()
-	header_row = next((i for i in range(min(10, len(raw))) if str(raw.iloc[i, 0]).strip().lower() == "periodname"), None)
-	if header_row is None:
-		raise ValueError(f"{path}: no 'periodname' header row found")
-	county, sub_county = _unit_location(unit)
-	if not sub_county:
-		return unit, None, set()  # location pending: caller skips this unit
+	unit, raw, header_row = _read_sheet(path)
 
 	columns, skipped = {}, set()
 	for j, h in enumerate(raw.iloc[header_row].tolist()[1:], start=1):
@@ -195,93 +240,124 @@ def parse_moh505_file(path):
 			continue
 		columns[j] = (key, m.group("kind").lower())
 
-	totals = {}
+	totals, weeks = {}, set()
 	for i in range(header_row + 1, len(raw)):
 		wk = MOH505_WEEK.search(str(raw.iloc[i, 0]))
 		if not wk:
 			continue
+		week = week_start(wk.group(1))
 		for j, (key, kind) in columns.items():
 			v = pd.to_numeric(raw.iloc[i, j], errors="coerce")
 			if pd.isna(v):
 				continue
-			t = totals.setdefault((key, wk.group(1)), {"cases": 0, "deaths": 0})
+			weeks.add(week)
+			t = totals.setdefault((key, week), {"cases": 0, "deaths": 0})
 			t[kind] += int(v)
 
 	rows = []
 	for (key, week), t in totals.items():
-		count = max(t["cases"], t["deaths"]) if key in COUNT_DEATHS_AS_CASES else t["cases"]
-		if count == 0 and t["deaths"] == 0:
+		cases = max(t["cases"], t["deaths"]) if key in COUNT_DEATHS_AS_CASES else t["cases"]
+		if cases == 0 and t["deaths"] == 0:
 			continue
-		rows.append({"disease": key, "county": county, "sub_county": sub_county, "week_start": week,
-			"signals": count, "affected": count, "deaths": t["deaths"]})
-	return unit, rows, skipped
+		rows.append({"disease": key, "week_start": week, "cases": cases, "deaths": t["deaths"]})
+	return unit, rows, weeks, skipped
+
+
+def _replace_facility_rows(doctype, facility, weeks, values, fields):
+	"""Delete one facility's rows for the given weeks, then insert values. Other weeks and facilities untouched."""
+	if weeks:
+		frappe.db.delete(doctype, {"facility": facility, "week_start": ["in", sorted(weeks)]})
+	if values:
+		frappe.db.bulk_insert(doctype, fields, values, chunk_size=2000)
+
+
+_BASE_FIELDS = ["name", "creation", "modified", "owner", "modified_by", "docstatus"]
+
+
+def store_cases(facility, rows, weeks, upload=None):
+	"""Save one facility's case rows, replacing only the weeks in `weeks`."""
+	ts, user = now(), frappe.session.user
+	values = [(hashlib.sha1(f"{facility}|{r['disease']}|{r['week_start']}".encode()).hexdigest()[:20], ts, ts, user, user, 0,
+		facility, r["disease"], r["week_start"], r["cases"], r["deaths"], upload) for r in rows]
+	_replace_facility_rows(FACILITY_WEEK, facility, weeks, values,
+		_BASE_FIELDS + ["facility", "disease", "week_start", "cases", "deaths", "upload"])
+
+
+def store_reporting(facility, weeks, upload=None):
+	"""Save one facility's reported/not-reported weeks ({week: bool}), replacing only those weeks."""
+	ts, user = now(), frappe.session.user
+	values = [(hashlib.sha1(f"{facility}|{w}".encode()).hexdigest()[:20], ts, ts, user, user, 0,
+		facility, w, 1 if ok else 0, upload) for w, ok in weeks.items()]
+	_replace_facility_rows(REPORTING_WEEK, facility, set(weeks), values,
+		_BASE_FIELDS + ["facility", "week_start", "reported", "upload"])
+
+
+def rebuild_idsr():
+	"""Roll facility weeks up into Weekly Count (source IDSR): sum per sub-county, disease and week.
+
+	A sub-county week counts as reported when any of its facilities reported. For those weeks, zero rows
+	are added so the engine sees a true zero instead of "not reported". Only diseases in Alert Threshold
+	Config are passed on (a disease added there later is picked up at the next rebuild)."""
+	known = set(frappe.get_all("Alert Threshold Config", pluck="name"))
+	loc = {f.name: (f.county, f.sub_county_name)
+		for f in frappe.get_all(FACILITY, fields=["name", "county", "sub_county_name"]) if f.sub_county_name}
+
+	rows, loc_diseases, loc_weeks = [], {}, {}
+	for r in frappe.get_all(FACILITY_WEEK, fields=["facility", "disease", "week_start", "cases", "deaths"], limit_page_length=0):
+		if r.facility not in loc or r.disease not in known:
+			continue
+		county, sub_county = loc[r.facility]
+		rows.append({"disease": r.disease, "county": county, "sub_county": sub_county, "week_start": r.week_start,
+			"signals": r.cases or 0, "affected": r.cases or 0, "deaths": r.deaths or 0})
+		loc_diseases.setdefault((county, sub_county), set()).add(r.disease)
+	for r in frappe.get_all(REPORTING_WEEK, filters={"reported": 1}, fields=["facility", "week_start"], limit_page_length=0):
+		if r.facility in loc:
+			loc_weeks.setdefault(loc[r.facility], set()).add(r.week_start)
+	zeros = [{"disease": d, "county": c, "sub_county": sc, "week_start": w, "signals": 0, "affected": 0, "deaths": 0}
+		for (c, sc), ws in loc_weeks.items() for w in ws for d in loc_diseases.get((c, sc), ())]
+	return replace_source("IDSR", rows + zeros)
 
 
 def load_moh505(folder):
-	"""Load every MOH 505 export under folder as source IDSR. Safe to re-run: replaces all IDSR rows.
-
-	Expects one sub-folder per facility holding yearly case files (2025.xls) and reporting files
-	(reporting_25.xls). Reporting files tell a true zero week (facility reported, no cases) apart
-	from a week the facility did not report, which the engine leaves out of the baseline.
+	"""Load every MOH 505 export under a folder (cases and reporting files, any sub-folders), then rebuild IDSR.
+	Safe to re-run: each file replaces only its own facility's weeks. Also used once to bring existing
+	history into the facility tables before the Facility Data page is used.
 
 	bench --site <site> execute surveillance.weekly_counts.load_moh505 --kwargs "{'folder': '/full/path/moh505'}"
 	"""
-	known = set(frappe.get_all("Alert Threshold Config", pluck="name"))
 	files = sorted(glob.glob(os.path.join(folder, "**", "*.xls*"), recursive=True))
 	if not files:
 		frappe.throw(f"No .xls/.xlsx files found under {folder}")
 
-	rows, skipped, unknown = [], set(), {}
-	units, pending = {}, {}
-	reported = {}  # unit -> {week: bool}
+	done, unknown, failed, skipped = {}, {}, {}, set()
 	for f in files:
-		if _is_reporting_file(f):
-			unit, weeks = parse_reporting_file(f)
-			reported.setdefault(unit, {}).update(weeks)
-			continue
-		unit, file_rows, file_skipped = parse_moh505_file(f)
-		if file_rows is None:
-			pending.setdefault(unit, []).append(os.path.basename(f))
-			continue
-		skipped |= file_skipped
-		units.setdefault(unit, []).append(os.path.basename(f))
-		for r in file_rows:
-			if r["disease"] not in known:
-				unknown[r["disease"]] = unknown.get(r["disease"], 0) + r["signals"]
-				continue
-			rows.append(r)
-
-	# A sub-county week counts as reported when any of its facilities reported. For those weeks,
-	# add zero rows so the engine sees a true zero instead of "not reported".
-	loc_weeks, loc_diseases = {}, {}
-	for unit, weeks in reported.items():
+		name = os.path.basename(f)
 		try:
-			county, sub_county = _unit_location(unit)
-		except ValueError:
-			continue
-		if not sub_county:
-			continue
-		for w, ok in weeks.items():
-			if ok:
-				loc_weeks.setdefault((county, sub_county), set()).add(str(week_start(w)))
-	for r in rows:
-		loc_diseases.setdefault((r["county"], r["sub_county"]), set()).add(r["disease"])
-	zeros = [{"disease": d, "county": c, "sub_county": sc, "week_start": w, "signals": 0, "affected": 0, "deaths": 0}
-		for (c, sc), ws in loc_weeks.items() for w in ws for d in loc_diseases.get((c, sc), ())]
+			if file_kind(f) == "Reporting":
+				unit, weeks = parse_reporting_file(f)
+				facility = find_facility(unit)
+				store_reporting(facility, weeks)
+				done.setdefault(facility, []).append(f"{name} (reporting, {sum(weeks.values())}/{len(weeks)} weeks reported)")
+			else:
+				unit, rows, weeks, file_skipped = parse_moh505_file(f)
+				facility = find_facility(unit)
+				skipped |= file_skipped
+				store_cases(facility, rows, weeks)
+				done.setdefault(facility, []).append(f"{name} ({len(weeks)} weeks, {sum(r['cases'] for r in rows)} cases)")
+		except UnknownFacility as e:
+			unknown.setdefault(e.unit, []).append(name)
+		except Exception as e:
+			failed[name] = str(e)
+	frappe.db.commit()
 
-	saved = replace_source("IDSR", rows + zeros)
-	weeks = sorted({str(week_start(r["week_start"])) for r in rows})
+	saved = rebuild_idsr()
 	print(f"Files read         : {len(files)}")
-	for unit, names in units.items():
-		rep = reported.get(unit, {})
-		rate = f"{sum(rep.values())}/{len(rep)} weeks reported" if rep else "no reporting file"
-		print(f"  {unit} -> {' / '.join(_unit_location(unit))}: {len(names)} case files, {rate}")
-	for unit, names in pending.items():
-		print(f"  SKIPPED {unit}: location pending ({len(names)} case files). Set it in UNIT_LOCATIONS.")
+	for facility, names in done.items():
+		print(f"  {facility}: " + "; ".join(names))
+	for unit, names in unknown.items():
+		print(f"  SKIPPED '{unit}': not in Reporting Facility ({len(names)} files). Add it, then re-run.")
+	for name, err in failed.items():
+		print(f"  FAILED {name}: {err}")
 	print(f"Weekly Count rows  : {saved} (source IDSR)")
-	if weeks:
-		print(f"Weeks covered      : {weeks[0]} to {weeks[-1]}")
-	if unknown:
-		print("Not loaded (disease not in Alert Threshold Config):", unknown)
 	print(f"Columns ignored    : {len(skipped)} (lab tests, separate malaria-death rows, other cases)")
 	return saved

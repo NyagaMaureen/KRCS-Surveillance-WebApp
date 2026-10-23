@@ -1218,3 +1218,41 @@ export async function splitReport(eventId, signalId, reason) {
 //   if (!res.ok) throw new Error(frappeErrorMessage(data, res.status))
 //   return (data.data || []).map((r) => r.name)
 // }
+// ---------- Facility Data (MOH 505 / IDSR uploads) ----------
+// Paste at the end of src/api/frappe.js
+
+const FD = '/api/method/surveillance.facility_data'
+
+export async function previewFacilityUpload(fileUrl) {
+  return callMethodPost(`${FD}.preview_upload`, { file_url: fileUrl })
+}
+
+export async function confirmFacilityUpload(name, runDetection = true) {
+  return callMethodPost(`${FD}.confirm_upload`, { name, run_detection: runDetection ? 1 : 0 })
+}
+
+export async function discardFacilityUpload(name) {
+  return callMethodPost(`${FD}.discard_upload`, { name })
+}
+
+export async function getFacilityUploads(limit = 100) {
+  return (await callMethod(`${FD}.get_uploads?limit=${limit}`)) || []
+}
+
+export async function getFacilityCoverage(weeks = 12) {
+  return (await callMethod(`${FD}.get_coverage?weeks=${weeks}`)) || { weeks: [], facilities: [] }
+}
+
+export async function getReportingFacilities() {
+  return (await callMethod(`${FD}.get_facilities`)) || []
+}
+
+export async function saveReportingFacility({ name, facilityName, khisMatch, subCounty, active = true }) {
+  return callMethodPost(`${FD}.save_facility`, {
+    name: name || null,
+    facility_name: facilityName,
+    khis_match: khisMatch,
+    sub_county: subCounty,
+    active: active ? 1 : 0,
+  })
+}

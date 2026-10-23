@@ -25,6 +25,7 @@ import AlertDetail from '../pages/AlertDetail'
 import AlertsSignalsQueue from '../pages/AlertsSignalsQueue'
 import EventDetail from '../pages/EventDetail'
 import SurveillanceMap from '../pages/SurveillanceMap'
+import FacilityData from '../pages/FacilityData'
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
@@ -47,6 +48,7 @@ const rawRoutes = [
   { path: '/record-health-signal', name: 'record-health-signal', element: RecordHealthSignal },
   { path: '/user-management', name: 'user-management', element: UserManagement },
   { path: '/channels', name: 'channels', element: Channels },
+  { path: '/facility-data', name: 'facility-data', element: FacilityData },
   { path: '/settings', name: 'settings', element: Settings },
   { path: '/help-center', name: 'help-center', element: HelpCenter },
   { path: '/audit-log', name: 'audit-log', element: AuditLog },

@@ -87,6 +87,11 @@ CAPABILITIES = [
 	 "grants": {"Region": ["read", "write", "create"], "Symptom": ["read", "write", "create"],
 	            "Sub County": ["read", "write", "create"]}},
 
+    # Facility Data
+	{"key": "upload_facility_data", "name": "Upload Facility Data", "category": "Facility Data",
+	 "description": "Upload MOH 505 (IDSR) exports from KHIS and manage the reporting facility list",
+	 "grants": {"Reporting Facility": ["read"], "IDSR Upload": ["read"]}},
+
 	# Knowledge Base
 	{"key": "manage_knowledge_base", "name": "Manage Knowledge Base", "category": "Knowledge Base",
 	 "description": "Upload, reindex and delete AI knowledge base documents", "grants": {"Knowledge Document": ["read", "write", "create", "delete"]}},
