@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "creation": "2026-10-23 12:00:00.000000",
+ "modified": "2026-10-23 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Population Bulletin Import",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "autoname": "format:POP-{#####}",
+ "naming_rule": "Expression",
+ "track_changes": 1,
+ "description": "Published population figures per sub-county (UNHCR, IOM, KNBS). A new record per bulletin; the latest is used for rates per 10,000.",
+ "fields": [
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Link",
+   "label": "Sub-county",
+   "options": "Sub County",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "label": "Camp / site",
+   "description": "Optional: if the figure is for one camp. Leave empty for the whole sub-county."
+  },
+  {
+   "fieldname": "reporting_period",
+   "fieldtype": "Date",
+   "label": "Reporting period (as of)",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "population_count",
+   "fieldtype": "Int",
+   "label": "Population",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "UNHCR ODP\nIOM DTM\nKNBS\nOther",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "bulletin_reference",
+   "fieldtype": "Data",
+   "label": "Bulletin reference / link"
+  },
+  {
+   "fieldname": "import_date",
+   "fieldtype": "Date",
+   "label": "Entered on",
+   "read_only": 1
+  },
+  {
+   "fieldname": "entered_by",
+   "fieldtype": "Link",
+   "label": "Entered by",
+   "options": "User",
+   "read_only": 1
+  }
+ ],
+ "field_order": [
+  "sub_county",
+  "site_name",
+  "reporting_period",
+  "population_count",
+  "cb1",
+  "source",
+  "bulletin_reference",
+  "import_date",
+  "entered_by"
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

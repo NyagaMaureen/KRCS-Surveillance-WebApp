@@ -77,8 +77,9 @@ function whyFlagged(a) {
 
 function periodText(a) {
   const weeks = a.weeks || 1
-  if (weeks <= 1) return a.date
-  return `${a.startDate} – ${a.date} · ${weeks} weeks`
+  const end = a.epiWeek || a.date
+  if (weeks <= 1) return end
+  return `${a.startEpiWeek || a.startDate} → ${end} · ${weeks} weeks`
 }
 
 function startOfWeek(d) {

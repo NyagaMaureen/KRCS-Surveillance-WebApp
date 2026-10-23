@@ -350,6 +350,10 @@ def refresh_links():
 # ---------- access ----------
 
 def _user_region():
+	"""The region this user is limited to, or None to see every region.
+	Users with View All Regions (or no region assigned) see everything."""
+	if has_capability("view_all_regions"):
+		return None
 	if frappe.get_meta("User").has_field("assigned_region"):
 		return frappe.db.get_value("User", frappe.session.user, "assigned_region")
 	return None

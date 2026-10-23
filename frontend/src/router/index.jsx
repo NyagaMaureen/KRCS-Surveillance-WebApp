@@ -26,6 +26,7 @@ import AlertsSignalsQueue from '../pages/AlertsSignalsQueue'
 import EventDetail from '../pages/EventDetail'
 import SurveillanceMap from '../pages/SurveillanceMap'
 import FacilityData from '../pages/FacilityData'
+import ContextData from '../pages/ContextData'
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
@@ -49,6 +50,7 @@ const rawRoutes = [
   { path: '/user-management', name: 'user-management', element: UserManagement },
   { path: '/channels', name: 'channels', element: Channels },
   { path: '/facility-data', name: 'facility-data', element: FacilityData },
+  { path: '/context-data', name: 'context-data', element: ContextData },
   { path: '/settings', name: 'settings', element: Settings },
   { path: '/help-center', name: 'help-center', element: HelpCenter },
   { path: '/audit-log', name: 'audit-log', element: AuditLog },

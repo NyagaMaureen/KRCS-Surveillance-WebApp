@@ -2,16 +2,17 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, AlertTriangle, Check, ShieldAlert, Sparkles, X, ExternalLink,
-  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Radio, Users, HeartCrack, Building2,
+  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Radio, Users, HeartCrack, Building2, Lightbulb,
 } from 'lucide-react'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import AppShell from '../components/layout/AppShell'
+import ContextPanel from '../components/context/ContextPanel'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
   getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
-  setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport,
+  setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { FOCUS, parseDate, fmtDateTime, relTime } from '../data/eventHelpers'
@@ -37,7 +38,7 @@ const ACTION_LABELS = {
 
 const STEPS = [
   { n: 1, label: 'Signal captured' },
-  { n: 2, label: 'AI triage', sub: 'Case definition' },
+  { n: 2, label: 'AI triage', sub: 'Case definition & context' },
   { n: 3, label: 'Verification', sub: 'Officer' },
   { n: 4, label: 'Field investigation', sub: 'Officer' },
   { n: 5, label: 'Decision', sub: 'Officer' },
@@ -91,7 +92,7 @@ function Tracker({ event, states, openStep, onSelect }) {
         {STEPS.map((s, i) => {
           const state = states[i]
           const isOpen = openStep === s.n
-          const info = s.n <= 2  // Signal captured and AI triage: shown as done, details live in the Case overview
+          const info = s.n === 1  // Signal captured: informational only
           const clickable = !info && (state === 'done' || state === 'current' || state === 'discarded')
           const box =
             state === 'current' ? 'border-red-600 bg-red-50'
@@ -1271,6 +1272,7 @@ export default function EventDetail() {
   const [splitting, setSplitting] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   const [reasonOpen, setReasonOpen] = useState(false)
+  const [contextSummary, setContextSummary] = useState(null)
 
   const showToast = useCallback((message, isError = false, ms = 3000) => {
     setToast({ show: true, message, error: isError })
@@ -1316,7 +1318,7 @@ export default function EventDetail() {
 
   const status = event?.status
   useEffect(() => {
-    if (status && currentStep) setOpenStep(currentStep)
+    if (status && currentStep) setOpenStep(status === 'New' ? 2 : currentStep)
     // only re-open the current step when the status changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
@@ -1327,6 +1329,20 @@ export default function EventDetail() {
       panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [openStep])
+
+  const ctxSubCounty = event?.subCounty
+  const ctxCounty = event?.county
+  const ctxPeople = event?.people
+  const ctxDisease = event?.disease
+  const hasEvent = !!event
+  useEffect(() => {
+    if (!hasEvent) { setContextSummary(null); return undefined }
+    let cancelled = false
+    getPlaceContext({ subCounty: ctxSubCounty, county: ctxCounty, people: ctxPeople, disease: ctxDisease })
+      .then((c) => { if (!cancelled) setContextSummary(c) })
+      .catch(() => { if (!cancelled) setContextSummary(null) })
+    return () => { cancelled = true }
+  }, [hasEvent, ctxSubCounty, ctxCounty, ctxPeople, ctxDisease])
 
   function selectStep(n) {
     scrollNext.current = true
@@ -1462,10 +1478,45 @@ export default function EventDetail() {
   const canSplit = canAct && !['Closed', 'Discarded'].includes(status) && signals.length >= 2
   const fieldWithReporter = signals.filter((s) => s.source === 'Field' && s.reporter)
   const singleReporter = canAct && fieldWithReporter.length === 1 ? fieldWithReporter[0].reporter : null
-  const shown = Math.max(openStep || currentStep || 3, 3)  // steps 1 and 2 have no panel
+  const shown = Math.max(openStep || currentStep || 3, 2)  // step 1 has no panel
+  const shortText = (t) => (t && t.length > 90 ? `${t.slice(0, 87).trimEnd()}…` : t)
+  const supports = contextSummary?.supports || []
 
   function renderPanel() {
     switch (shown) {
+      case 2:
+        return (
+          <div className={card}>
+            <PanelHeader title="AI triage" sub="What the system checked automatically. The officer decides." />
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Case definition match</h3>
+            {event.reason ? (
+              <div className="text-sm mb-6">
+                <p className="text-gray-700">
+                  <span className="text-gray-500">AI matched:</span> {matchedSigns(event.reason) || '—'}{' '}
+                  <button
+                    type="button"
+                    aria-expanded={reasonOpen}
+                    onClick={() => setReasonOpen((v) => !v)}
+                    className={`text-xs font-medium text-red-600 hover:underline rounded ${FOCUS}`}
+                  >
+                    {reasonOpen ? 'Hide case definition' : 'Show case definition'}
+                  </button>
+                </p>
+                {reasonOpen && <p className="mt-1 text-xs text-gray-500">{event.reason}</p>}
+                <p className="mt-1 text-xs text-gray-400">The AI suggests; the officer decides.</p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 mb-6">No case definition match recorded.</p>
+            )}
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Local context</h3>
+            <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} />
+            <div className="mt-6 flex justify-end">
+              <button type="button" onClick={() => selectStep(3)} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
+                Continue to verification →
+              </button>
+            </div>
+          </div>
+        )
       case 3:
         return (
           <VerificationPanel
@@ -1627,21 +1678,26 @@ export default function EventDetail() {
                 />
               )}
             </dl>
-            {event.reason && (
-              <div className="mt-5 border-t border-gray-100 pt-4 text-sm">
-                <p className="text-gray-700">
-                  <span className="text-gray-500">AI matched:</span> {matchedSigns(event.reason) || '—'}{' '}
-                  <button
-                    type="button"
-                    aria-expanded={reasonOpen}
-                    onClick={() => setReasonOpen((v) => !v)}
-                    className={`text-xs font-medium text-red-600 hover:underline rounded ${FOCUS}`}
-                  >
-                    {reasonOpen ? 'Hide case definition' : 'Show case definition'}
-                  </button>
-                </p>
-                {reasonOpen && <p className="mt-1 text-xs text-gray-500">{event.reason}</p>}
-                <p className="mt-1 text-xs text-gray-400">The AI suggests; the officer decides.</p>
+            {(supports.length > 0 || event.reason) && (
+              <div className="mt-5 border-t border-gray-100 pt-4">
+                {supports.length > 0 ? (
+                  <p className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+                    <Lightbulb className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      Context supports this signal: {supports.map((s) => shortText(s.text)).join(' · ')}{' '}
+                      <button type="button" onClick={() => selectStep(2)} className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+                        See AI triage
+                      </button>
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    AI matched: {matchedSigns(event.reason) || '—'} ·{' '}
+                    <button type="button" onClick={() => selectStep(2)} className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+                      See AI triage
+                    </button>
+                  </p>
+                )}
               </div>
             )}
             {mapOpen && <ReportsMap signals={signals} />}

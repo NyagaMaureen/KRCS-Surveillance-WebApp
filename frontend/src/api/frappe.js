@@ -641,81 +641,10 @@ export async function getResponseEffectivenessScore() {
   return MOCK_RESPONSE_EFFECTIVENESS
 }
 
-/*
-|--------------------------------------------------------------------------
-| Dashboard Overview
-|--------------------------------------------------------------------------
-|
-| Backed by mock data for now. Each function resolves the exact shape the
-| Dashboard page expects, so swapping in real data later just means
-| replacing the function body with a fetch/getList call that resolves to
-| the same shape - no changes needed in Dashboard.jsx.
-*/
 
-const MOCK_DASHBOARD_STATS = [
-  { key: 'active_alerts', label: 'Active Alerts', value: '9', icon: 'MapPin', changePct: 12.5, trend: 'down', sentiment: 'positive' },
-  { key: 'reports_today', label: 'Reports Today', value: '7', icon: 'AlertTriangle', changePct: 8.3, trend: 'down', sentiment: 'negative' },
-  { key: 'pending_verifications', label: 'Pending Verifications', value: '3', icon: 'Radio', changePct: 15.2, trend: 'down', sentiment: 'positive' },
-  { key: 'system_uptime', label: 'System Uptime', value: '93.1%', icon: 'CheckCheck', changePct: 6.8, trend: 'down', sentiment: 'negative' },
-]
 
-const MOCK_DASHBOARD_DISEASE_TRENDS = {
-  labels: ['W-4', 'W-3', 'W-2', 'W-1', 'Current'],
-  series: [
-    { name: 'AWD', color: '#EF4444', data: [8, 10, 14, 16, 18] },
-    { name: 'Malaria', color: '#F59E0B', data: [20, 25, 29, 32, 34] },
-    { name: 'Measles', color: '#10B981', data: [8, 7, 6, 4, 3] },
-    { name: 'Respiratory', color: '#3B82F6', data: [12, 16, 21, 24, 27] },
-  ],
-}
-
-const MOCK_DASHBOARD_ALERTS = [
-  { id: 'ALT-101', title: 'Acute Watery Diarrhea Cluster', location: 'Dagahaley, Dadaab', date: '2/12/2026', affected: 12, source: 'CHP Ahmed Abdi', aiScore: 94, severity: 'critical' },
-  { id: 'ALT-102', title: 'Measles Suspected Cases', location: 'Kalobeyei Zone 1', date: '2/12/2026', affected: 5, source: 'Facility Nurse Mary Wanjiru', aiScore: 87, severity: 'high' },
-  { id: 'ALT-103', title: 'Malaria Outbreak - Resolved', location: 'Ifo Camp', date: '2/8/2026', affected: 8, source: 'Dr. James Kimani', aiScore: 76, severity: 'medium' },
-  { id: 'ALT-104', title: 'Respiratory Illness Increase', location: 'Dagahaley, Dadaab', date: '2/12/2026', affected: 12, source: 'CHP Fatuma Noor', aiScore: 94, severity: 'low' },
-]
-
-const MOCK_DAILY_ALERT_VOLUME = {
-  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-  data: [3, 5, 3, 7, 6, 3, 5],
-}
-
-const MOCK_DISEASE_DISTRIBUTION = {
-  labels: ['AWD (Acute Watery Diarrhea)', 'Malaria', 'Measles', 'Respiratory Infections', 'Malnutrition'],
-  colors: ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6'],
-  data: [18, 34, 3, 27, 12],
-  changePct: [12, 2, -5, 8, 0],
-}
-
-const MOCK_ENVIRONMENTAL_RISK_FACTORS = {
-  labels: ['Temperature', 'Humidity', 'Rainfall (mm)'],
-  colors: ['#EF4444', '#3B82F6', '#06B6D4'],
-  data: [29, 65, 58],
-}
-
-export async function getDashboardStats() {
-  return MOCK_DASHBOARD_STATS
-}
-
-export async function getDashboardDiseaseTrends() {
-  return MOCK_DASHBOARD_DISEASE_TRENDS
-}
-
-export async function getDashboardAlerts() {
-  return MOCK_DASHBOARD_ALERTS
-}
-
-export async function getDailyAlertVolume() {
-  return MOCK_DAILY_ALERT_VOLUME
-}
-
-export async function getDiseaseDistribution() {
-  return MOCK_DISEASE_DISTRIBUTION
-}
-
-export async function getEnvironmentalRiskFactors() {
-  return MOCK_ENVIRONMENTAL_RISK_FACTORS
+export async function getDashboard(trendSource = 'community') {
+  return callMethod('/api/method/surveillance.dashboard.get_dashboard?trend_source=' + encodeURIComponent(trendSource))
 }
 
 /*
@@ -1255,4 +1184,47 @@ export async function saveReportingFacility({ name, facilityName, khisMatch, sub
     sub_county: subCounty,
     active: active ? 1 : 0,
   })
+}
+// ---------- Context data (weather, population, WASH) ----------
+// Paste at the END of src/api/frappe.js
+
+const CTX = '/api/method/surveillance.context'
+
+export async function getPlaceContext({ subCounty, county, people, disease } = {}) {
+  const qs = new URLSearchParams()
+  if (subCounty) qs.set('sub_county', subCounty)
+  if (county) qs.set('county', county)
+  if (people != null) qs.set('people', people)
+  if (disease) qs.set('disease', disease)
+  return callMethod(`${CTX}.get_context?${qs}`)
+}
+export async function getAreaContext() {
+  return (await callMethod(`${CTX}.get_area_context`)) || []
+}
+export async function getContextOptions() {
+  return callMethod(`${CTX}.get_options`)
+}
+export async function getWashAssessments(subCounty) {
+  return (await callMethod(`${CTX}.get_wash_assessments${subCounty ? `?sub_county=${encodeURIComponent(subCounty)}` : ''}`)) || []
+}
+export async function saveWashAssessment(fields) {
+  return callMethodPost(`${CTX}.save_wash_assessment`, fields)
+}
+export async function getPopulationFigures(subCounty) {
+  return (await callMethod(`${CTX}.get_population_figures${subCounty ? `?sub_county=${encodeURIComponent(subCounty)}` : ''}`)) || []
+}
+export async function savePopulationFigure(fields) {
+  return callMethodPost(`${CTX}.save_population_figure`, fields)
+}
+export async function deleteContextRecord(doctype, name) {
+  return callMethodPost(`${CTX}.delete_context_record`, { doctype, name })
+}
+export async function getWeatherStatus() {
+  return (await callMethod(`${CTX}.get_weather_status`)) || []
+}
+export async function getWeatherSeries(subCounty, days = 90) {
+  return (await callMethod(`${CTX}.get_weather?sub_county=${encodeURIComponent(subCounty)}&days=${days}`)) || []
+}
+export async function refreshWeather() {
+  return callMethodPost(`${CTX}.refresh_weather`, {})
 }

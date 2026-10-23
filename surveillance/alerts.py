@@ -342,11 +342,29 @@ def backtest(source="IDSR", path=None):
 	return len(episodes)
 
 
-# ---------- API for the Alerts & Signals pages ----------
 
 def _fmt(d):
 	return getdate(d).strftime("%-d/%-m/%Y") if d else ""
 
+
+def epi_week(d):
+	"""Epidemiological week (Monday-Sunday, numbered like KHIS / MOH 505: ISO weeks). Returns (year, week)."""
+	y, w, _ = getdate(d).isocalendar()
+	return y, w
+
+
+def epi_label(d, with_dates=True):
+	"""'Epi week 41 (5-11 Oct 2026)' for the week starting on d."""
+	if not d:
+		return ""
+	start = getdate(d)
+	end = add_days(start, 6)
+	y, w = epi_week(start)
+	if not with_dates:
+		return f"Epi week {w}, {y}"
+	span = (f"{start.day}\u2013{end.day} {end.strftime('%b %Y')}" if start.month == end.month
+		else f"{start.day} {start.strftime('%b')}\u2013{end.day} {end.strftime('%b %Y')}")
+	return f"Epi week {w} ({span})"
 
 def _shape(d, notes=None, related=None):
 	strength = {"outbreak": "outbreak level", "threshold": "threshold reached", "normal": "within usual level"}
@@ -357,8 +375,8 @@ def _shape(d, notes=None, related=None):
 
 	insights = []
 	if weeks > 1:
-		insights.append(f"{'Ongoing' if ongoing else 'Ended'}: flagged in {weeks} week(s) from {_fmt(d.week_start)} "
-			f"to {_fmt(last)}; {d.signals} case(s) in total, peak {d.get('peak_signals') or d.signals} in week of {_fmt(d.get('peak_week') or last)}.")
+		insights.append(f"{'Ongoing' if ongoing else 'Ended'}: flagged in {weeks} week(s) from {epi_label(d.week_start)} "
+			f"to {epi_label(last)}; {d.signals} case(s) in total, peak {d.get('peak_signals') or d.signals} in {epi_label(d.get('peak_week') or last)}.")
 	insights += [x.strip() for x in (d.explanation or "").split("|") if x.strip()]
 	insights.append(f"Disease priority: {d.priority}. Signal: {strength.get(d.signal_strength, d.signal_strength)}. Severity: {d.severity}.")
 	if d.possible_reporting_surge:
@@ -370,6 +388,8 @@ def _shape(d, notes=None, related=None):
 		"description": insights[0] if insights else "",
 		"location": f"{d.sub_county} · {d.county}" if d.sub_county else d.location,
 		"region": d.county or "",
+		"county": d.county or "",
+		"subCounty": d.sub_county or "",
 		"severity": d.severity,
 		"status": d.status,
 		"affected": d.affected,
@@ -383,6 +403,9 @@ def _shape(d, notes=None, related=None):
 		"ongoing": ongoing,
 		"lastWeek": str(getdate(last)),          # ISO date for sorting/filtering
 		"startWeek": str(getdate(d.week_start)),
+		"epiWeek": epi_label(last),
+		"startEpiWeek": epi_label(d.week_start),
+		"epiWeekShort": f"W{epi_week(last)[1]}",
 		"disease": d.disease,
 		"peak": d.get("peak_signals") or d.signals,
 		"sources": [s.strip() for s in (d.sources or "").split(",") if s.strip()],
@@ -406,7 +429,8 @@ def _trend(doc, before_weeks=8):
 	weeks = {}
 	w = getdate(start)
 	while w <= end:
-		weeks[str(w)] = {"week": str(w), "total": 0, "CBS": 0, "Case Report": 0, "IDSR": 0, "EMR": 0}
+		weeks[str(w)] = {"week": str(w), "epiWeek": f"W{epi_week(w)[1]}", "label": epi_label(w),
+			"total": 0, "CBS": 0, "Case Report": 0, "IDSR": 0, "EMR": 0}
 		w = add_days(w, 7)
 	for r in rows:
 		wk = weeks.get(str(getdate(r.week_start)))
@@ -466,7 +490,7 @@ def get_alert(name):
 	notes = [{"text": n.note, "createdAt": str(n.created_at),
 		"by": "Alert engine" if n.added_by == "Administrator" else frappe.utils.get_fullname(n.added_by)} for n in doc.notes]
 	related = [{"id": r.name, "severity": r.severity, "title": f"{r.disease_name} ({r.severity})",
-		"subtitle": f"{r.signals} case(s), week of {r.last_week or r.week_start}"}
+		"subtitle": f"{r.signals} case(s), {epi_label(r.last_week or r.week_start)}"}
 		for r in frappe.get_all(DOCTYPE, filters={"location": doc.location, "name": ["!=", doc.name],
 			"last_week": [">=", add_days(doc.last_week or doc.week_start, -56)]},
 			fields=["name", "disease_name", "severity", "signals", "week_start", "last_week"], order_by="last_week desc", limit_page_length=5)]
@@ -590,7 +614,7 @@ def investigate_alert(name):
 			or frappe.db.get_value("Sub County", {"sub_county_name": doc.sub_county}, "region")
 	weeks = doc.get("weeks_flagged") or 1
 	reason = (f"Epi Trends: {doc.disease_name} in {doc.sub_county or doc.location}, {doc.signals} case(s) over {weeks} week(s) "
-		f"from {doc.week_start} to {doc.last_week or doc.week_start} ({doc.sources or 'weekly counts'}). No individual reports: "
+		f"from {epi_label(doc.week_start)} to {epi_label(doc.last_week or doc.week_start)} ({doc.sources or 'weekly counts'}). No individual reports: "
 		f"verify with the facility or community.")
 	ev = frappe.get_doc({
 		"doctype": "Surveillance Event", "status": "New", "disease": doc.disease, "disease_name": doc.disease_name,

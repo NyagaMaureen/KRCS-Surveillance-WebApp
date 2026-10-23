@@ -189,7 +189,7 @@ doc_events = {
 
 
 scheduler_events = {
-	"daily": ["surveillance.knowledge_base.retire_expired"],
+	"daily": ["surveillance.knowledge_base.retire_expired", "surveillance.context.import_weather"],
 	"hourly_long": ["surveillance.cbs_feed.hourly"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }

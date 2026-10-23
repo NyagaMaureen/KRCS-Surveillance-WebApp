@@ -1,0 +1,152 @@
+{
+ "actions": [],
+ "creation": "2026-10-23 12:00:00.000000",
+ "modified": "2026-10-23 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Camp WASH Assessment",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "autoname": "format:WASH-{#####}",
+ "naming_rule": "Expression",
+ "track_changes": 1,
+ "title_field": "sub_county",
+ "description": "Water, sanitation and hygiene status per sub-county. A new dated record each time; the latest one is shown as context.",
+ "fields": [
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Link",
+   "label": "Sub-county",
+   "options": "Sub County",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "label": "Camp / site",
+   "description": "Optional: the camp or block assessed, e.g. Ifo, Kalobeyei Village 2."
+  },
+  {
+   "fieldname": "assessment_date",
+   "fieldtype": "Date",
+   "label": "Assessment date",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "assessed_by",
+   "fieldtype": "Link",
+   "label": "Assessed by",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "county",
+   "fieldtype": "Data",
+   "label": "County",
+   "fetch_from": "sub_county.county",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sub_county_name",
+   "fieldtype": "Data",
+   "label": "Sub-county name",
+   "fetch_from": "sub_county.sub_county_name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb1",
+   "fieldtype": "Section Break",
+   "label": "Indicators"
+  },
+  {
+   "fieldname": "water_source_type",
+   "fieldtype": "Select",
+   "label": "Water source",
+   "options": "\nPiped on premises\nProtected borehole or well\nUnprotected surface water\nTrucked"
+  },
+  {
+   "fieldname": "water_availability",
+   "fieldtype": "Select",
+   "label": "Water availability",
+   "options": "\nConsistent\nIntermittent\nDistant collection required"
+  },
+  {
+   "fieldname": "sanitation_facility_type",
+   "fieldtype": "Select",
+   "label": "Sanitation facility",
+   "options": "\nFlush toilet\nVIP latrine\nBasic pit latrine\nOpen defecation"
+  },
+  {
+   "fieldname": "cb2",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "waste_management",
+   "fieldtype": "Select",
+   "label": "Waste management",
+   "options": "\nProperly treated\nPartial containment\nOverflowing or untreated"
+  },
+  {
+   "fieldname": "handwashing_access",
+   "fieldtype": "Select",
+   "label": "Handwashing access",
+   "options": "\nStation with soap & water\nWater only\nNone available"
+  },
+  {
+   "fieldname": "sb2",
+   "fieldtype": "Section Break",
+   "label": ""
+  },
+  {
+   "fieldname": "narrative_notes",
+   "fieldtype": "Small Text",
+   "label": "Notes",
+   "description": "Observations only. No names or personal details."
+  }
+ ],
+ "field_order": [
+  "sub_county",
+  "site_name",
+  "assessment_date",
+  "assessed_by",
+  "cb1",
+  "county",
+  "sub_county_name",
+  "sb1",
+  "water_source_type",
+  "water_availability",
+  "sanitation_facility_type",
+  "cb2",
+  "waste_management",
+  "handwashing_access",
+  "sb2",
+  "narrative_notes"
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

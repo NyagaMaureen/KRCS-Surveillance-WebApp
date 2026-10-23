@@ -68,6 +68,9 @@ CAPABILITIES = [
 	 "description": "Create and edit user accounts", "grants": {"User": ["read", "write", "create"]}},
 	{"key": "manage_roles", "name": "Manage Roles & Permissions", "category": "Users & Roles",
 	 "description": "Change which capabilities each role has", "grants": {}},
+    {"key": "view_all_regions", "name": "View All Regions", "category": "Users & Roles",
+	 "description": "See events and dashboard figures for every region, even if the user has a region assigned",
+	 "grants": {}},
 
 	# Analytics
 	{"key": "view_analytics", "name": "View Analytics", "category": "Analytics",
@@ -86,6 +89,10 @@ CAPABILITIES = [
 	 "description": "Add and edit regions and symptoms",
 	 "grants": {"Region": ["read", "write", "create"], "Symptom": ["read", "write", "create"],
 	            "Sub County": ["read", "write", "create"]}},
+
+	{"key": "manage_context_data", "name": "Manage Context Data", "category": "Reference Data",
+	 "description": "Record WASH assessments and population figures, and refresh weather",
+	 "grants": {"Camp WASH Assessment": ["read"], "Population Bulletin Import": ["read"], "Weather Snapshot": ["read"]}},
 
     # Facility Data
 	{"key": "upload_facility_data", "name": "Upload Facility Data", "category": "Facility Data",

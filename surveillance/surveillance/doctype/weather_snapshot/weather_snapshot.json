@@ -1,0 +1,94 @@
+{
+ "actions": [],
+ "creation": "2026-10-23 12:00:00.000000",
+ "modified": "2026-10-23 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Weather Snapshot",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "autoname": "hash",
+ "naming_rule": "Random",
+ "in_create": 1,
+ "description": "Daily rainfall and temperature per sub-county, imported automatically. Context only.",
+ "fields": [
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Link",
+   "label": "Sub-county",
+   "options": "Sub County",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "rainfall_mm",
+   "fieldtype": "Float",
+   "label": "Rainfall (mm)",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "temperature_c",
+   "fieldtype": "Float",
+   "label": "Mean temperature (\u00b0C)",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "temperature_max_c",
+   "fieldtype": "Float",
+   "label": "Max temperature (\u00b0C)"
+  },
+  {
+   "fieldname": "temperature_min_c",
+   "fieldtype": "Float",
+   "label": "Min temperature (\u00b0C)"
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Source",
+   "default": "Open-Meteo"
+  },
+  {
+   "fieldname": "import_timestamp",
+   "fieldtype": "Datetime",
+   "label": "Imported at"
+  }
+ ],
+ "field_order": [
+  "sub_county",
+  "date",
+  "rainfall_mm",
+  "temperature_c",
+  "temperature_max_c",
+  "temperature_min_c",
+  "source",
+  "import_timestamp"
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

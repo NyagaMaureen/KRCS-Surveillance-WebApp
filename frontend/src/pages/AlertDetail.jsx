@@ -6,6 +6,7 @@ import {
   AlertTriangle, FileText, CheckCircle2, Clock, Radio, Check, Search, ArrowRight, XCircle,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import ContextPanel from '../components/context/ContextPanel'
 import { CHART_FONT } from '../charts/chartSetup'
 import { getAlertSignal, addAlertNote, investigateAlert, reviewAlert, reopenAlert } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
@@ -80,7 +81,9 @@ function fmtWeek(v) {
 
 function periodText(a) {
   const weeks = a.weeks || 1
-  return `${a.startDate} – ${a.date} · ${weeks} week${weeks === 1 ? '' : 's'}`
+  const end = a.epiWeek || a.date
+  if (weeks <= 1) return end
+  return `${a.startEpiWeek || a.startDate} → ${end} · ${weeks} weeks`
 }
 
 function reasonsFor(tags, detailed) {
@@ -118,7 +121,7 @@ function CasesChart({ alert }) {
   const endKey = String(alert.lastWeek || '').slice(0, 10)
 
   const data = {
-    labels: trend.map((t) => fmtWeek(t.week)),
+    labels: trend.map((t) => t.epiWeek || fmtWeek(t.week)),
     datasets: SOURCE_KEYS.map((k) => ({
       label: SOURCE_LABELS[k],
       data: trend.map((t) => t[k] || 0),
@@ -157,7 +160,10 @@ function CasesChart({ alert }) {
       legend: { position: 'bottom', labels: { font: CHART_FONT, usePointStyle: true } },
       tooltip: {
         callbacks: {
-          title: (items) => `Week of ${items[0].label}`,
+          title: (items) => {
+            const t = trend[items[0].dataIndex]
+            return t?.label || `Week of ${items[0].label}`
+          },
           afterBody: (items) => {
             const i = items[0].dataIndex
             const total = SOURCE_KEYS.reduce((s, k) => s + (trend[i]?.[k] || 0), 0)
@@ -266,7 +272,7 @@ export default function AlertDetail() {
       `Severity: ${alert.severity}`,
       `Status: ${STATUS_LABELS[alert.status] || alert.status}`,
       `Location: ${alert.location}`,
-      `Period: ${alert.startDate} – ${alert.date}`,
+      `Period: ${periodText(alert)}`,
       `Weeks: ${alert.weeks}`,
       `Total cases: ${alert.affected}`,
       `Peak cases per week: ${alert.peak}`,
@@ -420,6 +426,10 @@ export default function AlertDetail() {
               <p className="text-xs text-gray-400 mt-3">The 8 weeks before the outbreak show the usual level.</p>
             </div>
           )}
+
+          <div className={card}>
+            <ContextPanel subCounty={alert.subCounty} county={alert.county} people={alert.affected} disease={alert.disease} />
+          </div>
 
           <div className={card}>
             <h2 className="text-xl font-semibold text-gray-900 mb-5">Why this alert</h2>
