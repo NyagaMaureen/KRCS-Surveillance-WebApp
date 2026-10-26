@@ -3,9 +3,9 @@
 Signal = one de-identified report: a CBS report, a field Case Report, or (later) an EMR visit.
          Kept: source, reference (CBS case number / Case Report ID), date, disease, place, people, deaths.
          Never kept: names, phone numbers, free-text notes.
-Event  = signals of the same disease in the same place within WINDOW_DAYS of each other.
-         CBS signals group by Community Health Unit (area); field reports, which only have a
-         sub-county, join the latest open event for that disease in their sub-county.
+Event  = one report (signal) of a priority disease. Every new report starts its own event, so nothing
+         is merged silently. Open events of the same disease in the same sub-county within WINDOW_DAYS
+         are shown as "related", and an officer can merge them (merge_events) when they are one outbreak.
 An officer works the event through the investigation workflow (investigation.py):
 verify (questions), investigate (protocol steps), decide (confirm / discard / escalate), respond and close.
 
@@ -20,7 +20,7 @@ from surveillance.capabilities import has_capability, require_capability
 
 VIEW = "view_review_queue"
 ACT = "act_on_events"
-WINDOW_DAYS = 7            # a signal joins an open event last seen within this many days
+WINDOW_DAYS = 7            # open events of the same disease + sub-county within this many days are "related"
 SIGNAL_DAYS = 30           # CBS reports newer than this are kept as signals
 BIG_REPORT = 50            # one report with this many people gets a "confirm the number" warning
 UNCLASSIFIED = "unclassified-illness"
@@ -144,34 +144,88 @@ def _group_key(sig):
 
 
 def _assign(sig):
-	"""Put a signal in a matching open event, or start a new one."""
+	"""Start a new event for this signal. Related open events (same disease and sub-county, within
+	WINDOW_DAYS) are not merged automatically; officers see them and can merge (merge_events)."""
 	if not sig.disease:
 		return
-	since = add_days(sig.signal_date, -WINDOW_DAYS)
-	base = {"disease": sig.disease, "sub_county": sig.sub_county or "", "status": ["in", OPEN],
-		"last_reported": [">=", since]}
-		# any source joins the open event for the same disease + sub-county; the event lists every report
-	match = frappe.get_all("Surveillance Event", filters=base, pluck="name", order_by="last_reported desc", limit=1)
+	meta = frappe.db.get_value("Alert Threshold Config", sig.disease, ["disease_name", "priority"], as_dict=True) or {}
+	ev = frappe.get_doc({
+		"doctype": "Surveillance Event", "status": "New", "disease": sig.disease,
+		"disease_name": meta.get("disease_name") or sig.disease, "priority": meta.get("priority") or "",
+		"county": sig.county, "sub_county": sig.sub_county or "", "area": "" if sig.source == "Field" else sig.area,
+		"group_key": f"{_group_key(sig)}|{sig.name}", "region": sig.region,
+		"first_reported": sig.signal_date, "last_reported": sig.signal_date, "severity": "standard",
+	})
+	related = related_events(sig.disease, sig.sub_county, sig.signal_date)
+	note = f"Event started from {sig.source} report {sig.ref}."
+	if related:
+		note += " Related open event(s): " + ", ".join(r["id"] for r in related) + "."
+	ev.append("actions", {"at": now_datetime(), "user": "Administrator", "action": "Created", "note": note})
+	ev.insert(ignore_permissions=True)
+	frappe.db.set_value("Surveillance Signal", sig.name, "event", ev.name, update_modified=False)
+	recompute_event(ev.name)
+	from surveillance import notifications
+	notifications.on_new_event(ev.name, sig.signal_date)
 
-	if match:
-		event = match[0]
-	else:
-		meta = frappe.db.get_value("Alert Threshold Config", sig.disease, ["disease_name", "priority"], as_dict=True) or {}
-		ev = frappe.get_doc({
-			"doctype": "Surveillance Event", "status": "New", "disease": sig.disease,
-			"disease_name": meta.get("disease_name") or sig.disease, "priority": meta.get("priority") or "",
-			"county": sig.county, "sub_county": sig.sub_county or "", "area": "" if sig.source == "Field" else sig.area,
-			"group_key": _group_key(sig), "region": sig.region,
-			"first_reported": sig.signal_date, "last_reported": sig.signal_date, "severity": "standard",
-		})
-		ev.append("actions", {"at": now_datetime(), "user": "Administrator", "action": "Created",
-			"note": f"Event started from {sig.source} report {sig.ref}."})
-		ev.insert(ignore_permissions=True)
-		event = ev.name
-		from surveillance import notifications
-		notifications.on_new_event(ev.name, sig.signal_date)
-	frappe.db.set_value("Surveillance Signal", sig.name, "event", event, update_modified=False)
-	recompute_event(event)
+
+def related_events(disease, sub_county, when=None, exclude=None):
+	"""Open events of the same disease in the same sub-county reported within WINDOW_DAYS of `when`."""
+	if not disease or not sub_county:
+		return []
+	when = get_datetime(when) if when else now_datetime()
+	filters = {"disease": disease, "sub_county": sub_county, "status": ["in", OPEN],
+		"last_reported": [">=", add_days(when, -WINDOW_DAYS)], "first_reported": ["<=", add_days(when, WINDOW_DAYS)]}
+	if exclude:
+		filters["name"] = ["!=", exclude]
+	return [{"id": r.name, "title": r.title, "status": r.status, "severity": r.severity, "reports": r.reports or 0,
+		"people": r.people or 0, "lastSeen": str(r.last_reported or "")}
+		for r in frappe.get_all("Surveillance Event", filters=filters,
+			fields=["name", "title", "status", "severity", "reports", "people", "last_reported"], order_by="last_reported desc")]
+
+
+@frappe.whitelist(methods=["POST"])
+def merge_events(event, into, note=None):
+	"""Move every report of `event` into `into` (same disease), then close `event` as merged.
+	For when an officer decides two related events are the same outbreak."""
+	require_capability(ACT)
+	if event == into:
+		frappe.throw(_("Choose a different event to merge into."))
+	src, dst = frappe.get_doc("Surveillance Event", event), frappe.get_doc("Surveillance Event", into)
+	_check_access(src)
+	_check_access(dst)
+	if src.status not in OPEN or dst.status not in OPEN:
+		frappe.throw(_("Only open events can be merged."))
+	if src.disease != dst.disease:
+		frappe.throw(_("Only events of the same disease can be merged."))
+	note = (note or "").strip()
+	if not note:
+		frappe.throw(_("Please say why these are the same outbreak."))
+
+	refs = []
+	for s in frappe.get_all("Surveillance Signal", filters={"event": src.name}, fields=["name", "ref"]):
+		frappe.db.set_value("Surveillance Signal", s.name, "event", dst.name, update_modified=False)
+		refs.append(s.ref)
+	moved = ", ".join(refs) or "no reports"
+
+	dst.reload()
+	dst.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Merged in",
+		"note": f"Merged from {src.name} ({moved}). {note}"})
+	dst.save(ignore_permissions=True)
+	recompute_event(dst.name)
+
+	src.reload()
+	src.status = "Closed"
+	src.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Merged",
+		"note": f"Merged into {dst.name} ({moved}). {note}"})
+	src.reports = 0
+	src.data_warning = f"Merged into {dst.name}."
+	src.save(ignore_permissions=True)
+
+	from surveillance.alerts import sync_alert_for_event
+	sync_alert_for_event(src)
+	sync_alert_for_event(frappe.get_doc("Surveillance Event", dst.name))
+	frappe.db.commit()
+	return _shape(frappe.get_doc("Surveillance Event", dst.name), detail=True)
 
 
 def recompute_event(event):
@@ -437,6 +491,9 @@ def _shape(d, detail=False):
 		out["timeline"] = [{"at": str(a.at), "user": a.user, "action": a.action, "note": a.note}
 			for a in sorted(d.actions or [], key=lambda a: a.at or now_datetime(), reverse=True)]
 		out["canAct"] = has_capability(ACT)
+		out["related"] = related_events(d.disease, d.sub_county, d.last_reported, exclude=d.name) if d.status in OPEN else []
+		merged = next((a.note for a in (d.actions or []) if a.action == "Merged"), None)
+		out["mergedInto"] = merged.split(" ")[2] if merged and merged.startswith("Merged into ") else None
 	return out
 
 
@@ -473,7 +530,23 @@ def get_events(status=None, disease=None, region=None, source=None, search=None,
 	rows = frappe.get_all("Surveillance Event", filters=filters, or_filters=or_filters, fields=FIELDS,
 		order_by="last_reported desc", limit_page_length=cint(limit) or 200)
 	rows.sort(key=lambda d: (-LEVELS.index(d.severity if d.severity in LEVELS else "standard"), -(get_datetime(d.last_reported).timestamp() if d.last_reported else 0)))
-	return {"counts": counts, "events": [_shape(d) for d in rows], "canAct": has_capability(ACT)}
+
+	# how many other open events of the same disease + sub-county each event has (for the "related" badge)
+	open_rows = frappe.get_all("Surveillance Event", filters={"status": ["in", OPEN], "sub_county": ["is", "set"]},
+		fields=["name", "disease", "sub_county", "first_reported", "last_reported"])
+	events = []
+	for d in rows:
+		shaped = _shape(d)
+		if d.status in OPEN and d.sub_county and d.last_reported:
+			last = get_datetime(d.last_reported)
+			shaped["relatedCount"] = sum(1 for o in open_rows if o.name != d.name and o.disease == d.disease
+				and o.sub_county == d.sub_county and o.last_reported and o.first_reported
+				and get_datetime(o.last_reported) >= add_days(last, -WINDOW_DAYS)
+				and get_datetime(o.first_reported) <= add_days(last, WINDOW_DAYS))
+		else:
+			shaped["relatedCount"] = 0
+		events.append(shaped)
+	return {"counts": counts, "events": events, "canAct": has_capability(ACT)}
 
 
 @frappe.whitelist()

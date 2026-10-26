@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
-import { Search, RefreshCw, AlertTriangle, Clock, ShieldAlert } from 'lucide-react'
+import { Search, RefreshCw, AlertTriangle, Clock, ShieldAlert, Link2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getReviewEvents, getDiseaseOptions } from '../api/frappe'
 import { FOCUS, STATUS_STYLES, statusLabel, parseDate, relTime } from '../data/eventHelpers'
@@ -42,7 +42,7 @@ const EMPTY_TEXT = {
   all: 'No events to show yet.',
 }
 
-const FORBIDDEN_MSG = "You don't have access to Alerts & Signals."
+const FORBIDDEN_MSG = "You don't have access to Review Queue."
 const REFRESH_MS = 5 * 60 * 1000
 
 const time = (v) => parseDate(v)?.getTime() || 0
@@ -119,6 +119,15 @@ function EventRow({ event, search }) {
             >
               Part of an outbreak
             </Link>
+          )}
+          {event.relatedCount > 0 && (
+            <span
+              title="Other open events of the same disease in the same sub-county in the last 7 days"
+              className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+            >
+              <Link2 className="w-3 h-3" aria-hidden="true" />
+              {event.relatedCount} related
+            </span>
           )}
         </div>
         <p className="text-sm text-gray-600">
@@ -279,7 +288,7 @@ export default function AlertsSignalsQueue() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Alerts & Signals</h2>
+          <h2 className="text-xl font-bold text-gray-900">Review Queue</h2>
           <p className="text-sm text-gray-400">Reports from the community and field teams, grouped by disease and place. Open each one to verify it.</p>
           <p className="text-xs text-gray-400 mt-1">
             Looking for rising trends over weeks?{' '}

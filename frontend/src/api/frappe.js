@@ -722,6 +722,10 @@ export async function getMapEvents(params = {}) {
   if (params.disease) q.set('disease', params.disease)
   return callMethod(`/api/method/surveillance.events.get_map_events?${q.toString()}`)
 }
+
+export async function mergeEvents(event, into, note) {
+  return callMethodPost('/api/method/surveillance.events.merge_events', { event, into, note })
+}
 /*
 |--------------------------------------------------------------------------
 | Data Explorer

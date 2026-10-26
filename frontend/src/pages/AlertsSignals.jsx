@@ -58,7 +58,7 @@ const SORTS = [
 
 const PAGE_SIZES = [10, 25, 50]
 const SURGE_TIP =
-  'Several diseases rose together here. This may be more reporting rather than more disease. Verify before acting.'
+  'Several diseases rose together here; may be more reporting rather than more illness.'
 
 const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-1'
 const SELECT_CLS = `appearance-none bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-900 ${FOCUS}`
@@ -120,8 +120,8 @@ function SkeletonRow() {
 }
 
 function AlertCard({ alert, onOpen }) {
-  const reasons = whyFlagged(alert)
   const weeks = alert.weeks || 1
+  const isCommunityOnly = !!alert.sources?.length && alert.sources.every((s) => s === 'CBS' || s === 'Case Report')
   return (
     <div
       role="link"
@@ -157,31 +157,31 @@ function AlertCard({ alert, onOpen }) {
           ) : (
             <span className="text-xs font-medium text-gray-400">Ended</span>
           )}
-          {alert.surge && (
-            <span
-              title={SURGE_TIP}
-              tabIndex={0}
-              aria-label={`Check reporting. ${SURGE_TIP}`}
-              className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-200 ${FOCUS}`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> Check reporting
-            </span>
-          )}
         </div>
 
         <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-sm text-gray-500">
           <span className="inline-flex items-center gap-1.5"><MapPin className="w-4 h-4" aria-hidden="true" />{alert.location}</span>
           <span className="inline-flex items-center gap-1.5"><Calendar className="w-4 h-4" aria-hidden="true" />{periodText(alert)}</span>
-          <span className="inline-flex items-center gap-1.5"><Users className="w-4 h-4" aria-hidden="true" />{alert.affected} cases</span>
+          <span className="inline-flex items-center gap-1.5"><Users className="w-4 h-4" aria-hidden="true" />{isCommunityOnly ? `${alert.affected} affected` : `${alert.signals} cases`}</span>
           {weeks > 1 && (
             <span className="inline-flex items-center gap-1.5"><TrendingUp className="w-4 h-4" aria-hidden="true" />peak {alert.peak}/week</span>
           )}
         </div>
 
-        {reasons.length > 0 && (
-          <p className="text-sm text-gray-500">
-            <span className="font-medium text-gray-700">Why flagged:</span> {reasons.join(' · ')}
-          </p>
+        {(alert.whyShort || alert.surge) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {alert.whyShort && <p className="text-sm text-gray-700">{alert.whyShort}</p>}
+            {alert.surge && (
+              <span
+                title={SURGE_TIP}
+                tabIndex={0}
+                aria-label={`Possible reporting surge. ${SURGE_TIP}`}
+                className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-200 ${FOCUS}`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> Possible reporting surge
+              </span>
+            )}
+          </div>
         )}
 
         {!!alert.sources?.length && (
@@ -376,7 +376,7 @@ export default function AlertsSignals() {
           <p className="text-sm text-gray-500 mt-1">
             Individual reports waiting for verification are in the{' '}
             <Link to="/alerts-signals" className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
-              Alerts & Signals →
+              Review Queue →
             </Link>
           </p>
         </div>

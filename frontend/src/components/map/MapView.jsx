@@ -121,7 +121,7 @@ function PopupCard({ event: a, onToast }) {
       )}
       <div className="grid grid-cols-2 gap-2 mb-2">
         <Link to={`/alerts-signals/${a.id}`} className="bg-red-600 !text-white rounded-lg px-3 py-2 text-xs font-medium text-center no-underline hover:bg-red-700">
-          Open in Alerts & Signals
+          Open in Review Queue
         </Link>
         <a
           href={`https://www.google.com/maps/dir/?api=1&destination=${a.lat},${a.lng}`}

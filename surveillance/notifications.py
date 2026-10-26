@@ -103,9 +103,16 @@ def send_new_event(event_name):
 		users = sub_county_users(doc.sub_county)
 		if not users:
 			return
-		subject = f"New signal: {doc.disease_name or doc.disease}, {doc.sub_county or 'location missing'} ({doc.severity or 'standard'})"
+		from surveillance.events import related_events
+		related = related_events(doc.disease, doc.sub_county, doc.first_reported, exclude=doc.name)
+		related_ids = ", ".join(r["id"] for r in related)
+		subject = (f"New signal: {doc.disease_name or doc.disease}, {doc.sub_county or 'location missing'} ({doc.severity or 'standard'})"
+			+ (f" · related to {related_ids}" if related else ""))
 		html = (
-			f'<p style="font-size:15px">A new signal needs verification in Alerts &amp; Signals.</p>'
+			f'<p style="font-size:15px">A new signal needs verification in the Review Queue.</p>'
+			+ (f'<p style="font-size:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px">'
+				f'<b>Related to {escape_html(related_ids)}</b>: another open {escape_html(doc.disease_name or doc.disease)} '
+				f'event in {escape_html(doc.sub_county)} in the last 7 days. This may be the same outbreak.</p>' if related else "")
 			+ _rows([
 				("Disease", escape_html(doc.disease_name or doc.disease)),
 				("Severity", escape_html((doc.severity or "standard").title())),
@@ -115,12 +122,14 @@ def send_new_event(event_name):
 				("Deaths", doc.deaths or 0),
 				("First reported", _fmt(doc.first_reported)),
 				("Why flagged", escape_html(doc.reason or "")),
+				("Related events", escape_html(related_ids)),
 			])
 			+ _button(_link(doc.name), "Open and verify")
 		)
 		_send([u.email for u in users], subject, html, doc.name,
 			[u.mobile_no for u in users if u.mobile_no],
-			f"KRCS: new {doc.disease_name or doc.disease} signal, {doc.sub_county}. {doc.people or 0} people. Verify: {_link(doc.name)}")
+			f"KRCS: new {doc.disease_name or doc.disease} signal, {doc.sub_county}. {doc.people or 0} people."
+			+ (f" Related to {related_ids}." if related else "") + f" Verify: {_link(doc.name)}")
 		_in_app([u.name for u in users], subject, doc.name)
 		frappe.db.commit()
 	except Exception:

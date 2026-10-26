@@ -188,7 +188,13 @@ def _population_context(sc, today, people=None):
 		"reference": p.bulletin_reference, "site": p.site_name,
 		"stale": date_diff(today, p.reporting_period) > POPULATION_STALE_DAYS}
 	if people is not None and p.population_count:
-		out["per10k"] = round(int(people) * 10000 / p.population_count, 2)
+		people = int(people)
+		out["per10k"] = round(people * 10000 / p.population_count, 2)
+		if people > 0:
+			one_in = p.population_count / people
+			nice = round(one_in, -3) if one_in >= 10000 else round(one_in, -2) if one_in >= 1000 else round(one_in)
+			out["proportionText"] = (f"{people:,} {'person' if people == 1 else 'people'} affected out of about "
+				f"{p.population_count:,} (about 1 in {int(nice):,})")
 	return out
 
 
@@ -238,9 +244,6 @@ def _supports(ctx, disease):
 		age = f", {round(wash['ageDays'] / 30)} months old" if wash.get("stale") else ""
 		out.append({"kind": "wash", "text": f"Latest WASH assessment ({wash['date']}{age}): " + ", ".join(poor),
 			"why": "poor water and sanitation help diarrhoeal and water-borne diseases spread"})
-	if pop and pop.get("per10k") is not None:
-		out.append({"kind": "population", "text": f"{pop['per10k']:g} affected per 10,000 people (population {pop['population']:,}, {pop['source']})",
-			"why": "puts the number of cases in proportion to the population"})
 	return out
 
 

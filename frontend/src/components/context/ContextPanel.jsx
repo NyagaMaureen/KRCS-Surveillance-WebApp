@@ -110,10 +110,8 @@ export function ContextBody({ ctx, people, compact = false }) {
           <>
             <div className="text-lg font-bold text-gray-900">{p.population.toLocaleString()}</div>
             <div className="text-[11px] text-gray-400">{p.source} · as of {fmtDate(p.asOf)}{p.site ? ` · ${p.site}` : ''}</div>
-            {p.per10k != null && people != null && (
-              <div className="text-xs text-gray-700 mt-2">
-                <span className="font-semibold">{p.per10k}</span> affected per 10,000 people
-              </div>
+                        {p.proportionText && people != null && (
+              <div className="text-xs text-gray-700 mt-2">{p.proportionText}</div>
             )}
           </>
         ) : <Missing>No population figure recorded yet.</Missing>}

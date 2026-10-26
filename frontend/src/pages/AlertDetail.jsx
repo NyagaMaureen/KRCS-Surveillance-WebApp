@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 import { Bar } from 'react-chartjs-2'
 import {
   ArrowLeft, MapPin, CalendarDays, Users, Layers, ExternalLink,
-  AlertTriangle, FileText, CheckCircle2, Clock, Radio, Check, Search, ArrowRight, XCircle,
+  AlertTriangle, FileText, CheckCircle2, Clock, Radio, Check, Search, ArrowRight, XCircle, ChevronDown,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import ContextPanel from '../components/context/ContextPanel'
@@ -48,9 +48,9 @@ const SOURCE_COLORS = {
 const SOURCE_KEYS = ['CBS', 'Case Report', 'IDSR']
 
 const NEXT_STEP = {
-  Pending: 'Review the trend. Investigate it in Alerts & Signals, or mark it as reviewed if no action is needed.',
-  Investigating: 'An investigation is open in Alerts & Signals. This trend updates automatically.',
-  Confirmed: 'Confirmed in Alerts & Signals. The response is under way there.',
+  Pending: 'Review the trend. Investigate it in Review Queue, or mark it as reviewed if no action is needed.',
+  Investigating: 'An investigation is open in Review Queue. This trend updates automatically.',
+  Confirmed: 'Confirmed in Review Queue. The response is under way there.',
 }
 
 const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2'
@@ -73,17 +73,64 @@ function fmtDateTime(v) {
   return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function fmtWeek(v) {
-  const d = new Date(v)
-  if (isNaN(d)) return String(v)
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-}
-
 function periodText(a) {
   const weeks = a.weeks || 1
   const end = a.epiWeek || a.date
   if (weeks <= 1) return end
   return `${a.startEpiWeek || a.startDate} → ${end} · ${weeks} weeks`
+}
+
+const INSIGHT_LABEL = /^(What happened:|Why [^:]*?severity:|Watch out:|What to do:)\s*/i
+const SURGE_INSIGHT = /possible reporting surge/i
+
+function InsightsList({ insights }) {
+  const [techOpen, setTechOpen] = useState(false)
+  const main = []
+  const technical = []
+  insights.forEach((text) => {
+    if (SURGE_INSIGHT.test(text)) main.push({ text, surge: true })
+    else if (INSIGHT_LABEL.test(text)) main.push({ text, label: text.match(INSIGHT_LABEL)[1], body: text.replace(INSIGHT_LABEL, '') })
+    else technical.push(text)
+  })
+
+  return (
+    <div className="space-y-3">
+      {main.map((item) => (
+        <div key={item.text} className="flex items-start gap-2.5 text-sm leading-relaxed text-gray-700">
+          {item.surge ? (
+            <>
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
+              <p>{item.text}</p>
+            </>
+          ) : (
+            <p>
+              <span className="font-bold text-gray-900">{item.label}</span> {item.body}
+            </p>
+          )}
+        </div>
+      ))}
+      {technical.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setTechOpen((o) => !o)}
+            aria-expanded={techOpen}
+            className={`inline-flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900 rounded ${FOCUS}`}
+          >
+            <ChevronDown className={`w-4 h-4 transition-transform ${techOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+            Technical details
+          </button>
+          {techOpen && (
+            <ul className="list-disc pl-5 mt-2 space-y-2">
+              {technical.map((t) => (
+                <li key={t} className="text-sm leading-relaxed text-gray-500">{t}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function reasonsFor(tags, detailed) {
@@ -115,13 +162,21 @@ function Skeleton() {
   )
 }
 
+function isCommunityAlert(alert) {
+  return !!alert.sources?.length && alert.sources.every((s) => s === 'CBS' || s === 'Case Report')
+}
+
 function CasesChart({ alert }) {
+  const unit = isCommunityAlert(alert) ? 'reports' : 'cases'
   const trend = alert.trend || []
   const startKey = String(alert.startWeek || '').slice(0, 10)
   const endKey = String(alert.lastWeek || '').slice(0, 10)
 
   const data = {
-    labels: trend.map((t) => t.epiWeek || fmtWeek(t.week)),
+    labels: trend.map((t) => [
+      t.epiWeek,
+      new Date(t.week).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+    ]),
     datasets: SOURCE_KEYS.map((k) => ({
       label: SOURCE_LABELS[k],
       data: trend.map((t) => t[k] || 0),
@@ -162,18 +217,18 @@ function CasesChart({ alert }) {
         callbacks: {
           title: (items) => {
             const t = trend[items[0].dataIndex]
-            return t?.label || `Week of ${items[0].label}`
+            return t?.label || `Week of ${[].concat(items[0].label).join(' ')}`
           },
           afterBody: (items) => {
             const i = items[0].dataIndex
             const total = SOURCE_KEYS.reduce((s, k) => s + (trend[i]?.[k] || 0), 0)
-            return `Total: ${trend[i]?.total ?? total}`
+            return `Total ${unit}: ${trend[i]?.total ?? total}`
           },
         },
       },
     },
     scales: {
-      x: { stacked: true, grid: { display: false }, ticks: { font: CHART_FONT } },
+      x: { stacked: true, grid: { display: false }, ticks: { font: CHART_FONT, autoSkip: true } },
       y: { stacked: true, beginAtZero: true, ticks: { precision: 0, font: CHART_FONT } },
     },
   }
@@ -406,8 +461,12 @@ export default function AlertDetail() {
               <Tile Icon={CalendarDays} label="Period">
                 <div className="text-sm font-medium text-gray-600">{periodText(alert)}</div>
               </Tile>
-              <Tile Icon={Users} label="Cases">
-                <div className="text-sm font-medium text-gray-600">{alert.affected} total · peak {alert.peak}/week</div>
+              <Tile Icon={Users} label={isCommunityAlert(alert) ? 'Reports' : 'Cases'}>
+                <div className="text-sm font-medium text-gray-600">
+                  {isCommunityAlert(alert)
+                    ? `${alert.signals} reports · ${alert.affected} people affected · peak ${alert.peak} reports/week`
+                    : `${alert.signals} cases · peak ${alert.peak}/week`}
+                </div>
               </Tile>
               <Tile Icon={Layers} label="Data sources">
                 <div className="flex flex-wrap gap-1.5 mt-0.5">
@@ -421,7 +480,7 @@ export default function AlertDetail() {
 
           {!!(alert.trend || []).length && (
             <div className={card}>
-              <h2 className="text-xl font-semibold text-gray-900 mb-5">Cases per week</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-5">{isCommunityAlert(alert) ? 'Reports per week' : 'Cases per week'}</h2>
               <CasesChart alert={alert} />
               <p className="text-xs text-gray-400 mt-3">The 8 weeks before the outbreak show the usual level.</p>
             </div>
@@ -443,15 +502,7 @@ export default function AlertDetail() {
                 ))}
               </ul>
             )}
-            {(alert.insights || []).length > 1 && (
-              <ul className="list-disc pl-5 space-y-2">
-                {alert.insights.slice(1).map((insight) => (
-                  <li key={insight} className={`text-sm leading-relaxed ${/^recommended action/i.test(insight) ? 'font-bold text-gray-900' : 'text-gray-500'}`}>
-                    {insight}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {(alert.insights || []).length > 0 && <InsightsList insights={alert.insights} />}
           </div>
 
           <div className={card}>
@@ -500,7 +551,7 @@ export default function AlertDetail() {
               </button>
             </div>
             <p className="text-sm text-gray-500 mb-5">
-              Investigations happen in Alerts &amp; Signals. This trend's status follows them.
+              Investigations happen in Review Queue. This trend's status follows them.
             </p>
 
             {(alert.events || []).length > 0 ? (
@@ -563,7 +614,7 @@ export default function AlertDetail() {
                     className={`inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-5 py-2.5 text-sm font-medium ${FOCUS}`}
                   >
                     <Search className="w-4 h-4" aria-hidden="true" />
-                    {actionPending === 'investigate' ? 'Opening…' : 'Investigate in Alerts & Signals'}
+                    {actionPending === 'investigate' ? 'Opening…' : 'Investigate in Review Queue'}
                   </button>
                 ) : null}
                 {canReview && !alert.openEvent && alert.status === 'Pending' && (
@@ -662,7 +713,7 @@ export default function AlertDetail() {
 
           {!!(alert.relatedAlerts || []).length && (
             <div className={card}>
-              <h2 className="text-xl font-semibold text-gray-900 mb-5">Related Alerts</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-5">Other Alerts</h2>
               <div className="bg-gray-50 rounded-xl divide-y divide-gray-100">
                 {alert.relatedAlerts.map((related, i) => {
                   const body = (

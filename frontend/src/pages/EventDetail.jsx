@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Link, useParams, useLocation } from 'react-router-dom'
+import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, AlertTriangle, Check, ShieldAlert, Sparkles, X, ExternalLink,
+  ArrowLeft, AlertTriangle, Check, Link2, ShieldAlert, Sparkles, X, ExternalLink,
   Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Radio, Users, HeartCrack, Building2, Lightbulb,
 } from 'lucide-react'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
@@ -12,7 +12,7 @@ import ContextPanel from '../components/context/ContextPanel'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
   getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
-  setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext,
+  setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext, mergeEvents,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { FOCUS, parseDate, fmtDateTime, relTime } from '../data/eventHelpers'
@@ -1195,6 +1195,43 @@ function SplitDialog({ signal, saving, onConfirm, onClose }) {
   )
 }
 
+function MergeDialog({ eventId, relatedId, saving, onConfirm, onClose }) {
+  const [note, setNote] = useState('')
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape' && !saving) onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [saving, onClose])
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-gray-900/50" onClick={saving ? undefined : onClose} />
+      <div role="dialog" aria-modal="true" aria-label="Merge events" className="relative bg-white rounded-2xl p-6 w-full max-w-md flex flex-col gap-4">
+        <h3 className="text-base font-semibold text-gray-900">
+          Move all reports from {eventId} into {relatedId}? This event will be closed as merged.
+        </h3>
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-900">
+          Why are these the same outbreak?
+          <textarea
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            required
+            disabled={saving}
+            className={`${INPUT} font-normal`}
+          />
+        </label>
+        <div className="flex gap-2 justify-end">
+          <button type="button" aria-label="Cancel" disabled={saving} onClick={onClose} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Cancel</button>
+          <button type="button" aria-label="Merge" disabled={saving || !note.trim()} onClick={() => onConfirm(note.trim())} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
+            {saving ? 'Merging...' : 'Merge'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Skeleton() {
   return (
     <div className="flex flex-col gap-6 animate-pulse" aria-busy="true" aria-label="Loading event">
@@ -1249,6 +1286,7 @@ function ReporterContact({ signal: s, canAct }) {
 export default function EventDetail() {
   const { id } = useParams()
   const location = useLocation()
+  const navigate = useNavigate()
   const { has } = useCapabilities()
   const canManageProtocols = has('manage_response_protocols')
 
@@ -1270,6 +1308,8 @@ export default function EventDetail() {
   const scrollNext = useRef(false)
   const [splitTarget, setSplitTarget] = useState(null)
   const [splitting, setSplitting] = useState(false)
+  const [mergeTarget, setMergeTarget] = useState(null)
+  const [merging, setMerging] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
   const [reasonOpen, setReasonOpen] = useState(false)
   const [contextSummary, setContextSummary] = useState(null)
@@ -1425,6 +1465,21 @@ export default function EventDetail() {
       fail(e, 'Could not split the report')
     } finally {
       setSplitting(false)
+    }
+  }
+
+  async function confirmMerge(mergeNote) {
+    setMerging(true)
+    try {
+      await mergeEvents(event.id, mergeTarget.id, mergeNote)
+      const target = mergeTarget.id
+      setMergeTarget(null)
+      showToast(`Merged into ${target}`)
+      navigate(`/alerts-signals/${target}`)
+    } catch (e) {
+      fail(e, 'Could not merge the events')
+    } finally {
+      setMerging(false)
     }
   }
 
@@ -1591,7 +1646,7 @@ export default function EventDetail() {
         to={backTo}
         className={`inline-flex items-center gap-1.5 border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors mb-6 ${FOCUS}`}
       >
-        <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Alerts & Signals
+        <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Review Queue
       </Link>
 
       {loading ? (
@@ -1610,6 +1665,14 @@ export default function EventDetail() {
         </div>
       ) : event && inv && (
         <div className="flex flex-col gap-6">
+          {event.mergedInto && (
+            <div className="flex items-center gap-2 rounded-xl bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700">
+              <Link2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>This event was merged into{' '}
+                <Link to={`/alerts-signals/${event.mergedInto}`} className={`font-semibold text-red-600 hover:underline rounded ${FOCUS}`}>{event.mergedInto}</Link>
+              </span>
+            </div>
+          )}
           <div className={`rounded-2xl p-6 sm:p-7 text-white ${BANNER[event.severity] || BANNER.standard}`}>
             <div className="flex items-center gap-3 flex-wrap mb-1.5">
               <h1 className="text-xl sm:text-2xl font-semibold leading-tight">{event.title}</h1>
@@ -1638,6 +1701,30 @@ export default function EventDetail() {
               </div>
             )}
           </div>
+
+          {event.related?.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <h2 className="text-base font-semibold text-gray-900">Related events in {event.subCounty}</h2>
+              <p className="text-sm text-gray-600 mb-3">These may be the same outbreak. Check them before acting.</p>
+              <ul className="flex flex-col gap-2">
+                {event.related.map((r) => (
+                  <li key={r.id} className="flex items-center justify-between gap-3 flex-wrap rounded-xl bg-white border border-amber-200 px-4 py-3">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link to={`/alerts-signals/${r.id}`} className={`text-sm font-semibold text-red-600 hover:underline rounded ${FOCUS}`}>{r.title}</Link>
+                        <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600">{STATUS_LABELS[r.status] || r.status}</span>
+                        <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600">{SEVERITY_LABELS[r.severity] || SEVERITY_LABELS.standard}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">{r.reports} {r.reports === 1 ? 'report' : 'reports'} · {r.people} people · last {fmtDateTime(r.lastSeen)}</p>
+                    </div>
+                    {canAct && (
+                      <button type="button" onClick={() => setMergeTarget(r)} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Merge into this event</button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {!canAct && <p className="text-sm text-gray-500">You can view this event but not act on it.</p>}
 
@@ -1743,7 +1830,7 @@ export default function EventDetail() {
                 {timeline.map((t, i) => (
                   <li key={i} className="flex gap-3">
                     <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 mt-0.5" aria-hidden="true">
-                      <Check className="w-3 h-3" />
+                      {t.action === 'Merged' || t.action === 'Merged in' ? <Link2 className="w-3 h-3" /> : <Check className="w-3 h-3" />}
                     </span>
                     <div className="min-w-0">
                       <p className="text-sm text-gray-900">
@@ -1762,6 +1849,10 @@ export default function EventDetail() {
 
       {splitTarget && (
         <SplitDialog signal={splitTarget} saving={splitting} onConfirm={confirmSplit} onClose={() => setSplitTarget(null)} />
+      )}
+
+      {mergeTarget && (
+        <MergeDialog eventId={event.id} relatedId={mergeTarget.id} saving={merging} onConfirm={confirmMerge} onClose={() => setMergeTarget(null)} />
       )}
 
       {toast.show && (

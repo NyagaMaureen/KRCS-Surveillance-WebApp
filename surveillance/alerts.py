@@ -366,22 +366,61 @@ def epi_label(d, with_dates=True):
 		else f"{start.day} {start.strftime('%b')}\u2013{end.day} {end.strftime('%b %Y')}")
 	return f"Epi week {w} ({span})"
 
+
+def _why_short(d):
+	"""One plain line for the alert list: how many, compared with what.
+	Community sources (CBS, field) are counted in reports; facility sources (MOH 505, EMR) in cases."""
+	peak = d.get("peak_signals") or d.signals or 0
+	base = d.get("baseline_mean")
+	thr = frappe.db.get_value("Alert Threshold Config", d.disease, "threshold") or 1
+	sources = {s.strip() for s in (d.sources or "").split(",") if s.strip()}
+	word = "report" if sources and sources <= COMMUNITY_SOURCES else "case"
+	unit = word if peak == 1 else word + "s"
+	if d.signal_strength == "outbreak" and base and base >= 1:
+		ratio = peak / base
+		times = f"{ratio:.1f}" if ratio < 3 else f"{ratio:.0f}"
+		return f"{peak} {unit} in the peak week, about {times}× the usual (usually ~{base:.0f} a week)"
+	if d.signal_strength == "outbreak":
+		return f"{peak} {unit} in the peak week, where there is usually less than 1 a week"
+	return f"{peak} {unit} this week (alert at {thr})"
+
+
+def _why_severity(d):
+	"""Explain the severity in plain words, including the cluster bump and 'never lowered' rule."""
+	priority = d.priority or "Standard"
+	strength = d.signal_strength or "threshold"
+	base = MATRIX.get(priority, MATRIX["Standard"]).get(strength, "standard")
+	name = d.disease_name or d.disease
+	signal = {"outbreak": "an outbreak-level rise", "threshold": "reaching the alert threshold",
+		"normal": "a count within the usual level"}.get(strength, strength)
+	text = f"{name} is a {priority.lower()}-priority disease; {signal} gives {base} severity"
+	if d.severity == base:
+		return text + "."
+	community = bool({s.strip() for s in (d.sources or "").split(",")} & COMMUNITY_SOURCES)
+	if community and (d.affected or 0) >= CLUSTER_AFFECTED and d.severity in LEVELS and base in LEVELS \
+			and LEVELS.index(d.severity) == LEVELS.index(base) + 1:
+		return text + (f", raised to {d.severity} because a community report listed {d.affected} people "
+			f"({CLUSTER_AFFECTED} or more is treated as a cluster).")
+	return text + f", kept at {d.severity} because it reached that level in an earlier week (severity is never lowered automatically)."
+
+
 def _shape(d, notes=None, related=None):
-	strength = {"outbreak": "outbreak level", "threshold": "threshold reached", "normal": "within usual level"}
 	rules = (d.rules or "").replace(",", ", ")
 	last = d.get("last_week") or d.week_start
-	ongoing = getdate(last) >= add_days(week_start(today()), -7 * RECENT_WEEKS)
+	recent = getdate(last) >= add_days(week_start(today()), -7 * RECENT_WEEKS)
+	ongoing = recent and d.status not in CLOSED   # resolved or dismissed trends are never "ongoing"
 	weeks = d.get("weeks_flagged") or 1
 
 	insights = []
+	insights.append("What happened: " + _why_short(d))
 	if weeks > 1:
-		insights.append(f"{'Ongoing' if ongoing else 'Ended'}: flagged in {weeks} week(s) from {epi_label(d.week_start)} "
+		insights.append(f"{'Ongoing' if ongoing else STATUS_LABELS.get(d.status, 'Ended') if d.status in CLOSED else 'Ended'}: flagged in {weeks} week(s) from {epi_label(d.week_start)} "
 			f"to {epi_label(last)}; {d.signals} case(s) in total, peak {d.get('peak_signals') or d.signals} in {epi_label(d.get('peak_week') or last)}.")
 	insights += [x.strip() for x in (d.explanation or "").split("|") if x.strip()]
-	insights.append(f"Disease priority: {d.priority}. Signal: {strength.get(d.signal_strength, d.signal_strength)}. Severity: {d.severity}.")
+	insights.append("Why " + (d.severity or "standard") + " severity: " + _why_severity(d))
 	if d.possible_reporting_surge:
-		insights.append("Possible reporting surge: several diseases rose together at this location. Verify before acting.")
-	insights.append("Recommended action: " + RESPONSE.get(d.severity, ""))
+		insights.append("Watch out: possible reporting surge. Several diseases rose together at this location. Verify before acting.")
+	insights.append("What to do: " + RESPONSE.get(d.severity, ""))
 	return {
 		"id": d.name,
 		"title": f"{d.disease_name}" + (" (outbreak level)" if d.level == "outbreak" else ""),
@@ -396,6 +435,7 @@ def _shape(d, notes=None, related=None):
 		"signals": d.signals,
 		"aiScore": None,
 		"rulesLabel": f"Rules: {rules}" if rules else "",
+		"whyShort": _why_short(d),
 		"surge": bool(d.possible_reporting_surge),
 		"date": _fmt(last),
 		"startDate": _fmt(d.week_start),
@@ -420,6 +460,7 @@ def _shape(d, notes=None, related=None):
 		"reviewedBy": get_fullname(d.reviewed_by) if d.get("reviewed_by") else None,
 		"reviewedOn": str(d.reviewed_on) if d.get("reviewed_on") else None,
 	}
+
 def _trend(doc, before_weeks=8):
 	"""Weekly counts for this disease and place, from 8 weeks before the outbreak to its latest week, per source."""
 	start = add_days(doc.week_start, -7 * before_weeks)
@@ -455,7 +496,7 @@ def _timeline(doc):
 				events.append({"label": f"Severity changed: {old} → {new}", "by": who, "at": str(v.creation)})
 	if doc.last_detected:
 		events.append({"label": "Latest check by the alert engine", "by": "Alert engine", "at": str(doc.last_detected)})
-	return events
+	return sorted(events, key=lambda e: e["at"])
 
 @frappe.whitelist()
 def get_alerts(limit=500):

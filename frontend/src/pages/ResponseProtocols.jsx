@@ -675,7 +675,7 @@ export default function ResponseProtocols() {
        <div className="max-w-2xl">
   <h2 className="text-xl font-bold text-gray-900">Response Protocols</h2>
   <p className="text-sm text-gray-400">
-    What to do when each priority disease or unusual event is reported. Approved protocols appear as a checklist on every matching event in Alerts &amp; Signals.
+    What to do when each priority disease or unusual event is reported. Approved protocols appear as a checklist on every matching event in Review Queue.
   </p>
 </div>
         <div className="flex items-center gap-3 shrink-0">

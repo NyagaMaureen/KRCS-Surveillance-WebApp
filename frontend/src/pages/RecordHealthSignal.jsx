@@ -356,6 +356,8 @@ export default function RecordHealthSignal() {
         reporter_name: profile.full_name || '',
         phone_number: phone || profile.phone_number || '',
         region: profile.assigned_region || '',
+        sub_county: profile.assigned_sub_county || '',
+
       })
       setProfileLoaded(true)
     })
@@ -371,7 +373,10 @@ export default function RecordHealthSignal() {
     getSubCounties(form.region).then((list) => {
       if (cancelled) return
       setSubCounties(list)
-      updateForm({ sub_county: list.length === 1 ? list[0].name : '' })
+      setForm((prev) => ({
+        ...prev,
+        sub_county: list.some((s) => s.name === prev.sub_county) ? prev.sub_county : (list.length === 1 ? list[0].name : ''),
+      }))
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -472,7 +477,7 @@ export default function RecordHealthSignal() {
                     {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
                   </select>
                 </Field>
-                <Field id="sub_county" label="Sub-county" required error={shown('sub_county')}>
+                <Field id="sub_county" label="Sub-county" required error={shown('sub_county')} hint="Pre-filled from your profile. Change it if the signal is from another area.">
                   <select
                     value={form.sub_county}
                     onChange={(e) => updateForm({ sub_county: e.target.value })}
