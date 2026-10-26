@@ -2,7 +2,7 @@
 
 1. New event   -> the CHA and SCDSC assigned to that sub-county (User.assigned_sub_county).
 2. Escalation  -> County and National MOH contacts (Escalation Contact list, managed by KRCS),
-                  with what they need to act (Allan, KRCS, 19 Oct 2026): disease, signs and symptoms,
+                  with what they need to act: disease, signs and symptoms,
                   cases and deaths, dates, location, nearest health facility, reporter contacts,
                   and the officer escalating with their reason. The CHA/SCDSC also get an in-app copy.
 
@@ -20,7 +20,6 @@ from frappe.utils import add_days, cint, escape_html, get_datetime, get_fullname
 NEW_EVENT_MAX_AGE_DAYS = 2   # do not alert on events created from old reports (backfills, late syncs)
 
 
-# ---------- helpers ----------
 
 def _link(event):
 	base = (frappe.conf.get("frontend_url") or get_url()).rstrip("/")

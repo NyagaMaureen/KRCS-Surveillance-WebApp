@@ -726,52 +726,17 @@ export async function getMapEvents(params = {}) {
 export async function mergeEvents(event, into, note) {
   return callMethodPost('/api/method/surveillance.events.merge_events', { event, into, note })
 }
-/*
-|--------------------------------------------------------------------------
-| Data Explorer
-|--------------------------------------------------------------------------
-|
-| Backed by mock data for now. Once a searchable "Surveillance Record"
-| DocType exists on the Frappe side, swap the body of getDataExplorerRecords()
-| for a getList() call, e.g.
-|
-|   return getList('Surveillance Record',
-|     ['name', 'title', 'disease', 'region', 'severity', 'status', 'risk_score'],
-|     { limit: opts.limit || 500, start: opts.start || 0, orderBy: 'creation desc' })
-|
-| The Data Explorer page does all of its search/filter/pagination/charting
-| client-side, so the return shape (an array of the fields below) is all
-| that needs to stay the same.
-*/
 
-const DATA_EXPLORER_TEMPLATES = [
-  { title: 'Cholera cluster', disease: 'Cholera', region: 'Dadaab', severity: 'critical', status: 'unverified' },
-  { title: 'Measles cluster', disease: 'Measles', region: 'Kalobeyei', severity: 'high', status: 'investigating' },
-  { title: 'Malaria cluster', disease: 'Malaria', region: 'Garissa', severity: 'medium', status: 'verified' },
-  { title: 'Watery Diarrhea', disease: 'Diarrhea', region: 'Turkana', severity: 'low', status: 'closed' },
-  { title: 'Dengue cluster', disease: 'Dengue', region: 'Wajir', severity: 'critical', status: 'unverified' },
-  { title: 'Cholera cluster', disease: 'Cholera', region: 'Dadaab', severity: 'medium', status: 'investigating' },
-  { title: 'Respiratory outbreak', disease: 'Respiratory', region: 'Mombasa', severity: 'high', status: 'verified' },
-  { title: 'Fever cluster', disease: 'Fever', region: 'Nairobi', severity: 'low', status: 'unverified' },
-  { title: 'AWD cluster', disease: 'AWD', region: 'Garissa', severity: 'critical', status: 'investigating' },
-  { title: 'Malaria cluster', disease: 'Malaria', region: 'Turkana', severity: 'medium', status: 'closed' },
-]
-
-function buildMockDataExplorerRecords(count = 50) {
-  return Array.from({ length: count }, (_, i) => {
-    const template = DATA_EXPLORER_TEMPLATES[i % DATA_EXPLORER_TEMPLATES.length]
-    return {
-      name: `RPT-${String(i + 1).padStart(3, '0')}`,
-      ...template,
-      riskScore: 30 + ((i * 17) % 70),
-    }
-  })
+export async function getDataExplorerOptions() {
+  return callMethod('/api/method/surveillance.data_explorer.get_options')
 }
 
-const MOCK_DATA_EXPLORER_RECORDS = buildMockDataExplorerRecords(50)
+export async function queryDataExplorer(params) {
+  return callMethodPost('/api/method/surveillance.data_explorer.query', { params: JSON.stringify(params) })
+}
 
-export async function getDataExplorerRecords(opts = {}) {
-  return MOCK_DATA_EXPLORER_RECORDS.slice(opts.start || 0, (opts.start || 0) + (opts.limit || MOCK_DATA_EXPLORER_RECORDS.length))
+export async function exportDataExplorer(params) {
+  return callMethodPost('/api/method/surveillance.data_explorer.export', { params: JSON.stringify(params) })
 }
 
 /*

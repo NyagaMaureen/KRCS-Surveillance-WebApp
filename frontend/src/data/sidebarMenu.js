@@ -15,7 +15,7 @@ export const SIDEBAR_MENU = [
   ]},
   { section: 'DATA', items: [
     { label: 'Analytics', icon: 'BarChart3', page: 'analytics', requiresCapability: 'view_analytics' },
-    { label: 'Data Explorer', icon: 'FileSearch', page: 'data-explorer', requiresCapability: null },
+    { label: 'Data Explorer', icon: 'FileSearch', page: 'data-explorer', requiresCapability: 'view_analytics' },
     { label: 'Reporting Channels', icon: 'Radar', page: 'channels', requiresCapability: null },
     { label: 'Facility Data', icon: 'FileSpreadsheet', page: 'facility-data', requiresCapability: 'upload_facility_data' },
     { label: 'Context Data', icon: 'CloudSun', page: 'context-data', requiresCapability: null },
