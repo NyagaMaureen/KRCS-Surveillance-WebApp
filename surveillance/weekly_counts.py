@@ -17,8 +17,7 @@ import os
 import re
 
 import frappe
-from frappe.utils import add_days, getdate, now
-
+from frappe.utils import add_days, getdate, now, nowdate
 from surveillance.anomaly.diseases import to_key
 
 DOCTYPE = "Weekly Count"
@@ -285,6 +284,7 @@ def store_cases(facility, rows, weeks, upload=None):
 
 def store_reporting(facility, weeks, upload=None):
 	"""Save one facility's reported/not-reported weeks ({week: bool}), replacing only those weeks."""
+	weeks = {w: ok for w, ok in weeks.items() if getdate(w) <= getdate(nowdate())}   # KHIS files list future weeks too
 	ts, user = now(), frappe.session.user
 	values = [(hashlib.sha1(f"{facility}|{w}".encode()).hexdigest()[:20], ts, ts, user, user, 0,
 		facility, w, 1 if ok else 0, upload) for w, ok in weeks.items()]

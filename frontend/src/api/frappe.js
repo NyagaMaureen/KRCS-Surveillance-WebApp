@@ -520,125 +520,16 @@ export async function queryAiAssistant(question) {
   return buildMockAiAnswer(question)
 }
 
-/*
-|--------------------------------------------------------------------------
-| Analytics Dashboard
-|--------------------------------------------------------------------------
-|
-| Backed by mock data for now. Each function returns the exact shape the
-| Analytics page charts expect (labels/datasets), so swapping in real data
-| later just means replacing the function body with a fetch/getList call
-| that resolves to the same shape - no changes needed in Analytics.jsx.
-*/
+// ---------- Analytics ----------
+// In src/api/frappe.js: DELETE the nine mock analytics functions (getAnalyticsSummary, getDiseaseTrends,
+// getFacilityResponseTime, getAiPredictiveForecast, getMonthOverMonthComparison, getResponseTimeImprovement,
+// getAgeGenderDistribution, getAlertReportingPattern, getResponseEffectivenessScore) and their MOCK_ data,
+// then paste this in their place.
 
-const MOCK_ANALYTICS_SUMMARY = [
-  { key: 'time_to_alert', label: 'Average Time-to-Alert', value: '2.4 hrs', icon: 'Clock', changePct: 12.5, trend: 'down', sentiment: 'positive' },
-  { key: 'ai_precision', label: 'AI Alert Precision', value: '87.3%', icon: 'Sparkles', changePct: 8.3, trend: 'down', sentiment: 'negative' },
-  { key: 'active_cases', label: 'Active Cases', value: '23', icon: 'AlertTriangle', changePct: 15.2, trend: 'down', sentiment: 'positive' },
-  { key: 'surveillance_coverage', label: 'Surveillance Coverage', value: '94.8%', icon: 'Map', changePct: 5.2, trend: 'down', sentiment: 'negative' },
-]
-
-const MOCK_DISEASE_TRENDS = {
-  labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6'],
-  series: [
-    { name: 'Acute Watery Diarrhea', color: '#D62728', data: [4, 6, 3, 5, 3, 8] },
-    { name: 'Malaria', color: '#F2C94C', data: [9, 7, 15, 5, 10, 8] },
-    { name: 'Measles', color: '#2F80ED', data: [2, 1, 3, 4, 3, 5] },
-    { name: 'Respiratory', color: '#27AE60', data: [10, 12, 8, 14, 15, 20] },
-  ],
-}
-
-
-
-const MOCK_FACILITY_RESPONSE_TIME = {
-  labels: ['Dagahaley Health Center', 'Ifo Hospital', 'Kalobeyei Clinic', 'Hagadera Dispensary'],
-  data: [2.6, 2.15, 3.3, 2.95],
-}
-
-const MOCK_AI_FORECAST = {
-  labels: ['W-3', 'W-2', 'W-1', 'Current', 'W+1', 'W+2', 'W+3'],
-  actual: [18, 24, 29, 34, null, null, null],
-  predicted: [null, null, null, 34, 37, 39, 38],
-  upperBand: [null, null, null, 34, 42, 46, 47],
-  lowerBand: [null, null, null, 34, 33, 32, 29],
-}
-
-const MOCK_MONTH_OVER_MONTH = {
-  labels: ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb'],
-  current: [150, 175, 195, 205, 190, 170],
-  previous: [130, 145, 160, 180, 175, 160],
-  target: 185,
-}
-
-const MOCK_RESPONSE_TIME_IMPROVEMENT = {
-  labels: ['W1', 'W2', 'W3', 'W4', 'W5'],
-  avgResponseTime: [3.2, 2.9, 2.6, 2.5, 2.3],
-  target: 2.5,
-}
-
-const MOCK_AGE_GENDER_DISTRIBUTION = {
-  labels: ['<5', '5-14', '15-49', '50+'],
-  male: [38, 22, 30, 10],
-  female: [45, 18, 38, 8],
-}
-
-const MOCK_ALERT_REPORTING_PATTERN = {
-  labels: ['00-06', '06-09', '09-12', '12-15', '15-18', '18-21', '21-24'],
-  data: [7, 20, 26, 24, 22, 14, 10],
-}
-
-const MOCK_RESPONSE_EFFECTIVENESS = {
-  labels: ['Detection', 'Verification', 'Response', 'Tracing', 'Treatment', 'Data Quality'],
-  data: [88, 62, 58, 92, 68, 64],
-}
-
-export async function getAnalyticsSummary() {
-  return MOCK_ANALYTICS_SUMMARY
-}
-
-export async function getDiseaseTrends() {
-  return MOCK_DISEASE_TRENDS
-}
-
-
-
-export async function getChannelStats(days = 30) {
-  return (await callMethod(`/api/method/surveillance.surveillance.api.get_channel_stats?days=${days}`)) || { channels: [], total: 0, days }
-}
-
-export async function getSourceStats(days = 30) {
-  const res = await fetch(`/api/method/surveillance.surveillance.api.get_source_stats?days=${days}`, { credentials: 'include' })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data?._server_messages || data?.exception || 'Could not load data sources')
-  return data.message || { sources: [] }
-}
-
-export async function getFacilityResponseTime() {
-  return MOCK_FACILITY_RESPONSE_TIME
-}
-
-export async function getAiPredictiveForecast() {
-  return MOCK_AI_FORECAST
-}
-
-export async function getMonthOverMonthComparison() {
-  return MOCK_MONTH_OVER_MONTH
-}
-
-export async function getResponseTimeImprovement() {
-  return MOCK_RESPONSE_TIME_IMPROVEMENT
-}
-
-export async function getAgeGenderDistribution() {
-  return MOCK_AGE_GENDER_DISTRIBUTION
-}
-
-export async function getAlertReportingPattern() {
-  return MOCK_ALERT_REPORTING_PATTERN
-}
-
-export async function getResponseEffectivenessScore() {
-  return MOCK_RESPONSE_EFFECTIVENESS
+export async function getAnalytics({ weeks = 13, source = 'all', disease = '' } = {}) {
+  const qs = new URLSearchParams({ weeks, source })
+  if (disease) qs.set('disease', disease)
+  return callMethod(`/api/method/surveillance.analytics.get_analytics?${qs}`)
 }
 
 
@@ -726,6 +617,19 @@ export async function getMapEvents(params = {}) {
 export async function mergeEvents(event, into, note) {
   return callMethodPost('/api/method/surveillance.events.merge_events', { event, into, note })
 }
+
+
+export async function getChannelStats(days = 30) {
+  return (await callMethod(`/api/method/surveillance.surveillance.api.get_channel_stats?days=${days}`)) || { channels: [], total: 0, days }
+}
+
+export async function getSourceStats(days = 30) {
+  const res = await fetch(`/api/method/surveillance.surveillance.api.get_source_stats?days=${days}`, { credentials: 'include' })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data?._server_messages || data?.exception || 'Could not load data sources')
+  return data.message || { sources: [] }
+}
+
 
 export async function getDataExplorerOptions() {
   return callMethod('/api/method/surveillance.data_explorer.get_options')
@@ -1116,8 +1020,7 @@ export async function splitReport(eventId, signalId, reason) {
 //   if (!res.ok) throw new Error(frappeErrorMessage(data, res.status))
 //   return (data.data || []).map((r) => r.name)
 // }
-// ---------- Facility Data (MOH 505 / IDSR uploads) ----------
-// Paste at the end of src/api/frappe.js
+
 
 const FD = '/api/method/surveillance.facility_data'
 
