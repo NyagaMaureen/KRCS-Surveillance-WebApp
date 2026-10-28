@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-14 12:00:00.000000",
- "modified": "2026-10-21 13:00:00.000000",
+ "modified": "2026-10-28 16:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -261,7 +261,7 @@
   {
    "fieldname": "decision",
    "fieldtype": "Select",
-   "options": "\nConfirmed\nDiscarded\nEscalated",
+   "options": "\nConfirmed\nNot confirmed\nDiscarded\nEscalated",
    "label": "Decision"
   },
   {

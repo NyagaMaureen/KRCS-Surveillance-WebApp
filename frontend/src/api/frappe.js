@@ -1100,3 +1100,51 @@ export async function getWeatherSeries(subCounty, days = 90) {
 export async function refreshWeather() {
   return callMethodPost(`${CTX}.refresh_weather`, {})
 }
+
+// ---------- Event tasks (field visits, referrals, sample collection, follow-ups) ----------
+
+const TASKS = '/api/method/surveillance.event_tasks.'
+
+export async function getEventTasks(eventId) {
+  return callMethod(`${TASKS}get_event_tasks?event=${encodeURIComponent(eventId)}`)
+}
+
+export async function getTaskAssignees(eventId) {
+  return callMethod(`${TASKS}get_assignees?event=${encodeURIComponent(eventId)}`)
+}
+
+export async function createEventTask(eventId, task) {
+  return callMethodPost(`${TASKS}create_task`, {
+    event: eventId,
+    task_type: task.type,
+    title: task.title,
+    assigned_to: task.assignedTo,
+    due_date: task.dueDate,
+    instructions: task.instructions || '',
+    facility: task.facility || '',
+    urgency: task.urgency || '',
+    step_phase: task.stepPhase || '',
+    step_no: task.stepNo || 0,
+  })
+}
+
+export async function createFollowups(eventId, assignedTo, days, instructions) {
+  return callMethodPost(`${TASKS}create_followups`, { event: eventId, assigned_to: assignedTo, days: days.join(','), instructions: instructions || '' })
+}
+
+export async function updateEventTask(taskId, changes) {
+  const body = { task: taskId }
+  if (changes.status) body.status = changes.status
+  if (changes.outcome != null) body.outcome = changes.outcome
+  if (changes.dueDate) body.due_date = changes.dueDate
+  if (changes.assignedTo) body.assigned_to = changes.assignedTo
+  return callMethodPost(`${TASKS}update_task`, body)
+}
+
+export async function deleteEventTask(taskId) {
+  return callMethodPost(`${TASKS}delete_task`, { task: taskId })
+}
+
+export async function getMyTasks(scope = 'mine', status = 'open') {
+  return callMethod(`${TASKS}get_my_tasks?scope=${scope}&status=${status}`)
+}

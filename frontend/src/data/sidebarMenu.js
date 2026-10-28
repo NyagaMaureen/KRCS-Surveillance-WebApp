@@ -1,6 +1,7 @@
 export const SIDEBAR_MENU = [
   { section: 'OVERVIEW', items: [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
+    { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: null },
   ]},
   { section: 'FIELD ACTIVITIES', items: [
     { label: 'Reports', icon: 'FileText', page: 'reports', requiresCapability: 'view_reports' },

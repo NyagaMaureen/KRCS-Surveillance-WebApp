@@ -203,7 +203,8 @@ doc_events = {
 
 
 scheduler_events = {
-	"daily": ["surveillance.knowledge_base.retire_expired", "surveillance.context.import_weather"],
+	"daily": ["surveillance.knowledge_base.retire_expired", "surveillance.context.import_weather",
+		"surveillance.event_tasks.daily_reminders"],
 	"hourly_long": ["surveillance.cbs_feed.hourly"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }

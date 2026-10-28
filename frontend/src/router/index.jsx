@@ -27,6 +27,7 @@ import EventDetail from '../pages/EventDetail'
 import SurveillanceMap from '../pages/SurveillanceMap'
 import FacilityData from '../pages/FacilityData'
 import ContextData from '../pages/ContextData'
+import MyTasks from '../pages/MyTasks'
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
@@ -56,6 +57,7 @@ const rawRoutes = [
   { path: '/audit-log', name: 'audit-log', element: AuditLog },
   { path: '/ai-data-assistant', name: 'ai-data-assistant', element: AiDataAssistant },
   { path: '/knowledge-base', name: 'knowledge-base', element: KnowledgeBase },
+  { path: '/my-tasks', name: 'my-tasks', element: MyTasks },
 ]
 
 const MENU_ITEMS = SIDEBAR_MENU.flatMap((group) => group.items)

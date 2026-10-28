@@ -50,7 +50,10 @@ CAPABILITIES = [
 	 "grants": {"Surveillance Event": ["read"], "Surveillance Signal": ["read"]}},
 	{"key": "act_on_events", "name": "Act on Events", "category": "Review Queue",
 	 "description": "Verify, discard, escalate and close events",
-	 "grants": {"Surveillance Event": ["read", "write"]}},
+	 "grants": {"Surveillance Event": ["read", "write"], "Event Task": ["read", "write", "create"]}},
+	{"key": "view_all_tasks", "name": "View All Tasks", "category": "Review Queue",
+	 "description": "See every task assigned in your region and whether it was completed (e.g. SCDSC)",
+	 "grants": {"Event Task": ["read"]}},
 
 	 
 	# Response

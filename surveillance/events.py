@@ -70,13 +70,14 @@ ACTIONS = {
 	"investigate": (["Verifying"], "Investigating", False),
 	"confirm": (["Investigating"], "Confirmed", True),
 	"escalate": (["New", "Verifying", "Investigating", "Confirmed"], "Escalated", True),
-	"discard": (["New", "Verifying", "Investigating"], "Discarded", True),
+	"discard": (["New", "Verifying"], "Discarded", True),          # only at verification (KRCS, 28 Oct 2026)
 	"close": (["Confirmed", "Escalated"], "Closed", True),
+	"close_unconfirmed": (["Investigating"], "Closed", True),       # field investigation found no event
 	"reopen": (CLOSED, "Verifying", False),
 }
 ACTION_LABEL = {"start": "Verification started", "investigate": "Field investigation started",
 	"confirm": "Confirmed", "escalate": "Escalated to county / MoH", "discard": "Discarded",
-	"close": "Closed", "reopen": "Reopened"}
+	"close": "Closed", "close_unconfirmed": "Closed: no event found", "reopen": "Reopened"}
 
 
 # ---------- signals in ----------
@@ -546,6 +547,11 @@ def get_events(status=None, disease=None, region=None, source=None, search=None,
 		else:
 			shaped["relatedCount"] = 0
 		events.append(shaped)
+	from surveillance.event_tasks import counts_for_events
+	task_counts = counts_for_events([e["id"] for e in events])
+	for e in events:
+		c = task_counts.get(e["id"]) or {}
+		e["openTasks"], e["overdueTasks"] = c.get("open", 0), c.get("overdue", 0)
 	return {"counts": counts, "events": events, "canAct": has_capability(ACT)}
 
 
@@ -584,6 +590,11 @@ def set_status(event, action, note=None, facility=None):
 	investigation.after_status(doc, action, note)
 	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user,
 		"action": ACTION_LABEL[action], "note": note})
+	if action in ("close", "close_unconfirmed"):
+		from surveillance.event_tasks import open_tasks_note
+		still_open = open_tasks_note(doc.name)
+		if still_open:
+			doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Tasks continue", "note": still_open})
 	doc.save(ignore_permissions=True)
 	investigation.sync_reports(doc, action, note)
 	from surveillance.alerts import sync_alert_for_event

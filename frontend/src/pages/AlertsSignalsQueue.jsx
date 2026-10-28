@@ -333,6 +333,7 @@ export default function AlertsSignalsQueue() {
                       const extra = [
                         ev.reports > 1 && `${ev.reports} reports`,
                         ev.relatedCount > 0 && `${ev.relatedCount} related`,
+                        ev.overdueTasks > 0 ? `${ev.overdueTasks} task${ev.overdueTasks === 1 ? '' : 's'} overdue` : ev.openTasks > 0 && `${ev.openTasks} open task${ev.openTasks === 1 ? '' : 's'}`,
                       ].filter(Boolean).join(' · ')
                       return (
                         <tr key={ev.id} onClick={() => open(ev)} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 cursor-pointer">

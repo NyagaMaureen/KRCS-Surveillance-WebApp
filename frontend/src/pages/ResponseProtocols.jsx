@@ -29,8 +29,15 @@ const btnSecondary = `border border-gray-200 rounded-lg px-4 py-2 text-sm font-m
 const btnPrimary = `bg-red-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50 ${FOCUS}`
 
 const PHASES = ['Investigation', 'Response']
-const KINDS = ['Case definition', 'Supports', 'Red flag']
+const KINDS = ['Key question', 'Case definition', 'Supports', 'Red flag']
+const KIND_HELP = {
+  'Key question': 'Decides if this is a real event. At least half of the key questions must be Yes to start the field investigation.',
+  'Case definition': 'Does the case match the case definition? Counts as a key question.',
+  Supports: 'Extra context. Does not block anything.',
+  'Red flag': 'Yes means escalate to the county straight away.',
+}
 const KIND_TAG = {
+  'Key question': 'bg-gray-100 text-gray-700',
   'Case definition': 'bg-blue-50 text-blue-600',
   'Red flag': 'bg-red-50 text-red-700',
 }
@@ -102,149 +109,222 @@ function ProtocolHeader({ p }) {
   )
 }
 
-function ProtocolCard({ protocol: p, onOpen, cardRef }) {
+function ProtocolRow({ protocol: p, onOpen }) {
   const retired = p.status === 'Retired'
   const qCount = (p.questions || []).length
+  const keyCount = (p.questions || []).filter((q) => q.kind === 'Key question' || q.kind === 'Case definition').length
   return (
-    <div ref={cardRef} className={`${card} ${retired ? 'opacity-80' : ''}`}>
-      <div
-        role="link"
-        tabIndex={0}
-        onClick={() => onOpen(p)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(p) } }}
-        className={`p-5 sm:p-6 cursor-pointer rounded-2xl hover:bg-gray-50/60 ${FOCUS}`}
-      >
-        <ProtocolHeader p={p} />
-        <div className="mt-4 flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-900">
-            {p.stepCount} response steps{qCount > 0 ? ` · ${qCount} verification questions` : ''}
-          </span>
-          <ChevronRight className="w-5 h-5 text-gray-500" aria-hidden="true" />
-        </div>
+    <tr onClick={() => onOpen(p)} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 cursor-pointer">
+      <td className="px-3 py-3.5">
+        <span className={`font-medium ${retired ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{p.title}</span>
+        <span className="block text-xs text-gray-400 mt-0.5">{p.diseaseName} · {p.version}</span>
+      </td>
+      <td className="px-3 py-3.5 hidden md:table-cell">
+        <span className={`px-2.5 py-0.5 inline-flex items-center rounded-full text-xs font-medium ${PRIORITY_BADGE[p.priority] || PRIORITY_BADGE.Standard}`}>{p.priority}</span>
+      </td>
+      <td className="px-3 py-3.5">
+        <span className={`px-2.5 py-0.5 inline-flex items-center rounded-full text-xs font-medium ${STATUS_BADGE[p.status] || STATUS_BADGE.Draft}`}>{p.status}</span>
+        {p.notifyImmediately && <span className="block text-[11px] text-red-600 mt-1">Single case is an emergency</span>}
+      </td>
+      <td className="px-3 py-3.5 text-gray-600 hidden lg:table-cell whitespace-nowrap">{p.stepCount} steps</td>
+      <td className="px-3 py-3.5 text-gray-600 hidden lg:table-cell whitespace-nowrap">
+        {qCount} questions{keyCount ? <span className="text-gray-400"> · {keyCount} key</span> : ''}
+      </td>
+      <td className="px-3 py-3.5 text-gray-500 hidden sm:table-cell whitespace-nowrap">{fmtDateTime(p.updated)}</td>
+      <td className="px-3 py-3.5 text-right">
+        <span className="inline-flex items-center h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 whitespace-nowrap">View</span>
+      </td>
+    </tr>
+  )
+}
+
+function DetailSection({ title, count, help, children }) {
+  return (
+    <section className={`${card} p-5 sm:p-7`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+        {count != null && <span className="text-sm text-gray-400">{count}</span>}
       </div>
+      {help && <p className="text-sm text-gray-500 mt-1">{help}</p>}
+      <div className="mt-5">{children}</div>
+    </section>
+  )
+}
+
+function Meta({ label, children }) {
+  if (!children) return null
+  return (
+    <div className="py-3 first:pt-0 last:pb-0">
+      <dt className="text-xs text-gray-400">{label}</dt>
+      <dd className="text-sm text-gray-900 mt-0.5 break-words">{children}</dd>
     </div>
   )
 }
 
-function ProtocolDetail({ protocol: p, canManage, busy, onBack, onEdit, onStatus, onDelete }) {
-  const [tab, setTab] = useState('Investigation')
-  const retired = p.status === 'Retired'
+function StepView({ s, num }) {
   return (
-    <div>
-      <button type="button" onClick={onBack} className={`mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 rounded ${FOCUS}`}>
+    <li className="flex gap-4 py-5 first:pt-0 last:pb-0">
+      <span className="w-8 h-8 shrink-0 rounded-full bg-gray-100 text-sm font-semibold text-gray-600 flex items-center justify-center">{num}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] leading-relaxed text-gray-900">{s.step}</p>
+        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-gray-500">
+          {s.timeframe && <span><span className="text-gray-400">When:</span> {s.timeframe}</span>}
+          {s.responsible && <span><span className="text-gray-400">Who:</span> {s.responsible}</span>}
+          {s.assignable && <span className="text-emerald-700">Can be assigned to a field worker</span>}
+        </div>
+      </div>
+    </li>
+  )
+}
+
+const DETAIL_TABS = [
+  { key: 'about', label: 'Overview' },
+  { key: 'questions', label: 'Verification questions' },
+  { key: 'Investigation', label: 'Field investigation steps' },
+  { key: 'Response', label: 'Response steps' },
+]
+
+function ProtocolDetail({ protocol: p, canManage, busy, diseases, onBack, onSaved, onStatus, onDelete }) {
+  const [tab, setTab] = useState('about')
+  const [editing, setEditing] = useState(false)
+  const retired = p.status === 'Retired'
+  const inv = p.steps.filter((s) => (s.phase || 'Investigation') === 'Investigation')
+  const resp = p.steps.filter((s) => s.phase === 'Response')
+  const questions = p.questions || []
+  const keyCount = questions.filter((q) => q.kind === 'Key question' || q.kind === 'Case definition').length
+  const counts = { about: null, questions: questions.length, Investigation: inv.length, Response: resp.length }
+  const pick = (k) => { setTab(k); setEditing(false) }
+
+  const editBar = (help) => (
+    <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
+      <p className="text-sm text-gray-500 max-w-2xl">{help}</p>
+      {canManage && !editing && (
+        <button type="button" disabled={busy} onClick={() => setEditing(true)} className={`inline-flex items-center gap-1.5 ${btnSecondary}`}>
+          <FileEdit className="w-4 h-4" aria-hidden="true" /> Edit
+        </button>
+      )}
+    </div>
+  )
+
+  const editor = (
+    <ProtocolModal protocol={p} diseases={diseases} only={tab} onClose={() => setEditing(false)}
+      onSaved={(saved) => { setEditing(false); onSaved(saved) }} />
+  )
+
+  return (
+    <div className={retired ? 'opacity-80' : ''}>
+      <button type="button" onClick={onBack} className={`mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 rounded ${FOCUS}`}>
         <ArrowLeft className="w-4 h-4" aria-hidden="true" /> All protocols
       </button>
-      <div className={`${card} ${retired ? 'opacity-80' : ''}`}>
-      <div className="p-5 sm:p-6">
-        <ProtocolHeader p={p} />
-        {p.status === 'Draft' && (
-          <p className="mt-4 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
-            <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
-            Draft: not shown to officers until approved.
-          </p>
+
+      <header className="flex items-start justify-between gap-6 flex-wrap mb-6">
+        <div className="min-w-0 max-w-3xl">
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <span className={`px-2.5 py-0.5 inline-flex items-center rounded-full text-xs font-medium ${STATUS_BADGE[p.status] || STATUS_BADGE.Draft}`}>{p.status}</span>
+            <span className={`px-2.5 py-0.5 inline-flex items-center rounded-full text-xs font-medium ${PRIORITY_BADGE[p.priority] || PRIORITY_BADGE.Standard}`}>{p.priority} priority</span>
+            {p.notifyImmediately && <span className="px-2.5 py-0.5 inline-flex items-center rounded-full text-xs font-medium bg-red-50 text-red-700">Single case is an emergency</span>}
+          </div>
+          <h2 className={`text-2xl font-semibold text-gray-900 ${retired ? 'line-through' : ''}`}>{p.title}</h2>
+          <p className="text-sm text-gray-500 mt-1">{p.diseaseName} · {p.version}</p>
+        </div>
+        {canManage && (
+          <div className="flex flex-wrap gap-2">
+            {p.status === 'Draft' && <button type="button" disabled={busy} onClick={() => onStatus(p, 'Approved')} className={btnPrimary}>Approve</button>}
+            {p.status === 'Approved' && <button type="button" disabled={busy} onClick={() => onStatus(p, 'Draft')} className={btnSecondary}>Return to draft</button>}
+            {p.status !== 'Retired' && <button type="button" disabled={busy} onClick={() => onStatus(p, 'Retired')} className={btnSecondary}>Retire</button>}
+            <button type="button" disabled={busy} onClick={() => onDelete(p)}
+              className={`border border-red-200 text-red-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-50 disabled:opacity-50 ${FOCUS}`}>Delete</button>
+          </div>
+        )}
+      </header>
+
+      {p.status === 'Draft' && (
+        <p className="mb-6 flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+          Draft: officers don't see this protocol until it is approved.
+        </p>
+      )}
+
+      <div role="tablist" aria-label="Protocol sections" className="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
+        {DETAIL_TABS.map((t) => (
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => pick(t.key)}
+            className={`px-4 py-3 -mb-px text-sm font-medium whitespace-nowrap border-b-2 ${FOCUS} ${tab === t.key ? 'border-red-600 text-red-700' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
+            {t.label}{counts[t.key] != null && <span className="ml-1.5 text-xs opacity-70">{counts[t.key]}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel">
+        {tab === 'about' && (
+          editing ? editor : (
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+              <section className={`${card} p-5 sm:p-7`}>
+                {editBar('The case definition officers check every report against.')}
+                <h3 className="text-base font-semibold text-gray-900">Case definition</h3>
+                <p className="text-[15px] leading-relaxed text-gray-800 mt-2">{p.summary || <span className="text-gray-400">No case definition written yet.</span>}</p>
+              </section>
+              <aside className={`${card} p-5 sm:p-6`}>
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">About</h3>
+                <dl className="divide-y divide-gray-100">
+                  <Meta label="Disease">{p.diseaseName}</Meta>
+                  <Meta label="Version">{p.version}</Meta>
+                  <Meta label="Owner">{p.owner}</Meta>
+                  <Meta label="Last updated">{fmtDateTime(p.updated)}</Meta>
+                  <Meta label="Approved">{p.approvedBy ? `${p.approvedBy}, ${fmtDateTime(p.approvedOn)}` : null}</Meta>
+                  <Meta label="Next review">{p.reviewDate ? fmtDateTime(p.reviewDate) : null}</Meta>
+                  <Meta label="Source">
+                    {p.source ? (p.sourceUrl ? (
+                      <a href={p.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-red-700 hover:underline inline-flex items-start gap-1">
+                        {p.source}<ExternalLink className="w-3 h-3 mt-1 shrink-0" aria-hidden="true" />
+                      </a>
+                    ) : p.source) : null}
+                  </Meta>
+                </dl>
+              </aside>
+            </div>
+          )
         )}
 
-        {(
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            <div role="tablist" aria-label="Protocol sections" className="flex gap-1 border-b border-gray-100 mb-4 overflow-x-auto">
-              {TABS.map((t) => {
-                const count = t === 'Verification questions'
-                  ? (p.questions || []).length
-                  : p.steps.filter((s) => (s.phase || 'Investigation') === t).length
-                const active = tab === t
-                return (
-                  <button key={t} type="button" role="tab" aria-selected={active} onClick={() => setTab(t)}
-                    className={`px-4 py-2 -mb-px text-sm font-medium whitespace-nowrap border-b-2 rounded-t ${FOCUS} ${active ? 'border-red-600 text-red-700' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
-                    {t}<span className="ml-1.5 text-xs opacity-70">{count}</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {PHASES.includes(tab) && (() => {
-              const group = p.steps.filter((s) => (s.phase || 'Investigation') === tab)
-              if (group.length === 0) return <p className="text-sm text-gray-400">No {tab.toLowerCase()} steps.</p>
-              return (
-                <div role="tabpanel">
-                  <ol className="flex flex-col gap-3">
-                    {group.map((s) => (
-                      <li key={s.n} className="flex gap-3">
-                        <span className="w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{s.n}</span>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm text-gray-900">{s.step}</span>
-                            {s.timeframe && <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{s.timeframe}</span>}
-                          </div>
-                          {s.responsible && <p className="text-xs text-gray-400 mt-0.5">Responsible: {s.responsible}</p>}
+        {tab === 'questions' && (
+          editing ? editor : (
+            <section className={`${card} p-5 sm:p-7`}>
+              {editBar(keyCount
+                ? `Asked before the field investigation. ${keyCount} key question${keyCount === 1 ? '' : 's'}: at least half must be Yes to start investigation.`
+                : 'Asked before the field investigation.')}
+              {questions.length === 0 ? <p className="text-sm text-gray-400">No verification questions.</p> : (
+                <ol className="divide-y divide-gray-100">
+                  {questions.map((q, i) => (
+                    <li key={i} className="flex gap-4 py-5 first:pt-0 last:pb-0">
+                      <span className="w-8 h-8 shrink-0 rounded-full bg-gray-100 text-sm font-semibold text-gray-600 flex items-center justify-center">{i + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] leading-relaxed text-gray-900">{q.question}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-500">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${KIND_TAG[q.kind] || 'bg-gray-50 text-gray-500'}`}>{q.kind || 'Supports'}</span>
+                          {q.why && <span>{q.why}</span>}
                         </div>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )
-            })()}
-
-            {tab === 'Verification questions' && (!p.questions || p.questions.length === 0) && (
-              <p className="text-sm text-gray-400">No verification questions.</p>
-            )}
-            {tab === 'Verification questions' && p.questions?.length > 0 && (
-              <div role="tabpanel">
-                <ol className="flex flex-col gap-3">
-                  {p.questions.map((q, i) => (
-                    <li key={i} className="flex gap-3">
-                      <span className="w-6 h-6 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{i + 1}</span>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm text-gray-900">{q.question}</span>
-                          {KIND_TAG[q.kind] && (
-                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${KIND_TAG[q.kind]}`}>{q.kind}</span>
-                          )}
-                        </div>
-                        {q.why && <p className="text-xs text-gray-400 mt-0.5">Why we ask: {q.why}</p>}
                       </div>
                     </li>
                   ))}
                 </ol>
-              </div>
-            )}
-
-            <div className="mt-5 pt-4 border-t border-gray-100 flex flex-col gap-3">
-              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400">
-                {p.source && (
-                  <span>
-                    Source:{' '}
-                    {p.sourceUrl ? (
-                      <a href={p.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-red-700 hover:underline inline-flex items-center gap-1">
-                        {p.source}<ExternalLink className="w-3 h-3" aria-hidden="true" />
-                      </a>
-                    ) : p.source}
-                  </span>
-                )}
-                {p.reviewDate && <span>Next review {fmtDateTime(p.reviewDate)}</span>}
-                {p.approvedBy && <span>Approved by {p.approvedBy} on {fmtDateTime(p.approvedOn)}</span>}
-              </div>
-              {canManage && (
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" disabled={busy} onClick={() => onEdit(p)} className={btnSecondary}>Edit</button>
-                  {p.status === 'Draft' && (
-                    <button type="button" disabled={busy} onClick={() => onStatus(p, 'Approved')} className={btnPrimary}>Approve</button>
-                  )}
-                  {p.status === 'Approved' && (
-                    <button type="button" disabled={busy} onClick={() => onStatus(p, 'Draft')} className={btnSecondary}>Return to draft</button>
-                  )}
-                  {p.status !== 'Retired' && (
-                    <button type="button" disabled={busy} onClick={() => onStatus(p, 'Retired')} className={btnSecondary}>Retire</button>
-                  )}
-                  <button type="button" disabled={busy} onClick={() => onDelete(p)}
-                    className={`border border-red-200 text-red-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-50 disabled:opacity-50 ${FOCUS}`}>
-                    Delete
-                  </button>
-                </div>
               )}
-            </div>
-          </div>
+            </section>
+          )
         )}
-      </div>
+
+        {(tab === 'Investigation' || tab === 'Response') && (
+          editing ? editor : (
+            <section className={`${card} p-5 sm:p-7`}>
+              {editBar(tab === 'Investigation'
+                ? 'Done during the field investigation, including first treatment and isolation.'
+                : 'Open after the event is confirmed or escalated.')}
+              {(tab === 'Investigation' ? inv : resp).length === 0 ? <p className="text-sm text-gray-400">No steps yet.</p> : (
+                <ol className="divide-y divide-gray-100">
+                  {(tab === 'Investigation' ? inv : resp).map((s, k) => <StepView key={s.n} s={s} num={k + 1} />)}
+                </ol>
+              )}
+            </section>
+          )
+        )}
       </div>
     </div>
   )
@@ -276,10 +356,13 @@ function Label({ text, required, children }) {
   )
 }
 
-const blankStep = () => ({ step: '', timeframe: '', responsible: '', phase: 'Investigation' })
-const blankQuestion = () => ({ question: '', why: '', kind: 'Case definition' })
+const blankStep = () => ({ step: '', timeframe: '', responsible: '', phase: 'Investigation', assignable: false })
+const blankQuestion = () => ({ question: '', why: '', kind: 'Key question' })
 
-function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved }) {
+/** Protocol form. Full page for a new protocol; with `only` set it edits one tab in place
+ *  ('about' | 'questions' | 'Investigation' | 'Response') and saves the whole protocol. */
+function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, only = null }) {
+  const show = (part) => !only || only === part
   const editing = !!protocol
   const autoTitle = (key) => {
     const d = diseases.find((x) => x.key === key)
@@ -294,7 +377,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
     source_url: protocol?.sourceUrl || '',
     review_date: protocol?.reviewDate ? String(protocol.reviewDate).slice(0, 10) : '',
     steps: protocol?.steps?.length
-      ? protocol.steps.map((s) => ({ step: s.step, timeframe: s.timeframe || '', responsible: s.responsible || '', phase: s.phase || 'Investigation' }))
+      ? protocol.steps.map((s) => ({ step: s.step, timeframe: s.timeframe || '', responsible: s.responsible || '', phase: s.phase || 'Investigation', assignable: !!s.assignable }))
       : [blankStep()],
     questions: (protocol?.questions || []).map((q) => ({ question: q.question || '', why: q.why || '', kind: q.kind || 'Case definition' })),
     notifyImmediately: !!protocol?.notifyImmediately,
@@ -330,7 +413,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
   async function submit(e) {
     e.preventDefault()
     const steps = form.steps
-      .map((s) => ({ step: s.step.trim(), timeframe: s.timeframe.trim(), responsible: s.responsible.trim(), phase: s.phase }))
+      .map((s) => ({ step: s.step.trim(), timeframe: s.timeframe.trim(), responsible: s.responsible.trim(), phase: s.phase, assignable: !!s.assignable }))
       .filter((s) => s.step)
     const questions = form.questions
       .map((q) => ({ question: q.question.trim(), why: q.why.trim(), kind: q.kind }))
@@ -359,21 +442,81 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
     }
   }
 
-  return (
-    <Modal title={editing ? 'Edit protocol' : 'New protocol'} onClose={saving ? () => {} : onClose} wide>
-      <form onSubmit={submit} className="p-6 flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">{editing ? 'Edit protocol' : 'New protocol'}</h3>
-          <button type="button" onClick={onClose} aria-label="Close" className={`rounded ${FOCUS}`}><X className="w-5 h-5" /></button>
+  const sectionCls = `${card} p-5 sm:p-6`
+  const stepRows = (phase) => form.steps.map((st, i) => ({ st, i })).filter(({ st }) => (st.phase || 'Investigation') === phase)
+  const iconBtn = `p-1.5 rounded-md text-gray-400 hover:text-gray-900 hover:bg-gray-50 disabled:opacity-30 ${FOCUS}`
+
+  // plain function, not a component: keeps input focus while typing
+  const renderStep = (st, i, num) => (
+    <li key={i} className="flex gap-3 py-4 first:pt-0 last:pb-0">
+      <span className="w-7 h-7 mt-1 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{num}</span>
+      <div className="flex-1 min-w-0 flex flex-col gap-3">
+        <textarea rows={2} aria-label={`Step ${num}`} className={inputCls} placeholder="What needs to be done" value={st.step}
+          onChange={(e) => setStep(i, { step: e.target.value })} />
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 md:items-center">
+          <input aria-label={`Timeframe for step ${num}`} className={inputCls} placeholder="When (e.g. within 24 hours)" value={st.timeframe}
+            onChange={(e) => setStep(i, { timeframe: e.target.value })} />
+          <input aria-label={`Responsible for step ${num}`} className={inputCls} placeholder="Who is responsible" value={st.responsible}
+            onChange={(e) => setStep(i, { responsible: e.target.value })} />
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" checked={!!st.assignable} onChange={(e) => setStep(i, { assignable: e.target.checked })} className="w-4 h-4 accent-red-600" />
+            Field worker can do this
+          </label>
         </div>
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <button type="button" aria-label="Move step up" disabled={i === 0} onClick={() => move(i, -1)} className={iconBtn}><ArrowUp className="w-4 h-4" /></button>
+        <button type="button" aria-label="Move step down" disabled={i === form.steps.length - 1} onClick={() => move(i, 1)} className={iconBtn}><ArrowDown className="w-4 h-4" /></button>
+        <button type="button" aria-label={st.phase === 'Response' ? 'Move to investigation steps' : 'Move to response steps'} title={st.phase === 'Response' ? 'Move to investigation steps' : 'Move to response steps'}
+          onClick={() => setStep(i, { phase: st.phase === 'Response' ? 'Investigation' : 'Response' })} className={`${iconBtn} text-[10px] font-semibold`}>{st.phase === 'Response' ? 'INV' : 'RSP'}</button>
+        <button type="button" aria-label="Remove step" disabled={form.steps.length === 1}
+          onClick={() => set({ steps: form.steps.filter((_, idx) => idx !== i) })} className={`${iconBtn} hover:text-red-700`}><X className="w-4 h-4" /></button>
+      </div>
+    </li>
+  )
 
-        {editing && protocol.status === 'Approved' && (
-          <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
-            Saving will return this protocol to Draft for re-approval.
-          </p>
+  const phaseSection = (phase, title, help) => {
+    const rows = stepRows(phase)
+    return (
+      <section className={sectionCls}>
+        <h4 className="text-base font-semibold text-gray-900">{title}</h4>
+        <p className="text-sm text-gray-500 mt-0.5 mb-4">{help}</p>
+        {rows.length === 0 ? (
+          <p className="text-sm text-gray-400 mb-3">No steps yet.</p>
+        ) : (
+          <ol className="divide-y divide-gray-100 mb-3">
+            {rows.map(({ st, i }, k) => renderStep(st, i, k + 1))}
+          </ol>
         )}
+        <button type="button" onClick={() => set({ steps: [...form.steps, { ...blankStep(), phase }] })}
+          className={`inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+          <Plus className="w-4 h-4" aria-hidden="true" /> Add step
+        </button>
+      </section>
+    )
+  }
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  return (
+    <form onSubmit={submit} className={`flex flex-col gap-5 ${only ? '' : 'pb-24'}`}>
+      {!only && <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <button type="button" onClick={onClose} disabled={saving} className={`mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 rounded ${FOCUS}`}>
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back
+          </button>
+          <h2 className="text-xl font-semibold text-gray-900">{editing ? `Edit: ${protocol.title}` : 'New protocol'}</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Owner: {editing ? (protocol.owner || '—') : currentUserFullName()}</p>
+        </div>
+      </div>}
+
+      {editing && protocol.status === 'Approved' && (
+        <p className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
+          Saving will return this protocol to Draft so it can be approved again.
+        </p>
+      )}
+
+      {show('about') && <section className={sectionCls}>
+        <h4 className="text-base font-semibold text-gray-900 mb-4">About this protocol</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
           <Label text="Disease" required>
             <select className={inputCls} value={form.disease} onChange={(e) => onDisease(e.target.value)}>
               <option value="">Select a disease</option>
@@ -383,13 +526,11 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
           <Label text="Title" required>
             <input className={inputCls} value={form.title} onChange={(e) => set({ title: e.target.value })} />
           </Label>
-        </div>
-
-        <Label text="Summary">
-          <textarea rows={2} className={inputCls} value={form.summary} onChange={(e) => set({ summary: e.target.value })} />
-        </Label>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <Label text="Case definition / summary">
+              <textarea rows={3} className={inputCls} value={form.summary} onChange={(e) => set({ summary: e.target.value })} />
+            </Label>
+          </div>
           <Label text="Version">
             <input className={inputCls} value={form.version} onChange={(e) => set({ version: e.target.value })} />
           </Label>
@@ -402,90 +543,73 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
           <Label text="Source link">
             <input type="url" className={inputCls} value={form.source_url} onChange={(e) => set({ source_url: e.target.value })} placeholder="https://" />
           </Label>
+          <label className="md:col-span-2 flex items-start gap-2.5 text-sm text-gray-900 cursor-pointer">
+            <input type="checkbox" className="mt-0.5 w-4 h-4 accent-red-600" checked={form.notifyImmediately} onChange={(e) => set({ notifyImmediately: e.target.checked })} />
+            <span>
+              <span className="font-medium">Single case is an emergency</span>
+              <span className="block text-xs text-gray-500">One case meeting the case definition must be escalated to County / National MOH (e.g. VHF, polio).</span>
+            </span>
+          </label>
         </div>
+      </section>}
 
-        <p className="text-sm text-gray-500">
-          Owner: <span className="font-medium text-gray-900">{editing ? (protocol.owner || '—') : currentUserFullName()}</span>
+      {show('questions') && <section className={sectionCls}>
+        <h4 className="text-base font-semibold text-gray-900">Verification questions</h4>
+        <p className="text-sm text-gray-500 mt-0.5 mb-4">
+          Asked before the field investigation. <span className="font-medium text-gray-700">At least half of the key questions must be Yes</span>; otherwise the signal is discarded.
         </p>
+        {form.questions.length === 0 ? (
+          <p className="text-sm text-gray-400 mb-3">No questions yet. Without key questions, officers decide from the case definition.</p>
+        ) : (
+          <ol className="divide-y divide-gray-100 mb-3">
+            {form.questions.map((q, i) => (
+              <li key={i} className="flex gap-3 py-4 first:pt-0 last:pb-0">
+                <span className="w-7 h-7 mt-1 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{i + 1}</span>
+                <div className="flex-1 min-w-0 flex flex-col gap-3">
+                  <textarea rows={2} aria-label={`Question ${i + 1}`} className={inputCls} placeholder="Question (answered Yes / No)" value={q.question}
+                    onChange={(e) => setQuestion(i, { question: e.target.value })} />
+                  <input aria-label={`Why we ask question ${i + 1}`} className={inputCls} placeholder="Why we ask (optional)" value={q.why}
+                    onChange={(e) => setQuestion(i, { why: e.target.value })} />
+                  <div>
+                    <div role="radiogroup" aria-label={`Type of question ${i + 1}`} className="flex flex-wrap gap-2">
+                      {KINDS.map((k) => (
+                        <button key={k} type="button" role="radio" aria-checked={q.kind === k} onClick={() => setQuestion(i, { kind: k })}
+                          className={`h-8 px-3 rounded-lg border text-sm ${FOCUS} ${q.kind === k ? 'border-gray-900 text-gray-900 font-medium' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                          {k}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1.5">{KIND_HELP[q.kind]}</p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <button type="button" aria-label="Move question up" disabled={i === 0} onClick={() => moveQuestion(i, -1)} className={iconBtn}><ArrowUp className="w-4 h-4" /></button>
+                  <button type="button" aria-label="Move question down" disabled={i === form.questions.length - 1} onClick={() => moveQuestion(i, 1)} className={iconBtn}><ArrowDown className="w-4 h-4" /></button>
+                  <button type="button" aria-label="Remove question" onClick={() => set({ questions: form.questions.filter((_, idx) => idx !== i) })} className={`${iconBtn} hover:text-red-700`}><X className="w-4 h-4" /></button>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+        <button type="button" onClick={() => set({ questions: [...form.questions, blankQuestion()] })}
+          className={`inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+          <Plus className="w-4 h-4" aria-hidden="true" /> Add question
+        </button>
+      </section>}
 
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-gray-900">Steps <span className="text-red-700">*</span></span>
-          <p className="text-xs text-gray-500">
-            Investigation steps are done during field investigation (including first treatment and isolation). Response steps open after the outbreak is confirmed or escalated.
-          </p>
-          {form.steps.map((s, i) => (
-            <div key={i} className="flex items-start gap-2 rounded-xl border border-gray-100 p-3">
-              <span className="w-6 h-6 mt-1.5 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{i + 1}</span>
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input aria-label={`Step ${i + 1}`} className={`${inputCls} sm:col-span-3`} placeholder="Step" value={s.step} onChange={(e) => setStep(i, { step: e.target.value })} />
-                <input aria-label={`Timeframe for step ${i + 1}`} className={inputCls} placeholder="Timeframe (e.g. within 24 h)" value={s.timeframe} onChange={(e) => setStep(i, { timeframe: e.target.value })} />
-                <input aria-label={`Responsible for step ${i + 1}`} className={inputCls} placeholder="Responsible" value={s.responsible} onChange={(e) => setStep(i, { responsible: e.target.value })} />
-                <select aria-label={`Phase for step ${i + 1}`} className={inputCls} value={s.phase} onChange={(e) => setStep(i, { phase: e.target.value })}>
-                  {PHASES.map((ph) => <option key={ph} value={ph}>{ph}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-0.5 text-gray-400">
-                <button type="button" aria-label="Move step up" disabled={i === 0} onClick={() => move(i, -1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowUp className="w-4 h-4" /></button>
-                <button type="button" aria-label="Move step down" disabled={i === form.steps.length - 1} onClick={() => move(i, 1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowDown className="w-4 h-4" /></button>
-                <button type="button" aria-label="Remove step" disabled={form.steps.length === 1}
-                  onClick={() => set({ steps: form.steps.filter((_, idx) => idx !== i) })}
-                  className={`p-1 rounded hover:text-red-700 disabled:opacity-30 ${FOCUS}`}><X className="w-4 h-4" /></button>
-              </div>
-            </div>
-          ))}
-          <button type="button" onClick={() => set({ steps: [...form.steps, blankStep()] })}
-            className={`self-start text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
-            + Add step
-          </button>
-        </div>
+      {show('Investigation') && phaseSection('Investigation', 'Field investigation steps', 'Done during the field investigation, including first treatment and isolation. Tick "Field worker can do this" for steps a CHP, CHA or health worker carries out and reports back on.')}
+      {show('Response') && phaseSection('Response', 'Response steps', 'Open after the event is confirmed or escalated.')}
 
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-gray-900">Verification questions</span>
-          <p className="text-xs text-gray-500">
-            Officers answer each question Yes / No / Not sure. Case definition: No suggests discarding. Red flag: Yes suggests escalating at once. Supports: Yes makes a real event more likely.
-          </p>
-          {form.questions.map((q, i) => (
-            <div key={i} className="flex items-start gap-2 rounded-xl border border-gray-100 p-3">
-              <span className="w-6 h-6 mt-1.5 shrink-0 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center">{i + 1}</span>
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <textarea rows={2} aria-label={`Question ${i + 1}`} className={`${inputCls} sm:col-span-3`} placeholder="Question" value={q.question} onChange={(e) => setQuestion(i, { question: e.target.value })} />
-                <input aria-label={`Why we ask question ${i + 1}`} className={`${inputCls} sm:col-span-2`} placeholder="Why we ask" value={q.why} onChange={(e) => setQuestion(i, { why: e.target.value })} />
-                <select aria-label={`Kind for question ${i + 1}`} className={inputCls} value={q.kind} onChange={(e) => setQuestion(i, { kind: e.target.value })}>
-                  {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-0.5 text-gray-400">
-                <button type="button" aria-label="Move question up" disabled={i === 0} onClick={() => moveQuestion(i, -1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowUp className="w-4 h-4" /></button>
-                <button type="button" aria-label="Move question down" disabled={i === form.questions.length - 1} onClick={() => moveQuestion(i, 1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowDown className="w-4 h-4" /></button>
-                <button type="button" aria-label="Remove question" onClick={() => set({ questions: form.questions.filter((_, idx) => idx !== i) })}
-                  className={`p-1 rounded hover:text-red-700 ${FOCUS}`}><X className="w-4 h-4" /></button>
-              </div>
-            </div>
-          ))}
-          <button type="button" onClick={() => set({ questions: [...form.questions, blankQuestion()] })}
-            className={`self-start text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
-            + Add question
-          </button>
-        </div>
-
-        <label className="flex items-start gap-2 text-sm text-gray-900">
-          <input type="checkbox" className="mt-0.5 accent-red-600" checked={form.notifyImmediately} onChange={(e) => set({ notifyImmediately: e.target.checked })} />
-          <span>
-            <span className="font-medium">Single case is an emergency</span>
-            <span className="block text-xs text-gray-500">One case meeting the case definition is escalated immediately (e.g. VHF, polio).</span>
-          </span>
-        </label>
-
-        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-
-        <div className="flex justify-end gap-2 pt-1">
+      <div className={only ? '' : 'fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-gray-100'}>
+        <div className={only ? 'flex items-center justify-end gap-3' : 'max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-end gap-3'}>
+          {error && <p role="alert" className="mr-auto text-sm text-red-700">{error}</p>}
           <button type="button" onClick={onClose} disabled={saving} className={btnSecondary}>Cancel</button>
           <button type="submit" disabled={saving} className={btnPrimary}>
             {saving ? 'Saving…' : editing ? 'Save changes' : 'Create protocol'}
           </button>
         </div>
-      </form>
-    </Modal>
+      </div>
+    </form>
   )
 }
 
@@ -637,7 +761,13 @@ export default function ResponseProtocols() {
 
   const dialogs = (
     <>
-      {modal && (
+      {deleting && <DeleteDialog protocol={deleting} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />}
+    </>
+  )
+
+  if (modal) {
+    return (
+      <AppShell>
         <ProtocolModal
           protocol={modal.protocol}
           initialDisease={modal.disease}
@@ -645,10 +775,9 @@ export default function ResponseProtocols() {
           onClose={() => setModal(null)}
           onSaved={onSaved}
         />
-      )}
-      {deleting && <DeleteDialog protocol={deleting} onCancel={() => setDeleting(null)} onConfirm={confirmDelete} />}
-    </>
-  )
+      </AppShell>
+    )
+  }
 
   if (openProtocol) {
     return (
@@ -660,7 +789,8 @@ export default function ResponseProtocols() {
           canManage={canManage}
           busy={busy}
           onBack={closeDetail}
-          onEdit={(proto) => setModal({ protocol: proto, disease: '' })}
+          diseases={diseases}
+          onSaved={onSaved}
           onStatus={changeStatus}
           onDelete={setDeleting}
         />
@@ -741,14 +871,25 @@ export default function ResponseProtocols() {
             : 'No protocols match your filters.'}
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {visible.map((p) => (
-            <ProtocolCard
-              key={p.id}
-              protocol={p}
-              onOpen={(proto) => openDetail(proto.id)}
-            />
-          ))}
+        <div className={`${card} p-4`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                  <th className="px-3 py-2.5 font-medium rounded-l-lg">Protocol</th>
+                  <th className="px-3 py-2.5 font-medium hidden md:table-cell">Priority</th>
+                  <th className="px-3 py-2.5 font-medium">Status</th>
+                  <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Steps</th>
+                  <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Verification</th>
+                  <th className="px-3 py-2.5 font-medium hidden sm:table-cell">Updated</th>
+                  <th className="px-3 py-2.5 font-medium rounded-r-lg"><span className="sr-only">Open</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((p) => <ProtocolRow key={p.id} protocol={p} onOpen={(proto) => openDetail(proto.id)} />)}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

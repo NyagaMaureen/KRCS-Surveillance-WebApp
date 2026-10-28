@@ -27,7 +27,7 @@
   {
    "fieldname": "kind",
    "fieldtype": "Select",
-   "options": "Case definition\nSupports\nRed flag",
+   "options": "Key question\nCase definition\nSupports\nRed flag",
    "default": "Supports",
    "in_list_view": 1,
    "label": "Kind",
@@ -37,7 +37,7 @@
  "permissions": [],
  "istable": 1,
  "description": "Verification question asked by the officer, answered Yes / No / Not sure.",
- "modified": "2026-10-19 12:00:00.000000",
+ "modified": "2026-10-28 16:00:00.000000",
  "field_order": [
   "question",
   "why",

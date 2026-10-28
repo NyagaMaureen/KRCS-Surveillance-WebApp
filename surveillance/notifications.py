@@ -155,11 +155,19 @@ def _report_lines(event):
 			cr = frappe.db.get_value("Case Report", s.ref, ["reporter_name", "phone_number", "reported_by"], as_dict=True)
 			name = cr.reporter_name or (get_fullname(cr.reported_by) if cr.reported_by else "")
 			phone = cr.phone_number or (frappe.db.get_value("User", cr.reported_by, "mobile_no") if cr.reported_by else "")
-			contacts.append(f"{s.ref}: {name or 'CHP'}{', ' + phone if phone else ''} ({s.area or 'area not given'}, {s.people or 0} people)")
+			contacts.append(f"{s.ref}: {name or 'CHP'}{', ' + phone if phone else ''} ({s.area or 'area not given'}, {_people(s.people)} people)")
 		else:
-			contacts.append(f"CBS case {s.ref} ({s.area or 'area not given'}, {s.people or 0} people), contact through CBS")
+			contacts.append(f"CBS case {s.ref} ({s.area or 'area not given'}, {_people(s.people)} people), contact through CBS")
 	return signs, contacts
 
+def _strip_suspected(name):
+	name = (name or "").strip()
+	return name[10:] if name.lower().startswith("suspected ") else name
+
+
+def _people(n):
+	n = n or 0
+	return f"{n} person" if n == 1 else f"{n} people"
 
 def send_escalation(event_name, reason, escalated_by):
 	event = event_name
@@ -173,7 +181,7 @@ def send_escalation(event_name, reason, escalated_by):
 		verified = frappe.db.count("Surveillance Signal", {"event": event, "check_status": "Verified"})
 		subject = f"ESCALATION: {doc.disease_name or doc.disease}, {doc.sub_county}, {doc.county} ({doc.people or 0} cases, {doc.deaths or 0} deaths)"
 		html = (
-			f'<p style="font-size:15px"><b>A suspected {escape_html(doc.disease_name or doc.disease)} event has been escalated '
+			f'<p style="font-size:15px"><b>A suspected {escape_html(_strip_suspected(doc.disease_name or doc.disease))} event has been escalated '
 			f'to County and National MOH by the sub-county surveillance team.</b></p>'
 			+ _rows([
 				("Disease", escape_html(doc.disease_name or doc.disease)),
@@ -253,7 +261,8 @@ def setup():
 
 # ---------- API for the bell in the app header (every role) ----------
 
-LINKS = {"Surveillance Event": "/alerts-signals/{}", "Case Report": "/reports/{}", "Risk Alert": "/epi-trends/{}"}
+LINKS = {"Surveillance Event": "/alerts-signals/{}", "Case Report": "/reports/{}", "Risk Alert": "/epi-trends/{}",
+	"Event Task": "/my-tasks?task={}"}
 
 
 @frappe.whitelist()

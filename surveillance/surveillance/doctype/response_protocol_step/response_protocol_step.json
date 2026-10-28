@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-16 11:00:00.000000",
- "modified": "2026-10-19 12:00:00.000000",
+ "modified": "2026-10-28 12:30:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -15,7 +15,8 @@
   "step",
   "timeframe",
   "responsible",
-  "phase"
+  "phase",
+  "assignable"
  ],
  "fields": [
   {
@@ -45,6 +46,13 @@
    "default": "Investigation",
    "in_list_view": 1,
    "label": "Phase"
+  },
+  {
+   "fieldname": "assignable",
+   "fieldtype": "Check",
+   "label": "Field worker can do this",
+   "default": "0",
+   "description": "Ticked steps can be assigned as a task to a CHP, CHA or other field worker from the event page."
   }
  ],
  "permissions": [],

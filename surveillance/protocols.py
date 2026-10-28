@@ -23,7 +23,7 @@ VIEW = "view_response_protocols"
 MANAGE = "manage_response_protocols"
 STATUSES = ("Draft", "Approved", "Retired")
 PHASES = ("Investigation", "Response")
-KINDS = ("Case definition", "Supports", "Red flag")
+KINDS = ("Key question", "Case definition", "Supports", "Red flag")
 GENERIC_EVENT = "unusual-event"   # protocol used for unusual illness/death events with no protocol of their own
 
 
@@ -51,7 +51,8 @@ def _shape(doc, steps=True):
 	}
 	if steps:
 		out["steps"] = [{"n": i, "step": s.step, "timeframe": s.timeframe, "responsible": s.responsible,
-			"phase": s.get("phase") or "Investigation"} for i, s in enumerate(doc.get("steps") or [], 1)]
+			"phase": s.get("phase") or "Investigation", "assignable": bool(s.get("assignable"))}
+			for i, s in enumerate(doc.get("steps") or [], 1)]
 		out["questions"] = [{"n": i, "question": q.question, "why": q.why, "kind": q.kind or "Supports"}
 			for i, q in enumerate(doc.get("verification_questions") or [], 1)]
 	return out
@@ -122,7 +123,8 @@ def _clean_steps(steps):
 		if text:
 			phase = s.get("phase") if s.get("phase") in PHASES else "Investigation"
 			out.append({"step": text, "timeframe": (s.get("timeframe") or "").strip(),
-				"responsible": (s.get("responsible") or "").strip(), "phase": phase})
+				"responsible": (s.get("responsible") or "").strip(), "phase": phase,
+				"assignable": 1 if s.get("assignable") else 0})
 	return out
 
 
@@ -376,7 +378,8 @@ def seed_protocols(overwrite=0):
 		doc.update({"title": title, "disease": key, "summary": summary, "status": "Draft", "version": "v0.1",
 			"source": SEED_SOURCE, "source_url": "https://www.health.go.ke"})
 		for s, t, r in steps:
-			doc.append("steps", {"step": s, "timeframe": t, "responsible": r, "phase": phase_for(s, t)})
+			doc.append("steps", {"step": s, "timeframe": t, "responsible": r, "phase": phase_for(s, t),
+				"assignable": 1 if assignable_for(key, s) else 0})
 		for q, w, k in questions_for(key, summary, title):
 			doc.append("verification_questions", {"question": q, "why": w, "kind": k})
 		doc.notify_immediately = 1 if key in EMERGENCY else 0
@@ -509,3 +512,61 @@ def upgrade_protocols(overwrite=0):
 			refreshed += 1
 	frappe.db.commit()
 	print(f"Open events reset to pick up the new steps and questions: {refreshed}")
+
+
+# ---------- which steps a field worker can be assigned (event Tasks) ----------
+# Reviewed by hand for the seeded protocols (28 Oct 2026). A step is assignable when someone other than the
+# officer does it in the community or at a facility and reports back: referrals, searches, contact follow-up,
+# sample collection (by facility / trained staff, never CHPs), household visits and advice.
+# Steps the officer does or only records (notify, line-list, isolate, first aid, county planning) are not.
+ASSIGNABLE_STEPS = {
+	"awd-cholera": ["Start oral rehydration", "Collect stool samples", "Investigate water sources", "Run community hygiene"],
+	"measles": ["Collect blood (serum)", "Search for more cases door to door"],
+	"afp-polio": ["Collect 2 stool samples", "Check the child's polio vaccination", "Search for other AFP cases", "Follow up the case at 60 days"],
+	"vhf": ["Collect blood samples only by trained staff", "List all contacts", "Start community engagement"],
+	"bvd": ["Arrange sample collection", "List all contacts"],
+	"mpox": ["Collect lesion swabs", "List contacts", "Give infection prevention advice"],
+	"yellow-fever": ["Collect blood for laboratory", "Check vaccination status", "Search for more cases"],
+	"meningococcal-meningitis": ["Refer the patient urgently", "Collect cerebrospinal fluid", "List close contacts"],
+	"anthrax": ["Refer human cases", "Advise the community", "Ensure carcasses are buried"],
+	"rift-valley-fever": ["Collect blood samples from human cases", "Report livestock abortions", "Advise against slaughtering"],
+	"covid-sari": ["Collect respiratory samples", "List and monitor close contacts"],
+	"rabies": ["Refer for post-exposure vaccination", "Observe the biting animal", "Search for other people bitten"],
+	"unusual-event": ["Visit the area with the health team", "Collect samples if advised"],
+}
+ASSIGNABLE_WORDS = ("refer", "search", "visit", "follow up", "follow-up", "trace", "contacts", "sample", "swab",
+	"observe", "door to door", "household", "advise the community")
+NOT_ASSIGNABLE_WORDS = ("notify", "line-list", "line list", "report cases", "monitor weekly", "track admissions")
+
+
+def assignable_for(disease, step_text):
+	text = (step_text or "").strip().lower()
+	known = ASSIGNABLE_STEPS.get(disease)
+	if known is not None and any(text.startswith(k.lower()) for k in known):
+		return True
+	if known is not None and any(SEED.get(disease) and t.lower() == text for t, *_ in SEED[disease][2]):
+		return False   # a seeded step we reviewed and left unticked
+	if any(w in text for w in NOT_ASSIGNABLE_WORDS):
+		return False
+	return any(w in text for w in ASSIGNABLE_WORDS)
+
+
+def mark_assignable(overwrite=0):
+	"""One-off: tick 'Field worker can do this' on protocol steps.
+	Seeded steps use the reviewed list above; other steps use their wording. By default only protocols
+	where no step is ticked yet are changed, so KRCS's own choices are kept. Prints the result for review.
+	bench --site <site> execute surveillance.protocols.mark_assignable"""
+	for name in frappe.get_all("Response Protocol", pluck="name"):
+		doc = frappe.get_doc("Response Protocol", name)
+		steps = doc.get("steps") or []
+		if not cint(overwrite) and any(s.get("assignable") for s in steps):
+			print(f"-- {doc.title}: already set, skipped")
+			continue
+		for s in steps:
+			s.assignable = 1 if assignable_for(doc.disease, s.step) else 0
+		doc.flags.ignore_permissions = True
+		doc.save()
+		print(f"== {doc.title}")
+		for i, s in enumerate(steps, 1):
+			print(f"   {'[x]' if s.assignable else '[ ]'} {i}. {s.step[:90]}")
+	frappe.db.commit()

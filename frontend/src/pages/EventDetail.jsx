@@ -2,11 +2,11 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, AlertTriangle, Check, Link2, ShieldAlert, Sparkles, X, ExternalLink,
-  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Radio, Users, HeartCrack, Building2, Lightbulb,
-} from 'lucide-react'
+  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Radio, Users, HeartCrack, Building2, Lightbulb, ChevronDown } from 'lucide-react'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { EventTasksProvider, EventTasksPanel, StepTaskLink, useStepTask, OpenTasksNotice } from '../components/tasks/EventTasks'
 import AppShell from '../components/layout/AppShell'
 import ContextPanel from '../components/context/ContextPanel'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
@@ -33,6 +33,7 @@ const ACTION_LABELS = {
   escalate: 'Escalation',
   discard: 'Discard',
   close: 'Close',
+  close_unconfirmed: 'Close: no event found',
   reopen: 'Reopen',
 }
 
@@ -70,6 +71,10 @@ function computeSteps(event, inv) {
     mark(5)
     states[5] = 'current'
     current = 6
+  } else if (status === 'Closed' && inv?.decision?.decision === 'Not confirmed') {
+    mark(5)
+    states[5] = 'disabled'
+    current = 5
   } else if (status === 'Closed') {
     mark(6)
     current = 6
@@ -147,7 +152,7 @@ function Seg({ options, value, onChange, disabled, label }) {
             aria-pressed={selected}
             aria-label={`${label}: ${o.label}`}
             onClick={() => onChange(o.value)}
-            className={`border rounded-lg px-3.5 py-1.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${selected ? PRIMARY : SECONDARY} ${FOCUS}`}
+            className={`border rounded-md px-3 py-1 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed ${selected ? (o.value === 'Done' ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-gray-800 border-gray-800 text-white') : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'} ${FOCUS}`}
           >
             {o.label}
           </button>
@@ -310,8 +315,29 @@ function ReportCheckRow({ s, canVerify, canAct, canSplit, saving, onCheck, onSpl
   )
 }
 
-function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVerify, canAct, canSplit, onCheck, onSplit, onAnswer, onProceed, onDecide }) {
+function KeyCheckLine({ check }) {
+  if (!check || !check.total) return null
+  const tone = check.met ? 'text-emerald-700' : check.failed ? 'text-red-700' : 'text-gray-600'
+  return (
+    <p className={`mb-3 text-sm ${tone}`}>
+      <span className="font-medium">Key questions: {check.yes} of {check.total} Yes</span>
+      <span className="text-gray-500"> · at least {check.needed} needed to start the field investigation</span>
+    </p>
+  )
+}
+
+function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVerify, canAct, canSplit, onCheck, onSplit, onAnswer, onProceed, onDecide, onDiscard }) {
   const [showAll, setShowAll] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
+  const keyCheck = inv.gates?.keyCheck
+  const keyFailed = !!keyCheck?.failed
+  const [discardReason, setDiscardReason] = useState('')
+  useEffect(() => {
+    if (keyFailed && !discardReason) {
+      setDiscardReason(`Does not meet the criteria for an event: only ${keyCheck.yes} of ${keyCheck.total} key questions answered Yes.`)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyFailed])
   const checkedCount = signals.filter((s) => checkStatus(s) !== 'Not checked').length
   const ordered = [
     ...signals.filter((s) => checkStatus(s) === 'Not checked'),
@@ -430,6 +456,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
             {questions.map((q, i) => {
               const rowBusy = busyKey === `q-${q.n}`
               const red = String(q.kind || '').toLowerCase().includes('red')
+              const key = q.kind === 'Key question'
               return (
                 <li key={q.n} className={`px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 ${rowBusy ? 'opacity-60' : ''}`}>
                   <div className="flex-1 min-w-0">
@@ -437,6 +464,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
                       <span className="text-gray-400 mr-1.5 tabular-nums">{i + 1}.</span>
                       {q.question}
                       {red && <span className="ml-2 align-middle rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-[11px] font-medium">Red flag</span>}
+                      {key && <span className="ml-2 align-middle rounded-full bg-gray-100 text-gray-700 px-2 py-0.5 text-[11px] font-medium">Key</span>}
                     </p>
                     {q.why && <p className="text-xs text-gray-400 mt-0.5">{q.why}</p>}
                   </div>
@@ -459,6 +487,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
 
       <section aria-label="Next step">
         <SectionHeading letter="C" title="Next step" />
+        <KeyCheckLine check={inv.gates?.keyCheck} />
         <SuggestionBox suggestion={inv.suggestion} />
         {editable && open && (
           <div className="mt-4 flex items-center justify-between gap-3 flex-wrap rounded-xl bg-gray-50 border border-gray-100 p-3">
@@ -467,17 +496,37 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
               {action === 'escalate' && (
                 <button type="button" disabled={busy} onClick={() => onDecide('escalate')} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Escalate now</button>
               )}
-              {action === 'discard' && (
-                <button type="button" disabled={busy} onClick={() => onDecide('discard')} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Discard signal</button>
+              {(action === 'discard' || keyFailed) && !discarding && (
+                <button type="button" disabled={busy} onClick={() => setDiscarding(true)} className={`${BTN} ${keyFailed ? PRIMARY : SECONDARY} ${FOCUS}`}>Discard signal</button>
               )}
-              <button
-                type="button"
-                disabled={busy || unanswered.length > 0}
-                onClick={onProceed}
-                className={`${BTN} ${action === 'escalate' ? SECONDARY : PRIMARY} ${FOCUS}`}
-              >
-                Proceed to field investigation
-              </button>
+              {!keyFailed && (
+                <button
+                  type="button"
+                  disabled={busy || unanswered.length > 0 || !inv.gates?.canStartInvestigation}
+                  onClick={onProceed}
+                  className={`${BTN} ${action === 'escalate' ? SECONDARY : PRIMARY} ${FOCUS}`}
+                >
+                  Proceed to field investigation
+                </button>
+              )}
+              {action !== 'escalate' && (
+                <button type="button" disabled={busy} onClick={() => onDecide('escalate')} className={`text-sm font-medium text-gray-500 hover:text-gray-900 underline underline-offset-2 rounded ${FOCUS}`}>
+                  Escalate instead
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {editable && open && discarding && (
+          <div className="mt-3 rounded-xl border border-gray-200 p-4 flex flex-col gap-3">
+            <label className="block">
+              <span className="block text-sm font-medium text-gray-900 mb-1.5">Why discard? <span className="text-red-700">*</span></span>
+              <textarea rows={2} value={discardReason} onChange={(e) => setDiscardReason(e.target.value)} className={INPUT} />
+            </label>
+            <p className="text-xs text-gray-500">Field reporters get a thank-you note saying it was checked and closed.</p>
+            <div className="flex gap-2">
+              <button type="button" disabled={busy || !discardReason.trim()} onClick={() => onDiscard(discardReason.trim())} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Discard signal</button>
+              <button type="button" disabled={busy} onClick={() => setDiscarding(false)} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Cancel</button>
             </div>
           </div>
         )}
@@ -486,10 +535,13 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
   )
 }
 
-function OutcomeRow({ step, editable, busy, onSet }) {
+function OutcomeRow({ step, phase, editable, busy, onSet }) {
   const [draft, setDraft] = useState(null)
   const [reason, setReason] = useState('')
+  const [override, setOverride] = useState(false)
   const done = step.outcome === 'Done'
+  const handed = useStepTask(phase, step.n)
+  const showButtons = editable && (!handed || override || step.outcome)
 
   function choose(value) {
     if (step.outcome === value) {
@@ -515,7 +567,7 @@ function OutcomeRow({ step, editable, busy, onSet }) {
   return (
     <li className="flex flex-col gap-2">
       <div className="flex items-start gap-3">
-        <span className={`mt-0.5 w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold ${done ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-500'}`}>
+        <span className={`mt-0.5 w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold ${done ? 'bg-emerald-500 text-white' : step.outcome ? 'bg-gray-300 text-white' : handed ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-500'}`}>
           {done ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : step.n}
         </span>
         <div className="min-w-0 flex-1 flex flex-col gap-2">
@@ -523,7 +575,16 @@ function OutcomeRow({ step, editable, busy, onSet }) {
             <span className={`text-sm ${done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{step.step}</span>
             {step.timeframe && <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{step.timeframe}</span>}
           </div>
-          {editable && (
+          {phase && !done && <StepTaskLink phase={phase} step={step} />}
+          {handed && !step.outcome && (
+            <p className="text-xs text-gray-500">
+              {handed.status === 'In progress' ? 'In progress' : 'Handed over'}: this step completes itself when {handed.assignedToName.split(' ')[0]} marks the task done.
+              {editable && !override && (
+                <> <button type="button" onClick={() => setOverride(true)} className={`underline underline-offset-2 hover:text-gray-800 rounded ${FOCUS}`}>Record it yourself</button></>
+              )}
+            </p>
+          )}
+          {showButtons && (
             <Seg label={`Step ${step.n}`} options={OUTCOMES} value={step.outcome} disabled={busy} onChange={choose} />
           )}
           {!editable && step.outcome && !done && <p className="text-xs font-medium text-gray-600">{step.outcome}</p>}
@@ -559,13 +620,41 @@ function OutcomeRow({ step, editable, busy, onSet }) {
   )
 }
 
+/** Calm progress line above the steps: "3 of 5 recorded", plus a reassuring hint. */
+function StepProgress({ steps, open, handed, editable }) {
+  if (!steps.length) return null
+  const handedHere = steps.filter((s) => !s.outcome && (handed || []).includes(s.n)).length
+  const recorded = steps.length - open.length - handedHere
+  const pct = Math.round(((steps.length - open.length) / steps.length) * 100)
+  return (
+    <div className="mb-5">
+      <div className="flex items-center justify-between gap-3 text-xs text-gray-500 mb-1.5">
+        <span>
+          <span className="font-medium text-gray-800">{recorded} of {steps.length}</span> recorded
+          {handedHere > 0 && <> · {handedHere} with field workers</>}
+        </span>
+        {open.length === 0 && <span className="text-emerald-700 font-medium">All steps handled</span>}
+      </div>
+      <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden" aria-hidden="true">
+        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+      </div>
+      {editable && open.length > 0 && (
+        <p className="text-xs text-gray-400 mt-2">
+          Tap what happened for each step. Not done and N/A are fine, just add a short reason. You can also hand a step to a field worker.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function StepList({ steps, editable, busyKey, keyPrefix, onSet }) {
   return (
-    <ul className="flex flex-col gap-5">
+    <ul className="flex flex-col gap-4">
       {steps.map((s) => (
         <OutcomeRow
           key={s.n}
           step={s}
+          phase={keyPrefix === 'inv' ? 'Investigation' : keyPrefix === 'resp' ? 'Response' : null}
           editable={editable}
           busy={busyKey === `${keyPrefix}-${s.n}`}
           onSet={(n, outcome, reason) => onSet(`${keyPrefix}-${n}`, n, outcome, reason)}
@@ -799,6 +888,7 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
 
       {steps.length > 0 && (
         <div className="mb-7">
+          <StepProgress steps={steps} open={open} handed={inv.gates?.handedOverSteps} editable={editable} />
           <StepList steps={steps} editable={editable} busyKey={busyKey} keyPrefix="inv" onSet={onSetOutcome} />
         </div>
       )}
@@ -840,11 +930,11 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
               onClick={onGoDecision}
               className={`${BTN} ${PRIMARY} ${FOCUS}`}
             >
-              Go to decision ({doneCount}/{steps.length} steps done)
+              {inv.gates?.canConfirm ? 'Continue to decision' : `Go to decision (${doneCount}/${steps.length} handled)`}
             </button>
           </div>
           {!inv.gates?.canConfirm && open.length > 0 && (
-            <p className="text-xs text-gray-500">Still open: step {open.join(', ')}</p>
+            <p className="text-xs text-gray-500">Record step {open.join(', ')} to continue, or hand {open.length === 1 ? 'it' : 'them'} to a field worker.</p>
           )}
         </div>
       )}
@@ -854,9 +944,9 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
 }
 
 const DECISION_OPTIONS = [
-  { value: 'confirm', title: 'Confirm outbreak', icon: Check, enabled: (s, g, inv) => s === 'Investigating' && g?.canConfirm && !inv?.mustEscalate },
-  { value: 'discard', title: 'Discard signal', icon: X, enabled: (s) => ['New', 'Verifying', 'Investigating'].includes(s) },
-  { value: 'escalate', title: 'Escalate to County/MoH', icon: ExternalLink, enabled: (s) => ['New', 'Verifying', 'Investigating', 'Confirmed'].includes(s) },
+  { value: 'confirm', title: 'Confirm event', hint: 'It is a real event. Response steps open next.', icon: Check, enabled: (s, g, inv) => s === 'Investigating' && g?.canConfirm && !inv?.mustEscalate },
+  { value: 'escalate', title: 'Escalate to County/MoH', hint: 'County or National MOH need to lead.', icon: ExternalLink, enabled: (s) => ['New', 'Verifying', 'Investigating', 'Confirmed'].includes(s) },
+  { value: 'close_unconfirmed', title: 'Close: no event found', hint: 'The investigation found no event. Reporters are thanked.', icon: X, enabled: (s) => s === 'Investigating' },
 ]
 
 function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit }) {
@@ -879,7 +969,7 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
   }, [escalating])
   return (
     <div className={card}>
-      <PanelHeader title="Decision making" sub="Confirm, discard or escalate. Human sign-off." />
+      <PanelHeader title="Decision" sub="Confirm the event, escalate it, or close it if the investigation found no event. Your sign-off is recorded." />
       {inv.suggestion?.text && (
         <p className="text-sm text-gray-600 mb-5">
           Suggestion: {inv.suggestion.text} <span className="font-medium text-gray-900">Final decision is yours.</span>
@@ -918,17 +1008,20 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
                   aria-pressed={selected}
                   aria-label={o.title}
                   onClick={() => onChoose(o.value)}
-                  className={`rounded-xl border-2 p-5 flex flex-col items-center gap-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed ${selected ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-900 hover:bg-gray-50'} ${FOCUS}`}
+                  className={`rounded-xl border p-4 flex flex-col items-start gap-1.5 text-left disabled:opacity-40 disabled:cursor-not-allowed ${selected ? 'border-gray-900 ring-1 ring-gray-900 bg-white' : 'border-gray-200 bg-white hover:bg-gray-50'} ${FOCUS}`}
                 >
-                  <Icon className="w-6 h-6" aria-hidden="true" />
-                  {o.title}
+                  <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                    <Icon className="w-4 h-4 text-gray-500" aria-hidden="true" />
+                    {o.title}
+                  </span>
+                  <span className="text-xs text-gray-500 font-normal">{o.hint}</span>
                 </button>
               )
             })}
           </div>
           <label className="block mb-5">
             <span className="block text-sm font-medium text-gray-900 mb-1.5">
-              Reason for decision (required for audit)<span className="text-red-700"> *</span>
+              {choice === 'close_unconfirmed' ? 'What did the investigation find?' : 'Reason for decision'}<span className="text-red-700"> *</span>
             </span>
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className={INPUT} />
           </label>
@@ -971,7 +1064,7 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
             </div>
           )}
           <button type="button" aria-label="Sign off decision" disabled={!ready} onClick={() => onSubmit(choice, reason.trim(), facility.trim())} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
-            {escalating ? 'Sign off and escalate' : 'Sign off decision'}
+            {escalating ? 'Sign off and escalate' : choice === 'close_unconfirmed' ? 'Sign off and close' : 'Sign off decision'}
           </button>
         </>
       )}
@@ -1006,7 +1099,10 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
           {steps.length === 0 ? (
             <p className="text-sm text-gray-500">This protocol has no response steps.</p>
           ) : (
-            <StepList steps={steps} editable={editable && active} busyKey={busyKey} keyPrefix="resp" onSet={onSetOutcome} />
+            <>
+              {active && <StepProgress steps={steps} open={open} handed={inv.gates?.handedOverSteps} editable={editable} />}
+              <StepList steps={steps} editable={editable && active} busyKey={busyKey} keyPrefix="resp" onSet={onSetOutcome} />
+            </>
           )}
         </div>
       )}
@@ -1023,6 +1119,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
 
       {editable && active && (
         <>
+          {inv.gates?.canClose && <div className="mb-5"><OpenTasksNotice /></div>}
           <label className="block mb-5">
             <span className="block text-sm font-medium text-gray-900 mb-1.5">
               Closing summary (what was done, outcome)<span className="text-red-700"> *</span>
@@ -1040,7 +1137,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
             )}
           </div>
           {!inv.gates?.canClose && open.length > 0 && (
-            <p className="text-xs text-gray-500 mt-2">Still open: response step {open.join(', ')}</p>
+            <p className="text-xs text-gray-500 mt-2">Record response step {open.join(', ')} to close, or hand {open.length === 1 ? 'it' : 'them'} to a field worker.</p>
           )}
           <p className="text-xs text-gray-400 mt-2">Field reporters get an in-app notification. CBS reporters cannot be contacted from here.</p>
         </>
@@ -1300,6 +1397,7 @@ export default function EventDetail() {
   const [openStep, setOpenStep] = useState(() => Number(new URLSearchParams(window.location.search).get('step')) || null)
   const [choice, setChoice] = useState(null)
   const [noteOpen, setNoteOpen] = useState(false)
+  const [timelineOpen, setTimelineOpen] = useState(false)
   const [note, setNote] = useState('')
   const [savingNote, setSavingNote] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '', error: false })
@@ -1349,9 +1447,16 @@ export default function EventDetail() {
   useEffect(() => {
     setEvent(null)
     setInv(null)
-    setOpenStep(null)
+    setOpenStep(Number(new URLSearchParams(window.location.search).get('step')) || null)
     return load()
   }, [load])
+
+  // quiet refresh after a task change, so the audit timeline shows it without reloading the page
+  const refreshEvent = useCallback(() => {
+    Promise.all([getReviewEvent(id), getInvestigation(id)])
+      .then(([ev, iv]) => { setEvent(ev); setInv(iv) })
+      .catch(() => {})
+  }, [id])
 
   const stepInfo = useMemo(() => (event && inv ? computeSteps(event, inv) : null), [event, inv])
   const currentStep = stepInfo?.current
@@ -1588,6 +1693,7 @@ export default function EventDetail() {
             onSplit={setSplitTarget}
             onAnswer={answer}
             onProceed={() => runAction('investigate')}
+            onDiscard={(reason) => runAction('discard', reason)}
             onDecide={openDecision}
           />
         )
@@ -1791,20 +1897,33 @@ export default function EventDetail() {
             {mapOpen && <ReportsMap signals={signals} />}
           </div>
 
-          <Tracker event={event} states={stepInfo.states} openStep={shown} onSelect={selectStep} />
+          <EventTasksProvider eventId={event.id} eventStatus={event.status} onChanged={refreshEvent} onToast={showToast}>
+            <Tracker event={event} states={stepInfo.states} openStep={shown} onSelect={selectStep} />
 
-          <div ref={panelRef} className="scroll-mt-4">{renderPanel()}</div>
+            <div ref={panelRef} className="scroll-mt-4">{renderPanel()}</div>
+
+            <EventTasksPanel />
+          </EventTasksProvider>
 
           <div className={card}>
-            <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
-              <h2 className="text-xl font-semibold text-gray-900">Audit timeline</h2>
-              {canAct && !noteOpen && (
+            <div className={`flex items-center justify-between gap-3 flex-wrap ${timelineOpen ? 'mb-5' : ''}`}>
+              <button
+                type="button"
+                aria-expanded={timelineOpen}
+                onClick={() => setTimelineOpen((v) => !v)}
+                className={`flex items-center gap-2 text-left rounded ${FOCUS}`}
+              >
+                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${timelineOpen ? '' : '-rotate-90'}`} aria-hidden="true" />
+                <span className="text-xl font-semibold text-gray-900">Audit timeline</span>
+                <span className="text-sm text-gray-400">({timeline.length})</span>
+              </button>
+              {timelineOpen && canAct && !noteOpen && (
                 <button type="button" aria-label="Add note" onClick={() => setNoteOpen(true)} className={`text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
                   Add note
                 </button>
               )}
             </div>
-            {canAct && noteOpen && (
+            {timelineOpen && canAct && noteOpen && (
               <div className="mb-6 flex flex-col gap-2">
                 <textarea
                   value={note}
@@ -1824,7 +1943,7 @@ export default function EventDetail() {
                 </div>
               </div>
             )}
-            {timeline.length === 0 ? (
+            {!timelineOpen ? null : timeline.length === 0 ? (
               <p className="text-sm text-gray-400">No activity yet.</p>
             ) : (
               <ol className="space-y-4">

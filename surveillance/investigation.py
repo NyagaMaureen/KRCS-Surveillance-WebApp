@@ -22,7 +22,24 @@ from surveillance.capabilities import require_capability
 
 ANSWERS = ("Yes", "No", "Not sure")
 OUTCOMES = ("Done", "Not done", "Not applicable")
-KINDS = ("Case definition", "Supports", "Red flag")
+KINDS = ("Key question", "Case definition", "Supports", "Red flag")
+# Key questions decide whether a signal goes to field investigation (agreed with KRCS, Allan, 28 Oct 2026):
+# at least half of them must be answered Yes, otherwise the signal is discarded. The case-definition
+# question always counts as a key question. Red flags never block: escalation is always possible.
+KEY_KINDS = ("Key question", "Case definition")
+
+
+def key_check(answers):
+	"""answers: dicts or rows with kind and answer. Returns the half-Yes rule result."""
+	get = lambda a, k: a.get(k) if isinstance(a, dict) else getattr(a, k, None)
+	keys = [a for a in answers if get(a, "kind") in KEY_KINDS]
+	total = len(keys)
+	yes = sum(1 for a in keys if get(a, "answer") == "Yes")
+	no = sum(1 for a in keys if get(a, "answer") == "No")
+	needed = (total + 1) // 2          # at least half, rounded up
+	return {"total": total, "yes": yes, "no": no, "needed": needed,
+		"met": total == 0 or yes >= needed,
+		"failed": total > 0 and (total - no) < needed}   # cannot reach half any more
 EVIDENCE_TYPES = ("Photo", "Voice Note", "Text Note", "Attachment")
 
 # Asked for every disease unless the protocol has its own list.
@@ -136,6 +153,7 @@ def suggestion(answers, notify_immediately=False, disease_name=""):
 		return (a["question"].split("?")[0] + "?") if "?" in a["question"] else a["question"]
 
 	reasons = [f"{short(a)} {a['answer']}" for a in answered]
+	kc = key_check(answers)
 	case_def = [a for a in answers if a.get("kind") == "Case definition"]
 	cd = case_def[0].get("answer") if case_def else None
 	red = [a for a in answers if a.get("kind") == "Red flag" and a.get("answer") == "Yes"]
@@ -150,6 +168,22 @@ def suggestion(answers, notify_immediately=False, disease_name=""):
 	if cd == "Yes" and notify_immediately:
 		return {"action": "escalate", "level": "critical",
 			"text": f"One case of {disease_name or 'this disease'} meeting the case definition is an emergency. Escalate now.",
+			"reasons": reasons}
+	if kc["total"]:
+		if kc["met"] and notify_immediately:
+			return {"action": "escalate", "level": "critical",
+				"text": f"{kc['yes']} of {kc['total']} key questions are Yes and one case of {disease_name or 'this disease'} is an emergency. Escalate now.",
+				"reasons": reasons}
+		if kc["met"]:
+			return {"action": "investigate", "level": "high",
+				"text": f"{kc['yes']} of {kc['total']} key questions are Yes (at least {kc['needed']} needed). Start the field investigation.",
+				"reasons": reasons}
+		if kc["failed"]:
+			return {"action": "discard", "level": "low",
+				"text": f"Only {kc['yes']} of {kc['total']} key questions are Yes (at least {kc['needed']} needed). This does not meet the criteria for an event: discard the signal.",
+				"reasons": reasons}
+		return {"action": "gather", "level": "medium",
+			"text": f"{kc['yes']} of {kc['total']} key questions are Yes so far (at least {kc['needed']} needed). Find out the answers marked Not sure before deciding.",
 			"reasons": reasons}
 	if cd == "No":
 		return {"action": "discard", "level": "low",
@@ -189,15 +223,29 @@ def must_escalate(doc):
 	return bool(proto and proto.get("notify_immediately"))
 
 
+def _handed_over(doc):
+	"""(phase, step_no) of steps that have an open task: someone is doing them, so they do not block."""
+	if not doc.name or not frappe.db.exists("DocType", "Event Task"):
+		return set()
+	rows = frappe.get_all("Event Task", filters={"event": doc.name, "status": ["in", ["Assigned", "In progress"]],
+		"step_no": [">", 0]}, fields=["step_phase", "step_no"])
+	return {((r.step_phase or "Investigation"), cint(r.step_no)) for r in rows}
+
+
 def gates(doc):
 	unanswered = [a.question_no for a in (doc.get("verification") or []) if not a.answer]
-	inv_open = [s.step_no for s in _steps(doc, "Investigation") if not _outcome(s)]
-	resp_open = [s.step_no for s in _steps(doc, "Response") if not _outcome(s)]
+	handed = _handed_over(doc)
+	inv_open = [s.step_no for s in _steps(doc, "Investigation")
+		if not _outcome(s) and ("Investigation", cint(s.step_no)) not in handed]
+	resp_open = [s.step_no for s in _steps(doc, "Response")
+		if not _outcome(s) and ("Response", cint(s.step_no)) not in handed]
 	return {
 		"unansweredQuestions": unanswered,
 		"openInvestigationSteps": inv_open,
 		"openResponseSteps": resp_open,
-		"canStartInvestigation": doc.status == "Verifying" and not unanswered,
+		"handedOverSteps": sorted(n for _, n in handed),
+		"keyCheck": key_check(doc.get("verification") or []),
+		"canStartInvestigation": doc.status == "Verifying" and not unanswered and key_check(doc.get("verification") or [])["met"],
 		"canConfirm": doc.status == "Investigating" and not inv_open,
 		"canClose": doc.status in ("Confirmed", "Escalated") and not resp_open,
 	}
@@ -210,6 +258,11 @@ def check_gate(doc, action):
 	if action == "investigate" and g["unansweredQuestions"]:
 		frappe.throw(_("Check at least one report and answer all verification questions first (Not sure is an answer). Missing: {0}").format(
 			", ".join(str(n) for n in g["unansweredQuestions"])))
+	if action == "investigate":
+		kc = key_check(doc.get("verification") or [])
+		if not kc["met"]:
+			frappe.throw(_("Only {0} of {1} key questions are Yes; at least {2} are needed to start the field investigation. Discard the signal, or escalate if there is a red flag.").format(
+				kc["yes"], kc["total"], kc["needed"]))
 	if action == "confirm" and must_escalate(doc):
 		frappe.throw(_("{0} must be escalated to County / National MOH. Use Escalate instead of Confirm.").format(
 			doc.disease_name or doc.disease))
@@ -224,10 +277,11 @@ def check_gate(doc, action):
 def after_status(doc, action, note):
 	"""Record the decision or closure on the event, sync the field reports, tell their reporters."""
 	now, user = now_datetime(), frappe.session.user
-	if action in ("confirm", "discard", "escalate"):
-		doc.decision = {"confirm": "Confirmed", "discard": "Discarded", "escalate": "Escalated"}[action]
+	if action in ("confirm", "discard", "escalate", "close_unconfirmed"):
+		doc.decision = {"confirm": "Confirmed", "discard": "Discarded", "escalate": "Escalated",
+			"close_unconfirmed": "Not confirmed"}[action]
 		doc.decision_reason, doc.decided_by, doc.decided_on = note, user, now
-	if action == "close":
+	if action in ("close", "close_unconfirmed"):
 		doc.closing_summary, doc.closed_by, doc.closed_on = note, user, now
 	if action == "reopen":
 		doc.decision = doc.decision_reason = doc.decided_by = doc.decided_on = None
@@ -248,7 +302,7 @@ def sync_reports(doc, action, note):
 			continue
 		if status:
 			frappe.db.set_value("Case Report", ref, "status", status, update_modified=False)
-		if action in ("close", "discard"):
+		if action in ("close", "discard", "close_unconfirmed"):
 			_feedback(ref, doc, action, note)
 
 
@@ -256,7 +310,7 @@ def _feedback(ref, doc, action, note):
 	reporter = frappe.db.get_value("Case Report", ref, "reported_by") or frappe.db.get_value("Case Report", ref, "owner")
 	if not reporter or reporter in ("Administrator", "Guest") or not frappe.db.exists("User", reporter):
 		return
-	outcome = ("was checked and closed: no further action needed" if action == "discard"
+	outcome = ("was checked and closed: no further action needed" if action in ("discard", "close_unconfirmed")
 		else "was investigated and the response is complete")
 	subject = f"Your report {ref} ({doc.disease_name or doc.disease}) {outcome}. Thank you for reporting."
 	frappe.get_doc({"doctype": "Notification Log", "for_user": reporter, "type": "Alert",
@@ -283,8 +337,11 @@ def _shape(doc):
 		"answeredBy": get_fullname(a.answered_by) if a.answered_by else None, "answeredOn": str(a.answered_on or "") or None}
 		for a in sorted(doc.get("verification") or [], key=lambda a: cint(a.question_no))]
 
+	assignable = {(p.step or "").strip().lower() for p in (proto.get("steps") or []) if p.get("assignable")} if proto else set()
+
 	def step(s):
 		return {"n": s.step_no, "step": s.step, "timeframe": s.timeframe, "phase": s.phase or "Investigation",
+			"assignable": (s.step or "").strip().lower() in assignable,
 			"outcome": _outcome(s) or None, "reason": s.reason or None,
 			"by": get_fullname(s.done_by) if s.done_by else None, "on": str(s.done_on or "") or None}
 

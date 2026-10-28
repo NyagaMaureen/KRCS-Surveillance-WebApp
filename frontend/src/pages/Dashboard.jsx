@@ -15,6 +15,7 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import MyTasksCard from '../components/tasks/MyTasksCard'
 import ChartCard from '../components/analytics/ChartCard'
 import StatCard from '../components/analytics/StatCard'
 import { CHART_FONT } from '../charts/chartSetup'
@@ -174,6 +175,7 @@ export default function Dashboard() {
 
   return (
     <AppShell>
+      <MyTasksCard />
       <div className="flex items-start justify-between mb-6 flex-wrap gap-4">
         <div>
           <h2 className="text-xl font-bold text-brand-navy">Dashboard Overview</h2>

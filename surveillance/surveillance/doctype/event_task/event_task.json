@@ -1,0 +1,214 @@
+{
+ "actions": [],
+ "autoname": "TSK-.#####",
+ "naming_rule": "Expression",
+ "creation": "2026-10-28 12:00:00.000000",
+ "modified": "2026-10-28 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Event Task",
+ "track_changes": 1,
+ "sort_field": "due_date",
+ "sort_order": "ASC",
+ "title_field": "title",
+ "description": "A field visit, referral, sample collection or follow-up assigned to a person as part of a Review Queue event.",
+ "field_order": [
+  "event",
+  "task_type",
+  "title",
+  "instructions",
+  "cb1",
+  "assigned_to",
+  "assigned_by",
+  "due_date",
+  "status",
+  "sb_ref",
+  "facility",
+  "urgency",
+  "sb_ctx",
+  "disease_name",
+  "sub_county",
+  "area",
+  "region",
+  "cb2",
+  "step_phase",
+  "step_no",
+  "sb_out",
+  "outcome",
+  "completed_on",
+  "reminded_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "event",
+   "fieldtype": "Link",
+   "label": "Event",
+   "options": "Surveillance Event",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "task_type",
+   "fieldtype": "Select",
+   "label": "Type",
+   "options": "Field visit\nReferral\nSample collection\nFollow-up\nOther",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Task",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "instructions",
+   "fieldtype": "Small Text",
+   "label": "Instructions",
+   "description": "Do not write patient names or phone numbers here."
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "assigned_to",
+   "fieldtype": "Link",
+   "label": "Assigned to",
+   "options": "User",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "assigned_by",
+   "fieldtype": "Link",
+   "label": "Assigned by",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "due_date",
+   "fieldtype": "Date",
+   "label": "Due date",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Assigned\nIn progress\nDone\nCould not complete",
+   "default": "Assigned",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "sb_ref",
+   "fieldtype": "Section Break",
+   "label": "Referral",
+   "depends_on": "eval:doc.task_type=='Referral'"
+  },
+  {
+   "fieldname": "facility",
+   "fieldtype": "Data",
+   "label": "Refer to facility"
+  },
+  {
+   "fieldname": "urgency",
+   "fieldtype": "Select",
+   "label": "Urgency",
+   "options": "\nRoutine\nUrgent\nEmergency"
+  },
+  {
+   "fieldname": "sb_ctx",
+   "fieldtype": "Section Break",
+   "label": "Event details",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "disease_name",
+   "fieldtype": "Data",
+   "label": "Disease",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Data",
+   "label": "Sub-county",
+   "read_only": 1
+  },
+  {
+   "fieldname": "area",
+   "fieldtype": "Data",
+   "label": "Area",
+   "read_only": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "cb2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "step_phase",
+   "fieldtype": "Data",
+   "label": "Workflow step",
+   "read_only": 1
+  },
+  {
+   "fieldname": "step_no",
+   "fieldtype": "Int",
+   "label": "Protocol step no",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_out",
+   "fieldtype": "Section Break",
+   "label": "Outcome"
+  },
+  {
+   "fieldname": "outcome",
+   "fieldtype": "Small Text",
+   "label": "Outcome note"
+  },
+  {
+   "fieldname": "completed_on",
+   "fieldtype": "Datetime",
+   "label": "Completed on",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reminded_on",
+   "fieldtype": "Date",
+   "label": "Last reminder",
+   "read_only": 1,
+   "hidden": 1
+  }
+ ],
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

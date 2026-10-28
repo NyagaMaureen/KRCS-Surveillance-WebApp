@@ -31,7 +31,7 @@
   {
    "fieldname": "kind",
    "fieldtype": "Select",
-   "options": "Case definition\nSupports\nRed flag",
+   "options": "Key question\nCase definition\nSupports\nRed flag",
    "label": "Kind"
   },
   {
@@ -56,7 +56,7 @@
  "permissions": [],
  "istable": 1,
  "description": "One verification answer on one event.",
- "modified": "2026-10-19 12:00:00.000000",
+ "modified": "2026-10-28 16:00:00.000000",
  "field_order": [
   "question_no",
   "question",
