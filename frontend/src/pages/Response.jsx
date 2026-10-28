@@ -5,7 +5,7 @@ export default function Response() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Response</h2>
+        <h2 className="text-xl font-bold text-brand-navy">Response</h2>
         <p className="text-sm text-gray-400">Coordinate and track outbreak response actions</p>
       </div>
 

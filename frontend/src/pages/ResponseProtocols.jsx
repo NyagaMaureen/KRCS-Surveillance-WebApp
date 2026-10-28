@@ -32,7 +32,7 @@ const PHASES = ['Investigation', 'Response']
 const KINDS = ['Case definition', 'Supports', 'Red flag']
 const KIND_TAG = {
   'Case definition': 'bg-blue-50 text-blue-600',
-  'Red flag': 'bg-red-50 text-red-600',
+  'Red flag': 'bg-red-50 text-red-700',
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
@@ -76,7 +76,7 @@ function ProtocolHeader({ p }) {
   return (
         <div className="flex items-start gap-4">
           <span className="w-12 h-12 shrink-0 rounded-full bg-red-50 flex items-center justify-center">
-            <ClipboardList className="w-5 h-5 text-red-600" aria-hidden="true" />
+            <ClipboardList className="w-5 h-5 text-red-700" aria-hidden="true" />
           </span>
           <div className="flex-1 min-w-0">
             <h3 className={`text-base font-semibold text-gray-900 ${retired ? 'line-through text-gray-400' : ''}`}>{p.title}</h3>
@@ -154,7 +154,7 @@ function ProtocolDetail({ protocol: p, canManage, busy, onBack, onEdit, onStatus
                 const active = tab === t
                 return (
                   <button key={t} type="button" role="tab" aria-selected={active} onClick={() => setTab(t)}
-                    className={`px-4 py-2 -mb-px text-sm font-medium whitespace-nowrap border-b-2 rounded-t ${FOCUS} ${active ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
+                    className={`px-4 py-2 -mb-px text-sm font-medium whitespace-nowrap border-b-2 rounded-t ${FOCUS} ${active ? 'border-red-600 text-red-700' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
                     {t}<span className="ml-1.5 text-xs opacity-70">{count}</span>
                   </button>
                 )
@@ -214,7 +214,7 @@ function ProtocolDetail({ protocol: p, canManage, busy, onBack, onEdit, onStatus
                   <span>
                     Source:{' '}
                     {p.sourceUrl ? (
-                      <a href={p.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-red-600 hover:underline inline-flex items-center gap-1">
+                      <a href={p.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-red-700 hover:underline inline-flex items-center gap-1">
                         {p.source}<ExternalLink className="w-3 h-3" aria-hidden="true" />
                       </a>
                     ) : p.source}
@@ -236,7 +236,7 @@ function ProtocolDetail({ protocol: p, canManage, busy, onBack, onEdit, onStatus
                     <button type="button" disabled={busy} onClick={() => onStatus(p, 'Retired')} className={btnSecondary}>Retire</button>
                   )}
                   <button type="button" disabled={busy} onClick={() => onDelete(p)}
-                    className={`border border-red-200 text-red-600 rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-50 disabled:opacity-50 ${FOCUS}`}>
+                    className={`border border-red-200 text-red-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-50 disabled:opacity-50 ${FOCUS}`}>
                     Delete
                   </button>
                 </div>
@@ -270,7 +270,7 @@ function Modal({ title, onClose, children, wide }) {
 function Label({ text, required, children }) {
   return (
     <label className="flex flex-col gap-1 text-sm font-medium text-gray-900">
-      <span>{text}{required && <span className="text-red-600"> *</span>}</span>
+      <span>{text}{required && <span className="text-red-700"> *</span>}</span>
       {children}
     </label>
   )
@@ -409,7 +409,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
         </p>
 
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-gray-900">Steps <span className="text-red-600">*</span></span>
+          <span className="text-sm font-medium text-gray-900">Steps <span className="text-red-700">*</span></span>
           <p className="text-xs text-gray-500">
             Investigation steps are done during field investigation (including first treatment and isolation). Response steps open after the outbreak is confirmed or escalated.
           </p>
@@ -429,12 +429,12 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
                 <button type="button" aria-label="Move step down" disabled={i === form.steps.length - 1} onClick={() => move(i, 1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowDown className="w-4 h-4" /></button>
                 <button type="button" aria-label="Remove step" disabled={form.steps.length === 1}
                   onClick={() => set({ steps: form.steps.filter((_, idx) => idx !== i) })}
-                  className={`p-1 rounded hover:text-red-600 disabled:opacity-30 ${FOCUS}`}><X className="w-4 h-4" /></button>
+                  className={`p-1 rounded hover:text-red-700 disabled:opacity-30 ${FOCUS}`}><X className="w-4 h-4" /></button>
               </div>
             </div>
           ))}
           <button type="button" onClick={() => set({ steps: [...form.steps, blankStep()] })}
-            className={`self-start text-sm font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+            className={`self-start text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
             + Add step
           </button>
         </div>
@@ -458,12 +458,12 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
                 <button type="button" aria-label="Move question up" disabled={i === 0} onClick={() => moveQuestion(i, -1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowUp className="w-4 h-4" /></button>
                 <button type="button" aria-label="Move question down" disabled={i === form.questions.length - 1} onClick={() => moveQuestion(i, 1)} className={`p-1 rounded hover:text-gray-900 disabled:opacity-30 ${FOCUS}`}><ArrowDown className="w-4 h-4" /></button>
                 <button type="button" aria-label="Remove question" onClick={() => set({ questions: form.questions.filter((_, idx) => idx !== i) })}
-                  className={`p-1 rounded hover:text-red-600 ${FOCUS}`}><X className="w-4 h-4" /></button>
+                  className={`p-1 rounded hover:text-red-700 ${FOCUS}`}><X className="w-4 h-4" /></button>
               </div>
             </div>
           ))}
           <button type="button" onClick={() => set({ questions: [...form.questions, blankQuestion()] })}
-            className={`self-start text-sm font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+            className={`self-start text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
             + Add question
           </button>
         </div>
@@ -476,7 +476,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved })
           </span>
         </label>
 
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onClose} disabled={saving} className={btnSecondary}>Cancel</button>
@@ -507,7 +507,7 @@ function DeleteDialog({ protocol, onCancel, onConfirm }) {
       <div className="p-6 flex flex-col gap-4">
         <h3 className="text-base font-semibold text-gray-900">Delete protocol?</h3>
         <p className="text-sm text-gray-600">“{protocol.title}” will be permanently deleted. This cannot be undone.</p>
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onCancel} disabled={busy} className={btnSecondary}>Cancel</button>
           <button type="button" onClick={confirm} disabled={busy} className={btnPrimary}>{busy ? 'Deleting…' : 'Delete'}</button>
@@ -653,7 +653,7 @@ export default function ResponseProtocols() {
   if (openProtocol) {
     return (
       <AppShell>
-        {actionError && <p role="alert" className="mb-4 text-sm text-red-600">{actionError}</p>}
+        {actionError && <p role="alert" className="mb-4 text-sm text-red-700">{actionError}</p>}
         <ProtocolDetail
           key={openProtocol.id}
           protocol={openProtocol}
@@ -673,7 +673,7 @@ export default function ResponseProtocols() {
     <AppShell>
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
        <div className="max-w-2xl">
-  <h2 className="text-xl font-bold text-gray-900">Response Protocols</h2>
+  <h2 className="text-xl font-bold text-brand-navy">Response Protocols</h2>
   <p className="text-sm text-gray-400">
     What to do when each priority disease or unusual event is reported. Approved protocols appear as a checklist on every matching event in Review Queue.
   </p>
@@ -725,13 +725,13 @@ export default function ResponseProtocols() {
         </div>
       </div>
 
-      {actionError && <p role="alert" className="mb-4 text-sm text-red-600">{actionError}</p>}
+      {actionError && <p role="alert" className="mb-4 text-sm text-red-700">{actionError}</p>}
 
       {loading ? (
         <Skeleton />
       ) : error ? (
         <div className={`${card} py-16 text-center space-y-3`}>
-          <p className="text-sm text-red-500">{error}</p>
+          <p className="text-sm text-red-700">{error}</p>
           <button type="button" onClick={() => { setLoading(true); load() }} className={btnPrimary}>Retry</button>
         </div>
       ) : visible.length === 0 ? (

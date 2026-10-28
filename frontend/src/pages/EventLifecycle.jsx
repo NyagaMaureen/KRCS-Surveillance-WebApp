@@ -5,7 +5,7 @@ export default function EventLifecycle() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Event Lifecycle</h2>
+        <h2 className="text-xl font-bold text-brand-navy">Event Lifecycle</h2>
         <p className="text-sm text-gray-400">Track events from detection through closure</p>
       </div>
 

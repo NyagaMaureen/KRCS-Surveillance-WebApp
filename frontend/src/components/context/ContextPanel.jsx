@@ -172,7 +172,7 @@ export default function ContextPanel({ subCounty, county, people, disease, data,
       ) : loading ? (
         <p className="text-sm text-gray-400">Loading context…</p>
       ) : error ? (
-        <p className="text-sm text-red-600 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> {error}</p>
+        <p className="text-sm text-red-700 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> {error}</p>
       ) : ctx?.unknownLocation ? (
         <p className="text-sm text-gray-400 flex items-center gap-2"><Info className="w-4 h-4" /> {place} isn't in our sub-county list, so no context is recorded for it.</p>
       ) : ctx ? (

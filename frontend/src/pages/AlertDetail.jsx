@@ -24,7 +24,7 @@ const STATUS_STYLES = {
   Resolved: 'border-emerald-500 bg-emerald-500/10 text-emerald-600',
   Investigating: 'border-purple-400 bg-purple-400/10 text-purple-500',
   Confirmed: 'border-blue-500 bg-blue-500/10 text-blue-600',
-  Rejected: 'border-red-500 bg-red-500/10 text-red-600',
+  Rejected: 'border-red-500 bg-red-500/10 text-red-700',
 }
 
 const STATUS_LABELS = { Pending: 'New', Investigating: 'Under investigation', Confirmed: 'Confirmed', Resolved: 'Resolved', Rejected: 'Dismissed' }
@@ -386,11 +386,12 @@ export default function AlertDetail() {
         <Skeleton />
       ) : loadError ? (
         <div className="bg-white rounded-2xl border border-gray-100 py-24 text-center">
-          <p className="text-sm text-red-500 mb-4">{loadError}</p>
-          <Link to="/epi-trends" className="text-sm font-semibold text-red-600 hover:underline">Return to Epi Trends</Link>
+          <p className="text-sm text-red-700 mb-4">{loadError}</p>
+          <Link to="/epi-trends" className="text-sm font-semibold text-red-700 hover:underline">Return to Epi Trends</Link>
         </div>
       ) : alert && (
         <div className="flex flex-col gap-6">
+          <p className="text-sm text-gray-500 -mb-2">A disease rising above its usual weekly level in this place. Review the chart and reasons, then decide whether it needs an investigation.</p>
           <div className={`relative rounded-2xl p-6 sm:p-7 text-white ${accent.banner}`}>
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-4 min-w-0">
@@ -453,7 +454,7 @@ export default function AlertDetail() {
                   href={`https://www.google.com/maps?q=${encodeURIComponent(alert.location)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline mt-0.5 rounded ${FOCUS}`}
+                  className={`inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline mt-0.5 rounded ${FOCUS}`}
                 >
                   Open in Maps <ExternalLink className="w-3 h-3" aria-hidden="true" />
                 </a>

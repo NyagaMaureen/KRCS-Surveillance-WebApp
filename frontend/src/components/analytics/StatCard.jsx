@@ -13,7 +13,7 @@ export default function StatCard({ icon: Icon, label, value, changePct = null, t
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-xl sm:text-2xl font-semibold text-gray-900">{value}</span>
           {changePct != null && (
-            <span className={['inline-flex items-center gap-0.5 text-xs font-medium', sentiment === 'positive' ? 'text-emerald-400' : 'text-rose-400'].join(' ')}>
+            <span className={['inline-flex items-center gap-0.5 text-xs font-medium', sentiment === 'positive' ? 'text-emerald-400' : 'text-red-400'].join(' ')}>
               <TrendIcon className="w-3 h-3" />
               {changePct}%
             </span>

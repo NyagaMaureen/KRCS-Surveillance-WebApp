@@ -75,7 +75,7 @@ export default function SurveillanceDashboard() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Surveillance Operations Dashboard</h2>
+        <h2 className="text-xl font-bold text-brand-navy">Surveillance Operations Dashboard</h2>
         <p className="text-sm text-gray-400">Review priority signals, verify alerts, investigate events, and coordinate response</p>
       </div>
 
@@ -101,7 +101,7 @@ export default function SurveillanceDashboard() {
         <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-sm sm:text-base font-medium text-gray-900">Priority Alert Queue</h3>
-            <Link to="/epi-trends" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700">
+            <Link to="/epi-trends" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800">
               View all <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -118,7 +118,7 @@ export default function SurveillanceDashboard() {
                     {alert.location} • {STATUS_LABEL[alert.status] || alert.status} • {alert.affected} affected
                   </p>
                 </div>
-                <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-red-600 bg-red-600/10 border border-red-600/50 rounded-full px-3 py-1.5">
+                <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-600/10 border border-red-600/50 rounded-full px-3 py-1.5">
                   Risk {alert.risk}%
                 </span>
               </div>

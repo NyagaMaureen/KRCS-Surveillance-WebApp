@@ -26,7 +26,7 @@ export function UploadStatus({ item, onRetry }) {
   if (item.status === 'done') return <span className="text-[10px] text-green-600 mt-1 block">Uploaded</span>
   if (item.status === 'error') {
     return (
-      <div className="mt-1 text-[10px] text-red-600">
+      <div className="mt-1 text-[10px] text-red-700">
         {item.error}{' '}
         <button type="button" onClick={onRetry} className="font-semibold underline">Retry</button>
       </div>
@@ -103,13 +103,13 @@ export default function PhotoField({ photos, setPhotos, onRetry }) {
                 onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
               />
               <span style={{ display: 'none' }} className="absolute inset-0 items-center justify-center text-gray-400"><ImageOff className="w-6 h-6" /></span>
-              {p.status === 'uploading' && <span className="absolute inset-0 bg-white/60 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-red-600" /></span>}
+              {p.status === 'uploading' && <span className="absolute inset-0 bg-white/60 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-red-700" /></span>}
             </button>
             <div className="flex justify-between mt-1 text-[11px]">
-              <button type="button" onClick={() => openPicker(p.id)} className="inline-flex items-center gap-0.5 text-gray-600 hover:text-red-600">
+              <button type="button" onClick={() => openPicker(p.id)} className="inline-flex items-center gap-0.5 text-gray-600 hover:text-red-700">
                 <RefreshCw className="w-3 h-3" /> {phone ? 'Retake' : 'Replace'}
               </button>
-              <button type="button" onClick={() => remove(p.id)} className="text-gray-600 hover:text-red-600">Remove</button>
+              <button type="button" onClick={() => remove(p.id)} className="text-gray-600 hover:text-red-700">Remove</button>
             </div>
             <UploadStatus item={p} onRetry={() => onRetry(p.id)} />
           </div>
@@ -126,7 +126,7 @@ export default function PhotoField({ photos, setPhotos, onRetry }) {
         </button>
       )}
       <span className="text-xs text-gray-400 ml-2">{photos.length}/{MAX_PHOTOS} · JPG, PNG, WEBP, HEIC · max 10 MB</span>
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
 
       <input
         ref={inputRef}

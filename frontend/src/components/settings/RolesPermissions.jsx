@@ -203,7 +203,7 @@ export default function RolesPermissions({ roles = [], users = [], initialRole =
       type="button"
       onClick={() => bulkToggle(cat)}
       disabled={bulkBusy}
-      className="text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-50"
+      className="text-xs font-semibold text-red-700 hover:text-red-800 disabled:opacity-50"
     >
       {bulkLabel(cat)}
     </button>
@@ -235,7 +235,7 @@ export default function RolesPermissions({ roles = [], users = [], initialRole =
                 isSelected(r) ? 'border-red-600 bg-red-50' : 'border-transparent hover:bg-gray-50',
               ].join(' ')}
             >
-              <span className={['text-sm font-semibold truncate', isSelected(r) ? 'text-red-600' : 'text-gray-900'].join(' ')}>{r.role}</span>
+              <span className={['text-sm font-semibold truncate', isSelected(r) ? 'text-red-700' : 'text-gray-900'].join(' ')}>{r.role}</span>
               <span className="text-[11px] text-gray-500 bg-gray-100 rounded-full px-2 py-0.5 shrink-0">{r.countLabel}</span>
             </button>
           ))}
@@ -252,7 +252,7 @@ export default function RolesPermissions({ roles = [], users = [], initialRole =
             onClick={() => pickRole(r)}
             className={[
               'whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium border',
-              isSelected(r) ? 'border-red-600 bg-red-50 text-red-600' : 'border-gray-200 bg-white text-gray-700',
+              isSelected(r) ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-700',
             ].join(' ')}
           >
             {r.role} <span className="text-xs text-gray-400">{r.countLabel}</span>

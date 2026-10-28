@@ -30,7 +30,7 @@ const PULSE_CSS = `
 .leaflet-popup-content { margin: 0; line-height: 1.4; }
 .leaflet-popup-content p { margin: 0; }
 .leaflet-popup-close-button { top: 10px !important; right: 10px !important; }
-.map-pulse-ring { border-radius: 9999px; border: 2px solid #DC2626; background: rgba(220,38,38,0.25); animation: map-critical-pulse 1.8s ease-out infinite; pointer-events: none; }
+.map-pulse-ring { border-radius: 9999px; border: 2px solid #EE2435; background: rgba(220,38,38,0.25); animation: map-critical-pulse 1.8s ease-out infinite; pointer-events: none; }
 `
 
 function radiusFor(affected, min, max) {
@@ -102,7 +102,7 @@ function PopupCard({ event: a, onToast }) {
           <span className="font-semibold text-gray-900">{a.people ?? 0} people</span>
           {` · ${a.reports ?? 0} reports`}
           {sources && ` · ${sources}`}
-          {Number(a.deaths) > 0 && <span className="font-semibold text-red-600">{` · ${a.deaths} ${Number(a.deaths) === 1 ? 'death' : 'deaths'}`}</span>}
+          {Number(a.deaths) > 0 && <span className="font-semibold text-red-700">{` · ${a.deaths} ${Number(a.deaths) === 1 ? 'death' : 'deaths'}`}</span>}
         </div>
         {place && <div className="text-sm font-medium text-gray-900">{place}</div>}
         <div className="flex items-center flex-wrap gap-2 text-xs text-gray-500">
@@ -147,7 +147,7 @@ function PopupCard({ event: a, onToast }) {
       </div>
       {a.linkedAlert && (
         <div className="mt-3 text-xs">
-          <Link to={`/epi-trends/${a.linkedAlert.id}`} className="font-medium !text-red-600 hover:underline">
+          <Link to={`/epi-trends/${a.linkedAlert.id}`} className="font-medium !text-red-700 hover:underline">
             Outbreak alert
           </Link>
         </div>

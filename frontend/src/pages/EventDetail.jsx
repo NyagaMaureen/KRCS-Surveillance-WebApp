@@ -104,7 +104,7 @@ function Tracker({ event, states, openStep, onSelect }) {
               : state === 'done' ? 'bg-emerald-500 text-white'
                 : 'bg-gray-200 text-gray-400'
           const text =
-            state === 'current' ? 'text-red-600'
+            state === 'current' ? 'text-red-700'
               : state === 'done' ? 'text-gray-900'
                 : state === 'discarded' ? 'text-gray-600'
                   : 'text-gray-400'
@@ -260,7 +260,7 @@ function ReportCheckRow({ s, canVerify, canAct, canSplit, saving, onCheck, onSpl
         <td className="px-3 py-3 whitespace-nowrap">
           <div className="text-sm font-medium text-gray-900">{s.source}</div>
           {s.source === 'Field' && s.ref ? (
-            <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`font-mono text-xs text-red-600 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
+            <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`font-mono text-xs text-red-700 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
           ) : (
             <div className="font-mono text-xs text-gray-500">{s.ref || '—'}</div>
           )}
@@ -403,7 +403,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
           </table>
         </div>
         {ordered.length > 5 && (
-          <button type="button" onClick={() => setShowAll(!showAll)} className={`mt-2 text-sm font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+          <button type="button" onClick={() => setShowAll(!showAll)} className={`mt-2 text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
             {showAll ? 'Show fewer' : `Show ${ordered.length - 5} more`}
           </button>
         )}
@@ -436,7 +436,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
                     <p className="text-sm text-gray-900">
                       <span className="text-gray-400 mr-1.5 tabular-nums">{i + 1}.</span>
                       {q.question}
-                      {red && <span className="ml-2 align-middle rounded-full bg-red-50 text-red-600 px-2 py-0.5 text-[11px] font-medium">Red flag</span>}
+                      {red && <span className="ml-2 align-middle rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-[11px] font-medium">Red flag</span>}
                     </p>
                     {q.why && <p className="text-xs text-gray-400 mt-0.5">{q.why}</p>}
                   </div>
@@ -658,16 +658,16 @@ function EvidenceAdder({ busy, onUpload, onText, onError }) {
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button type="button" aria-label="Add photo" disabled={busy} onClick={() => { setMode('photo'); photoRef.current?.click() }} className={tile}>
-          <Camera className="w-5 h-5 text-red-600" aria-hidden="true" /> Photo
+          <Camera className="w-5 h-5 text-red-700" aria-hidden="true" /> Photo
         </button>
         <button type="button" aria-label="Add voice note" disabled={busy} onClick={() => { setPending(null); setMode('voice') }} className={tile}>
-          <Mic className="w-5 h-5 text-red-600" aria-hidden="true" /> Voice note
+          <Mic className="w-5 h-5 text-red-700" aria-hidden="true" /> Voice note
         </button>
         <button type="button" aria-label="Add text note" disabled={busy} onClick={() => { setPending(null); setMode('text') }} className={tile}>
-          <FileText className="w-5 h-5 text-red-600" aria-hidden="true" /> Text note
+          <FileText className="w-5 h-5 text-red-700" aria-hidden="true" /> Text note
         </button>
         <button type="button" aria-label="Add attachment" disabled={busy} onClick={() => { setMode('file'); fileRef.current?.click() }} className={tile}>
-          <Paperclip className="w-5 h-5 text-red-600" aria-hidden="true" /> Attachment
+          <Paperclip className="w-5 h-5 text-red-700" aria-hidden="true" /> Attachment
         </button>
       </div>
       <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" aria-label="Choose photo" onChange={(e) => { pick('Photo', e.target.files?.[0]); e.target.value = '' }} />
@@ -682,7 +682,7 @@ function EvidenceAdder({ busy, onUpload, onText, onError }) {
             <button type="button" aria-label="Stop recording" onClick={stopRecording} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Stop</button>
           )}
           <button type="button" aria-label="Pick an audio file" disabled={busy || recording} onClick={() => audioRef.current?.click()} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Pick audio file</button>
-          {recording && <span className="text-sm text-red-600">Recording...</span>}
+          {recording && <span className="text-sm text-red-700">Recording...</span>}
         </div>
       )}
 
@@ -731,7 +731,7 @@ function EvidenceGrid({ evidence, editable, busyKey, onRemove, onOpenPhoto }) {
               aria-label="Remove evidence"
               disabled={busyKey === `ev-${e.id}`}
               onClick={() => onRemove(e.id)}
-              className={`absolute top-2 right-2 rounded-full bg-white border border-gray-200 p-1 text-gray-500 hover:text-red-600 disabled:opacity-50 ${FOCUS}`}
+              className={`absolute top-2 right-2 rounded-full bg-white border border-gray-200 p-1 text-gray-500 hover:text-red-700 disabled:opacity-50 ${FOCUS}`}
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
@@ -745,7 +745,7 @@ function EvidenceGrid({ evidence, editable, busyKey, onRemove, onOpenPhoto }) {
           ) : e.type === 'Text Note' ? (
             <p className="text-sm text-gray-800 whitespace-pre-wrap break-words pr-6">{e.text}</p>
           ) : e.file ? (
-            <a href={e.file} target="_blank" rel="noreferrer" className={`text-sm text-red-600 hover:underline break-all rounded ${FOCUS}`}>
+            <a href={e.file} target="_blank" rel="noreferrer" className={`text-sm text-red-700 hover:underline break-all rounded ${FOCUS}`}>
               {e.file.split('/').pop()}
             </a>
           ) : null}
@@ -777,7 +777,7 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
     }
   }
 
-  const link = `text-sm font-medium text-red-600 hover:underline rounded ${FOCUS}`
+  const link = `text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`
   return (
     <div className={card}>
       <PanelHeader title="Field investigation" sub="Do the protocol's investigation steps, record findings and evidence" />
@@ -918,7 +918,7 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
                   aria-pressed={selected}
                   aria-label={o.title}
                   onClick={() => onChoose(o.value)}
-                  className={`rounded-xl border-2 p-5 flex flex-col items-center gap-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed ${selected ? 'border-red-600 bg-red-50 text-red-600' : 'border-gray-200 bg-white text-gray-900 hover:bg-gray-50'} ${FOCUS}`}
+                  className={`rounded-xl border-2 p-5 flex flex-col items-center gap-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed ${selected ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-900 hover:bg-gray-50'} ${FOCUS}`}
                 >
                   <Icon className="w-6 h-6" aria-hidden="true" />
                   {o.title}
@@ -928,7 +928,7 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
           </div>
           <label className="block mb-5">
             <span className="block text-sm font-medium text-gray-900 mb-1.5">
-              Reason for decision (required for audit)<span className="text-red-600"> *</span>
+              Reason for decision (required for audit)<span className="text-red-700"> *</span>
             </span>
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className={INPUT} />
           </label>
@@ -937,7 +937,7 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
               <label className="block">
                 <span className="flex items-center gap-1.5 text-sm font-medium text-gray-900 mb-1.5">
                   <Building2 className="w-4 h-4 text-gray-500" aria-hidden="true" />
-                  Nearest health facility<span className="text-red-600"> *</span>
+                  Nearest health facility<span className="text-red-700"> *</span>
                 </span>
                 <input
                   value={facility}
@@ -1025,7 +1025,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
         <>
           <label className="block mb-5">
             <span className="block text-sm font-medium text-gray-900 mb-1.5">
-              Closing summary (what was done, outcome)<span className="text-red-600"> *</span>
+              Closing summary (what was done, outcome)<span className="text-red-700"> *</span>
             </span>
             <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={3} className={INPUT} />
           </label>
@@ -1059,7 +1059,7 @@ const CHECK_STYLES = {
   Verified: { pill: 'bg-emerald-50 text-emerald-700 border-emerald-200', color: '#059669' },
   Unconfirmed: { pill: 'bg-amber-50 text-amber-700 border-amber-200', color: '#F59E0B' },
   'Not a case': { pill: 'bg-gray-100 text-gray-600 border-gray-200', color: '#9CA3AF' },
-  'Not checked': { pill: 'bg-red-50 text-red-700 border-red-200', color: '#DC2626' },
+  'Not checked': { pill: 'bg-red-50 text-red-700 border-red-200', color: '#EE2435' },
 }
 
 function checkStatus(s) {
@@ -1113,7 +1113,7 @@ function ReportsMap({ signals }) {
   const noGpsLabel = noGps
     .map((s) => (s.source === 'CBS' ? [`CBS ${s.ref || ''}`.trim(), s.area].filter(Boolean).join(' · ') : s.area || s.ref || s.source))
     .join(', ')
-  const link = 'text-xs font-medium !text-red-600 hover:underline'
+  const link = 'text-xs font-medium !text-red-700 hover:underline'
 
   return (
     <div className="mt-5">
@@ -1252,7 +1252,7 @@ function Field({ label, value, danger, icon: Icon }) {
   const text = (
     <div className="min-w-0">
       <dt className="text-sm text-gray-500">{label}</dt>
-      <dd className={`text-sm font-medium break-words ${danger ? 'text-red-600' : 'text-gray-900'}`}>{value}</dd>
+      <dd className={`text-sm font-medium break-words ${danger ? 'text-red-700' : 'text-gray-900'}`}>{value}</dd>
     </div>
   )
   if (!Icon) return text
@@ -1273,7 +1273,7 @@ function ReporterContact({ signal: s, canAct }) {
     <div className="flex flex-col gap-0.5">
       <span className="text-gray-900">{s.reporter.name || '—'}</span>
       {s.reporter.phone ? (
-        <a href={`tel:${s.reporter.phone}`} className={`inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+        <a href={`tel:${s.reporter.phone}`} className={`inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
           <Phone className="w-3 h-3" aria-hidden="true" /> Call {s.reporter.phone}
         </a>
       ) : (
@@ -1297,7 +1297,7 @@ export default function EventDetail() {
   const [forbidden, setForbidden] = useState(false)
   const [busy, setBusy] = useState(false)
   const [busyKey, setBusyKey] = useState(null)
-  const [openStep, setOpenStep] = useState(null)
+  const [openStep, setOpenStep] = useState(() => Number(new URLSearchParams(window.location.search).get('step')) || null)
   const [choice, setChoice] = useState(null)
   const [noteOpen, setNoteOpen] = useState(false)
   const [note, setNote] = useState('')
@@ -1552,7 +1552,7 @@ export default function EventDetail() {
                     type="button"
                     aria-expanded={reasonOpen}
                     onClick={() => setReasonOpen((v) => !v)}
-                    className={`text-xs font-medium text-red-600 hover:underline rounded ${FOCUS}`}
+                    className={`text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}
                   >
                     {reasonOpen ? 'Hide case definition' : 'Show case definition'}
                   </button>
@@ -1658,18 +1658,19 @@ export default function EventDetail() {
         </div>
       ) : error ? (
         <div className="bg-white rounded-2xl border border-gray-100 py-24 text-center space-y-3">
-          <p className="text-sm text-red-500">{error}</p>
+          <p className="text-sm text-red-700">{error}</p>
           <button onClick={load} className={`bg-red-600 text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-red-700 ${FOCUS}`}>
             Retry
           </button>
         </div>
       ) : event && inv && (
         <div className="flex flex-col gap-6">
+          <p className="text-sm text-gray-500 -mb-2">One reported event from the field. Work through the steps below: check the AI triage, verify with the reporter, investigate, then record a decision.</p>
           {event.mergedInto && (
             <div className="flex items-center gap-2 rounded-xl bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700">
               <Link2 className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span>This event was merged into{' '}
-                <Link to={`/alerts-signals/${event.mergedInto}`} className={`font-semibold text-red-600 hover:underline rounded ${FOCUS}`}>{event.mergedInto}</Link>
+                <Link to={`/alerts-signals/${event.mergedInto}`} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{event.mergedInto}</Link>
               </span>
             </div>
           )}
@@ -1711,7 +1712,7 @@ export default function EventDetail() {
                   <li key={r.id} className="flex items-center justify-between gap-3 flex-wrap rounded-xl bg-white border border-amber-200 px-4 py-3">
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Link to={`/alerts-signals/${r.id}`} className={`text-sm font-semibold text-red-600 hover:underline rounded ${FOCUS}`}>{r.title}</Link>
+                        <Link to={`/alerts-signals/${r.id}`} className={`text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{r.title}</Link>
                         <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600">{STATUS_LABELS[r.status] || r.status}</span>
                         <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600">{SEVERITY_LABELS[r.severity] || SEVERITY_LABELS.standard}</span>
                       </div>
@@ -1756,7 +1757,7 @@ export default function EventDetail() {
                     <>
                       {singleReporter.name || '—'}
                       {singleReporter.phone && (
-                        <a href={`tel:${singleReporter.phone}`} className={`block text-xs font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+                        <a href={`tel:${singleReporter.phone}`} className={`block text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
                           Call {singleReporter.phone}
                         </a>
                       )}
@@ -1772,7 +1773,7 @@ export default function EventDetail() {
                     <Lightbulb className="w-4 h-4 shrink-0" aria-hidden="true" />
                     <span>
                       Context supports this signal: {supports.map((s) => shortText(s.text)).join(' · ')}{' '}
-                      <button type="button" onClick={() => selectStep(2)} className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+                      <button type="button" onClick={() => selectStep(2)} className={`font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
                         See AI triage
                       </button>
                     </span>
@@ -1780,7 +1781,7 @@ export default function EventDetail() {
                 ) : (
                   <p className="text-xs text-gray-500">
                     AI matched: {matchedSigns(event.reason) || '—'} ·{' '}
-                    <button type="button" onClick={() => selectStep(2)} className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+                    <button type="button" onClick={() => selectStep(2)} className={`font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
                       See AI triage
                     </button>
                   </p>
@@ -1798,7 +1799,7 @@ export default function EventDetail() {
             <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
               <h2 className="text-xl font-semibold text-gray-900">Audit timeline</h2>
               {canAct && !noteOpen && (
-                <button type="button" aria-label="Add note" onClick={() => setNoteOpen(true)} className={`text-sm font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
+                <button type="button" aria-label="Add note" onClick={() => setNoteOpen(true)} className={`text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
                   Add note
                 </button>
               )}

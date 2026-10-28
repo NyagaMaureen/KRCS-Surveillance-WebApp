@@ -7,8 +7,8 @@ import { formatDateTime, parseDateOnly, formatDateOnly, STATUSES } from '../data
 
 const PAGE_SIZE = 6
 
-const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-600', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500' }
-const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-600', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
+const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-700', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500' }
+const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-700', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
 const channelColor = (c) => CHANNEL_COLORS[c] || 'bg-gray-100 text-gray-600'
 const EXPOSURE_TAGS = { 'Bite or scratch': 'Animal bite or scratch', 'Handled sick or dead animal': 'Handled sick or dead animal' }
@@ -113,7 +113,7 @@ export default function Reports() {
     <AppShell>
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Reports Management</h2>
+          <h2 className="text-xl font-bold text-brand-navy">Reports Management</h2>
           <p className="text-sm text-gray-400">Generate, import, export, and manage surveillance reports</p>
         </div>
         <div className="flex gap-3">

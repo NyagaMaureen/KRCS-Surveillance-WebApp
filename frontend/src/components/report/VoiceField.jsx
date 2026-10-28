@@ -123,8 +123,8 @@ export default function VoiceField({ voice, setVoice, onRetry }) {
           <audio controls src={voice.previewUrl} className="w-full max-w-md" />
           <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
             {voice.duration ? <span className="text-gray-500">Duration {formatDuration(voice.duration)}</span> : null}
-            <button type="button" onClick={startRecording} className="inline-flex items-center gap-1 text-gray-600 hover:text-red-600"><RefreshCw className="w-3 h-3" /> Re-record</button>
-            <button type="button" onClick={deleteVoice} className="inline-flex items-center gap-1 text-gray-600 hover:text-red-600"><Trash2 className="w-3 h-3" /> Delete</button>
+            <button type="button" onClick={startRecording} className="inline-flex items-center gap-1 text-gray-600 hover:text-red-700"><RefreshCw className="w-3 h-3" /> Re-record</button>
+            <button type="button" onClick={deleteVoice} className="inline-flex items-center gap-1 text-gray-600 hover:text-red-700"><Trash2 className="w-3 h-3" /> Delete</button>
           </div>
           <UploadStatus item={voice} onRetry={onRetry} />
         </div>
@@ -138,7 +138,7 @@ export default function VoiceField({ voice, setVoice, onRetry }) {
           </button>
         </div>
       )}
-      {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
+      {error && <p className="text-xs text-red-700 mt-1.5">{error}</p>}
       <input
         ref={fileInputRef}
         type="file"

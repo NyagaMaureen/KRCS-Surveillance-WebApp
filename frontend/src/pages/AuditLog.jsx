@@ -8,13 +8,13 @@ const PAGE_SIZE = 20
 
 const CATEGORY_COLORS = {
   Investigation: 'bg-purple-50 text-purple-700',
-  Auth: 'bg-[#DB2424]/10 text-[#DB2424]',
+  Auth: 'bg-brand-red/10 text-red-700',
   Alert: 'bg-[#F2C94C]/10 text-[#F2C94C]',
   Report: 'bg-[#27AE60]/10 text-[#27AE60]',
   Case: 'bg-[#1447E6]/10 text-[#1447E6]',
   Config: 'bg-[#9333EA]/10 text-[#9333EA]',
   User: 'bg-gray-50 text-gray-900',
-  AI: 'bg-[#DB2424]/10 text-[#DB2424]',
+  AI: 'bg-brand-red/10 text-red-700',
 }
 const categoryColor = (c) => CATEGORY_COLORS[c] || 'bg-gray-100 text-gray-600'
 
@@ -117,7 +117,7 @@ export default function AuditLog() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Audit Log</h2>
+          <h2 className="text-xl font-bold text-brand-navy">Audit Log</h2>
           <p className="text-sm text-gray-400">Access activity, User Logs, Alert Created, Data Export and System Backup</p>
         </div>
         <div className="flex gap-3">
@@ -193,7 +193,7 @@ export default function AuditLog() {
                 <td className="px-5 py-4 text-gray-500 whitespace-nowrap">{log.role}</td>
                 <td className="px-5 py-4 text-gray-500 max-w-xs">
                   {log.details}
-                  {log.link && <Link to={log.link} className="ml-2 text-xs text-[#DB2424] hover:underline">Open</Link>}
+                  {log.link && <Link to={log.link} className="ml-2 text-xs text-red-700 hover:underline">Open</Link>}
                   {log.changes?.length > 0 && (
                     <>
                       {' '}
@@ -250,7 +250,7 @@ export default function AuditLog() {
               <div className="flex justify-between gap-4"><dt className="text-gray-400">Action</dt><dd className="text-gray-900 font-medium">{detailsLog.action}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-gray-400">User</dt><dd className="text-gray-900 font-medium">{detailsLog.user}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-gray-400">Role</dt><dd className="text-gray-900 font-medium">{detailsLog.role}</dd></div>
-              <div><dt className="text-gray-400 mb-1">Details</dt><dd className="text-gray-700 break-words whitespace-pre-wrap">{detailsLog.details}{detailsLog.link && <Link to={detailsLog.link} className="ml-2 text-xs text-[#DB2424] hover:underline">Open</Link>}</dd></div>
+              <div><dt className="text-gray-400 mb-1">Details</dt><dd className="text-gray-700 break-words whitespace-pre-wrap">{detailsLog.details}{detailsLog.link && <Link to={detailsLog.link} className="ml-2 text-xs text-red-700 hover:underline">Open</Link>}</dd></div>
             </dl>
             {detailsLog.changes?.length > 0 && (
               <div className="mt-4">

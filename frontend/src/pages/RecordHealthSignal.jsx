@@ -78,10 +78,10 @@ function validate(f, today) {
 function Field({ id, label, required, error, hint, children }) {
   return (
     <div id={`field-${id}`}>
-      <label className="block text-sm font-semibold mb-1">{label}{required && <span className="text-red-600"> *</span>}</label>
+      <label className="block text-sm font-semibold mb-1">{label}{required && <span className="text-red-700"> *</span>}</label>
       {children}
       {hint && !error && <p className="text-xs text-gray-400 mt-1.5">{hint}</p>}
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
     </div>
   )
 }
@@ -403,7 +403,7 @@ export default function RecordHealthSignal() {
   return (
     <AppShell>
       <div className="w-full">
-        <h2 className="text-xl font-bold text-gray-900">Record Health Signal</h2>
+        <h2 className="text-xl font-bold text-brand-navy">Record Health Signal</h2>
         <p className="text-sm text-gray-400 mb-8">Quick community or facility health surveillance signal recording</p>
 
         <div className="flex items-center mb-8">
@@ -411,7 +411,7 @@ export default function RecordHealthSignal() {
             <div key={label} className={['flex items-center', i < steps.length - 1 ? 'flex-1' : ''].join(' ')}>
               <div className="flex flex-col items-center">
                 <div className={['w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors', i + 1 <= currentStep ? 'bg-red-600 text-white shadow-sm shadow-red-200' : 'bg-gray-200 text-gray-500'].join(' ')}>{i + 1}</div>
-                <div className={['text-xs mt-1.5 whitespace-nowrap', i + 1 <= currentStep ? 'text-red-600 font-semibold' : 'text-gray-400'].join(' ')}>{label}</div>
+                <div className={['text-xs mt-1.5 whitespace-nowrap', i + 1 <= currentStep ? 'text-red-700 font-semibold' : 'text-gray-400'].join(' ')}>{label}</div>
               </div>
               {i < steps.length - 1 && (
                 <div className={['flex-1 h-0.5 mx-2 rounded-full transition-colors', i + 1 < currentStep ? 'bg-red-600' : 'bg-gray-200'].join(' ')}></div>
@@ -452,7 +452,7 @@ export default function RecordHealthSignal() {
                   {phoneMissing && phoneWarning}
                 </Field>
                 <div>
-                  <div className="block text-sm font-semibold mb-1">Channel <span className="text-red-600">*</span></div>
+                  <div className="block text-sm font-semibold mb-1">Channel <span className="text-red-700">*</span></div>
                   <p className="text-sm text-gray-700 py-1">Web</p>
                 </div>
               </div>
@@ -497,7 +497,7 @@ export default function RecordHealthSignal() {
               </div>
 
               <div className="mb-8" id="field-gps">
-                <label className="block text-sm font-semibold mb-1">GPS location <span className="text-red-600">*</span></label>
+                <label className="block text-sm font-semibold mb-1">GPS location <span className="text-red-700">*</span></label>
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="button"
@@ -516,7 +516,7 @@ export default function RecordHealthSignal() {
                     <button type="button" onClick={() => setManualGps(true)} className="text-xs text-gray-500 underline hover:text-gray-800">Enter manually</button>
                   )}
                 </div>
-                {geoError && <p className="text-xs text-red-600 mt-1.5">{geoError}</p>}
+                {geoError && <p className="text-xs text-red-700 mt-1.5">{geoError}</p>}
                 {manualGps && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                     <div>
@@ -529,7 +529,7 @@ export default function RecordHealthSignal() {
                     </div>
                   </div>
                 )}
-                {shown('gps') && <p className="text-xs text-red-600 mt-1">{shown('gps')}</p>}
+                {shown('gps') && <p className="text-xs text-red-700 mt-1">{shown('gps')}</p>}
               </div>
 
               <div className="flex justify-end">
@@ -551,11 +551,11 @@ export default function RecordHealthSignal() {
               </div>
 
               <h3 className="text-sm font-bold text-gray-900 mb-3 pt-2 border-t border-gray-100">
-                Select All Observed Symptoms <span className="text-red-600">*</span>
+                Select All Observed Symptoms <span className="text-red-700">*</span>
                 <span className="block text-xs font-normal text-gray-400 mt-0.5">Select at least one symptom, or an animal exposure below.</span>
               </h3>
               <SymptomPicker symptoms={symptoms} selected={form.symptoms} onToggle={(id) => { toggleSymptom(id); touch('symptoms') }} invalid={!!shown('symptoms')} onBlur={() => touch('symptoms')} />
-              {shown('symptoms') && <p className="text-xs text-red-600 mt-1">{shown('symptoms')}</p>}
+              {shown('symptoms') && <p className="text-xs text-red-700 mt-1">{shown('symptoms')}</p>}
 
               <div className="pt-6 mt-6 border-t border-gray-100">
                 <h3 className="text-sm font-bold text-gray-900 mb-4">About the affected person(s)</h3>
@@ -598,7 +598,7 @@ export default function RecordHealthSignal() {
                 {classifyResults.length > 0 && (
                   <div className="mt-5 bg-gray-50 border border-gray-100 rounded-xl p-4">
                     <div className="flex items-start gap-2.5">
-                      <Stethoscope className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <Stethoscope className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
                       <div>
                         <p className="text-sm font-semibold text-gray-900">These signs match:  {classifyResults[0].name}</p>
                         {classifyResults.length > 1 && (
@@ -660,10 +660,10 @@ export default function RecordHealthSignal() {
                       disabled={uploading[type]}
                       className="w-12 h-12 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-60"
                     >
-                      {uploading[type] ? <Loader2 className="w-5 h-5 animate-spin text-red-600" /> : <Icon className="w-5 h-5 text-gray-500" />}
+                      {uploading[type] ? <Loader2 className="w-5 h-5 animate-spin text-red-700" /> : <Icon className="w-5 h-5 text-gray-500" />}
                     </button>
                     <span className="text-[11px] text-gray-500 mt-1 text-center">{type}</span>
-                    {uploadErrors[type] && <span className="text-[10px] text-red-600 mt-0.5 text-center max-w-[80px]">{uploadErrors[type]}</span>}
+                    {uploadErrors[type] && <span className="text-[10px] text-red-700 mt-0.5 text-center max-w-[80px]">{uploadErrors[type]}</span>}
                     {accept !== null && (
                       <input
                         ref={fileInputRefs[type]}
@@ -701,7 +701,7 @@ export default function RecordHealthSignal() {
                         <span className="text-xs font-semibold text-gray-500 shrink-0">{a.attachment_type}</span>
                         <span className="text-gray-700 truncate">{attachmentPreview(a)}</span>
                       </div>
-                      <button type="button" onClick={() => removeAttachment(i)} className="text-gray-400 hover:text-red-600 transition-colors shrink-0 ml-2">
+                      <button type="button" onClick={() => removeAttachment(i)} className="text-gray-400 hover:text-red-700 transition-colors shrink-0 ml-2">
                         <X className="w-4 h-4" />
                       </button>
                     </div>

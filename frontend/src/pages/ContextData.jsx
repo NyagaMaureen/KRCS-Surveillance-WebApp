@@ -43,7 +43,7 @@ export default function ContextData() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Context Data</h2>
+        <h2 className="text-xl font-bold text-brand-navy">Context Data</h2>
         <p className="text-sm text-gray-400">Weather, population and WASH conditions per sub-county. Shown to officers as background on alerts; never used by the alert engine.</p>
       </div>
 
@@ -86,7 +86,7 @@ function Modal({ title, subtitle, icon: Icon, onClose, children, footer }) {
       <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center"><Icon className="w-5 h-5 text-red-600" /></div>
+            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center"><Icon className="w-5 h-5 text-red-700" /></div>
             <div><h3 className="font-bold text-gray-900">{title}</h3><p className="text-xs text-gray-400">{subtitle}</p></div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
@@ -162,7 +162,7 @@ function WashTab({ subCounties, options }) {
                 </div>
                 {r.narrative_notes && <p className="text-xs text-gray-600 mt-2">{r.narrative_notes}</p>}
               </div>
-              {canManage && <button onClick={() => remove(r)} className="text-gray-300 hover:text-red-600" title="Delete (mistakes only)"><Trash2 className="w-4 h-4" /></button>}
+              {canManage && <button onClick={() => remove(r)} className="text-gray-300 hover:text-red-700" title="Delete (mistakes only)"><Trash2 className="w-4 h-4" /></button>}
             </div>
           ))}
       </div>
@@ -196,14 +196,14 @@ function WashModal({ subCounties, options, defaultSubCounty, onClose, onSaved })
       </>}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className={label}>Sub-county <span className="text-red-600">*</span></label>
+          <label className={label}>Sub-county <span className="text-red-700">*</span></label>
           <select value={form.sub_county} onChange={(e) => setForm({ ...form, sub_county: e.target.value })} className={field}>
             <option value="">Select a sub-county</option>
             {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}
           </select>
         </div>
         <div>
-          <label className={label}>Assessment date <span className="text-red-600">*</span></label>
+          <label className={label}>Assessment date <span className="text-red-700">*</span></label>
           <input type="date" max={todayIso()} value={form.assessment_date} onChange={(e) => setForm({ ...form, assessment_date: e.target.value })} className={field} />
         </div>
         <div className="md:col-span-2">
@@ -288,7 +288,7 @@ function PopulationTab({ subCounties, options }) {
                 <td className="px-5 py-3 text-right font-semibold text-gray-900">{Number(r.population_count).toLocaleString()}</td>
                 <td className="px-5 py-3 text-gray-700">{r.source}{r.bulletin_reference && <div className="text-xs text-gray-400 truncate max-w-[220px]" title={r.bulletin_reference}>{r.bulletin_reference}</div>}</td>
                 <td className="px-5 py-3 text-gray-500 text-xs">{fmtDate(r.import_date)}<div>{r.entered_by || ''}</div></td>
-                <td className="px-5 py-3 text-right">{canManage && <button onClick={() => remove(r)} className="text-gray-300 hover:text-red-600" title="Delete (mistakes only)"><Trash2 className="w-4 h-4" /></button>}</td>
+                <td className="px-5 py-3 text-right">{canManage && <button onClick={() => remove(r)} className="text-gray-300 hover:text-red-700" title="Delete (mistakes only)"><Trash2 className="w-4 h-4" /></button>}</td>
               </tr>
             ))}
         </tbody>
@@ -323,22 +323,22 @@ function PopulationModal({ subCounties, sources, defaultSubCounty, onClose, onSa
       </>}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className={label}>Sub-county <span className="text-red-600">*</span></label>
+          <label className={label}>Sub-county <span className="text-red-700">*</span></label>
           <select value={form.sub_county} onChange={(e) => setForm({ ...form, sub_county: e.target.value })} className={field}>
             <option value="">Select a sub-county</option>
             {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}
           </select>
         </div>
         <div>
-          <label className={label}>Figures as of <span className="text-red-600">*</span></label>
+          <label className={label}>Figures as of <span className="text-red-700">*</span></label>
           <input type="date" value={form.reporting_period} onChange={(e) => setForm({ ...form, reporting_period: e.target.value })} className={field} />
         </div>
         <div>
-          <label className={label}>Population <span className="text-red-600">*</span></label>
+          <label className={label}>Population <span className="text-red-700">*</span></label>
           <input type="number" min="1" value={form.population_count} onChange={(e) => setForm({ ...form, population_count: e.target.value })} className={field} placeholder="e.g. 382000" />
         </div>
         <div>
-          <label className={label}>Source <span className="text-red-600">*</span></label>
+          <label className={label}>Source <span className="text-red-700">*</span></label>
           <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} className={field}>
             {sources.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>

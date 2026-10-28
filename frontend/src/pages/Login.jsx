@@ -34,7 +34,7 @@ export default function Login() {
           <div className="mb-10">
             <img src="/assets/surveillance/images/newlogo.svg" alt="Kenya Red Cross" className="h-10 w-auto object-contain" />
           </div>
-          <h1 className="text-3xl font-extrabold text-gray-900 mb-1">Welcome Back!</h1>
+          <h1 className="text-3xl font-extrabold text-brand-navy mb-1">Welcome Back!</h1>
           <p className="text-gray-400 mb-8">Login to your account</p>
 
           <form onSubmit={handleLogin}>
@@ -103,7 +103,7 @@ export default function Login() {
               </button>
             </div>
 
-            {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+            {error && <p className="text-red-700 text-sm mb-4">{error}</p>}
 
             <button
               type="submit"
@@ -113,7 +113,7 @@ export default function Login() {
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               {loading ? 'Logging in...' : 'Login'}
             </button>
-            <p className="text-center text-sm text-gray-600">Forgot Password? <a href="#" className="text-red-600 font-medium">Reset</a></p>
+            <p className="text-center text-sm text-gray-600">Forgot Password? <a href="#" className="text-red-700 font-medium">Reset</a></p>
           </form>
         </div>
 

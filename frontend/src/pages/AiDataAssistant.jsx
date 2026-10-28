@@ -359,7 +359,7 @@ export default function AiDataAssistant() {
                     </div>
                     <span
                       onClick={(e) => { e.stopPropagation(); deleteChat(chat.id) }}
-                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 shrink-0 mt-0.5"
+                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-700 shrink-0 mt-0.5"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </span>
@@ -374,7 +374,7 @@ export default function AiDataAssistant() {
           {!messages.length ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-4 py-10">
               <img src="/assets/surveillance/images/logo.png" alt="KRCS" className="w-20 h-18 object-contain mb-5" />
-              <h2 className="text-2xl sm:text-3xl font-medium text-gray-900 mb-3">Welcome to KRCS AI DataAssistant</h2>
+              <h2 className="text-2xl sm:text-3xl font-medium text-brand-navy mb-3">Welcome to KRCS AI DataAssistant</h2>
               <p className="text-gray-500 text-base sm:text-lg max-w-2xl mb-8">
                 {source === 'documents'
                   ? 'Ask about KRCS protocols, case definitions and guidelines. Answers are written from approved KRCS documents, with their sources.'
@@ -517,7 +517,7 @@ export default function AiDataAssistant() {
                 disabled={!voiceSupported}
                 title={voiceSupported ? 'Voice input' : 'Voice input not supported in this browser'}
                 className={['rounded-full w-10 h-10 flex items-center justify-center shrink-0 border transition-colors',
-                  isRecording ? 'bg-red-100 border-red-200 text-red-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100',
+                  isRecording ? 'bg-red-100 border-red-200 text-red-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100',
                   !voiceSupported ? 'opacity-40 cursor-not-allowed' : ''].join(' ')}
               >
                 <Mic className="w-4 h-4" />

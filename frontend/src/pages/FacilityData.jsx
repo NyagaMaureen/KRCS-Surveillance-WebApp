@@ -69,7 +69,7 @@ export default function FacilityData() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Facility Data</h2>
+          <h2 className="text-xl font-bold text-brand-navy">Facility Data</h2>
           <p className="text-sm text-gray-400">Upload weekly MOH 505 (IDSR) exports from KHIS. They feed straight into outbreak detection.</p>
         </div>
       </div>
@@ -168,7 +168,7 @@ function UploadTab({ onAddFacility }) {
         <input ref={inputRef} type="file" accept=".xls,.xlsx" multiple className="hidden"
           onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }} />
         <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
-          <Upload className="w-6 h-6 text-red-600" />
+          <Upload className="w-6 h-6 text-red-700" />
         </div>
         <p className="text-sm font-semibold text-gray-900">Drop KHIS exports here, or click to choose files</p>
         <p className="text-xs text-gray-400 mt-1">MOH 505 cases files (e.g. 2026.xls) and reporting-rate files (e.g. reporting_26.xls). You can add several at once.</p>
@@ -398,7 +398,7 @@ function CoverageTab() {
         ))}
       </div>
 
-      {error ? <p className="p-6 text-sm text-red-600">{error}</p> : loading ? (
+      {error ? <p className="p-6 text-sm text-red-700">{error}</p> : loading ? (
         <p className="p-10 text-center text-sm text-gray-400">Loading coverage…</p>
       ) : !data.facilities.length ? (
         <p className="p-10 text-center text-sm text-gray-400">No facilities yet. Add them under Facilities.</p>
@@ -561,7 +561,7 @@ function HistoryTab() {
             {(open.status === 'Ready' || open.status === 'Failed') && (
               <div className="flex justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-100">
                 <p className="text-xs text-gray-500 mr-auto self-center">This upload was never saved, so discarding it changes no data.</p>
-                <button onClick={discardOpen} disabled={discarding} className="border border-red-200 bg-white text-red-600 hover:bg-red-50 rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2 disabled:opacity-60">
+                <button onClick={discardOpen} disabled={discarding} className="border border-red-200 bg-white text-red-700 hover:bg-red-50 rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2 disabled:opacity-60">
                   {discarding && <Loader2 className="w-4 h-4 animate-spin" />}
                   Discard upload
                 </button>
@@ -688,7 +688,7 @@ function FacilityModal({ facility, prefillUnit, onClose, onSaved }) {
       <div className="bg-white rounded-2xl w-full max-w-xl shadow-xl overflow-hidden">
         <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center"><Building2 className="w-5 h-5 text-red-600" /></div>
+            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center"><Building2 className="w-5 h-5 text-red-700" /></div>
             <div>
               <h3 className="font-bold text-gray-900">{facility ? 'Edit facility' : 'Add facility'}</h3>
               <p className="text-xs text-gray-400">{prefillUnit ? `From the file: “${prefillUnit}”` : 'A health facility that sends MOH 505 reports'}</p>
@@ -699,18 +699,18 @@ function FacilityModal({ facility, prefillUnit, onClose, onSaved }) {
 
         <div className="px-6 py-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Facility name <span className="text-red-600">*</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Facility name <span className="text-red-700">*</span></label>
             <input value={form.facilityName} disabled={!!facility} onChange={(e) => setForm({ ...form, facilityName: e.target.value })} className={field + ' disabled:bg-gray-50 disabled:text-gray-400'} placeholder="e.g. Ifo" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Name in KHIS files <span className="text-red-600">*</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Name in KHIS files <span className="text-red-700">*</span></label>
             <input value={form.khisMatch} onChange={(e) => setForm({ ...form, khisMatch: e.target.value })} className={field + ' font-mono'} placeholder="e.g. ifo" />
             <p className="text-xs text-gray-400 mt-1">A word from the organisation unit name at the top of this facility's KHIS exports. Not case-sensitive.</p>
             {matches === true && <p className="text-xs text-green-700 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Matches the file.</p>}
             {matches === false && <p className="text-xs text-amber-700 mt-1 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Doesn't match “{prefillUnit}” yet.</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Sub-county <span className="text-red-600">*</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Sub-county <span className="text-red-700">*</span></label>
             <select value={form.subCounty} onChange={(e) => setForm({ ...form, subCounty: e.target.value })} className={field}>
               <option value="">Select a sub-county</option>
               {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}

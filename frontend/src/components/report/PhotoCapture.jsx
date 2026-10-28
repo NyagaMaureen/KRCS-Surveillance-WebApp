@@ -8,7 +8,7 @@ export function UploadStatus({ upload, onRetry }) {
   if (!upload) return null
   if (upload.error) {
     return (
-      <div className="text-[11px] text-red-600 mt-1">
+      <div className="text-[11px] text-red-700 mt-1">
         {upload.error}{' '}
         {onRetry && <button type="button" onClick={onRetry} className="font-semibold underline">Retry</button>}
       </div>
@@ -91,8 +91,8 @@ export default function PhotoCapture({ photos, onChange, uploads, onRetry, error
                 <img src={p.url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
               </button>
               <div className="flex justify-between mt-1">
-                <button type="button" onClick={() => openPicker(p.id)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-red-600"><RefreshCw className="w-3 h-3" /> Replace</button>
-                <button type="button" onClick={() => remove(p)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-red-600"><Trash2 className="w-3 h-3" /> Remove</button>
+                <button type="button" onClick={() => openPicker(p.id)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-red-700"><RefreshCw className="w-3 h-3" /> Replace</button>
+                <button type="button" onClick={() => remove(p)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-red-700"><Trash2 className="w-3 h-3" /> Remove</button>
               </div>
               <UploadStatus upload={upload} onRetry={onRetry} />
             </div>
@@ -108,8 +108,8 @@ export default function PhotoCapture({ photos, onChange, uploads, onRetry, error
         <Camera className="w-3.5 h-3.5" /> Add photo
       </button>
       <span className="text-xs text-gray-400 ml-2">{photos.length}/{MAX_PHOTOS} · JPG, PNG, WEBP, HEIC · max 10 MB each</span>
-      {fileError && <p className="text-xs text-red-600 mt-1">{fileError}</p>}
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {fileError && <p className="text-xs text-red-700 mt-1">{fileError}</p>}
+      {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
 
       {preview && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPreview(null)}>

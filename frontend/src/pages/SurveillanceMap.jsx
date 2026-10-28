@@ -7,7 +7,7 @@ import MapView from '../components/map/MapView'
 import { getMapEvents, getDiseaseOptions, exportCsv } from '../api/frappe'
 
 const SEVERITY_COLORS = {
-  critical: '#DC2626',
+  critical: '#EE2435',
   high: '#F2C94C',
   standard: '#3B82F6',
 }
@@ -206,7 +206,7 @@ export default function SurveillanceMap() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Surveillance Map</h2>
+          <h2 className="text-xl font-bold text-brand-navy">Surveillance Map</h2>
           <p className="text-sm text-gray-400">Where reported events are in Dadaab and Kalobeyei, coloured by severity.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -285,7 +285,7 @@ export default function SurveillanceMap() {
         </div>
 
         {filtersActive && (
-          <button type="button" onClick={clearFilters} className="text-sm font-medium text-red-600 hover:underline">
+          <button type="button" onClick={clearFilters} className="text-sm font-medium text-red-700 hover:underline">
             Clear filters
           </button>
         )}
@@ -409,7 +409,7 @@ export default function SurveillanceMap() {
       {data.unmapped > 0 && (
         <p className="text-sm text-gray-400 mt-3">
           {data.unmapped} events have no map location.{' '}
-          <Link to="/alerts-signals" className="text-red-600 font-medium hover:underline">View them in Review Queue.</Link>
+          <Link to="/alerts-signals" className="text-red-700 font-medium hover:underline">View them in Review Queue.</Link>
         </p>
       )}
 

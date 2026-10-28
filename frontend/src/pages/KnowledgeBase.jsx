@@ -207,9 +207,9 @@ function StatusBadge({ doc }) {
   if (doc.status === 'processing') {
     badge = <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-amber-500/10 text-amber-600"><Loader2 className="w-3 h-3 animate-spin" />Processing</span>
   } else if (doc.status === 'failed') {
-    badge = <span title={doc.error || ''} className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-rose-500/10 text-rose-600"><AlertTriangle className="w-3 h-3" />Failed</span>
+    badge = <span title={doc.error || ''} className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-red-500/10 text-red-700"><AlertTriangle className="w-3 h-3" />Failed</span>
   } else if (f.expired) {
-    badge = <span className="text-xs font-medium px-3 py-1 rounded-full bg-rose-500/10 text-rose-600">Expired</span>
+    badge = <span className="text-xs font-medium px-3 py-1 rounded-full bg-red-500/10 text-red-700">Expired</span>
   } else if (a === 'approved') {
     badge = <span className="text-xs font-medium px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600">Approved</span>
   } else if (a === 'retired') {
@@ -224,7 +224,7 @@ function StatusBadge({ doc }) {
         <span className="text-[11px] text-gray-400">by {doc.approvedBy}</span>
       )}
       {doc.status === 'failed' && doc.error && (
-        <span className="text-[11px] text-rose-500 max-w-[180px] truncate" title={doc.error}>{doc.error}</span>
+        <span className="text-[11px] text-red-700 max-w-[180px] truncate" title={doc.error}>{doc.error}</span>
       )}
       {f.expiresSoon && <span className="text-[11px] text-amber-600">Expires in {f.daysLeft} {f.daysLeft === 1 ? 'day' : 'days'}</span>}
       {f.reviewDue && <span className="text-[11px] text-gray-500">Review due</span>}
@@ -257,7 +257,7 @@ function RowMenu({ items }) {
               disabled={disabled}
               onClick={() => { setOpen(false); onClick() }}
               className={['w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-left disabled:opacity-40 disabled:cursor-not-allowed',
-                danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50'].join(' ')}
+                danger ? 'text-red-700 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50'].join(' ')}
             >
               <Icon className="w-4 h-4" />{label}
             </button>
@@ -314,7 +314,7 @@ function MoreOptions({ values, setValues, diseaseOptions, regionOptions, disease
             <input type="date" value={expiryDate} onChange={(e) => setValues({ expiryDate: e.target.value })} className={INPUT} />
           </div>
           <p className="sm:col-span-2 text-xs text-gray-400 -mt-2">{DATE_HELP}</p>
-          {dateError && <p className="sm:col-span-2 text-xs text-red-600 -mt-2">{dateError}</p>}
+          {dateError && <p className="sm:col-span-2 text-xs text-red-700 -mt-2">{dateError}</p>}
         </div>
       )}
     </div>
@@ -421,7 +421,7 @@ function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOption
             >
               <input ref={fileInputRef} type="file" multiple accept=".pdf,.docx,.txt,.md" className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
               <UploadCloud className="w-7 h-7 text-gray-400 mb-2" />
-              <p className="text-sm text-gray-900">Drag files here or <span className="text-red-600 font-medium">browse</span></p>
+              <p className="text-sm text-gray-900">Drag files here or <span className="text-red-700 font-medium">browse</span></p>
               <p className="text-xs text-gray-400 mt-1">PDF, Word, TXT or Markdown, up to 25 MB each</p>
             </div>
             {!!files.length && (
@@ -431,7 +431,7 @@ function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOption
                     <FileText className="w-4 h-4 text-gray-400 shrink-0" />
                     <span className="flex-1 truncate text-gray-700">{file.name}</span>
                     <span className="text-xs text-gray-400 shrink-0">{formatBytes(file.size)}</span>
-                    <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} disabled={!!progress} aria-label={`Remove ${file.name}`} className="text-gray-400 hover:text-red-500">
+                    <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} disabled={!!progress} aria-label={`Remove ${file.name}`} className="text-gray-400 hover:text-red-700">
                       <X className="w-4 h-4" />
                     </button>
                   </li>
@@ -440,7 +440,7 @@ function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOption
             )}
             {!!errors.length && (
               <ul className="mt-3 bg-red-50 rounded-lg px-4 py-3 space-y-1">
-                {errors.map((m) => <li key={m} className="text-xs text-red-600">{m}</li>)}
+                {errors.map((m) => <li key={m} className="text-xs text-red-700">{m}</li>)}
               </ul>
             )}
           </section>
@@ -621,7 +621,7 @@ function FiltersPopover({ filters, setFilters, roleOptions, regionOptions }) {
             </SelectField>
           </div>
           <div className="flex justify-between pt-1">
-            <button type="button" onClick={() => setFilters(EMPTY_FILTERS)} className="text-sm text-red-600 hover:underline">Clear all</button>
+            <button type="button" onClick={() => setFilters(EMPTY_FILTERS)} className="text-sm text-red-700 hover:underline">Clear all</button>
             <button type="button" onClick={close} className="text-sm font-medium text-gray-700 hover:underline">Done</button>
           </div>
         </div>
@@ -672,7 +672,7 @@ function TestSearch() {
           {loading && <Loader2 className="w-4 h-4 animate-spin" />}{loading ? 'Searching…' : 'Search'}
         </button>
       </form>
-      {error && <p className="mt-4 bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3">{error}</p>}
+      {error && <p className="mt-4 bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3">{error}</p>}
       {results && !results.length && <p className="mt-6 text-sm text-gray-400 text-center">No matching passages.</p>}
       {!!results?.length && (
         <ul className="mt-5 space-y-3">
@@ -692,7 +692,7 @@ function TestSearch() {
                 </div>
                 <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{expanded[key] || !long ? text : `${text.slice(0, 300)}…`}</p>
                 {long && (
-                  <button type="button" onClick={() => setExpanded((p) => ({ ...p, [key]: !p[key] }))} className="text-xs font-medium text-red-600 mt-1 hover:underline">
+                  <button type="button" onClick={() => setExpanded((p) => ({ ...p, [key]: !p[key] }))} className="text-xs font-medium text-red-700 mt-1 hover:underline">
                     {expanded[key] ? 'Show less' : 'Show more'}
                   </button>
                 )}
@@ -886,7 +886,7 @@ export default function KnowledgeBase() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Knowledge Base</h1>
+          <h1 className="text-xl font-semibold text-brand-navy">Knowledge Base</h1>
           <p className="text-sm text-gray-400 mt-1">Approved KRCS documents that the AI assistant and chatbot quote from.</p>
         </div>
         {canManage && (
@@ -913,7 +913,7 @@ export default function KnowledgeBase() {
               key={t.key}
               onClick={() => setTab(t.key)}
               className={['pb-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-                tab === t.key ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-900'].join(' ')}
+                tab === t.key ? 'border-red-600 text-red-700' : 'border-transparent text-gray-500 hover:text-gray-900'].join(' ')}
             >
               {t.label}
             </button>
@@ -942,7 +942,7 @@ export default function KnowledgeBase() {
                   key={q.key}
                   onClick={() => setQuick(q.key)}
                   className={['inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm border transition-colors',
-                    quick === q.key ? 'border-red-600 bg-red-50 text-red-600' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'].join(' ')}
+                    quick === q.key ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'].join(' ')}
                 >
                   {q.key === 'attention' && quickCounts.attention > 0 && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
                   {q.label}
@@ -965,8 +965,8 @@ export default function KnowledgeBase() {
               </div>
             ) : loadError ? (
               <div className="py-16 text-center">
-                <p className="text-sm text-red-600 mb-3">{loadError}</p>
-                <button onClick={loadDocuments} className="text-sm font-medium text-red-600 hover:underline">Try again</button>
+                <p className="text-sm text-red-700 mb-3">{loadError}</p>
+                <button onClick={loadDocuments} className="text-sm font-medium text-red-700 hover:underline">Try again</button>
               </div>
             ) : !documents.length ? (
               <div className="py-16 px-6 text-center flex flex-col items-center">
@@ -1044,7 +1044,7 @@ export default function KnowledgeBase() {
                           {hasFilters && (
                             <button
                               onClick={() => { setSearch(''); setQuick('all'); setFilters(EMPTY_FILTERS) }}
-                              className="ml-2 text-red-600 font-medium hover:underline"
+                              className="ml-2 text-red-700 font-medium hover:underline"
                             >
                               Clear filters
                             </button>

@@ -49,7 +49,7 @@ const INITIAL_AI_FEATURES = [
 ]
 
 const PRIORITY_OPTIONS = [
-  { value: 'Critical', colorClass: 'text-red-600' },
+  { value: 'Critical', colorClass: 'text-red-700' },
   { value: 'High', colorClass: 'text-amber-600' },
   { value: 'Standard', colorClass: 'text-gray-600' },
 ]
@@ -481,7 +481,7 @@ export default function Settings() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Settings</h2>
+        <h2 className="text-xl font-bold text-brand-navy">Settings</h2>
         <p className="text-sm text-gray-400">Manage the system settings and preferences</p>
       </div>
 
@@ -549,7 +549,7 @@ export default function Settings() {
             </div>
             <p className="text-xs text-gray-500 -mt-3 mb-6">Your area is set by an administrator. Contact them to change it.</p>
 
-            {profileError && <p className="text-red-600 text-sm mb-4">{profileError}</p>}
+            {profileError && <p className="text-red-700 text-sm mb-4">{profileError}</p>}
 
             <div className="flex gap-3">
               {!editing ? (
@@ -755,7 +755,7 @@ export default function Settings() {
             <p className="text-sm text-gray-400">Loading thresholds…</p>
           ) : thresholdsError ? (
             <div>
-              <p className="text-red-600 text-sm mb-3">{thresholdsError}</p>
+              <p className="text-red-700 text-sm mb-3">{thresholdsError}</p>
               <button onClick={loadThresholds} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50">Retry</button>
             </div>
           ) : (
@@ -808,7 +808,7 @@ export default function Settings() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium text-gray-900">{disease.name}</p>
-                        {disease.note && <span className="text-xs font-medium text-red-600 bg-red-50 rounded px-1.5 py-0.5">{disease.note}</span>}
+                        {disease.note && <span className="text-xs font-medium text-red-700 bg-red-50 rounded px-1.5 py-0.5">{disease.note}</span>}
                       </div>
 
                       <div className="mt-1.5 flex items-center gap-2 flex-wrap">
@@ -821,7 +821,7 @@ export default function Settings() {
                           <span className="text-xs text-gray-300">No ICD-11 code</span>
                         )}
                         {editingDiseaseThresholds && has('manage_alert_thresholds') && (
-                          <button type="button" onClick={() => startIcd11Change(disease)} className="text-xs font-medium text-red-600 hover:underline">
+                          <button type="button" onClick={() => startIcd11Change(disease)} className="text-xs font-medium text-red-700 hover:underline">
                             Change
                           </button>
                         )}
@@ -837,7 +837,7 @@ export default function Settings() {
                             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 mb-2"
                           />
                           {icd11ChangeSearch.loading && <p className="text-xs text-gray-400">Searching…</p>}
-                          {!icd11ChangeSearch.loading && icd11ChangeSearch.error && <p className="text-xs text-red-600">{icd11ChangeSearch.error}</p>}
+                          {!icd11ChangeSearch.loading && icd11ChangeSearch.error && <p className="text-xs text-red-700">{icd11ChangeSearch.error}</p>}
                           {!icd11ChangeSearch.loading && !icd11ChangeSearch.error && icd11ChangeQuery.trim().length >= 2 && icd11ChangeSearch.results.length === 0 && (
                             <p className="text-xs text-gray-400">No ICD-11 matches</p>
                           )}
@@ -861,7 +861,7 @@ export default function Settings() {
                               No ICD-11 code
                             </button>
                           </div>
-                          {icd11ChangeSaveError && <p className="text-xs text-red-600 mt-2">{icd11ChangeSaveError}</p>}
+                          {icd11ChangeSaveError && <p className="text-xs text-red-700 mt-2">{icd11ChangeSaveError}</p>}
                           <button type="button" onClick={closeIcd11Change} className="mt-2 text-xs font-medium text-gray-500 hover:underline">
                             Cancel
                           </button>
@@ -907,7 +907,7 @@ export default function Settings() {
 
               <p className="text-xs text-gray-400 mt-4">Priority sets how serious one suspected case is. Alerts for Critical diseases are always treated as critical.</p>
 
-              {saveThresholdsError && <p className="text-red-600 text-sm mt-4">{saveThresholdsError}</p>}
+              {saveThresholdsError && <p className="text-red-700 text-sm mt-4">{saveThresholdsError}</p>}
 
               {addingDisease && (
                 <div className="mt-6 border border-gray-200 rounded-xl p-4">
@@ -981,7 +981,7 @@ export default function Settings() {
                     )}
                   </div>
 
-                  {addDiseaseError && <p className="text-red-600 text-sm mt-3">{addDiseaseError}</p>}
+                  {addDiseaseError && <p className="text-red-700 text-sm mt-3">{addDiseaseError}</p>}
 
                   <div className="flex justify-end gap-3 mt-4">
                     <button onClick={cancelAddDisease} className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
@@ -1052,7 +1052,7 @@ export default function Settings() {
               <input ref={importInputRef} type="file" accept=".csv" className="hidden" onChange={handleImport} />
             </div>
 
-            {importMessage && <p className={['text-sm mt-4', importError ? 'text-red-600' : 'text-green-600'].join(' ')}>{importMessage}</p>}
+            {importMessage && <p className={['text-sm mt-4', importError ? 'text-red-700' : 'text-green-600'].join(' ')}>{importMessage}</p>}
 
             <div className="border-t border-gray-100 mt-6 pt-4">
               <p className="text-xs text-gray-400">Import, export, and manage surveillance data</p>

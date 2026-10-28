@@ -5,7 +5,7 @@ export default function Investigations() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Investigations</h2>
+        <h2 className="text-xl font-bold text-brand-navy">Investigations</h2>
         <p className="text-sm text-gray-400">Track and manage active outbreak investigations</p>
       </div>
 

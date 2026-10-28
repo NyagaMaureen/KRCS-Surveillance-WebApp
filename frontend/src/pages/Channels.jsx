@@ -114,7 +114,7 @@ export default function Channels() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Reporting Channels</h2>
+          <h2 className="text-xl font-bold text-brand-navy">Reporting Channels</h2>
           <p className="text-sm text-gray-400">How health signals are reaching the system, from submitted reports and connected data sources</p>
         </div>
         <div className="bg-gray-50 border border-gray-100 rounded-lg p-1 flex gap-1">
@@ -128,7 +128,7 @@ export default function Channels() {
       </div>
 
       {error ? (
-        <p className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>
+        <p className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>
       ) : loading ? (
         <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center text-sm text-gray-400">Loading reporting channels...</div>
       ) : (
@@ -221,7 +221,7 @@ export default function Channels() {
                         Latest week with signals: {lastWeek ? `week of ${lastWeek}` : 'None'}
                       </p>
                       {src.value === 'IDSR' && has('upload_facility_data') && (
-                        <Link to="/facility-data" className="text-xs font-semibold text-red-600 hover:underline">Upload files →</Link>
+                        <Link to="/facility-data" className="text-xs font-semibold text-red-700 hover:underline">Upload files →</Link>
                       )}
                       {signals > 0 && pilot === 0 && (
                         <div className="flex items-start gap-2 bg-blue-50 text-blue-700 text-xs rounded-lg px-3 py-2 mt-4">

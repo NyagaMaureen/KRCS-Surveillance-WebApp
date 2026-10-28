@@ -5,7 +5,7 @@ import AppShell from '../components/layout/AppShell'
 import { CHART_FONT } from '../charts/chartSetup'
 import { getDataExplorerOptions, queryDataExplorer, exportDataExplorer, exportCsv } from '../api/frappe'
 
-const CHART_COLORS = ['#DC2626', '#2F80ED', '#F2C94C', '#27AE60', '#8B5CF6', '#EC4899', '#F97316', '#0EA5E9']
+const CHART_COLORS = ['#EE2435', '#2F80ED', '#F2C94C', '#27AE60', '#8B5CF6', '#EC4899', '#F97316', '#0EA5E9']
 const PAGE_SIZE = 25
 
 const VIEWS = [
@@ -166,7 +166,7 @@ export default function DataExplorer() {
     return {
       labels: chart.labels,
       datasets: chart.series.map((s, i) => {
-        const color = chart.series.length > 1 ? CHART_COLORS[i % CHART_COLORS.length] : '#DC2626'
+        const color = chart.series.length > 1 ? CHART_COLORS[i % CHART_COLORS.length] : '#EE2435'
         return view === 'line'
           ? { label: s.name, data: s.data, borderColor: color, backgroundColor: color, tension: 0.3, pointRadius: 3, borderWidth: 2 }
           : { label: s.name, data: s.data, backgroundColor: color, borderRadius: 4, stack: 'stack' }
@@ -201,7 +201,7 @@ export default function DataExplorer() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Data Explorer</h2>
+          <h2 className="text-xl font-bold text-brand-navy">Data Explorer</h2>
           <p className="text-sm text-gray-400">Search and filter surveillance data from field reports, CBS and MOH 505, and see it as a table or chart</p>
         </div>
         {options?.canExport && (
@@ -336,7 +336,7 @@ export default function DataExplorer() {
         </div>
       </div>
 
-      {error && <p className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>}
+      {error && <p className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>}
 
       <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
         <div className="flex items-center justify-between gap-4 flex-wrap mb-4">

@@ -1,18 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, Download, RefreshCw, MapPin, Calendar, Users, TrendingUp, AlertTriangle } from 'lucide-react'
+import { Search, Download, RefreshCw, Activity, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getAlertsSignals, getAlertRegions } from '../api/frappe'
+import { sev, BTN_SECONDARY, EmptyState } from '../components/surveillance/ui'
 
 const SEVERITIES = ['critical', 'high', 'standard']
 const SEVERITY_RANK = { critical: 0, high: 1, standard: 2 }
 const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
 
-const SEVERITY_STYLES = {
-  critical: 'bg-red-600 text-white',
-  high: 'bg-amber-400 text-white',
-  standard: 'bg-blue-500 text-white',
-}
 const SEVERITY_BAR = {
   critical: 'bg-red-600',
   high: 'bg-amber-400',
@@ -24,7 +20,7 @@ const STATUS_STYLES = {
   Resolved: 'border-emerald-500 bg-emerald-500/10 text-emerald-600',
   Investigating: 'border-purple-400 bg-purple-400/10 text-purple-500',
   Confirmed: 'border-blue-500 bg-blue-500/10 text-blue-600',
-  Rejected: 'border-red-500 bg-red-500/10 text-red-600',
+  Rejected: 'border-red-500 bg-red-500/10 text-red-700',
 }
 
 const TABS = [
@@ -60,8 +56,9 @@ const PAGE_SIZES = [10, 25, 50]
 const SURGE_TIP =
   'Several diseases rose together here; may be more reporting rather than more illness.'
 
-const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-1'
-const SELECT_CLS = `appearance-none bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-900 ${FOCUS}`
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1'
+const STATUS_TONE = { Pending: 'amber', Investigating: 'purple', Confirmed: 'blue', Resolved: 'green', Rejected: 'neutral' }
+const isCommunity = (a) => !!a.sources?.length && a.sources.every((x) => x === 'CBS' || x === 'Case Report')
 
 const diseaseOf = (a) => a.disease || a.title || ''
 const timeOf = (a) => (a.lastWeek ? new Date(a.lastWeek).getTime() : 0)
@@ -106,102 +103,64 @@ function csvCell(v) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-function SkeletonRow() {
-  return (
-    <div className="p-6 border-t border-gray-100 first:border-t-0 animate-pulse flex gap-6">
-      <div className="flex-1 space-y-3">
-        <div className="h-4 bg-gray-100 rounded w-1/3" />
-        <div className="h-3 bg-gray-100 rounded w-2/3" />
-        <div className="h-3 bg-gray-100 rounded w-1/2" />
-      </div>
-      <div className="h-8 w-16 bg-gray-100 rounded-lg" />
-    </div>
-  )
+function SkeletonRows() {
+  return [0, 1, 2, 3, 4].map((i) => (
+    <tr key={i} className="animate-pulse border-t border-gray-100">
+      {[40, 28, 16, 10, 12, 14, 18].map((w, j) => (
+        <td key={j} className="px-3 py-4"><div className="h-3 bg-gray-100 rounded" style={{ width: `${w * 3}px` }} /></td>
+      ))}
+    </tr>
+  ))
 }
 
-function AlertCard({ alert, onOpen }) {
-  const weeks = alert.weeks || 1
-  const isCommunityOnly = !!alert.sources?.length && alert.sources.every((s) => s === 'CBS' || s === 'Case Report')
+const PRIORITY_STYLE = {
+  critical: 'border-red-300 text-red-700',
+  high: 'border-amber-300 text-amber-600',
+  standard: 'border-gray-300 text-gray-500',
+}
+const STATUS_PILL = {
+  Pending: 'bg-red-600 text-white',
+  Investigating: 'bg-gray-200 text-gray-700',
+  Confirmed: 'bg-sky-100 text-sky-800',
+  Resolved: 'bg-green-600 text-white',
+  Rejected: 'bg-gray-100 text-gray-400',
+}
+
+function AlertRow({ alert, onOpen }) {
+  const community = isCommunity(alert)
+  const qLink = `/alerts-signals?tab=all&q=${encodeURIComponent(diseaseOf(alert) || '')}`
   return (
-    <div
-      role="link"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.target === e.currentTarget && e.key === 'Enter') onOpen()
-      }}
-      className={`relative flex items-start justify-between gap-4 p-6 flex-wrap sm:flex-nowrap cursor-pointer hover:bg-gray-50 transition-colors ${FOCUS} focus-visible:ring-inset`}
-    >
-      <div className="min-w-0 flex-1 space-y-2">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <h3 className="text-base text-gray-900">{alert.title}</h3>
-          <span className={`text-xs font-medium px-2.5 py-1 rounded uppercase tracking-wide ${SEVERITY_STYLES[alert.severity] || 'bg-gray-400 text-white'}`}>
-            {alert.severity}
-          </span>
-          <span className={`inline-flex items-center text-[10px] font-medium px-2.5 py-1 rounded-full border ${STATUS_STYLES[alert.status] || 'border-gray-200 bg-gray-50 text-gray-500'}`}>
-            {STATUS_LABELS[alert.status] || alert.status}
-          </span>
-          {alert.openEvents > 0 && (
-            <span className="inline-flex items-center text-[10px] font-medium px-2.5 py-1 rounded-full border border-purple-300 bg-purple-50 text-purple-600">
-              {alert.openEvents === 1 ? 'Investigation open' : `${alert.openEvents} investigations open`}
-            </span>
-          )}
-          {alert.ongoing ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-              <span className="relative flex w-2 h-2" aria-hidden="true">
-                <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-500 opacity-75 animate-ping" />
-                <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500" />
-              </span>
-              Ongoing
-            </span>
-          ) : (
-            <span className="text-xs font-medium text-gray-400">Ended</span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-sm text-gray-500">
-          <span className="inline-flex items-center gap-1.5"><MapPin className="w-4 h-4" aria-hidden="true" />{alert.location}</span>
-          <span className="inline-flex items-center gap-1.5"><Calendar className="w-4 h-4" aria-hidden="true" />{periodText(alert)}</span>
-          <span className="inline-flex items-center gap-1.5"><Users className="w-4 h-4" aria-hidden="true" />{isCommunityOnly ? `${alert.affected} affected` : `${alert.signals} cases`}</span>
-          {weeks > 1 && (
-            <span className="inline-flex items-center gap-1.5"><TrendingUp className="w-4 h-4" aria-hidden="true" />peak {alert.peak}/week</span>
-          )}
-        </div>
-
-        {(alert.whyShort || alert.surge) && (
-          <div className="flex items-center gap-2 flex-wrap">
-            {alert.whyShort && <p className="text-sm text-gray-700">{alert.whyShort}</p>}
-            {alert.surge && (
-              <span
-                title={SURGE_TIP}
-                tabIndex={0}
-                aria-label={`Possible reporting surge. ${SURGE_TIP}`}
-                className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-200 ${FOCUS}`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> Possible reporting surge
-              </span>
+    <tr onClick={onOpen} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 cursor-pointer">
+      <td className="px-3 py-3.5">
+        <span className="font-medium text-gray-900">{alert.title}</span>
+        {(alert.surge || alert.openEvents > 0) && (
+          <span className="block text-xs text-gray-400 mt-0.5">
+            {alert.surge && <span className="text-amber-600" title={SURGE_TIP}>Reporting surge?</span>}
+            {alert.surge && alert.openEvents > 0 && ' · '}
+            {alert.openEvents > 0 && (
+              <Link to={qLink} onClick={(e) => e.stopPropagation()} className={`underline underline-offset-2 hover:text-gray-700 rounded ${FOCUS}`}>
+                {alert.openEvents === 1 ? 'In Review Queue' : `${alert.openEvents} in Review Queue`}
+              </Link>
             )}
-          </div>
+          </span>
         )}
-
-        {!!alert.sources?.length && (
-          <div className="flex gap-1.5 flex-wrap">
-            {alert.sources.map((s) => (
-              <span key={s} className="text-xs text-gray-600 bg-gray-100 rounded-full px-2.5 py-0.5">
-                {SOURCE_LABELS[s] || s}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      <Link
-        to={`/epi-trends/${alert.id}`}
-        onClick={(e) => e.stopPropagation()}
-        className={`border border-gray-200 bg-white rounded-lg px-5 py-2 text-xs font-medium text-gray-900 hover:bg-gray-50 shrink-0 ${FOCUS}`}
-      >
-        View
-      </Link>
-    </div>
+      </td>
+      <td className="px-3 py-3.5 text-gray-600 hidden md:table-cell">
+        {alert.location}
+        <span className="block text-xs text-gray-400">{alert.epiWeekShort || alert.date}{alert.ongoing ? ' · ongoing' : ''}</span>
+      </td>
+      <td className="px-3 py-3.5 text-gray-500 hidden lg:table-cell">{(alert.sources || []).map((x) => SOURCE_LABELS[x] || x).join(', ') || '—'}</td>
+      <td className="px-3 py-3.5 text-right tabular-nums text-gray-700">
+        {community ? alert.affected : alert.signals}
+        <span className="block text-xs text-gray-400">{community ? 'people' : 'cases'}</span>
+      </td>
+      <td className="px-3 py-3.5"><span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs ${PRIORITY_STYLE[alert.severity] || PRIORITY_STYLE.standard}`}>{alert.severity || 'standard'}</span></td>
+      <td className="px-3 py-3.5"><span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_PILL[alert.status] || STATUS_PILL.Rejected}`}>{STATUS_LABELS[alert.status] || alert.status}</span></td>
+      <td className="px-3 py-3.5 text-right">
+        <Link to={`/epi-trends/${alert.id}`} onClick={(e) => e.stopPropagation()}
+          className={`inline-flex items-center h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-white whitespace-nowrap ${FOCUS}`}>View details</Link>
+      </td>
+    </tr>
   )
 }
 
@@ -365,208 +324,130 @@ export default function AlertsSignals() {
     URL.revokeObjectURL(url)
   }
 
-  const pageBtn = `border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50 ${FOCUS}`
+  const card = 'bg-white rounded-xl border border-gray-100'
+  const pageBtn = `h-9 px-4 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-white ${FOCUS}`
+  const SEL = `h-9 bg-white border border-gray-200 rounded-lg px-3 text-sm text-gray-700 ${FOCUS}`
+  const cols = 7
+  const statCards = [
+    { label: 'Open', value: tabCounts.open || 0, onClick: () => setParam({ tab: '', sev: '' }), on: tab === 'open' && !severities.length },
+    ...SEVERITIES.map((sv) => ({
+      label: SEVERITY_LABELS[sv], value: severityCounts[sv], dot: sev(sv).dot, on: severities.length === 1 && severities[0] === sv,
+      onClick: () => setParam({ sev: severities.length === 1 && severities[0] === sv ? '' : sv }),
+    })),
+  ]
 
   return (
     <AppShell>
-      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Epi Trends</h2>
-          <p className="text-sm text-gray-400">Weekly case counts compared with what is normal for each area. Use this to spot rising diseases and confirm outbreaks.</p>
-          <p className="text-sm text-gray-500 mt-1">
-            Individual reports waiting for verification are in the{' '}
-            <Link to="/alerts-signals" className={`font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
-              Review Queue →
-            </Link>
-          </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
+        <div className="max-w-2xl">
+          <h1 className="text-xl font-semibold text-brand-navy">Epi Trends</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Weekly case counts compared with what is normal for each place. An alert means a disease is rising above its usual level and may need an investigation.</p>
+          <Link to="/alerts-signals" className={`inline-block text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2 mt-1 rounded ${FOCUS}`}>Looking for individual reports to verify? See the Review Queue</Link>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleExportReport}
-            disabled={!total}
-            className={`border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-900 flex items-center gap-2 hover:bg-gray-50 disabled:opacity-50 ${FOCUS}`}
-          >
-            <Download className="w-4 h-4" /> Export Report
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportReport} disabled={!total} className={`h-9 inline-flex items-center gap-1.5 px-3.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 ${FOCUS}`}>
+            <Download className="w-4 h-4" aria-hidden="true" /> Export
           </button>
-          <button
-            onClick={load}
-            disabled={loading}
-            className={`border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-900 flex items-center gap-2 hover:bg-gray-50 disabled:opacity-50 ${FOCUS}`}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          <button onClick={load} disabled={loading} className={`h-9 inline-flex items-center gap-1.5 px-3.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium ${FOCUS}`}>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" /> Refresh
           </button>
         </div>
       </div>
 
-      <div role="tablist" aria-label="Alert status" className="flex gap-1 border-b border-gray-200 mb-4 overflow-x-auto">
-        {TABS.map((t) => {
-          const active = tab === t.key
-          return (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={active}
-              onClick={() => setParam({ tab: t.key === 'open' ? '' : t.key })}
-              className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px flex items-center gap-2 ${FOCUS} ${
-                active ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              {t.label}
-              <span className={`text-xs rounded-full px-2 py-0.5 ${active ? 'bg-red-600/10 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
-                {tabCounts[t.key]}
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {statCards.map((c) => (
+            <button key={c.label} onClick={c.onClick} aria-pressed={c.on}
+              className={`${card} text-left p-4 flex items-center justify-between hover:border-gray-200 ${c.on ? 'ring-1 ring-gray-300' : ''} ${FOCUS}`}>
+              <span>
+                <span className="block text-xs text-gray-400">{c.label}</span>
+                <span className="block text-xl font-semibold text-gray-900 tabular-nums mt-1">{loading ? '–' : c.value}</span>
+              </span>
+              <span className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                {c.dot ? <span className={`w-2.5 h-2.5 rounded-full ${c.dot}`} aria-hidden="true" /> : <Activity className="w-4 h-4 text-gray-500" aria-hidden="true" />}
               </span>
             </button>
-          )
-        })}
-      </div>
-
-      <div className="flex gap-2 flex-wrap mb-4" role="group" aria-label="Filter by severity">
-        {SEVERITIES.map((s) => {
-          const on = severities.includes(s)
-          return (
-            <button
-              key={s}
-              aria-pressed={on}
-              onClick={() =>
-                setParam({ sev: (on ? severities.filter((x) => x !== s) : [...severities, s]).join(',') })
-              }
-              className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium ${FOCUS} ${
-                on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <span className={`w-2.5 h-2.5 rounded-full ${SEVERITY_BAR[s]}`} aria-hidden="true" />
-              {SEVERITY_LABELS[s]}
-              <span className={on ? 'text-white/80' : 'text-gray-400'}>{severityCounts[s]}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-3 flex-wrap mb-6">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" aria-hidden="true" />
-          <input
-            value={search}
-            onChange={(e) => setParam({ q: e.target.value })}
-            type="text"
-            aria-label="Search alerts"
-            placeholder="Search by title, location, disease or description..."
-            className={`w-full bg-gray-50 border border-gray-100 rounded-lg pl-10 pr-4 py-2.5 text-sm ${FOCUS}`}
-          />
+          ))}
         </div>
 
-        <select aria-label="Region or county" value={region} onChange={(e) => setParam({ region: e.target.value })} className={SELECT_CLS}>
-          <option value="">All regions</option>
-          {regions.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
-
-        <select aria-label="Disease" value={disease} onChange={(e) => setParam({ disease: e.target.value })} className={SELECT_CLS}>
-          <option value="">All diseases</option>
-          {diseases.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
-
-        <select aria-label="Data source" value={source} onChange={(e) => setParam({ source: e.target.value })} className={SELECT_CLS}>
-          <option value="">All data sources</option>
-          {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-
-        <select aria-label="Period" value={period} onChange={(e) => setParam({ period: e.target.value === '4w' ? '' : e.target.value })} className={SELECT_CLS}>
-          {PERIODS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
-
-        <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-900 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={ongoingOnly}
-            onChange={(e) => setParam({ ongoing: e.target.checked })}
-            className="w-4 h-4 accent-red-600 focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-1"
-          />
-          Ongoing only
-        </label>
-
-        {filtersActive && (
-          <button onClick={clearFilters} className={`text-sm font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
-            Clear filters
-          </button>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-        <p className="text-sm text-gray-500">{loading ? 'Loading alerts…' : `${total} alert${total === 1 ? '' : 's'}`}</p>
-        <label className="flex items-center gap-2 text-sm text-gray-500">
-          Sort by
-          <select value={sort} onChange={(e) => setParam({ sort: e.target.value === 'recent' ? '' : e.target.value })} className={SELECT_CLS}>
-            {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        <div className={`${card} p-3 flex items-center gap-2 flex-wrap`}>
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+            <input value={search} onChange={(e) => setParam({ q: e.target.value })} type="text" aria-label="Search alerts" placeholder="Search by disease or place"
+              className={`w-full h-9 bg-gray-50 border border-gray-100 rounded-lg pl-9 pr-3 text-sm ${FOCUS}`} />
+          </div>
+          <select aria-label="Status" value={ongoingOnly ? 'ongoing' : tab}
+            onChange={(e) => e.target.value === 'ongoing' ? setParam({ tab: 'all', ongoing: '1' }) : setParam({ tab: e.target.value === 'open' ? '' : e.target.value, ongoing: '' })} className={SEL}>
+            {TABS.map((t) => <option key={t.key} value={t.key}>{t.key === 'all' ? 'All statuses' : t.label}</option>)}
+            <option value="ongoing">Ongoing only</option>
           </select>
-        </label>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        {loading ? (
-          [0, 1, 2, 3].map((i) => <SkeletonRow key={i} />)
-        ) : error ? (
-          <div className="py-16 text-center space-y-3">
-            <p className="text-sm text-gray-500">We couldn't load alerts. Please check your connection and try again.</p>
-            <button onClick={load} className={`bg-red-600 text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-red-700 ${FOCUS}`}>
-              Try again
+          <select aria-label="Disease" value={disease} onChange={(e) => setParam({ disease: e.target.value })} className={SEL}>
+            <option value="">All diseases</option>
+            {diseases.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <select aria-label="Region" value={region} onChange={(e) => setParam({ region: e.target.value })} className={SEL}>
+            <option value="">All regions</option>
+            {regions.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+          <select aria-label="Period" value={period} onChange={(e) => setParam({ period: e.target.value === '4w' ? '' : e.target.value })} className={SEL}>
+            {PERIODS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+          </select>
+          {filtersActive && (
+            <button onClick={clearFilters} className={`inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 rounded ${FOCUS}`}>
+              <X className="w-4 h-4" aria-hidden="true" /> Clear
             </button>
-          </div>
-        ) : !alerts.length ? (
-          <div className="py-16 text-center text-gray-400 text-sm">
-            No active outbreaks. The engine checks all data sources daily.
-          </div>
-        ) : !total ? (
-          <div className="py-16 text-center space-y-3">
-            <p className="text-sm text-gray-400">No alerts match your filters</p>
-            {filtersActive && (
-              <button onClick={clearFilters} className={`text-sm font-medium text-red-600 hover:underline rounded ${FOCUS}`}>
-                Clear filters
-              </button>
-            )}
-          </div>
-        ) : (
-          sections.map((section) => (
-            <div key={section.title || 'all'}>
-              {section.title && (
-                <div className="flex items-center gap-2 px-6 py-2.5 bg-gray-50 border-y border-gray-100 first:border-t-0">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{section.title}</h3>
-                  <span className="text-xs text-gray-500 bg-white border border-gray-100 rounded-full px-2 py-0.5">{section.count}</span>
-                </div>
-              )}
-              {section.items.map((alert, i) => (
-                <div key={alert.id} className={i !== 0 ? 'border-t border-gray-100' : ''}>
-                  <AlertCard alert={alert} onOpen={() => navigate(`/epi-trends/${alert.id}`)} />
-                </div>
-              ))}
-            </div>
-          ))
-        )}
+          )}
+        </div>
 
-        {!loading && !error && !!total && (
-          <div className="flex items-center justify-between p-5 border-t border-gray-100 flex-wrap gap-3">
-            <div className="flex gap-2">
-              <button onClick={() => setPage(0)} disabled={safePage === 0} className={pageBtn}>First</button>
-              <button onClick={() => setPage(Math.max(0, safePage - 1))} disabled={safePage === 0} className={pageBtn}>Previous</button>
-            </div>
-            <div className="flex items-center gap-4 flex-wrap justify-center">
-              <span className="text-sm text-gray-500">{paginationLabel}</span>
-              <label className="flex items-center gap-2 text-sm text-gray-500">
-                Per page
-                <select
-                  value={pageSize}
-                  onChange={(e) => setParam({ size: Number(e.target.value) === 10 ? '' : e.target.value })}
-                  className={SELECT_CLS}
-                >
-                  {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setPage(Math.min(lastPage, safePage + 1))} disabled={safePage >= lastPage} className={pageBtn}>Next</button>
-              <button onClick={() => setPage(lastPage)} disabled={safePage >= lastPage} className={pageBtn}>Last</button>
-            </div>
+        <div className={`${card} p-4`}>
+          <div className="flex items-center justify-between mb-3 gap-3">
+            <h2 className="text-sm font-medium text-gray-900">{tab === 'all' ? 'All alerts' : `${TABS.find((t) => t.key === tab).label} alerts`}</h2>
+            <select aria-label="Sort" value={sort} onChange={(e) => setParam({ sort: e.target.value === 'recent' ? '' : e.target.value })} className={`${SEL} h-8`}>
+              {SORTS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
           </div>
-        )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                  <th className="px-3 py-2.5 font-medium rounded-l-lg">Alert</th>
+                  <th className="px-3 py-2.5 font-medium hidden md:table-cell">Location · week</th>
+                  <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Source</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Total</th>
+                  <th className="px-3 py-2.5 font-medium">Priority</th>
+                  <th className="px-3 py-2.5 font-medium">Status</th>
+                  <th className="px-3 py-2.5 font-medium rounded-r-lg"><span className="sr-only">Action</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRows />
+                ) : error ? (
+                  <tr><td colSpan={cols}><EmptyState title="Couldn't load trends" body="Check your connection and try again." action={<button onClick={load} className={BTN_SECONDARY}>Try again</button>} /></td></tr>
+                ) : !alerts.length ? (
+                  <tr><td colSpan={cols}><EmptyState title="No trend alerts" body="No disease is above its usual level right now." /></td></tr>
+                ) : !total ? (
+                  <tr><td colSpan={cols}><EmptyState title="No alerts match your filters" action={filtersActive && <button onClick={clearFilters} className={BTN_SECONDARY}>Clear filters</button>} /></td></tr>
+                ) : (
+                  pagedAlerts.map((a) => <AlertRow key={a.id} alert={a} onOpen={() => navigate(`/epi-trends/${a.id}`)} />)
+                )}
+              </tbody>
+            </table>
+          </div>
+          {!loading && !error && !!total && (
+            <div className="flex items-center justify-between gap-3 flex-wrap mt-4">
+              <div className="flex gap-2">
+                <button onClick={() => setPage(0)} disabled={safePage === 0} className={pageBtn}>First</button>
+                <button onClick={() => setPage(Math.max(0, safePage - 1))} disabled={safePage === 0} className={pageBtn}>Previous</button>
+              </div>
+              <span className="text-sm text-gray-500">{paginationLabel}</span>
+              <div className="flex gap-2">
+                <button onClick={() => setPage(Math.min(lastPage, safePage + 1))} disabled={safePage >= lastPage} className={pageBtn}>Next</button>
+                <button onClick={() => setPage(lastPage)} disabled={safePage >= lastPage} className={pageBtn}>Last</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </AppShell>
   )

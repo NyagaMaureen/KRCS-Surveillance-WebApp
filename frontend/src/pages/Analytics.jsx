@@ -9,7 +9,7 @@ import { getAnalytics, exportCsv } from '../api/frappe'
 
 const ICONS = { Clock, Sparkles, AlertTriangle, Map }
 const iconFor = (name) => ICONS[name] || Clock
-const COLORS = ['#DC2626', '#2F80ED', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#14B8A6', '#6B7280']
+const COLORS = ['#EE2435', '#2F80ED', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#14B8A6', '#6B7280']
 
 const PERIODS = [{ value: 4, label: '4 weeks' }, { value: 13, label: '3 months' }, { value: 52, label: '12 months' }]
 const SOURCES = [
@@ -94,7 +94,7 @@ export default function Analytics() {
     return {
       labels: exp.labels,
       datasets: [
-        { label: 'Outbreak level', data: exp.outbreakLevel, borderColor: '#DC2626', borderDash: [6, 6], pointRadius: 0, borderWidth: 2, tension: 0, fill: false },
+        { label: 'Outbreak level', data: exp.outbreakLevel, borderColor: '#EE2435', borderDash: [6, 6], pointRadius: 0, borderWidth: 2, tension: 0, fill: false },
         { label: 'Usual level', data: exp.expected, borderColor: '#9CA3AF', backgroundColor: 'rgba(156,163,175,0.15)', pointRadius: 0, borderWidth: 2, tension: 0.3, fill: true },
         { label: 'Observed', data: exp.observed, borderColor: '#2F80ED', backgroundColor: '#2F80ED', pointRadius: 4, borderWidth: 2, tension: 0.3 },
       ],
@@ -107,7 +107,7 @@ export default function Analytics() {
     return {
       labels: cmp.labels,
       datasets: [
-        { label: `Last 4 weeks (${cmp.currentLabel})`, data: cmp.current, backgroundColor: '#DC2626', borderRadius: 4 },
+        { label: `Last 4 weeks (${cmp.currentLabel})`, data: cmp.current, backgroundColor: '#EE2435', borderRadius: 4 },
         { label: `4 weeks before (${cmp.previousLabel})`, data: cmp.previous, backgroundColor: '#9CA3AF', borderRadius: 4 },
       ],
     }
@@ -120,7 +120,7 @@ export default function Analytics() {
       labels: rt.labels,
       datasets: [
         { label: 'Median hours to start verification', data: rt.medianHours, borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)', fill: true, tension: 0.3, pointRadius: 3, borderWidth: 2, spanGaps: true },
-        { label: `Target (${rt.target} h)`, data: rt.labels.map(() => rt.target), borderColor: '#EF4444', borderDash: [6, 6], pointRadius: 0, borderWidth: 2, fill: false, tension: 0 },
+        { label: `Target (${rt.target} h)`, data: rt.labels.map(() => rt.target), borderColor: '#F15A67', borderDash: [6, 6], pointRadius: 0, borderWidth: 2, fill: false, tension: 0 },
       ],
     }
   }, [rt])
@@ -131,7 +131,7 @@ export default function Analytics() {
     return {
       labels: ages.labels,
       datasets: [
-        { label: 'Reports', data: ages.reports, backgroundColor: '#DC2626', borderRadius: 4 },
+        { label: 'Reports', data: ages.reports, backgroundColor: '#EE2435', borderRadius: 4 },
         { label: 'People affected', data: ages.people, backgroundColor: '#F59E0B', borderRadius: 4 },
       ],
     }
@@ -150,7 +150,7 @@ export default function Analytics() {
       labels: comp.facilities.map((f) => `${f.facility} (${f.subCounty})`),
       datasets: [{
         label: '% of weeks reported', data: comp.facilities.map((f) => f.pct),
-        backgroundColor: comp.facilities.map((f) => (f.pct >= 80 ? '#10B981' : f.pct >= 50 ? '#F59E0B' : '#DC2626')), borderRadius: 4, barThickness: 22,
+        backgroundColor: comp.facilities.map((f) => (f.pct >= 80 ? '#10B981' : f.pct >= 50 ? '#F59E0B' : '#EE2435')), borderRadius: 4, barThickness: 22,
       }],
     }
   }, [comp])
@@ -168,7 +168,7 @@ export default function Analytics() {
     if (items.length < 3) return null
     return {
       labels: items.map((i) => i.label),
-      datasets: [{ label: '%', data: items.map((i) => i.value), backgroundColor: 'rgba(220,38,38,0.25)', borderColor: '#DC2626', borderWidth: 2, pointBackgroundColor: '#DC2626' }],
+      datasets: [{ label: '%', data: items.map((i) => i.value), backgroundColor: 'rgba(220,38,38,0.25)', borderColor: '#EE2435', borderWidth: 2, pointBackgroundColor: '#EE2435' }],
     }
   }, [ind])
   const radarOptions = {
@@ -207,7 +207,7 @@ export default function Analytics() {
     <AppShell>
       <div className="flex items-start justify-between mb-6 flex-wrap gap-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Analytics Dashboard</h2>
+          <h2 className="text-xl font-bold text-brand-navy">Analytics Dashboard</h2>
           <p className="text-sm text-gray-400">
             Disease trends and surveillance performance{data ? ` · ${fmtDate(data.from)} – ${fmtDate(data.to)}` : ''}{data?.region ? ` · ${data.region}` : ' · Dadaab and Kalobeyei'}
           </p>
@@ -231,7 +231,7 @@ export default function Analytics() {
         </div>
       </div>
 
-      {error && <p className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>}
+      {error && <p className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>}
       {loading && !data && <p className="text-sm text-gray-400 flex items-center gap-2 mb-6"><Loader2 className="w-4 h-4 animate-spin" /> Loading analytics…</p>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
@@ -259,19 +259,19 @@ export default function Analytics() {
               </select>
             </div>
           </div>
-          <Legend items={[{ label: 'Observed', color: '#2F80ED' }, { label: 'Usual level', color: '#9CA3AF' }, { label: 'Outbreak level', color: '#DC2626' }]} />
+          <Legend items={[{ label: 'Observed', color: '#2F80ED' }, { label: 'Usual level', color: '#9CA3AF' }, { label: 'Outbreak level', color: '#EE2435' }]} />
           <div className="relative w-full h-72 sm:h-96 mt-3">
             {expectedData ? <Line data={expectedData} options={{ ...baseOptions, scales: baseScales }} /> : <Empty>{loading ? 'Loading…' : 'No data for this disease in this period.'}</Empty>}
           </div>
         </div>
 
         <ChartCard title="Last 4 Weeks vs the 4 Weeks Before" height="h-72 sm:h-96"
-          legend={<Legend items={[{ label: 'Last 4 weeks', color: '#DC2626' }, { label: '4 weeks before', color: '#9CA3AF' }]} />}>
+          legend={<Legend items={[{ label: 'Last 4 weeks', color: '#EE2435' }, { label: '4 weeks before', color: '#9CA3AF' }]} />}>
           {compareData ? <Bar data={compareData} options={{ ...baseOptions, scales: baseScales }} /> : <Empty>{loading ? 'Loading…' : 'No reports or cases in the last 8 weeks.'}</Empty>}
         </ChartCard>
 
         <ChartCard title="Time to Start Verification (median hours per week)" height="h-72 sm:h-96"
-          legend={<Legend items={[{ label: 'Median hours', color: '#10B981' }, { label: `Target (${rt?.target ?? 24} h)`, color: '#EF4444' }]} />}>
+          legend={<Legend items={[{ label: 'Median hours', color: '#10B981' }, { label: `Target (${rt?.target ?? 24} h)`, color: '#F15A67' }]} />}>
           {responseData && rt.medianHours.some((h) => h != null) ? <Line data={responseData} options={{ ...baseOptions, scales: baseScales }} />
             : <Empty>{loading ? 'Loading…' : 'No events have started verification in this period.'}</Empty>}
         </ChartCard>
@@ -310,7 +310,7 @@ export default function Analytics() {
         </ChartCard>
         {comp?.upTo && <Note>{comp.overall != null ? `Overall ${comp.overall}% of facility weeks reported. ` : ''}Latest week loaded: {fmtDate(comp.upTo)}. Green ≥ 80%, amber 50–79%, red below 50%.</Note>}
         <ChartCard title="Field Reports by Age Group" height="h-72 sm:h-96"
-          legend={<Legend items={[{ label: 'Reports', color: '#DC2626' }, { label: 'People affected', color: '#F59E0B' }]} />}>
+          legend={<Legend items={[{ label: 'Reports', color: '#EE2435' }, { label: 'People affected', color: '#F59E0B' }]} />}>
           {agesData ? <Bar data={agesData} options={{ ...baseOptions, scales: baseScales }} /> : <Empty>{loading ? 'Loading…' : 'No field reports in this period.'}</Empty>}
         </ChartCard>
         {/* <Note>Sex is not recorded on reports, to keep personal data to a minimum.</Note> */}

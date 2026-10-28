@@ -20,8 +20,8 @@ function withCurrentValue(list, value) {
   return value && !list.includes(value) ? [...list, value] : list
 }
 
-const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-600', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500' }
-const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-600', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
+const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-700', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500' }
+const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-700', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
 const channelColor = (c) => CHANNEL_COLORS[c] || 'bg-gray-100 text-gray-600'
 const symptomTags = (s) => (s || '').split(',').map((t) => t.trim()).filter(Boolean)
@@ -49,7 +49,7 @@ function SupportingInfoItem({ item, onOpenImage, onRemove }) {
         <button
           type="button"
           onClick={onRemove}
-          className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 flex items-center justify-center shadow-sm transition-colors"
+          className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-red-700 hover:border-red-200 flex items-center justify-center shadow-sm transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -66,7 +66,7 @@ function SupportingInfoItem({ item, onOpenImage, onRemove }) {
         <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.text_content}</p>
       )}
       {item.attachment_type === 'Attachment' && (
-        <a href={item.file} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-gray-700 hover:text-red-600 transition-colors">
+        <a href={item.file} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-gray-700 hover:text-red-700 transition-colors">
           <FileIcon className="w-4 h-4 shrink-0" />
           <span className="truncate">{fileNameFromUrl(item.file)}</span>
         </a>
@@ -287,15 +287,15 @@ export default function ReportDetail() {
           </div>
         ) : loadError ? (
           <div className="bg-white rounded-2xl border border-gray-100 py-24 text-center">
-            <p className="text-sm text-red-500 mb-4">{loadError}</p>
-            <Link to="/reports" className="text-sm font-semibold text-red-600 hover:underline">Return to Reports</Link>
+            <p className="text-sm text-red-700 mb-4">{loadError}</p>
+            <Link to="/reports" className="text-sm font-semibold text-red-700 hover:underline">Return to Reports</Link>
           </div>
         ) : report && (
           <div className="bg-white rounded-2xl border border-gray-100">
             <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5 border-b border-gray-100">
               <div>
                 <div className="flex items-center gap-3 mb-1">
-                  <h2 className="text-xl font-bold text-gray-900">{report.name}</h2>
+                  <h2 className="text-xl font-bold text-brand-navy">{report.name}</h2>
                   <span className={['text-xs font-semibold px-2.5 py-1 rounded-full', statusColor(report.status)].join(' ')}>{report.status}</span>
                 </div>
                 <p className="text-sm text-gray-400">Submitted {formatDateTime(report.creation)} via {(report.channel || '—').toUpperCase()}</p>
@@ -311,7 +311,7 @@ export default function ReportDetail() {
                   </button>
                   <button
                     onClick={() => setConfirmingDelete(true)}
-                    className="inline-flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-red-100 transition-colors"
+                    className="inline-flex items-center gap-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-red-100 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" /> Delete
                   </button>
@@ -320,7 +320,7 @@ export default function ReportDetail() {
             </div>
 
             <div className="p-6">
-              {actionError && <p className="text-red-600 text-sm mb-4">{actionError}</p>}
+              {actionError && <p className="text-red-700 text-sm mb-4">{actionError}</p>}
 
               {mode === 'view' ? (
                 <>
@@ -342,7 +342,7 @@ export default function ReportDetail() {
                         href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-red-600 font-semibold hover:underline"
+                        className="inline-flex items-center gap-1.5 text-red-700 font-semibold hover:underline"
                       >
                         Open in Maps ({Number(report.latitude).toFixed(5)}, {Number(report.longitude).toFixed(5)})
                       </a>
@@ -393,7 +393,7 @@ export default function ReportDetail() {
                     </div>
 
                     <div className="flex items-center gap-2.5 mb-3">
-                      <Stethoscope className="w-5 h-5 text-red-600 shrink-0" />
+                      <Stethoscope className="w-5 h-5 text-red-700 shrink-0" />
                       <span className={['text-lg font-bold', report.suspected_disease ? 'text-gray-900' : 'text-gray-400'].join(' ')}>
                         {report.suspected_disease ? (diseaseName || report.suspected_disease) : 'Not classified'}
                       </span>
@@ -501,7 +501,7 @@ export default function ReportDetail() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold mb-1">Sub-county <span className="text-red-600">*</span></label>
+                      <label className="block text-sm font-semibold mb-1">Sub-county <span className="text-red-700">*</span></label>
                       <select
                         value={editForm.sub_county}
                         onChange={(e) => setEditForm({ ...editForm, sub_county: e.target.value })}
@@ -526,7 +526,7 @@ export default function ReportDetail() {
                             setEditForm((f) => ({ ...f, latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
                           }, undefined, { enableHighAccuracy: true })
                         }}
-                        className="mt-2 text-xs font-semibold text-red-600 hover:underline"
+                        className="mt-2 text-xs font-semibold text-red-700 hover:underline"
                       >
                         Use my current location
                       </button>
@@ -579,10 +579,10 @@ export default function ReportDetail() {
                             disabled={uploading[type]}
                             className="w-12 h-12 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-60"
                           >
-                            {uploading[type] ? <Loader2 className="w-5 h-5 animate-spin text-red-600" /> : <Icon className="w-5 h-5 text-gray-500" />}
+                            {uploading[type] ? <Loader2 className="w-5 h-5 animate-spin text-red-700" /> : <Icon className="w-5 h-5 text-gray-500" />}
                           </button>
                           <span className="text-[11px] text-gray-500 mt-1 text-center">{type}</span>
-                          {uploadErrors[type] && <span className="text-[10px] text-red-600 mt-0.5 text-center max-w-[80px]">{uploadErrors[type]}</span>}
+                          {uploadErrors[type] && <span className="text-[10px] text-red-700 mt-0.5 text-center max-w-[80px]">{uploadErrors[type]}</span>}
                           {accept !== null && (
                             <input
                               ref={fileInputRefs[type]}
@@ -642,7 +642,7 @@ export default function ReportDetail() {
             <div className="bg-red-50 border border-red-100 rounded-lg p-4 mb-6">
               <p className="text-sm text-gray-700">Are you sure you want to delete report <span className="font-semibold">{report?.name}</span>? This action cannot be undone.</p>
             </div>
-            {actionError && <p className="text-red-600 text-sm mb-4">{actionError}</p>}
+            {actionError && <p className="text-red-700 text-sm mb-4">{actionError}</p>}
             <div className="flex justify-end gap-3">
               <button onClick={() => setConfirmingDelete(false)} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
               <button onClick={confirmDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors">

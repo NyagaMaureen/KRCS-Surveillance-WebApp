@@ -30,7 +30,7 @@ const SEVERITY_STYLES = {
   standard: 'bg-blue-500',
 }
 
-const SERIES_COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#14B8A6', '#6B7280']
+const SERIES_COLORS = ['#F15A67', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#14B8A6', '#6B7280']
 
 const TREND_SOURCES = [
   { key: 'community', label: 'Community', hint: 'Field reports and CBS signals' },
@@ -62,7 +62,7 @@ const baseScales = {
 }
 
 function formatChangePct(pct) {
-  if (pct > 0) return { label: `+${pct}%`, className: 'text-red-600' }
+  if (pct > 0) return { label: `+${pct}%`, className: 'text-red-700' }
   if (pct < 0) return { label: `${pct}%`, className: 'text-gray-600' }
   return { label: '±0%', className: 'text-gray-600' }
 }
@@ -176,7 +176,7 @@ export default function Dashboard() {
     <AppShell>
       <div className="flex items-start justify-between mb-6 flex-wrap gap-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Dashboard Overview</h2>
+          <h2 className="text-xl font-bold text-brand-navy">Dashboard Overview</h2>
           <p className="text-sm text-gray-400">Surveillance overview for your area, from live events and weekly counts</p>
         </div>
         <button
@@ -188,7 +188,7 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {error && <p className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>}
+      {error && <p className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>}
 
       {data?.eventsAvailable && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
@@ -266,7 +266,7 @@ export default function Dashboard() {
           <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-sm sm:text-base font-medium text-gray-900">Review Queue: most urgent open events</h3>
-              <Link to="/alerts-signals" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700">
+              <Link to="/alerts-signals" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800">
                 View all <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
@@ -332,7 +332,7 @@ export default function Dashboard() {
               <h3 className="text-sm sm:text-base font-medium text-gray-900">Environmental & Population Context</h3>
               <p className="text-xs text-gray-400 mt-0.5">Rainfall, population and WASH per sub-county. Background only; not used by the alert engine.</p>
             </div>
-            <Link to="/context-data" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700">
+            <Link to="/context-data" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800">
               Context data <ArrowRight className="w-4 h-4" />
             </Link>
           </div>

@@ -159,7 +159,7 @@ export default function Header() {
   return (
     <header className="bg-white px-8 py-4 h-20 flex items-center justify-between border-b border-gray-100">
       <div>
-        <h1 className="text-lg font-semibold text-gray-900 leading-tight">Good {timeOfDay}, {firstName}!</h1>
+        <h1 className="text-lg font-semibold text-brand-navy leading-tight">Good {timeOfDay}, {firstName}!</h1>
         <p className="text-xs text-gray-400 mt-0.5">{dateTimeLabel}</p>
       </div>
 
@@ -198,7 +198,7 @@ export default function Header() {
                   <button
                     type="button"
                     onClick={markAllRead}
-                    className={`text-xs font-medium text-red-600 hover:text-red-700 rounded ${FOCUS}`}
+                    className={`text-xs font-medium text-red-700 hover:text-red-800 rounded ${FOCUS}`}
                   >
                     Mark all as read
                   </button>
@@ -263,7 +263,7 @@ export default function Header() {
                 Settings
               </button>
               <button
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
                 onClick={handleLogout}
               >
                 <LogOut className="w-4 h-4" />

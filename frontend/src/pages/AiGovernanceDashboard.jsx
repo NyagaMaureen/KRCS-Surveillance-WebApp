@@ -28,7 +28,7 @@ const DRIFT_COLORS = {
   Low: 'text-green-600',
   Moderate: 'text-amber-600',
   Monitoring: 'text-blue-600',
-  High: 'text-red-600',
+  High: 'text-red-700',
 }
 
 export default function AiGovernanceDashboard() {
@@ -129,7 +129,7 @@ export default function AiGovernanceDashboard() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-gray-900">AI Governance & Monitoring</h2>
+        <h2 className="text-xl font-bold text-brand-navy">AI Governance & Monitoring</h2>
         <p className="text-sm text-gray-400">Monitor model performance, explainability, feedback, and responsible AI use</p>
       </div>
 

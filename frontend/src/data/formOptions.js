@@ -21,12 +21,12 @@ export const ANIMAL_EXPOSURE_OPTIONS = [
 export const STATUS_COLORS = {
   Submitted: 'bg-amber-50 text-amber-600',
   Reviewed: 'bg-green-50 text-green-600',
-  Linked: 'bg-red-50 text-red-600',
+  Linked: 'bg-red-50 text-red-700',
   Investigating: 'bg-blue-50 text-blue-600',
   Closed: 'bg-gray-100 text-gray-500',
 }
 export const CHANNEL_COLORS = {
-  Web: 'bg-indigo-50 text-indigo-600',
+  Web: 'bg-brand-navy-light text-brand-navy',
   Mobile: 'bg-purple-50 text-purple-600',
   SMS: 'bg-green-50 text-green-600',
   USSD: 'bg-amber-50 text-amber-600',

@@ -17,7 +17,7 @@ const STATUSES = ['Active', 'Inactive', 'Suspended']
 const STATUS_COLORS = {
   Active: 'bg-[#29A847]/10 text-[#29A847]',
   Inactive: 'bg-[#F2C94C]/10 text-[#F2C94C]',
-  Suspended: 'bg-[#DB2424]/10 text-[#DB2424]',
+  Suspended: 'bg-brand-red/10 text-red-700',
 }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
 
@@ -29,7 +29,7 @@ const STATUS_SELECTED = {
 
 const labelCls = 'block text-sm font-medium text-gray-700 mb-1.5'
 const inputCls = 'w-full bg-white border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500'
-const req = <span className="text-red-500 ml-0.5">*</span>
+const req = <span className="text-red-700 ml-0.5">*</span>
 
 const emptyForm = () => ({
   email: '',
@@ -271,7 +271,7 @@ export default function UserManagement() {
     <AppShell>
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">User Management</h2>
+          <h2 className="text-xl font-bold text-brand-navy">User Management</h2>
           <p className="text-sm text-gray-400">Control users, roles, permissions, and platform access</p>
         </div>
         <div className="flex gap-3">
@@ -372,7 +372,7 @@ export default function UserManagement() {
                       </div>
                     </td>
                     <td className="px-5 py-3">{u.primary_role ? (
-                      <Link to={rolePermissionsLink(u.primary_role)} title="View permissions for this role" className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900 hover:border-red-300 hover:text-red-600">{u.primary_role}</Link>
+                      <Link to={rolePermissionsLink(u.primary_role)} title="View permissions for this role" className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900 hover:border-red-300 hover:text-red-700">{u.primary_role}</Link>
                     ) : (
                       <span className="border border-gray-200 bg-gray-50 rounded-full px-2.5 py-1 text-xs font-medium text-gray-900">—</span>
                     )}
@@ -393,7 +393,7 @@ export default function UserManagement() {
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
                         <button onClick={() => openEditUser(u)} className="text-gray-500 hover:text-gray-800"><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => removeUser(u)} className="text-red-500 hover:text-red-700"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => removeUser(u)} className="text-red-700 hover:text-red-800"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -424,7 +424,7 @@ export default function UserManagement() {
               <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
                 <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 shrink-0">
                   <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-                    {editingUser ? <Pencil className="w-5 h-5 text-red-600" /> : <UserPlus className="w-5 h-5 text-red-600" />}
+                    {editingUser ? <Pencil className="w-5 h-5 text-red-700" /> : <UserPlus className="w-5 h-5 text-red-700" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-gray-900">{editingUser ? 'Edit user' : 'Add user'}</h3>
@@ -560,7 +560,7 @@ export default function UserManagement() {
             <label className="block text-sm font-semibold mb-1">Role Name</label>
             <input value={newRole} onChange={(e) => setNewRole(e.target.value)} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-2 text-sm" placeholder="e.g. Field Supervisor" />
 
-            {roleError && <p className="text-red-600 text-sm mb-4">{roleError}</p>}
+            {roleError && <p className="text-red-700 text-sm mb-4">{roleError}</p>}
 
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowRoleModal(false)} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold">Cancel</button>

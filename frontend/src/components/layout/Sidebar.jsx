@@ -72,7 +72,7 @@ export default function Sidebar() {
                   key={item.page}
                   to={`/${item.page}`}
                   className={['relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1',
-                    currentPage === item.page ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50'].join(' ')}
+                    currentPage === item.page ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'].join(' ')}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
