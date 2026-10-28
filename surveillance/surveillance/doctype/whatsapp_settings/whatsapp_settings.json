@@ -1,0 +1,246 @@
+{
+ "actions": [],
+ "creation": "2026-10-22 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "connection_section",
+  "enabled",
+  "webhook_url",
+  "phone_number_id",
+  "business_account_id",
+  "graph_api_version",
+  "column_break_secrets",
+  "access_token",
+  "app_secret",
+  "verify_token",
+  "reporting_section",
+  "community_user",
+  "country_code",
+  "column_break_reporting",
+  "idle_minutes",
+  "welcome_image_url",
+  "alerts_section",
+  "notify_numbers",
+  "escalation_numbers",
+  "column_break_alerts",
+  "notify_template",
+  "notify_template_language",
+  "chatbot_section",
+  "chatbot_url",
+  "chatbot_timeout",
+  "column_break_chatbot",
+  "chatbot_token",
+  "extraction_section",
+  "extraction_url",
+  "column_break_extraction",
+  "extraction_token"
+ ],
+ "fields": [
+  {
+   "fieldname": "connection_section",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp Cloud API"
+  },
+  {
+   "default": "0",
+   "description": "When off, Meta's webhook check still works but incoming messages are ignored.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "description": "Paste into Meta: WhatsApp > Configuration > Callback URL.",
+   "fieldname": "webhook_url",
+   "fieldtype": "Data",
+   "is_virtual": 1,
+   "label": "Webhook Callback URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "phone_number_id",
+   "fieldtype": "Data",
+   "label": "Phone Number ID",
+   "mandatory_depends_on": "enabled"
+  },
+  {
+   "description": "Optional. WhatsApp Business Account ID, for reference.",
+   "fieldname": "business_account_id",
+   "fieldtype": "Data",
+   "label": "Business Account ID"
+  },
+  {
+   "default": "v23.0",
+   "fieldname": "graph_api_version",
+   "fieldtype": "Data",
+   "label": "Graph API Version"
+  },
+  {
+   "fieldname": "column_break_secrets",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Permanent token of a System User in Meta Business Settings.",
+   "fieldname": "access_token",
+   "fieldtype": "Password",
+   "label": "Access Token",
+   "mandatory_depends_on": "enabled"
+  },
+  {
+   "description": "Meta app: App settings > Basic > App secret. Used to check that webhook calls come from Meta.",
+   "fieldname": "app_secret",
+   "fieldtype": "Password",
+   "label": "App Secret",
+   "mandatory_depends_on": "enabled"
+  },
+  {
+   "description": "Any long random text; enter the same value in Meta next to the Callback URL.",
+   "fieldname": "verify_token",
+   "fieldtype": "Password",
+   "label": "Webhook Verify Token",
+   "mandatory_depends_on": "enabled"
+  },
+  {
+   "fieldname": "reporting_section",
+   "fieldtype": "Section Break",
+   "label": "Reporting"
+  },
+  {
+   "description": "Shown as Reported by on community reports. Created on migrate if empty.",
+   "fieldname": "community_user",
+   "fieldtype": "Link",
+   "label": "Community Reporter Account",
+   "options": "User"
+  },
+  {
+   "default": "254",
+   "description": "Used to match staff mobile numbers written as 07... with WhatsApp numbers.",
+   "fieldname": "country_code",
+   "fieldtype": "Data",
+   "label": "Default Country Code"
+  },
+  {
+   "fieldname": "column_break_reporting",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "15",
+   "description": "After this long without a reply, an unfinished report asks Continue / Start over.",
+   "fieldname": "idle_minutes",
+   "fieldtype": "Int",
+   "label": "Idle Minutes"
+  },
+  {
+   "description": "Optional public https link to the KRCS logo (JPEG/PNG), sent before the first welcome.",
+   "fieldname": "welcome_image_url",
+   "fieldtype": "Data",
+   "label": "Welcome Image URL"
+  },
+  {
+   "fieldname": "alerts_section",
+   "fieldtype": "Section Break",
+   "label": "Desk Alerts"
+  },
+  {
+   "description": "WhatsApp numbers alerted for every new WhatsApp report, one per line (e.g. 254712345678).",
+   "fieldname": "notify_numbers",
+   "fieldtype": "Small Text",
+   "label": "Desk Alert Numbers"
+  },
+  {
+   "description": "Questions the chatbot cannot answer go here, one per line. Empty: the desk alert numbers.",
+   "fieldname": "escalation_numbers",
+   "fieldtype": "Small Text",
+   "label": "Escalation Numbers"
+  },
+  {
+   "fieldname": "column_break_alerts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Approved Utility template with 5 body variables: reference, what, where, affected, reporter. Without it, alerts are plain text and only reach numbers that wrote to the bot in the last 24 hours.",
+   "fieldname": "notify_template",
+   "fieldtype": "Data",
+   "label": "Alert Template Name"
+  },
+  {
+   "default": "en",
+   "fieldname": "notify_template_language",
+   "fieldtype": "Data",
+   "label": "Alert Template Language"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "chatbot_section",
+   "fieldtype": "Section Break",
+   "label": "Response Support Chatbot"
+  },
+  {
+   "description": "Optional, e.g. http://10.0.0.5:8100. Empty: \"Ask a question\" is not offered.",
+   "fieldname": "chatbot_url",
+   "fieldtype": "Data",
+   "label": "Chatbot URL"
+  },
+  {
+   "default": "10",
+   "fieldname": "chatbot_timeout",
+   "fieldtype": "Int",
+   "label": "Chatbot Timeout (seconds)"
+  },
+  {
+   "fieldname": "column_break_chatbot",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "chatbot_token",
+   "fieldtype": "Password",
+   "label": "Chatbot Token"
+  },
+  {
+   "fieldname": "extraction_section",
+   "fieldtype": "Section Break",
+   "label": "Free-text Extraction"
+  },
+  {
+   "description": "Optional: the NLP extraction service (POST /extract). Empty: the Chatbot URL above; with neither, free-text reports use a keyword fallback.",
+   "fieldname": "extraction_url",
+   "fieldtype": "Data",
+   "label": "Extraction URL"
+  },
+  {
+   "fieldname": "column_break_extraction",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "extraction_token",
+   "fieldtype": "Password",
+   "label": "Extraction Token"
+  }
+ ],
+ "grid_page_length": 50,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-23 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Surveillance",
+ "name": "WhatsApp Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

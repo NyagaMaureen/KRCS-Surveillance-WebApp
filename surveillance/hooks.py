@@ -96,7 +96,7 @@ after_migrate = [
 	"surveillance.weekly_counts.seed_reporting_facilities",
 	"surveillance.alert_thresholds.seed_extra_diseases", 
 	"surveillance.capabilities.after_migrate",
-	
+	"surveillance.whatsapp.setup.after_migrate",
 ]
 
 # Fixtures: shipped with the app and installed on every site on migrate
@@ -168,12 +168,26 @@ fixtures = [
 # Hook on document methods and events
 
 
+WHATSAPP_CATALOG = {
+	"on_update": "surveillance.whatsapp.data.clear_catalog_cache",
+	"on_trash": "surveillance.whatsapp.data.clear_catalog_cache",
+}
+
 doc_events = {
 	"Case Report": {
 		"validate": "surveillance.case_report_rules.validate_complete",
 		"on_update": "surveillance.events.on_case_report",
 		"on_trash": "surveillance.events.on_case_report_trash",
 	},
+	# WhatsApp: staff are matched by User.mobile_no; lists come from these DocTypes
+	"User": {
+		"after_insert": "surveillance.whatsapp.data.clear_staff_cache",
+		"on_update": "surveillance.whatsapp.data.clear_staff_cache",
+		"on_trash": "surveillance.whatsapp.data.clear_staff_cache",
+	},
+	"Region": WHATSAPP_CATALOG,
+	"Sub County": WHATSAPP_CATALOG,
+	"Symptom": WHATSAPP_CATALOG,
 }
 # doc_events = {
 # 	"*": {
