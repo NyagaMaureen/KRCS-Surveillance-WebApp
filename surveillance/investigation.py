@@ -29,10 +29,31 @@ KINDS = ("Key question", "Case definition", "Supports", "Red flag")
 KEY_KINDS = ("Key question", "Case definition")
 
 
+def _get(a, k):
+	return a.get(k) if isinstance(a, dict) else getattr(a, k, None)
+
+
+def is_key(a):
+	"""Ticked "Needed to start the investigation" (older records: Key question / Case definition)."""
+	return bool(cint(_get(a, "needed_to_start"))) or _get(a, "kind") in KEY_KINDS
+
+
+def is_red(a):
+	"""Ticked "Yes means escalate now" (older records: Red flag)."""
+	return bool(cint(_get(a, "escalate_if_yes"))) or _get(a, "kind") == "Red flag"
+
+
+def kind_for(needed, red, current=None):
+	"""Keep the old kind label in step with the ticks (the case-definition question keeps its kind)."""
+	if current == "Case definition" and needed:
+		return "Case definition"
+	return "Key question" if needed else "Red flag" if red else "Supports"
+
+
 def key_check(answers):
-	"""answers: dicts or rows with kind and answer. Returns the half-Yes rule result."""
-	get = lambda a, k: a.get(k) if isinstance(a, dict) else getattr(a, k, None)
-	keys = [a for a in answers if get(a, "kind") in KEY_KINDS]
+	"""answers: dicts or rows with ticks/kind and answer. Returns the half-Yes rule result."""
+	get = _get
+	keys = [a for a in answers if is_key(a)]
 	total = len(keys)
 	yes = sum(1 for a in keys if get(a, "answer") == "Yes")
 	no = sum(1 for a in keys if get(a, "answer") == "No")
@@ -84,10 +105,12 @@ def ensure_investigation(doc):
 	changed = _ensure_checklist(doc)
 	if not doc.get("verification"):
 		proto = _protocol(doc)
-		rows = ([(q.question, q.why, q.kind) for q in proto.verification_questions]
-			if proto and proto.get("verification_questions") else default_questions(proto, doc.disease_name))
-		for i, (q, why, kind) in enumerate(rows, 1):
-			doc.append("verification", {"question_no": i, "question": q, "why": why, "kind": kind or "Supports"})
+		rows = ([(q.question, q.why, q.kind, is_key(q), is_red(q)) for q in proto.verification_questions]
+			if proto and proto.get("verification_questions")
+			else [(q, w, k, k in KEY_KINDS, k == "Red flag") for q, w, k in default_questions(proto, doc.disease_name)])
+		for i, (q, why, kind, needed, red) in enumerate(rows, 1):
+			doc.append("verification", {"question_no": i, "question": q, "why": why, "kind": kind or "Supports",
+				"needed_to_start": 1 if needed else 0, "escalate_if_yes": 1 if red else 0})
 		changed = True
 	return sync_case_definition(doc) or changed
 
@@ -156,8 +179,8 @@ def suggestion(answers, notify_immediately=False, disease_name=""):
 	kc = key_check(answers)
 	case_def = [a for a in answers if a.get("kind") == "Case definition"]
 	cd = case_def[0].get("answer") if case_def else None
-	red = [a for a in answers if a.get("kind") == "Red flag" and a.get("answer") == "Yes"]
-	supports = [a for a in answers if a.get("kind") == "Supports"]
+	red = [a for a in answers if is_red(a) and a.get("answer") == "Yes"]
+	supports = [a for a in answers if not is_key(a) and not is_red(a)]
 	yes = sum(1 for a in supports if a.get("answer") == "Yes")
 	unsure = sum(1 for a in answers if a.get("answer") in (None, "", "Not sure"))
 
@@ -334,6 +357,7 @@ def _shape(doc):
 	from surveillance.protocols import _shape as protocol_shape
 	proto = frappe.get_doc("Response Protocol", doc.protocol) if doc.protocol and frappe.db.exists("Response Protocol", doc.protocol) else None
 	questions = [{"n": a.question_no, "question": a.question, "why": a.why, "kind": a.kind, "answer": a.answer or None,
+		"key": is_key(a), "redFlag": is_red(a), "neededToStart": is_key(a), "escalateIfYes": is_red(a),
 		"answeredBy": get_fullname(a.answered_by) if a.answered_by else None, "answeredOn": str(a.answered_on or "") or None}
 		for a in sorted(doc.get("verification") or [], key=lambda a: cint(a.question_no))]
 

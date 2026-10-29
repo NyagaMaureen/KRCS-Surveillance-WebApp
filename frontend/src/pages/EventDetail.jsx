@@ -455,8 +455,8 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
           <ul className="border border-gray-100 rounded-xl divide-y divide-gray-100">
             {questions.map((q, i) => {
               const rowBusy = busyKey === `q-${q.n}`
-              const red = String(q.kind || '').toLowerCase().includes('red')
-              const key = q.kind === 'Key question'
+              const red = q.redFlag ?? String(q.kind || '').toLowerCase().includes('red')
+              const key = q.key ?? q.kind === 'Key question'
               return (
                 <li key={q.n} className={`px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 ${rowBusy ? 'opacity-60' : ''}`}>
                   <div className="flex-1 min-w-0">

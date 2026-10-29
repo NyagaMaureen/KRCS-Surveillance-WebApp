@@ -53,7 +53,9 @@ def _shape(doc, steps=True):
 		out["steps"] = [{"n": i, "step": s.step, "timeframe": s.timeframe, "responsible": s.responsible,
 			"phase": s.get("phase") or "Investigation", "assignable": bool(s.get("assignable"))}
 			for i, s in enumerate(doc.get("steps") or [], 1)]
-		out["questions"] = [{"n": i, "question": q.question, "why": q.why, "kind": q.kind or "Supports"}
+		from surveillance.investigation import is_key, is_red
+		out["questions"] = [{"n": i, "question": q.question, "why": q.why, "kind": q.kind or "Supports",
+			"neededToStart": is_key(q), "escalateIfYes": is_red(q)}
 			for i, q in enumerate(doc.get("verification_questions") or [], 1)]
 	return out
 
@@ -137,8 +139,14 @@ def _clean_questions(questions):
 			q = {"question": q}
 		text = (q.get("question") or "").strip()
 		if text:
-			kind = q.get("kind") if q.get("kind") in KINDS else "Supports"
-			out.append({"question": text, "why": (q.get("why") or "").strip(), "kind": kind})
+			from surveillance.investigation import kind_for
+			old = q.get("kind") if q.get("kind") in KINDS else None
+			if "neededToStart" in q or "escalateIfYes" in q:
+				needed, red = bool(q.get("neededToStart")), bool(q.get("escalateIfYes"))
+			else:   # older callers that only send a kind
+				needed, red = old in ("Key question", "Case definition"), old == "Red flag"
+			out.append({"question": text, "why": (q.get("why") or "").strip(), "kind": kind_for(needed, red, old),
+				"needed_to_start": 1 if needed else 0, "escalate_if_yes": 1 if red else 0})
 	return out
 
 

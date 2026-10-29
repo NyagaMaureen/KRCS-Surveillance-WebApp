@@ -31,16 +31,30 @@
    "default": "Supports",
    "in_list_view": 1,
    "label": "Kind",
-   "description": "Case definition: No means it is probably not this disease. Supports: Yes makes a real event more likely. Red flag: Yes means escalate now."
+   "description": "Set automatically from the two ticks (kept for older records)."
+  },
+  {
+   "fieldname": "needed_to_start",
+   "fieldtype": "Check",
+   "label": "Needed to start the investigation",
+   "default": "0"
+  },
+  {
+   "fieldname": "escalate_if_yes",
+   "fieldtype": "Check",
+   "label": "Yes means escalate now",
+   "default": "0"
   }
  ],
  "permissions": [],
  "istable": 1,
  "description": "Verification question asked by the officer, answered Yes / No / Not sure.",
- "modified": "2026-10-28 16:00:00.000000",
+ "modified": "2026-10-29 13:00:00.000000",
  "field_order": [
   "question",
   "why",
-  "kind"
+  "kind",
+  "needed_to_start",
+  "escalate_if_yes"
  ]
 }

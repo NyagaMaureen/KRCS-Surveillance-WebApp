@@ -32,7 +32,20 @@
    "fieldname": "kind",
    "fieldtype": "Select",
    "options": "Key question\nCase definition\nSupports\nRed flag",
-   "label": "Kind"
+   "label": "Kind",
+   "description": "Set automatically from the two ticks (kept for older records)."
+  },
+  {
+   "fieldname": "needed_to_start",
+   "fieldtype": "Check",
+   "label": "Needed to start the investigation",
+   "default": "0"
+  },
+  {
+   "fieldname": "escalate_if_yes",
+   "fieldtype": "Check",
+   "label": "Yes means escalate now",
+   "default": "0"
   },
   {
    "fieldname": "answer",
@@ -56,12 +69,14 @@
  "permissions": [],
  "istable": 1,
  "description": "One verification answer on one event.",
- "modified": "2026-10-28 16:00:00.000000",
+ "modified": "2026-10-29 13:00:00.000000",
  "field_order": [
   "question_no",
   "question",
   "why",
   "kind",
+  "needed_to_start",
+  "escalate_if_yes",
   "answer",
   "answered_by",
   "answered_on"

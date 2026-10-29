@@ -112,7 +112,7 @@ function ProtocolHeader({ p }) {
 function ProtocolRow({ protocol: p, onOpen }) {
   const retired = p.status === 'Retired'
   const qCount = (p.questions || []).length
-  const keyCount = (p.questions || []).filter((q) => q.kind === 'Key question' || q.kind === 'Case definition').length
+  const keyCount = (p.questions || []).filter((q) => q.neededToStart).length
   return (
     <tr onClick={() => onOpen(p)} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 cursor-pointer">
       <td className="px-3 py-3.5">
@@ -127,8 +127,9 @@ function ProtocolRow({ protocol: p, onOpen }) {
         {p.notifyImmediately && <span className="block text-[11px] text-red-600 mt-1">Single case is an emergency</span>}
       </td>
       <td className="px-3 py-3.5 text-gray-600 hidden lg:table-cell whitespace-nowrap">{p.stepCount} steps</td>
-      <td className="px-3 py-3.5 text-gray-600 hidden lg:table-cell whitespace-nowrap">
-        {qCount} questions{keyCount ? <span className="text-gray-400"> · {keyCount} key</span> : ''}
+          <td className="px-3 py-3.5 text-gray-600 hidden lg:table-cell">
+        {qCount} questions
+        {keyCount ? <span className="block text-xs text-gray-400 mt-0.5">{keyCount} needed to start investigation</span> : null}
       </td>
       <td className="px-3 py-3.5 text-gray-500 hidden sm:table-cell whitespace-nowrap">{fmtDateTime(p.updated)}</td>
       <td className="px-3 py-3.5 text-right">
@@ -191,7 +192,7 @@ function ProtocolDetail({ protocol: p, canManage, busy, diseases, onBack, onSave
   const inv = p.steps.filter((s) => (s.phase || 'Investigation') === 'Investigation')
   const resp = p.steps.filter((s) => s.phase === 'Response')
   const questions = p.questions || []
-  const keyCount = questions.filter((q) => q.kind === 'Key question' || q.kind === 'Case definition').length
+  const keyCount = questions.filter((q) => q.neededToStart).length
   const counts = { about: null, questions: questions.length, Investigation: inv.length, Response: resp.length }
   const pick = (k) => { setTab(k); setEditing(false) }
 
@@ -289,7 +290,7 @@ function ProtocolDetail({ protocol: p, canManage, busy, diseases, onBack, onSave
           editing ? editor : (
             <section className={`${card} p-5 sm:p-7`}>
               {editBar(keyCount
-                ? `Asked before the field investigation. ${keyCount} key question${keyCount === 1 ? '' : 's'}: at least half must be Yes to start investigation.`
+                ? `Asked before the field investigation. ${keyCount} question${keyCount === 1 ? ' is' : 's are'} needed to start it: at least half must be Yes to start investigation.`
                 : 'Asked before the field investigation.')}
               {questions.length === 0 ? <p className="text-sm text-gray-400">No verification questions.</p> : (
                 <ol className="divide-y divide-gray-100">
@@ -299,7 +300,7 @@ function ProtocolDetail({ protocol: p, canManage, busy, diseases, onBack, onSave
                       <div className="min-w-0 flex-1">
                         <p className="text-[15px] leading-relaxed text-gray-900">{q.question}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-500">
-                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${KIND_TAG[q.kind] || 'bg-gray-50 text-gray-500'}`}>{q.kind || 'Supports'}</span>
+                          <QuestionTags q={q} />
                           {q.why && <span>{q.why}</span>}
                         </div>
                       </div>
@@ -357,7 +358,44 @@ function Label({ text, required, children }) {
 }
 
 const blankStep = () => ({ step: '', timeframe: '', responsible: '', phase: 'Investigation', assignable: false })
-const blankQuestion = () => ({ question: '', why: '', kind: 'Key question' })
+const blankQuestion = () => ({ question: '', why: '', kind: 'Supports', neededToStart: false, escalateIfYes: false })
+
+// The three choices on each verification question. "Supporting information only" = neither of the first two.
+function QuestionTicks({ q, n, onChange }) {
+  const supporting = !q.neededToStart && !q.escalateIfYes
+  const box = 'mt-0.5 w-4 h-4 accent-red-600 shrink-0'
+  return (
+    <fieldset className="flex flex-col gap-2.5">
+      <legend className="sr-only">How question {n} is used</legend>
+      <label className="flex items-start gap-2.5 text-sm text-gray-800 cursor-pointer">
+        <input type="checkbox" className={box} checked={!!q.neededToStart} onChange={(e) => onChange({ neededToStart: e.target.checked })} />
+        <span>Needed to start the investigation
+          <span className="block text-xs text-gray-400">At least half of these must be answered Yes to start the field investigation.</span></span>
+      </label>
+      <label className="flex items-start gap-2.5 text-sm text-gray-800 cursor-pointer">
+        <input type="checkbox" className={box} checked={!!q.escalateIfYes} onChange={(e) => onChange({ escalateIfYes: e.target.checked })} />
+        <span>Yes means escalate now
+          <span className="block text-xs text-gray-400">A Yes suggests escalating to the county straight away.</span></span>
+      </label>
+      <label className="flex items-start gap-2.5 text-sm text-gray-800 cursor-pointer">
+        <input type="checkbox" className={box} checked={supporting} onChange={(e) => e.target.checked && onChange({ neededToStart: false, escalateIfYes: false })} />
+        <span>Supporting information only
+          <span className="block text-xs text-gray-400">Helps the officer understand the situation, but doesn't change whether the investigation starts.</span></span>
+      </label>
+    </fieldset>
+  )
+}
+
+function QuestionTags({ q }) {
+  const supporting = !q.neededToStart && !q.escalateIfYes
+  return (
+    <>
+      {q.neededToStart && <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-700">Needed to start</span>}
+      {q.escalateIfYes && <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-50 text-red-700">Yes means escalate</span>}
+      {supporting && <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-50 text-gray-500">Supporting information</span>}
+    </>
+  )
+}
 
 /** Protocol form. Full page for a new protocol; with `only` set it edits one tab in place
  *  ('about' | 'questions' | 'Investigation' | 'Response') and saves the whole protocol. */
@@ -379,7 +417,8 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
     steps: protocol?.steps?.length
       ? protocol.steps.map((s) => ({ step: s.step, timeframe: s.timeframe || '', responsible: s.responsible || '', phase: s.phase || 'Investigation', assignable: !!s.assignable }))
       : [blankStep()],
-    questions: (protocol?.questions || []).map((q) => ({ question: q.question || '', why: q.why || '', kind: q.kind || 'Case definition' })),
+    questions: (protocol?.questions || []).map((q) => ({ question: q.question || '', why: q.why || '', kind: q.kind || 'Supports',
+      neededToStart: !!q.neededToStart, escalateIfYes: !!q.escalateIfYes })),
     notifyImmediately: !!protocol?.notifyImmediately,
   }))
   const [error, setError] = useState('')
@@ -416,7 +455,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
       .map((s) => ({ step: s.step.trim(), timeframe: s.timeframe.trim(), responsible: s.responsible.trim(), phase: s.phase, assignable: !!s.assignable }))
       .filter((s) => s.step)
     const questions = form.questions
-      .map((q) => ({ question: q.question.trim(), why: q.why.trim(), kind: q.kind }))
+      .map((q) => ({ question: q.question.trim(), why: q.why.trim(), kind: q.kind, neededToStart: !!q.neededToStart, escalateIfYes: !!q.escalateIfYes }))
       .filter((q) => q.question)
     if (!form.disease) return setError('Choose a disease.')
     if (!form.title.trim()) return setError('Title is required.')
@@ -556,10 +595,10 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
       {show('questions') && <section className={sectionCls}>
         <h4 className="text-base font-semibold text-gray-900">Verification questions</h4>
         <p className="text-sm text-gray-500 mt-0.5 mb-4">
-          Asked before the field investigation. <span className="font-medium text-gray-700">At least half of the key questions must be Yes</span>; otherwise the signal is discarded.
+          Asked before the field investigation. <span className="font-medium text-gray-700">At least half of the questions ticked "Needed to start the investigation" must be Yes</span>; otherwise the signal is discarded.
         </p>
         {form.questions.length === 0 ? (
-          <p className="text-sm text-gray-400 mb-3">No questions yet. Without key questions, officers decide from the case definition.</p>
+          <p className="text-sm text-gray-400 mb-3">No questions yet. Without questions marked "Needed to start the investigation", officers decide from the case definition.</p>
         ) : (
           <ol className="divide-y divide-gray-100 mb-3">
             {form.questions.map((q, i) => (
@@ -570,17 +609,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
                     onChange={(e) => setQuestion(i, { question: e.target.value })} />
                   <input aria-label={`Why we ask question ${i + 1}`} className={inputCls} placeholder="Why we ask (optional)" value={q.why}
                     onChange={(e) => setQuestion(i, { why: e.target.value })} />
-                  <div>
-                    <div role="radiogroup" aria-label={`Type of question ${i + 1}`} className="flex flex-wrap gap-2">
-                      {KINDS.map((k) => (
-                        <button key={k} type="button" role="radio" aria-checked={q.kind === k} onClick={() => setQuestion(i, { kind: k })}
-                          className={`h-8 px-3 rounded-lg border text-sm ${FOCUS} ${q.kind === k ? 'border-gray-900 text-gray-900 font-medium' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                          {k}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1.5">{KIND_HELP[q.kind]}</p>
-                  </div>
+                  <QuestionTicks q={q} n={i + 1} onChange={(patch) => setQuestion(i, patch)} />
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <button type="button" aria-label="Move question up" disabled={i === 0} onClick={() => moveQuestion(i, -1)} className={iconBtn}><ArrowUp className="w-4 h-4" /></button>
