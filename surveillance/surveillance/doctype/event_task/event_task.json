@@ -3,7 +3,7 @@
  "autoname": "TSK-.#####",
  "naming_rule": "Expression",
  "creation": "2026-10-28 12:00:00.000000",
- "modified": "2026-10-28 12:00:00.000000",
+ "modified": "2026-10-29 12:00:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "doctype": "DocType",
@@ -39,7 +39,13 @@
   "sb_out",
   "outcome",
   "completed_on",
-  "reminded_on"
+  "reminded_on",
+  "severity",
+  "sb_patient",
+  "case_report",
+  "patient_age_group",
+  "patient_sex",
+  "reason"
  ],
  "fields": [
   {
@@ -47,7 +53,7 @@
    "fieldtype": "Link",
    "label": "Event",
    "options": "Surveillance Event",
-   "reqd": 1,
+   "reqd": 0,
    "in_list_view": 1,
    "search_index": 1
   },
@@ -195,6 +201,41 @@
    "label": "Last reminder",
    "read_only": 1,
    "hidden": 1
+  },
+  {
+   "fieldname": "severity",
+   "fieldtype": "Data",
+   "label": "Priority",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_patient",
+   "fieldtype": "Section Break",
+   "label": "Referral details (no names)",
+   "depends_on": "eval:doc.task_type=='Referral'"
+  },
+  {
+   "fieldname": "case_report",
+   "fieldtype": "Link",
+   "label": "Case Report",
+   "options": "Case Report"
+  },
+  {
+   "fieldname": "patient_age_group",
+   "fieldtype": "Select",
+   "label": "Age group",
+   "options": "\nUnder 1\n1-4 years\n5-14 years\n15+ years"
+  },
+  {
+   "fieldname": "patient_sex",
+   "fieldtype": "Select",
+   "label": "Sex",
+   "options": "\nFemale\nMale"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason for referral"
   }
  ],
  "links": [],

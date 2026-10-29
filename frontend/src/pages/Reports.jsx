@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye, Camera, Mic } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import { useCapabilities } from '../context/CapabilitiesContext'
 import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc } from '../api/frappe'
 import { formatDateTime, parseDateOnly, formatDateOnly, STATUSES } from '../data/formOptions'
 
@@ -16,6 +17,9 @@ const symptomTags = (s) => (s || '').split(',').map((t) => t.trim()).filter(Bool
 
 export default function Reports() {
   const navigate = useNavigate()
+  const { has, workspace } = useCapabilities()
+  const isChp = workspace === 'chp'          // CHPs only ever receive their own reports (enforced on the server)
+  const canExport = has('export_reports')
   const [page, setPage] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
   const [reports, setReports] = useState([])
@@ -113,15 +117,17 @@ export default function Reports() {
     <AppShell>
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-brand-navy">Reports Management</h2>
-          <p className="text-sm text-gray-400">Generate, import, export, and manage surveillance reports</p>
+          <h2 className="text-xl font-bold text-brand-navy">{isChp ? 'My Reports' : 'Reports Management'}</h2>
+          <p className="text-sm text-gray-400">{isChp ? 'Everything you have reported. Tell us what you see in your community; you can finish a report even without network.' : 'Generate, import, export, and manage surveillance reports'}</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={handleExport} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 flex items-center gap-2 hover:bg-gray-50">
-            <Upload className="w-4 h-4" /> Export Report
-          </button>
+          {canExport && (
+            <button onClick={handleExport} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 flex items-center gap-2 hover:bg-gray-50">
+              <Upload className="w-4 h-4" /> Export Report
+            </button>
+          )}
           <Link to="/record-health-signal" className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Create Report
+            <Plus className="w-4 h-4" /> {isChp ? 'Report an Event' : 'Create Report'}
           </Link>
         </div>
       </div>
@@ -159,13 +165,13 @@ export default function Reports() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 font-semibold text-gray-900 text-sm">Reports List</div>
+        <div className="px-5 py-4 font-semibold text-gray-900 text-sm">{isChp ? 'My Reports List' : 'Reports List'}</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-gray-400 text-xs border-t border-b border-gray-100">
                 <th className="px-5 py-3 font-medium">Report ID</th>
-                <th className="px-5 py-3 font-medium">Reporter</th>
+                {!isChp && <th className="px-5 py-3 font-medium">Reporter</th>}
                 <th className="px-5 py-3 font-medium">Symptoms</th>
                 <th className="px-5 py-3 font-medium">Location</th>
                 <th className="px-5 py-3 font-medium">Sub-county</th>
@@ -186,7 +192,7 @@ export default function Reports() {
                       {mediaByReport[r.name]?.voice && <Mic className="w-3.5 h-3.5 text-gray-400" aria-label="Has voice note" />}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-gray-700">{r.reporter_name}</td>
+                  {!isChp && <td className="px-5 py-3 text-gray-700">{r.reporter_name}</td>}
                   <td className="px-5 py-3">
                     {symptomTags(r.symptom_tags).map((s) => (
                       <span key={s} className="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full mr-1">{s}</span>

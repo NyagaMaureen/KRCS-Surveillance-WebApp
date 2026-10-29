@@ -1,0 +1,123 @@
+{
+ "actions": [],
+ "autoname": "FBK-.#####",
+ "naming_rule": "Expression",
+ "creation": "2026-10-29 12:00:00.000000",
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "User Feedback",
+ "track_changes": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "description": "Feedback, problems and suggestions sent by users from the app.",
+ "field_order": [
+  "feedback_type",
+  "message",
+  "status",
+  "cb1",
+  "submitted_by",
+  "role",
+  "region",
+  "page",
+  "sb1",
+  "response",
+  "handled_by",
+  "handled_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "feedback_type",
+   "fieldtype": "Select",
+   "label": "Type",
+   "options": "Feedback\nProblem\nSuggestion",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Text",
+   "label": "Message",
+   "reqd": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "New\nSeen\nResolved",
+   "default": "New",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "submitted_by",
+   "fieldtype": "Link",
+   "label": "Submitted by",
+   "options": "User",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Data",
+   "label": "Role",
+   "read_only": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "read_only": 1
+  },
+  {
+   "fieldname": "page",
+   "fieldtype": "Data",
+   "label": "Sent from page",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb1",
+   "fieldtype": "Section Break",
+   "label": "Response"
+  },
+  {
+   "fieldname": "response",
+   "fieldtype": "Small Text",
+   "label": "Reply / note"
+  },
+  {
+   "fieldname": "handled_by",
+   "fieldtype": "Link",
+   "label": "Handled by",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "handled_on",
+   "fieldtype": "Datetime",
+   "label": "Handled on",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

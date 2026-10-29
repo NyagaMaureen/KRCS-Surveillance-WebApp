@@ -34,7 +34,12 @@ SYSTEM_ROLES = {"All", "Guest", "Administrator", "System Manager", "Desk User", 
 
 FIELDS = ["name", "event", "task_type", "title", "instructions", "assigned_to", "assigned_by", "due_date", "status",
 	"facility", "urgency", "disease_name", "sub_county", "area", "region", "step_phase", "step_no", "outcome",
-	"completed_on", "creation", "modified"]
+	"completed_on", "creation", "modified", "severity", "case_report", "patient_age_group", "patient_sex", "reason"]
+
+# How a referral's status reads to people (stored statuses are the same as other tasks)
+REFERRAL_LABELS = {"Assigned": "Pending", "In progress": "On the way", "Done": "Reached facility",
+	"Could not complete": "Not reached"}
+RECEIVE = "receive_tasks"
 
 
 # ---------- helpers ----------
@@ -68,6 +73,12 @@ def _shape(t, me=None):
 		"stepPhase": t.step_phase or None, "stepNo": t.step_no or None,
 		"outcome": t.outcome or "", "completedOn": str(t.completed_on) if t.completed_on else None,
 		"createdOn": str(t.creation), "mine": t.assigned_to == me,
+		"priority": t.get("severity") or None,
+		"statusLabel": REFERRAL_LABELS.get(t.status, t.status) if t.task_type == "Referral" else t.status,
+		"caseReport": t.get("case_report") or None,
+		"patient": {"ageGroup": t.get("patient_age_group") or None, "sex": t.get("patient_sex") or None},
+		"reason": t.get("reason") or "",
+		"selfMade": t.assigned_by == t.assigned_to,
 	}
 
 
@@ -141,6 +152,7 @@ def _insert(doc, task_type, title, assigned_to, due_date, instructions=None, fac
 		"due_date": getdate(due_date), "status": "Assigned", "facility": (facility or "").strip() or None,
 		"urgency": urgency or None, "disease_name": doc.disease_name, "sub_county": doc.sub_county,
 		"area": doc.area, "region": doc.region, "step_phase": step_phase or None, "step_no": cint(step_no) or None,
+		"severity": doc.get("severity") or None,
 	}).insert(ignore_permissions=True)
 
 
@@ -178,7 +190,7 @@ def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None
 	t = frappe.get_doc(DOCTYPE, task)
 	is_assignee = t.assigned_to == frappe.session.user
 	is_officer = has_capability(ACT)
-	if is_officer:
+	if is_officer and t.event:
 		from surveillance.events import _check_access
 		_check_access(frappe.get_doc("Surveillance Event", t.event))
 	if not (is_assignee or is_officer):
@@ -208,6 +220,8 @@ def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None
 		reassigned = True
 	t.save(ignore_permissions=True)
 
+	if not t.event:
+		return _shape(t)
 	ev = frappe.get_doc("Surveillance Event", t.event)
 	if changes and t.step_no and t.status in ("Done", "Could not complete"):
 		_finish_step(ev, t)
@@ -265,7 +279,7 @@ def delete_task(task):
 # ---------- My Tasks ----------
 
 @frappe.whitelist()
-def get_my_tasks(scope="mine", status="open", limit=300):
+def get_my_tasks(scope="mine", status="open", limit=300, kind=None):
 	"""scope: "mine" = assigned to me, "all" = every task in my region (needs view_all_tasks).
 	status: "open" | "done" | "all"."""
 	from surveillance.events import _user_region
@@ -282,14 +296,22 @@ def get_my_tasks(scope="mine", status="open", limit=300):
 		filters["status"] = ["in", OPEN_STATUSES]
 	elif status == "done":
 		filters["status"] = ["not in", OPEN_STATUSES]
+	if kind == "referrals":
+		filters["task_type"] = "Referral"
+	elif kind == "followups":
+		filters["task_type"] = ["!=", "Referral"]
 	rows = frappe.get_all(DOCTYPE, filters=filters, fields=FIELDS, order_by="due_date asc",
 		limit_page_length=min(cint(limit) or 300, 1000))
 	tasks = [_shape(t) for t in rows]
 	if status != "open":
 		tasks.sort(key=lambda x: x["completedOn"] or x["dueDate"] or "", reverse=True)
 
-	mine_open = frappe.get_all(DOCTYPE, filters={"assigned_to": frappe.session.user, "status": ["in", OPEN_STATUSES]},
-		fields=["due_date", "status"])
+	mine_filters = {"assigned_to": frappe.session.user, "status": ["in", OPEN_STATUSES]}
+	if kind == "referrals":
+		mine_filters["task_type"] = "Referral"
+	elif kind == "followups":
+		mine_filters["task_type"] = ["!=", "Referral"]
+	mine_open = frappe.get_all(DOCTYPE, filters=mine_filters, fields=["due_date", "status"])
 	today = getdate(nowdate())
 	summary = {
 		"overdue": sum(1 for t in mine_open if t.due_date and getdate(t.due_date) < today),
@@ -298,6 +320,64 @@ def get_my_tasks(scope="mine", status="open", limit=300):
 	}
 	return {"tasks": tasks, "scope": scope, "canViewAll": can_all,
 		"canOpenEvents": has_capability("view_review_queue"), "summary": summary}
+
+
+# ---------- referrals a CHP records themselves ----------
+
+AGE_GROUPS = ("Under 1", "1-4 years", "5-14 years", "15+ years")
+
+
+@frappe.whitelist()
+def get_my_referable_reports():
+	"""The user's own recent reports, to link a referral to."""
+	require_capability(RECEIVE)
+	user = frappe.session.user
+	rows = frappe.get_all("Case Report", filters={"creation": [">=", add_days(nowdate(), -60)]},
+		or_filters={"reported_by": user, "owner": user},
+		fields=["name", "location_name", "symptom_tags", "suspected_disease", "creation"],
+		order_by="creation desc", limit_page_length=50)
+	return [{"id": r.name, "label": f"{r.name} · {r.location_name or 'no place'} · {(r.symptom_tags or '')[:40]}",
+		"date": str(r.creation)[:10]} for r in rows]
+
+
+@frappe.whitelist(methods=["POST"])
+def create_referral(facility, reason, case_report=None, age_group=None, sex=None, urgency=None):
+	"""A CHP records a patient they referred to a health facility. No names are stored."""
+	require_capability(RECEIVE)
+	user = frappe.session.user
+	facility, reason = (facility or "").strip(), (reason or "").strip()
+	if not facility:
+		frappe.throw(_("Enter the health facility."))
+	if not reason:
+		frappe.throw(_("Say briefly why the patient was referred."))
+	if age_group and age_group not in AGE_GROUPS:
+		frappe.throw(_("Unknown age group."))
+	if sex and sex not in ("Female", "Male"):
+		frappe.throw(_("Unknown sex."))
+	ctx = {}
+	event = None
+	if case_report:
+		cr = frappe.db.get_value("Case Report", case_report,
+			["name", "reported_by", "owner", "sub_county", "location_name", "region", "suspected_disease"], as_dict=True)
+		if not cr or user not in (cr.reported_by, cr.owner):
+			frappe.throw(_("You can only link referrals to your own reports."), frappe.PermissionError)
+		event = frappe.db.get_value("Surveillance Signal", f"Field-{cr.name}", "event")
+		disease = frappe.db.get_value("Alert Threshold Config", cr.suspected_disease, "disease_name") if cr.suspected_disease else None
+		ctx = {"sub_county": cr.sub_county, "area": cr.location_name, "region": cr.region, "disease_name": disease}
+	if event:
+		ev = frappe.db.get_value("Surveillance Event", event, ["disease_name", "sub_county", "area", "region", "severity"], as_dict=True)
+		ctx = {"sub_county": ev.sub_county, "area": ev.area, "region": ev.region, "disease_name": ev.disease_name,
+			"severity": ev.severity}
+	t = frappe.get_doc({
+		"doctype": DOCTYPE, "event": event, "task_type": "Referral", "title": f"Referral to {facility}"[:140],
+		"assigned_to": user, "assigned_by": user, "due_date": nowdate(), "status": "Assigned",
+		"facility": facility, "urgency": urgency or "Routine", "reason": reason, "case_report": case_report or None,
+		"patient_age_group": age_group or None, "patient_sex": sex or None, **ctx,
+	}).insert(ignore_permissions=True)
+	if event:
+		_log(frappe.get_doc("Surveillance Event", event), "Referral recorded",
+			f"{get_fullname(user)} referred a patient to {facility}: {reason}")
+	return _shape(t)
 
 
 def counts_for_events(names):
@@ -360,6 +440,8 @@ def send_assigned(task, count=1):
 
 def send_finished(task):
 	t = frappe.get_doc(DOCTYPE, task)
+	if not t.event:
+		return
 	subject = f"Task {t.status.lower()}: {t.title} ({t.event})"
 	base = (frappe.conf.get("frontend_url") or get_url()).rstrip("/")
 	frappe.get_doc({"doctype": "Notification Log", "for_user": t.assigned_by, "type": "Alert",
@@ -377,8 +459,10 @@ def daily_reminders():
 	"""Once a day: remind people of tasks due today or overdue (in-app; email only on the due day)."""
 	today = getdate(nowdate())
 	rows = frappe.get_all(DOCTYPE, filters={"status": ["in", OPEN_STATUSES], "due_date": ["<=", today]},
-		fields=["name", "title", "assigned_to", "due_date", "reminded_on", "disease_name", "sub_county"])
+		fields=["name", "title", "assigned_to", "assigned_by", "due_date", "reminded_on", "disease_name", "sub_county"])
 	for t in rows:
+		if t.assigned_by == t.assigned_to:
+			continue   # a CHP's own referral record: no reminders
 		if t.reminded_on and getdate(t.reminded_on) == today:
 			continue
 		due_today = getdate(t.due_date) == today

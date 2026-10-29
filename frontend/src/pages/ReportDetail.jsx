@@ -301,20 +301,20 @@ export default function ReportDetail() {
                 <p className="text-sm text-gray-400">Submitted {formatDateTime(report.creation)} via {(report.channel || '—').toUpperCase()}</p>
               </div>
 
-              {mode === 'view' && (
+              {mode === 'view' && (has('edit_reports') || has('delete_reports')) && (
                 <div className="flex gap-2">
-                  <button
+                  {has('edit_reports') && <button
                     onClick={startEdit}
                     className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-amber-100 transition-colors"
                   >
                     <Pencil className="w-4 h-4" /> Edit
-                  </button>
-                  <button
+                  </button>}
+                  {has('delete_reports') && <button
                     onClick={() => setConfirmingDelete(true)}
                     className="inline-flex items-center gap-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-red-100 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" /> Delete
-                  </button>
+                  </button>}
                 </div>
               )}
             </div>

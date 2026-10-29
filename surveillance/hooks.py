@@ -307,3 +307,10 @@ scheduler_events = {
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+# Case Reports: CHPs (View Own Reports) only see the reports they submitted
+permission_query_conditions = {
+	"Case Report": "surveillance.report_access.case_report_query",
+}
+has_permission = {
+	"Case Report": "surveillance.report_access.case_report_permission",
+}

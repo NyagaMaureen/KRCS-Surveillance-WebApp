@@ -1,4 +1,4 @@
-import { SIDEBAR_MENU } from '../data/sidebarMenu'
+import { MENUS } from '../data/sidebarMenu'
 
 import Login from '../pages/Login'
 import Dashboard from '../pages/Dashboard'
@@ -28,10 +28,26 @@ import SurveillanceMap from '../pages/SurveillanceMap'
 import FacilityData from '../pages/FacilityData'
 import ContextData from '../pages/ContextData'
 import MyTasks from '../pages/MyTasks'
+import FollowUps from '../pages/FollowUps'
+import Referrals from '../pages/Referrals'
+import Feedback from '../pages/Feedback'
+import FeedbackInbox from '../pages/FeedbackInbox'
+import ChpDashboard from '../pages/ChpDashboard'
+import ChpSettings from '../pages/ChpSettings'
+import { useCapabilities } from '../context/CapabilitiesContext'
+
+// One URL, a different page per workspace (CHP gets the simple version)
+function byWorkspace(pages) {
+  return function WorkspacePage() {
+    const { workspace } = useCapabilities()
+    const Page = pages[workspace] || pages.full
+    return <Page />
+  }
+}
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
-  { path: '/dashboard', name: 'dashboard', element: Dashboard },
+  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: Dashboard, chp: ChpDashboard }) },
   { path: '/surveillance-dashboard', name: 'surveillance-dashboard', element: SurveillanceDashboard },
   { path: '/ai-governance-dashboard', name: 'ai-governance-dashboard', element: AiGovernanceDashboard },
   { path: '/investigations', name: 'investigations', element: Investigations },
@@ -52,20 +68,29 @@ const rawRoutes = [
   { path: '/channels', name: 'channels', element: Channels },
   { path: '/facility-data', name: 'facility-data', element: FacilityData },
   { path: '/context-data', name: 'context-data', element: ContextData },
-  { path: '/settings', name: 'settings', element: Settings },
+  { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings }) },
   { path: '/help-center', name: 'help-center', element: HelpCenter },
   { path: '/audit-log', name: 'audit-log', element: AuditLog },
   { path: '/ai-data-assistant', name: 'ai-data-assistant', element: AiDataAssistant },
   { path: '/knowledge-base', name: 'knowledge-base', element: KnowledgeBase },
   { path: '/my-tasks', name: 'my-tasks', element: MyTasks },
+  { path: '/follow-ups', name: 'follow-ups', element: FollowUps },
+  { path: '/referrals', name: 'referrals', element: Referrals },
+  { path: '/feedback', name: 'feedback', element: Feedback },
+  { path: '/feedback-inbox', name: 'feedback-inbox', element: FeedbackInbox },
 ]
 
-const MENU_ITEMS = SIDEBAR_MENU.flatMap((group) => group.items)
-const CAPABILITY_BY_PAGE = Object.fromEntries(
-  MENU_ITEMS.filter((item) => item.requiresCapability).map((item) => [item.page, item.requiresCapability])
-)
+// A page is open to anyone holding the capability it needs in ANY menu (e.g. Reports: view_reports or view_own_reports).
+// A page listed without a capability in some menu stays open to everyone.
+const CAPABILITY_BY_PAGE = {}
+const OPEN_PAGES = new Set()
+Object.values(MENUS).flatMap((menu) => menu.flatMap((group) => group.items)).forEach((item) => {
+  if (!item.requiresCapability) OPEN_PAGES.add(item.page)
+  else (CAPABILITY_BY_PAGE[item.page] = CAPABILITY_BY_PAGE[item.page] || new Set()).add(item.requiresCapability)
+})
+CAPABILITY_BY_PAGE['report-detail'] = CAPABILITY_BY_PAGE.reports
 
 export const routes = rawRoutes.map((route) => ({
   ...route,
-  requiresCapability: CAPABILITY_BY_PAGE[route.name] || null,
+  requiresCapability: !OPEN_PAGES.has(route.name) && CAPABILITY_BY_PAGE[route.name] ? [...CAPABILITY_BY_PAGE[route.name]] : null,
 }))

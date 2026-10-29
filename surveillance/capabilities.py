@@ -20,7 +20,9 @@ RESERVED_ROLES = {"Administrator", "System Manager", "Guest", "All"}
 CAPABILITIES = [
 	# Case Reports
 	{"key": "view_reports", "name": "View Reports", "category": "Case Reports",
-	 "description": "View case reports", "grants": {"Case Report": ["read"]}},
+	 "description": "View all case reports in the user's area", "grants": {"Case Report": ["read"]}},
+	{"key": "view_own_reports", "name": "View Own Reports", "category": "Case Reports",
+	 "description": "View only the reports the user submitted (e.g. CHPs)", "grants": {"Case Report": ["read"]}},
 	{"key": "create_reports", "name": "Create Reports", "category": "Case Reports",
 	 "description": "Submit new case reports",
 	 "grants": {"Case Report": ["read", "create"], "Region": ["read"], "Symptom": ["read"], "Sub County": ["read"]}},
@@ -53,6 +55,9 @@ CAPABILITIES = [
 	 "grants": {"Surveillance Event": ["read", "write"], "Event Task": ["read", "write", "create"]}},
 	{"key": "view_all_tasks", "name": "View All Tasks", "category": "Review Queue",
 	 "description": "See every task assigned in your region and whether it was completed (e.g. SCDSC)",
+	 "grants": {"Event Task": ["read"]}},
+	{"key": "receive_tasks", "name": "Receive Tasks", "category": "Review Queue",
+	 "description": "Get follow-ups and referrals from officers and record referrals (e.g. CHPs)",
 	 "grants": {"Event Task": ["read"]}},
 
 	 
@@ -113,7 +118,26 @@ CAPABILITIES = [
 	{"key": "kb_service", "name": "Knowledge Base Service Access", "category": "Knowledge Base",
 	 "description": "Search on behalf of another role (chatbot service account only)", "grants": {}},
 ]
+CAPABILITIES += [
+	# Workspaces: which simple dashboard and menu a role gets. Admins never get these automatically.
+	{"key": "chp_workspace", "name": "CHP Workspace", "category": "Workspaces",
+	 "description": "Simple CHP dashboard and menu: report, follow-ups, referrals, AI assistant, feedback",
+	 "grants": {}},
+	# Feedback
+	{"key": "view_feedback", "name": "View Feedback", "category": "Users & Roles",
+	 "description": "Read and resolve feedback sent by users", "grants": {}},
+]
 CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
+
+# Not given to Administrator / System Manager automatically: these change what the user sees
+# (a field worker's menu and dashboard), not what they are allowed to do.
+NOT_AUTO_FOR_ADMIN = {"chp_workspace", "receive_tasks", "view_own_reports"}
+
+# Workspace for each workspace capability, checked in order. Users without one get the full app.
+WORKSPACES = [("chp_workspace", "chp")]
+
+# Capabilities set for the CHP role by setup_chp_role (run once; adjust later in Roles & Permissions)
+CHP_CAPABILITIES = ["chp_workspace", "create_reports", "view_own_reports", "receive_tasks", "use_knowledge_base"]
 
 # Applied on migrate ONLY to roles that have no capabilities yet, so fresh environments
 # (staging, production, KRCS handover) come preconfigured. Add your other roles here.
@@ -130,7 +154,7 @@ def get_user_capabilities(user=None):
 		return set()
 	roles = set(frappe.get_roles(user))
 	if user == "Administrator" or "System Manager" in roles:
-		return set(CAPABILITY_MAP)
+		return set(CAPABILITY_MAP) - NOT_AUTO_FOR_ADMIN
 	keys = frappe.get_all(ROLE_CAPABILITY, filters={"role": ["in", list(roles)]}, pluck="capability")
 	return {k for k in keys if k in CAPABILITY_MAP}
 
@@ -197,9 +221,13 @@ def sync_all_role_permissions():
 def get_my_capabilities():
 	user = frappe.session.user
 	primary_role = frappe.db.get_value("User", user, "primary_role") if user != "Guest" else None
+	caps = get_user_capabilities(user)
+	workspace = next((name for key, name in WORKSPACES if key in caps), "full")
 	return {
-		"capabilities": sorted(get_user_capabilities(user)),
+		"capabilities": sorted(caps),
 		"primary_role": primary_role or "User",
+		"workspace": workspace,
+		"names": {k: CAPABILITY_MAP[k]["name"] for k in caps},
 	}
 
 
@@ -277,6 +305,20 @@ def after_migrate():
 			)
 	sync_all_role_permissions()
 	frappe.db.commit()
+
+
+def setup_chp_role(role="CHP"):
+	"""Give the CHP role exactly the CHP capabilities (removes others, e.g. View Reports for all reports).
+	bench --site <site> execute surveillance.capabilities.setup_chp_role"""
+	if not frappe.db.exists("Role", role):
+		frappe.throw(f"Role {role} does not exist")
+	before = set(frappe.get_all(ROLE_CAPABILITY, filters={"role": role}, pluck="capability"))
+	frappe.db.delete(ROLE_CAPABILITY, {"role": role})
+	for key in CHP_CAPABILITIES:
+		frappe.get_doc({"doctype": ROLE_CAPABILITY, "role": role, "capability": key}).insert(ignore_permissions=True)
+	sync_role_permissions(role)
+	frappe.db.commit()
+	print(f"{role}: removed {sorted(before - set(CHP_CAPABILITIES)) or 'nothing'}; now {CHP_CAPABILITIES}")
 
 
 def reset_managed_permissions():

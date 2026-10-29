@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff, Search, X, Lock } from 'lucide-react'
+import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff, Search, X, Lock, MessageSquare } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getCurrentUser, getMyProfile, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds, searchIcd11, setIcd11 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
+import { FeedbackList } from './FeedbackInbox'
+import { listFeedback } from '../api/frappe'
 
 const TABS = [
   { key: 'profile', label: 'Profile', icon: UserCircle },
@@ -12,6 +14,7 @@ const TABS = [
   { key: 'ai-config', label: 'AI Config', icon: Wand2 },
   { key: 'data', label: 'Data', icon: Database },
   { key: 'security', label: 'Security', icon: Shield },
+  { key: 'feedback', label: 'Feedback', icon: MessageSquare, requires: 'view_feedback' },
 ]
 
 const SESSION_TIMEOUT_OPTIONS = [
@@ -113,7 +116,12 @@ function Toggle({ enabled, onClick }) {
 
 export default function Settings() {
   const { has } = useCapabilities()
-  const [activeTab, setActiveTab] = useState('profile')
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get('tab') || 'profile')
+  const [newFeedback, setNewFeedback] = useState(0)
+  const visibleTabs = TABS.filter((t) => !t.requires || has(t.requires))
+  useEffect(() => {
+    if (has('view_feedback')) listFeedback('New').then((r) => setNewFeedback(r?.counts?.new || 0)).catch(() => {})
+  }, [has])
   const [diseases, setDiseases] = useState([])
   const [diseaseThresholds, setDiseaseThresholds] = useState({})
   const [diseasePriorities, setDiseasePriorities] = useState({})
@@ -486,7 +494,7 @@ export default function Settings() {
       </div>
 
       <div className="flex w-full gap-1 bg-white border border-gray-100 rounded-2xl p-1.5 mb-6">
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -495,9 +503,15 @@ export default function Settings() {
           >
             <tab.icon className="w-4 h-4" />
             {tab.label}
+            {tab.key === 'feedback' && newFeedback > 0 && (
+              <span className={['text-[10px] font-semibold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center',
+                activeTab === tab.key ? 'bg-white text-red-600' : 'bg-red-600 text-white'].join(' ')}>{newFeedback}</span>
+            )}
           </button>
         ))}
       </div>
+
+      {activeTab === 'feedback' && has('view_feedback') && <FeedbackList onCounts={(c) => setNewFeedback(c.new || 0)} />}
 
       {activeTab === 'profile' && (
         <div className="space-y-6">

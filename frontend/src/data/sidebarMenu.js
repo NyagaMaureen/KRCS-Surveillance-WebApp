@@ -1,7 +1,8 @@
+// Full app menu (officers, admins). Items are filtered by capability.
 export const SIDEBAR_MENU = [
   { section: 'OVERVIEW', items: [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
-    { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: null },
+    { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: 'receive_tasks' },
   ]},
   { section: 'FIELD ACTIVITIES', items: [
     { label: 'Reports', icon: 'FileText', page: 'reports', requiresCapability: 'view_reports' },
@@ -28,3 +29,35 @@ export const SIDEBAR_MENU = [
     { label: 'Help Center', icon: 'HelpCircle', page: 'help-center', requiresCapability: null },
   ]},
 ]
+
+// CHP workspace menu (Figma "CHP" screens). Only these pages are reachable for CHPs.
+export const CHP_MENU = [
+  { section: 'OVERVIEW', items: [
+    { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
+  ]},
+  { section: 'REPORTING', items: [
+    { label: 'Report', icon: 'FileText', page: 'reports', requiresCapability: 'view_own_reports' },
+  ]},
+  { section: 'MY WORK', items: [
+    { label: 'Follow-ups', icon: 'ClipboardList', page: 'follow-ups', requiresCapability: 'receive_tasks' },
+    { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals', requiresCapability: 'receive_tasks' },
+  ]},
+  { section: 'ARTIFICIAL INTELLIGENCE', items: [
+    { label: 'AI Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },
+  ]},
+  { section: 'SUPPORT', items: [
+    { label: 'Feedback', icon: 'MessageSquareWarning', page: 'feedback', requiresCapability: null },
+    { label: 'Help Center', icon: 'HelpCircle', page: 'help-center', requiresCapability: null },
+  ]},
+  { section: 'SYSTEM', items: [
+    { label: 'Settings', icon: 'Settings', page: 'settings', requiresCapability: null },
+  ]},
+]
+
+export const MENUS = { full: SIDEBAR_MENU, chp: CHP_MENU }
+
+// Pages each workspace may open (menu pages plus their detail pages). 'full' = no restriction.
+export const WORKSPACE_PAGES = {
+  chp: ['login', 'dashboard', 'reports', 'report-detail', 'record-health-signal', 'follow-ups', 'referrals',
+    'ai-data-assistant', 'feedback', 'help-center', 'settings', 'my-tasks'],
+}

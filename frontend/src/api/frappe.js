@@ -87,6 +87,8 @@ export async function getMyCapabilities() {
   return {
     capabilities: message.capabilities || [],
     primary_role: message.primary_role || '',
+    workspace: message.workspace || 'full',
+    names: message.names || {},
   }
 }
 
@@ -1145,6 +1147,60 @@ export async function deleteEventTask(taskId) {
   return callMethodPost(`${TASKS}delete_task`, { task: taskId })
 }
 
-export async function getMyTasks(scope = 'mine', status = 'open') {
-  return callMethod(`${TASKS}get_my_tasks?scope=${scope}&status=${status}`)
+export async function getMyTasks(scope = 'mine', status = 'open', kind = '') {
+  return callMethod(`${TASKS}get_my_tasks?scope=${scope}&status=${status}${kind ? `&kind=${kind}` : ''}`)
+}
+
+export async function createReferral(r) {
+  return callMethodPost(`${TASKS}create_referral`, {
+    facility: r.facility, reason: r.reason, case_report: r.caseReport || '',
+    age_group: r.ageGroup || '', sex: r.sex || '', urgency: r.urgency || '',
+  })
+}
+
+export async function getMyReferableReports() {
+  return (await callMethod(`${TASKS}get_my_referable_reports`)) || []
+}
+
+// ---------- CHP workspace ----------
+
+export async function getChpDashboard() {
+  return callMethod('/api/method/surveillance.chp.get_chp_dashboard')
+}
+
+export async function getMyAccount() {
+  return callMethod('/api/method/surveillance.chp.get_my_account')
+}
+
+export async function updateMyProfile(changes) {
+  return callMethodPost('/api/method/surveillance.chp.update_my_profile', changes)
+}
+
+export async function changeMyPassword(oldPassword, newPassword) {
+  return callMethodPost('/api/method/frappe.core.doctype.user.user.update_password', {
+    old_password: oldPassword, new_password: newPassword, logout_all_sessions: 0,
+  })
+}
+
+// ---------- Feedback ----------
+
+const FEEDBACK = '/api/method/surveillance.feedback.'
+
+export async function submitFeedback(type, message, page) {
+  return callMethodPost(`${FEEDBACK}submit_feedback`, { feedback_type: type, message, page: page || '' })
+}
+
+export async function getMyFeedback() {
+  return (await callMethod(`${FEEDBACK}get_my_feedback`)) || []
+}
+
+export async function listFeedback(status = '', type = '') {
+  const qs = new URLSearchParams()
+  if (status) qs.set('status', status)
+  if (type) qs.set('feedback_type', type)
+  return callMethod(`${FEEDBACK}list_feedback?${qs}`)
+}
+
+export async function setFeedbackStatus(name, status, response) {
+  return callMethodPost(`${FEEDBACK}set_feedback_status`, { name, status, ...(response != null ? { response } : {}) })
 }

@@ -6,14 +6,16 @@ const CapabilitiesContext = createContext(null)
 export function CapabilitiesProvider({ children }) {
   const [capabilities, setCapabilities] = useState([])
   const [primaryRole, setPrimaryRole] = useState('')
+  const [workspace, setWorkspace] = useState('full')
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const { capabilities: caps, primary_role } = await getMyCapabilities()
+      const { capabilities: caps, primary_role, workspace: ws } = await getMyCapabilities()
       setCapabilities(caps)
       setPrimaryRole(primary_role)
+      setWorkspace(ws || 'full')
     } finally {
       setLoading(false)
     }
@@ -23,11 +25,15 @@ export function CapabilitiesProvider({ children }) {
     refresh()
   }, [refresh])
 
-  const has = useCallback((key) => capabilities.includes(key), [capabilities])
+  // key can be one capability or a list (any of them is enough)
+  const has = useCallback(
+    (key) => (Array.isArray(key) ? key.some((k) => capabilities.includes(k)) : capabilities.includes(key)),
+    [capabilities]
+  )
 
   const value = useMemo(
-    () => ({ capabilities, primaryRole, loading, has, refresh }),
-    [capabilities, primaryRole, loading, has, refresh]
+    () => ({ capabilities, primaryRole, workspace, loading, has, refresh }),
+    [capabilities, primaryRole, workspace, loading, has, refresh]
   )
 
   return <CapabilitiesContext.Provider value={value}>{children}</CapabilitiesContext.Provider>

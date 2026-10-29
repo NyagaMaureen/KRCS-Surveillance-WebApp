@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import * as icons from 'lucide-react'
-import { SIDEBAR_MENU } from '../../data/sidebarMenu'
+import { MENUS } from '../../data/sidebarMenu'
 import { useCapabilities } from '../../context/CapabilitiesContext'
 import { getReviewEvents } from '../../api/frappe'
 
@@ -13,18 +13,20 @@ export default function Sidebar() {
   const location = useLocation()
   const currentPage = location.pathname.replace('/', '').split('/')[0]
 
-  const { capabilities } = useCapabilities()
+  const { capabilities, workspace } = useCapabilities()
+  const canSeeQueue = capabilities.includes('view_review_queue')
 
   const visibleMenu = useMemo(() =>
-    SIDEBAR_MENU.map(group => ({
+    (MENUS[workspace] || MENUS.full).map(group => ({
       ...group,
       items: group.items.filter(item => !item.requiresCapability || capabilities.includes(item.requiresCapability)),
     })).filter(group => group.items.length > 0),
-    [capabilities]
+    [capabilities, workspace]
   )
 
   const [newCount, setNewCount] = useState(0)
   useEffect(() => {
+    if (!canSeeQueue) return undefined
     let active = true
     const load = () => getReviewEvents({ limit: 1 })
       .then((res) => { if (active) setNewCount(res?.counts?.new || 0) })
@@ -32,7 +34,7 @@ export default function Sidebar() {
     load()
     const timer = setInterval(load, 5 * 60 * 1000)
     return () => { active = false; clearInterval(timer) }
-  }, [])
+  }, [canSeeQueue])
 
   const [collapsed, setCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true')
   function toggle() {

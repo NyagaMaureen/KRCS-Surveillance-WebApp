@@ -262,7 +262,14 @@ def setup():
 # ---------- API for the bell in the app header (every role) ----------
 
 LINKS = {"Surveillance Event": "/alerts-signals/{}", "Case Report": "/reports/{}", "Risk Alert": "/epi-trends/{}",
-	"Event Task": "/my-tasks?task={}"}
+	"Event Task": "/my-tasks?task={}", "User Feedback": "/feedback"}
+
+
+def _link_for(doctype, name):
+	if doctype == "User Feedback":
+		from surveillance.capabilities import has_capability
+		return "/settings?tab=feedback" if has_capability("view_feedback") else "/feedback"
+	return LINKS[doctype].format(name) if doctype in LINKS and name else None
 
 
 @frappe.whitelist()
@@ -276,7 +283,7 @@ def get_my_notifications(limit=20):
 		"unread": unread,
 		"items": [{"id": r.name, "text": frappe.utils.strip_html(r.subject or ""), "read": bool(r.read),
 			"at": str(r.creation),
-			"link": LINKS[r.document_type].format(r.document_name) if r.document_type in LINKS and r.document_name else None}
+			"link": _link_for(r.document_type, r.document_name)}
 			for r in rows],
 	}
 
