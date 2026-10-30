@@ -1,0 +1,55 @@
+{
+ "doctype": "DocType",
+ "name": "Case Report Update",
+ "module": "Surveillance",
+ "engine": "InnoDB",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "creation": "2026-10-30 17:00:00.000000",
+ "modified": "2026-10-30 17:00:00.000000",
+ "fields": [
+  {
+   "fieldname": "at",
+   "fieldtype": "Datetime",
+   "label": "At",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "label": "Note",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "channel",
+   "fieldtype": "Data",
+   "label": "Channel"
+  },
+  {
+   "fieldname": "client_ref",
+   "fieldtype": "Data",
+   "label": "Client reference",
+   "length": 64
+  }
+ ],
+ "field_order": [
+  "at",
+  "user",
+  "note",
+  "channel",
+  "client_ref"
+ ],
+ "links": [],
+ "states": [],
+ "permissions": [],
+ "istable": 1,
+ "editable_grid": 0
+}

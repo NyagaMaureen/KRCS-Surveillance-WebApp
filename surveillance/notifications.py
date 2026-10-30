@@ -297,3 +297,18 @@ def mark_notifications_read(name=None):
 	for n in frappe.get_all("Notification Log", filters=filters, pluck="name"):
 		frappe.db.set_value("Notification Log", n, "read", 1, update_modified=False)
 	return get_my_notifications()
+
+
+# ---------- phone push (Expo): names used by the mobile app ----------
+
+@frappe.whitelist(methods=["POST"])
+def register_device(token, platform=None, device_name=None):
+	"""Save this phone's Expo push token for the logged-in user. Same as field_api.register_push_token."""
+	from surveillance.field_api import register_push_token
+	return register_push_token(token, platform, device_name)
+
+
+@frappe.whitelist(methods=["POST"])
+def unregister_device(token):
+	from surveillance.field_api import unregister_push_token
+	return unregister_push_token(token)

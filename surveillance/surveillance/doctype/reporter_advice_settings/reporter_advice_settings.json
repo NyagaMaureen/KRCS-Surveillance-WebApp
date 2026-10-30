@@ -1,0 +1,34 @@
+{
+ "doctype": "DocType",
+ "name": "Reporter Advice Settings",
+ "module": "Surveillance",
+ "engine": "InnoDB",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "creation": "2026-10-30 17:00:00.000000",
+ "modified": "2026-10-30 17:00:00.000000",
+ "fields": [
+  {
+   "fieldname": "general_advice",
+   "fieldtype": "Small Text",
+   "label": "General next steps for reporters",
+   "description": "One per line. Shown after every report, under the disease-specific steps.",
+   "default": "Keep the sick person's contacts in mind; the surveillance officer may call you.\nIf someone gets worse, take them to the nearest health facility.\nWash hands with soap after caring for a sick person."
+  }
+ ],
+ "field_order": [
+  "general_advice"
+ ],
+ "links": [],
+ "states": [],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  }
+ ],
+ "issingle": 1
+}

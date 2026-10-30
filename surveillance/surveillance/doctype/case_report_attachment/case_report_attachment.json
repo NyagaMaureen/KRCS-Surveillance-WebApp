@@ -8,6 +8,9 @@
  "field_order": [
   "attachment_type",
   "file",
+  "people_shown",
+  "consent",
+  "consent_recorded_on",
   "text_content"
  ],
  "fields": [
@@ -23,6 +26,26 @@
    "label": "File"
   },
   {
+   "fieldname": "people_shown",
+   "fieldtype": "Check",
+   "label": "People shown or recorded",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "consent",
+   "fieldtype": "Select",
+   "label": "Consent",
+   "options": "\nNo one\nPerson agreed\nParent or guardian agreed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "consent_recorded_on",
+   "fieldtype": "Datetime",
+   "label": "Consent recorded on",
+   "read_only": 1
+  },
+  {
    "fieldname": "text_content",
    "fieldtype": "Small Text",
    "label": "Text Content"
@@ -32,7 +55,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-30 09:23:29.226006",
+ "modified": "2026-10-30 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report Attachment",

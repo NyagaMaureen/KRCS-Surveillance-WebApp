@@ -25,6 +25,26 @@
    "label": "File"
   },
   {
+   "fieldname": "people_shown",
+   "fieldtype": "Check",
+   "label": "People shown or recorded",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "consent",
+   "fieldtype": "Select",
+   "label": "Consent",
+   "options": "\nNo one\nPerson agreed\nParent or guardian agreed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "consent_recorded_on",
+   "fieldtype": "Datetime",
+   "label": "Consent recorded on",
+   "read_only": 1
+  },
+  {
    "fieldname": "text_content",
    "fieldtype": "Small Text",
    "label": "Text"
@@ -39,17 +59,27 @@
    "fieldname": "added_on",
    "fieldtype": "Datetime",
    "label": "Added On"
+  },
+  {
+   "fieldname": "client_ref",
+   "fieldtype": "Data",
+   "label": "Client reference",
+   "length": 64
   }
  ],
  "permissions": [],
  "istable": 1,
  "description": "Evidence collected during an investigation.",
- "modified": "2026-10-19 12:00:00.000000",
+ "modified": "2026-10-30 17:00:00.000000",
  "field_order": [
   "attachment_type",
   "file",
+  "people_shown",
+  "consent",
+  "consent_recorded_on",
   "text_content",
   "added_by",
-  "added_on"
+  "added_on",
+  "client_ref"
  ]
 }

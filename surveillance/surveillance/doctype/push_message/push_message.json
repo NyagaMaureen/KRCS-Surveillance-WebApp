@@ -1,0 +1,83 @@
+{
+ "doctype": "DocType",
+ "name": "Push Message",
+ "module": "Surveillance",
+ "engine": "InnoDB",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "creation": "2026-10-30 17:00:00.000000",
+ "modified": "2026-10-30 17:00:00.000000",
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "label": "Token",
+   "length": 200
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title"
+  },
+  {
+   "fieldname": "body",
+   "fieldtype": "Small Text",
+   "label": "Body"
+  },
+  {
+   "fieldname": "ticket_id",
+   "fieldtype": "Data",
+   "label": "Expo ticket",
+   "search_index": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Sent\nDelivered\nError",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Data",
+   "label": "Error"
+  },
+  {
+   "fieldname": "checked_on",
+   "fieldtype": "Datetime",
+   "label": "Receipt checked on"
+  }
+ ],
+ "field_order": [
+  "user",
+  "token",
+  "title",
+  "body",
+  "ticket_id",
+  "status",
+  "error",
+  "checked_on"
+ ],
+ "links": [],
+ "states": [],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  }
+ ],
+ "autoname": "hash",
+ "track_changes": 0
+}

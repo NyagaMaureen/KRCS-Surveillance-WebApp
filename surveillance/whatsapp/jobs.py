@@ -118,7 +118,9 @@ def process_event(ev):
 	session = sessions.load(ev["from"])
 	if ev.get("name"):
 		session.profile_name = ev["name"]
-	replies = handle(session, ev["input"], make_context(st))
+	ctx = make_context(st)
+	ctx.message_id = ev.get("id")   # becomes the report's client_ref, so a redelivered message never creates a second report
+	replies = handle(session, ev["input"], ctx)
 	sessions.save(session)
 	for msg in replies:
 		problems = validate(msg)
@@ -213,13 +215,12 @@ def attach_media(report, media):
 					"attached_to_name": report,
 				}
 			).insert(ignore_permissions=True)
-			rows.append(
-				{
-					"attachment_type": ATTACHMENT_TYPES.get(m.get("kind"), "Attachment"),
-					"file": f.file_url,
-					"text_content": m.get("caption"),
-				}
-			)
+			kind = ATTACHMENT_TYPES.get(m.get("kind"), "Attachment")
+			row = {"attachment_type": kind, "file": f.file_url, "text_content": m.get("caption")}
+			if kind in ("Photo", "Voice Note") and m.get("consent"):   # answered in the bot (RConsent)
+				row.update({"people_shown": m.get("people_shown") or 0, "consent": m["consent"],
+					"consent_recorded_on": frappe.utils.now_datetime()})
+			rows.append(row)
 		except Exception:
 			frappe.log_error(title=f"WhatsApp media could not be attached to {report}")
 	if rows:

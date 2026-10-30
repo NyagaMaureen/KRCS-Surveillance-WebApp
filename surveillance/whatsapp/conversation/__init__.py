@@ -70,7 +70,7 @@ from surveillance.whatsapp.conversation.fields import (
 	SelectStep,
 )
 from surveillance.whatsapp.conversation.portal import Help, Lang, Menu, NotStaff, Reports, Resume, Welcome
-from surveillance.whatsapp.conversation.report import RDescribe, RDone, RDuplicate, REdit, RReview
+from surveillance.whatsapp.conversation.report import RConsent, RDescribe, RDone, RDuplicate, REdit, RReview
 from surveillance.whatsapp.conversation.steps import BACK_TO, step_back
 from surveillance.whatsapp.messages import text
 
@@ -167,6 +167,7 @@ STATES.update(
 		"r_extra": RExtra(),
 		"r_review": RReview(),
 		"r_duplicate": RDuplicate(),
+		"r_consent": RConsent(),
 		"r_edit": REdit(),
 		"r_done": RDone(),
 	}

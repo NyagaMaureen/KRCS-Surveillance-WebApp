@@ -1,0 +1,82 @@
+{
+ "doctype": "DocType",
+ "name": "Mobile Sync Stats",
+ "module": "Surveillance",
+ "engine": "InnoDB",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "creation": "2026-10-30 17:00:00.000000",
+ "modified": "2026-10-30 17:00:00.000000",
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "device_id",
+   "fieldtype": "Data",
+   "label": "Device ID",
+   "length": 100,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "label": "Day",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "queued",
+   "fieldtype": "Int",
+   "label": "Queued"
+  },
+  {
+   "fieldname": "sent",
+   "fieldtype": "Int",
+   "label": "Sent"
+  },
+  {
+   "fieldname": "failed",
+   "fieldtype": "Int",
+   "label": "Failed"
+  },
+  {
+   "fieldname": "max_queue_age_minutes",
+   "fieldtype": "Int",
+   "label": "Oldest queued item (minutes)"
+  },
+  {
+   "fieldname": "stats",
+   "fieldtype": "Long Text",
+   "label": "All stats (JSON from the app)"
+  }
+ ],
+ "field_order": [
+  "user",
+  "device_id",
+  "day",
+  "queued",
+  "sent",
+  "failed",
+  "max_queue_age_minutes",
+  "stats"
+ ],
+ "links": [],
+ "states": [],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  }
+ ],
+ "autoname": "hash",
+ "track_changes": 0
+}

@@ -103,11 +103,55 @@ class RReview(State):
 		if missing:
 			s.editing = True
 			return go(missing[0], text(t(s)["incomplete"](", ".join(step_name(s, m) for m in missing))))
+		if needs_consent(s):
+			return go("r_consent")
 		if not s.draft.skip_duplicate_check:
 			dup = ctx.data.find_duplicate(s.draft.region, s.draft.symptoms)
 			if dup:
 				s.draft.duplicate_of = dup
 				return go("r_duplicate")
+		return submit(s, ctx)
+
+
+CONSENT_CHOICES = {"none": (0, "No one"), "person": (1, "Person agreed"), "guardian": (1, "Parent or guardian agreed")}
+
+
+def needs_consent(s):
+	"""Photos / voice notes in the draft that have no consent answer yet (Kenya Data Protection Act 2019)."""
+	return any(m.get("kind") in ("image", "audio") and not m.get("consent") for m in (s.draft.media or []))
+
+
+class RConsent(State):
+	"""Asked once before sending, when the report has photos or voice notes."""
+
+	def options(self, s, ctx):
+		return [
+			{"id": "none", "title": t(s)["consentNone"], "aliases": ["no", "none", "no one", "hapana", "hakuna"]},
+			{"id": "person", "title": t(s)["consentPerson"], "aliases": ["yes", "agreed", "ndiyo", "alikubali"]},
+			{"id": "guardian", "title": t(s)["consentGuardian"], "aliases": ["parent", "guardian", "mzazi", "mlezi"]},
+			{"id": "remove", "title": t(s)["consentRemove"], "aliases": ["remove", "delete", "ondoa", "futa"]},
+		]
+
+	def prompt(self, s, ctx):
+		return [choose(s, t(s)["consentAsk"], self.options(s, ctx))]
+
+	def on(self, s, inp, choice, ctx):
+		if choice == "remove":
+			s.draft.media = [m for m in s.draft.media if m.get("kind") not in ("image", "audio")]
+			note = [text(t(s)["consentRemoved"])]
+		elif choice in CONSENT_CHOICES:
+			shown, consent = CONSENT_CHOICES[choice]
+			for m in s.draft.media:
+				if m.get("kind") in ("image", "audio"):
+					m["people_shown"], m["consent"] = shown, consent
+			note = []
+		else:
+			return None
+		if not s.draft.skip_duplicate_check:
+			dup = ctx.data.find_duplicate(s.draft.region, s.draft.symptoms)
+			if dup:
+				s.draft.duplicate_of = dup
+				return go("r_duplicate", *note)
 		return submit(s, ctx)
 
 
@@ -285,7 +329,16 @@ def build_doc(s, ctx):
 		"additional_notes": "\n\n".join(x for x in [*d.notes, extraction_note(s)] if x) or None,
 		"channel": "WhatsApp",
 		"status": "Submitted",
+		"client_ref": _client_ref(ctx),
 	}
+
+
+def _client_ref(ctx):
+	mid = getattr(ctx, "message_id", None)
+	if not mid:
+		return None
+	import hashlib
+	return "wa:" + hashlib.sha1(str(mid).encode()).hexdigest()   # WhatsApp IDs can exceed 64 characters
 
 
 def submit(s, ctx):

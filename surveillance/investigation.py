@@ -403,7 +403,8 @@ def get_investigation(event):
 
 
 @frappe.whitelist(methods=["POST"])
-def answer_question(event, question_no, answer):
+def answer_question(event, question_no, answer, expected=None):
+	"""expected (optional): the answer the app last saw; a different answer on the server is refused with 409."""
 	doc = _load(event, act=True)
 	if doc.status not in ("New", "Verifying", "Investigating"):
 		frappe.throw(_("Verification answers can only change while the event is open for verification."))
@@ -413,6 +414,8 @@ def answer_question(event, question_no, answer):
 	row = next((a for a in doc.verification if cint(a.question_no) == cint(question_no)), None)
 	if not row:
 		frappe.throw(_("Question not found."))
+	from surveillance.field_api import check_expected
+	check_expected(expected, row.answer, row.answered_by, row.answered_on)
 	if row.kind == "Case definition" and frappe.db.count("Surveillance Signal", {"event": doc.name}):
 		frappe.throw(_("This question is answered from the report checks. Check each report instead."))
 	if row.answer == answer:
@@ -427,7 +430,7 @@ def answer_question(event, question_no, answer):
 
 
 @frappe.whitelist(methods=["POST"])
-def set_step_outcome(event, step_no, outcome=None, reason=None):
+def set_step_outcome(event, step_no, outcome=None, reason=None, expected=None):
 	"""Record Done / Not done / Not applicable on one protocol step. Not done needs a reason. Empty outcome clears it."""
 	doc = _load(event, act=True)
 	if doc.status in ("Discarded", "Closed"):
@@ -436,6 +439,8 @@ def set_step_outcome(event, step_no, outcome=None, reason=None):
 	row = next((s for s in doc.checklist if cint(s.step_no) == cint(step_no)), None)
 	if not row:
 		frappe.throw(_("Step not found."))
+	from surveillance.field_api import check_expected
+	check_expected(expected, row.outcome, row.done_by, row.done_on)
 	outcome = outcome or None
 	reason = (reason or "").strip()
 	if outcome and outcome not in OUTCOMES:
@@ -457,8 +462,10 @@ def set_step_outcome(event, step_no, outcome=None, reason=None):
 
 
 @frappe.whitelist(methods=["POST"])
-def save_findings(event, findings):
+def save_findings(event, findings, expected=None):
 	doc = _load(event, act=True)
+	from surveillance.field_api import check_expected
+	check_expected(expected, doc.findings, doc.modified_by, doc.modified)
 	findings = (findings or "").strip()
 	if findings == (doc.findings or ""):
 		return _shape(doc)
@@ -469,17 +476,29 @@ def save_findings(event, findings):
 
 
 @frappe.whitelist(methods=["POST"])
-def add_evidence(event, attachment_type, file_url=None, text=None):
-	"""Attach a photo, voice note, file (already uploaded as a private file) or a text note."""
+def add_evidence(event, attachment_type, file_url=None, text=None, people_shown=None, consent=None,
+		consent_recorded_on=None, client_ref=None):
+	"""Attach a photo, voice note, file (already uploaded as a private file) or a text note.
+	Photos and voice notes: people_shown (0/1) and, when 1, consent "Person agreed" / "Parent or guardian agreed".
+	client_ref (optional, from the app): a retry with the same reference does not attach it twice."""
 	doc = _load(event, act=True)
 	if attachment_type not in EVIDENCE_TYPES:
 		frappe.throw(_("Unknown attachment type."))
+	ref = (client_ref or "").strip()[:64] or None
+	if ref and any(e.get("client_ref") == ref for e in (doc.get("evidence") or [])):
+		return _shape(doc)
+	from surveillance.case_report_rules import check_consent
+	shown, consent, recorded = check_consent(attachment_type, people_shown, consent)
+	if consent_recorded_on and shown is not None and attachment_type in ("Photo", "Voice Note"):
+		from frappe.utils import get_datetime
+		recorded = get_datetime(consent_recorded_on)   # when the app asked the question, offline
 	if attachment_type == "Text Note" and not (text or "").strip():
 		frappe.throw(_("The note is empty."))
 	if attachment_type != "Text Note" and not file_url:
 		frappe.throw(_("Upload a file first."))
 	doc.append("evidence", {"attachment_type": attachment_type, "file": file_url, "text_content": (text or "").strip() or None,
-		"added_by": frappe.session.user, "added_on": now_datetime()})
+		"added_by": frappe.session.user, "added_on": now_datetime(), "people_shown": shown, "consent": consent,
+		"consent_recorded_on": recorded, "client_ref": ref})
 	_log(doc, f"{attachment_type} added", (text or "")[:200] or (file_url or "").split("/")[-1])
 	doc.save(ignore_permissions=True)
 	return _shape(doc)

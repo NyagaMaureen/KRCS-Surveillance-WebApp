@@ -3,7 +3,7 @@
  "autoname": "TSK-.#####",
  "naming_rule": "Expression",
  "creation": "2026-10-28 12:00:00.000000",
- "modified": "2026-10-29 14:00:00.000000",
+ "modified": "2026-10-30 16:00:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "doctype": "DocType",
@@ -47,7 +47,8 @@
   "case_report",
   "patient_age_group",
   "patient_sex",
-  "reason"
+  "reason",
+  "client_ref"
  ],
  "fields": [
   {
@@ -250,6 +251,14 @@
    "fieldname": "reason",
    "fieldtype": "Small Text",
    "label": "Reason for referral"
+  },
+  {
+   "fieldname": "client_ref",
+   "fieldtype": "Data",
+   "label": "Client reference",
+   "length": 64,
+   "no_copy": 1,
+   "search_index": 1
   }
  ],
  "links": [],

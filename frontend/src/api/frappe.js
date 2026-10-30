@@ -1041,8 +1041,8 @@ export async function saveFindings(eventId, findings) {
   return callMethodPost('/api/method/surveillance.investigation.save_findings', { event: eventId, findings })
 }
 
-export async function addEvidence(eventId, attachmentType, fileUrl, text) {
-  return callMethodPost('/api/method/surveillance.investigation.add_evidence', { event: eventId, attachment_type: attachmentType, file_url: fileUrl || '', text: text || '' })
+export async function addEvidence(eventId, attachmentType, fileUrl, text, consent) {
+  return callMethodPost('/api/method/surveillance.investigation.add_evidence', { event: eventId, attachment_type: attachmentType, file_url: fileUrl || '', text: text || '', ...(consent || {}) })
 }
 
 export async function removeEvidence(eventId, evidenceId) {
@@ -1267,6 +1267,10 @@ export async function getCbsContact(signal) {
 
 export async function getTrendCbsReports(event) {
   return callMethod(`/api/method/surveillance.cbs_feed.get_trend_cbs_reports?event=${encodeURIComponent(event)}`)
+}
+
+export async function getReporterAdvice(disease) {
+  return callMethod(`/api/method/surveillance.protocols.get_reporter_advice?disease=${encodeURIComponent(disease || '')}`)
 }
 
 export async function getRedFlags() {

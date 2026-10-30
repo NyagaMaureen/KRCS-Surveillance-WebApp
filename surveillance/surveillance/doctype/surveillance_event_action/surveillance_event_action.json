@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-14 12:00:00.000000",
- "modified": "2026-10-14 12:00:00.000000",
+ "modified": "2026-10-30 16:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -15,7 +15,8 @@
   "at",
   "user",
   "action",
-  "note"
+  "note",
+  "client_ref"
  ],
  "fields": [
   {
@@ -42,6 +43,12 @@
    "fieldtype": "Small Text",
    "label": "Note",
    "in_list_view": 1
+  },
+  {
+   "fieldname": "client_ref",
+   "fieldtype": "Data",
+   "label": "Client reference",
+   "length": 64
   }
  ],
  "permissions": [],

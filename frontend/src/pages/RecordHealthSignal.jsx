@@ -5,7 +5,8 @@ import AppShell from '../components/layout/AppShell'
 import SymptomPicker from '../components/report/SymptomPicker'
 import PhotoField, { ImageModal, UploadStatus } from '../components/report/PhotoField'
 import VoiceField from '../components/report/VoiceField'
-import { getList, createReport, getMyProfile, getLoggedInUserPhone, getSubCounties, uploadFile, uploadFileWithProgress, classifyPreview } from '../api/frappe'
+import ConsentQuestion, { consentOk, consentFields } from '../components/report/ConsentQuestion'
+import { getList, createReport, getMyProfile, getLoggedInUserPhone, getSubCounties, uploadFile, uploadFileWithProgress, classifyPreview, getReporterAdvice } from '../api/frappe'
 import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS } from '../data/formOptions'
 import { formatDuration, photoExtension } from '../utils/media'
 
@@ -22,7 +23,6 @@ const FIELD_META = {
   signal_type: { label: 'Signal type', step: 1 },
   region: { label: 'Region', step: 1 },
   sub_county: { label: 'Sub-county', step: 1 },
-  location_name: { label: 'Location / village / block', step: 1 },
   gps: { label: 'GPS location', step: 1 },
   affected_count: { label: 'People affected', step: 2 },
   deaths_count: { label: 'Deaths', step: 2 },
@@ -51,9 +51,8 @@ function validate(f, today) {
   if (!f.signal_type) e.signal_type = 'Select a signal type'
   if (!f.region) e.region = 'Select a region'
   if (!f.sub_county) e.sub_county = 'Select a sub-county'
-  if (!f.location_name.trim()) e.location_name = 'Enter the location, village or block name'
-
   const { latitude: lat, longitude: lng } = f
+
   if (lat === null || lng === null) e.gps = 'Capture your location or enter the coordinates'
   else if (!Number.isFinite(lat) || lat < -5 || lat > 5) e.gps = 'Latitude must be between -5 and 5 (Kenya)'
   else if (!Number.isFinite(lng) || lng < 33 || lng > 42) e.gps = 'Longitude must be between 33 and 42 (Kenya)'
@@ -112,6 +111,9 @@ export default function RecordHealthSignal() {
   const [textNoteValue, setTextNoteValue] = useState('')
   const [photos, setPhotos] = useState([])
   const [voice, setVoice] = useState(null)
+  const [mediaConsent, setMediaConsent] = useState({ peopleShown: false, consent: '' })   // default: no person shown
+  // one reference per report: if Submit is pressed twice (or the network retries), the server keeps one report
+  const clientRef = useRef(globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `web-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const [reviewImage, setReviewImage] = useState(null)
 
   const photosRef = useRef(photos)
@@ -130,12 +132,14 @@ export default function RecordHealthSignal() {
   })
 
   const [classifyResults, setClassifyResults] = useState([])
+  const [sent, setSent] = useState(null)   // after submit: { name, diseaseName, advice }
   const classifyTimerRef = useRef(null)
 
   const errors = useMemo(() => validate(form, today), [form, today])
   const shown = (key) => (errors[key] && (touched[key] || attempted) ? errors[key] : '')
   const touch = (key) => setTouched((prev) => (prev[key] ? prev : { ...prev, [key]: true }))
-  const summaryKeys = attempted ? Object.keys(FIELD_META).filter((k) => errors[k]) : []
+  const [stepTried, setStepTried] = useState({})   // steps where Continue was pressed with problems
+  const summaryKeys = Object.keys(FIELD_META).filter((k) => errors[k] && (attempted || (stepTried[FIELD_META[k].step] && FIELD_META[k].step === currentStep)))
 
   function updateForm(fields) {
     setForm((prev) => ({ ...prev, ...fields }))
@@ -317,33 +321,42 @@ export default function RecordHealthSignal() {
       return
     }
 
+    const hasMedia = photosRef.current.length > 0 || !!voiceRef.current
+    if (hasMedia && !consentOk(mediaConsent)) {
+      setSubmitError('Answer the consent question under the photo and voice note (step 3), or remove them.')
+      return
+    }
+
     setSubmitting(true)
     try {
       const uploaded = []
       let failed = 0
       for (const p of photosRef.current) {
-        try { uploaded.push({ attachment_type: 'Photo', file: await uploadPhoto(p.id), text_content: '' }) } catch { failed++ }
+        try { uploaded.push({ attachment_type: 'Photo', file: await uploadPhoto(p.id), text_content: '', ...consentFields(mediaConsent) }) } catch { failed++ }
       }
       if (voiceRef.current) {
-        try { uploaded.push({ attachment_type: 'Voice Note', file: await uploadVoice(), text_content: '' }) } catch { failed++ }
+        try { uploaded.push({ attachment_type: 'Voice Note', file: await uploadVoice(), text_content: '', ...consentFields(mediaConsent) }) } catch { failed++ }
       }
       if (failed) {
         setSubmitError(`${failed} file${failed > 1 ? 's' : ''} could not be uploaded. Your answers are kept. Retry the upload, or press Submit report again.`)
         return
       }
 
-      await createReport({
+      const saved = await createReport({
         reported_by: form.reported_by, reporter_name: form.reporter_name, phone_number: form.phone_number,
         signal_type: form.signal_type, category: form.category,
         region: form.region, sub_county: form.sub_county, location_name: form.location_name.trim(), latitude: form.latitude, longitude: form.longitude,
         affected_count: Number(form.affected_count),
         symptoms: form.symptoms.map((s) => ({ symptom: s })),
         onset_date: form.onset_date, report_date: form.report_date, attachments: [...form.attachments, ...uploaded],
-        additional_notes: form.additional_notes, channel: 'Web', status: 'Submitted',
+        additional_notes: form.additional_notes, channel: 'Web', status: 'Submitted', client_ref: clientRef.current,
         age_group: form.age_group, animal_exposure: form.animal_exposure, deaths_count: Number(form.deaths_count),
       })
-      navigate('/reports')
+      const advice = await getReporterAdvice(saved?.suspected_disease).catch(() => null)
+      setSent({ name: saved?.name, diseaseName: advice?.diseaseName || (saved?.suspected_disease ? classifyResults[0]?.name : null), advice })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
+      if (/already received/i.test(e.message || '')) { navigate('/reports'); return }   // first press got through
       setSubmitError(e.message || 'Something went wrong submitting the report.')
     } finally {
       setSubmitting(false)
@@ -387,13 +400,31 @@ export default function RecordHealthSignal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.region])
 
-  function goToStep(n, fromStep) {
-    if (fromStep) {
-      const keys = Object.keys(FIELD_META).filter((k) => FIELD_META[k].step === fromStep)
-      setTouched((prev) => ({ ...prev, ...Object.fromEntries(keys.map((k) => [k, true])) }))
+  // Moving forward checks each step on the way; the first step with a problem stops there and shows it.
+  // Going back is always allowed.
+  const consentMissing = (photos.length > 0 || !!voice) && !consentOk(mediaConsent)
+  function goToStep(n) {
+    for (let s = currentStep; s < n; s++) {
+      if (s === 3 && consentMissing) {
+        setStepTried((prev) => ({ ...prev, consent: true }))
+        if (s !== currentStep) setCurrentStep(s)
+        setTimeout(() => document.getElementById('field-consent')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+        return
+      }
+      const keys = Object.keys(FIELD_META).filter((k) => FIELD_META[k].step === s)
+      const bad = keys.filter((k) => errors[k])
+      if (bad.length) {
+        setTouched((prev) => ({ ...prev, ...Object.fromEntries(keys.map((k) => [k, true])) }))
+        setStepTried((prev) => ({ ...prev, [s]: true }))
+        if (s !== currentStep) setCurrentStep(s)
+        setTimeout(() => document.getElementById(`field-${bad[0]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+        return
+      }
     }
     setCurrentStep(n)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+  const stepHasErrors = (s) => Object.keys(FIELD_META).some((k) => FIELD_META[k].step === s && errors[k])
 
   const phoneMissing = profileLoaded && !form.phone_number
   const phoneWarning = (
@@ -411,13 +442,57 @@ export default function RecordHealthSignal() {
         <h2 className="text-xl font-bold text-brand-navy">Record Health Signal</h2>
         <p className="text-sm text-gray-400 mb-8">Quick community or facility health surveillance signal recording</p>
 
+        {sent ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 w-full">
+            <div className="flex items-start gap-3 mb-6">
+              <CheckCircle2 className="w-7 h-7 text-emerald-600 shrink-0" aria-hidden="true" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Report sent{sent.name ? `: ${sent.name}` : ''}</h3>
+                <p className="text-sm text-gray-500">The surveillance officer will review it and may call you.</p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-red-100 bg-red-50/60 p-4 mb-6">
+              <p className="text-xs text-gray-500">Suspected disease</p>
+              <p className="text-base font-semibold text-gray-900">{sent.diseaseName || 'No disease matched: treated as an unusual event'}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Based on the signs you entered. An officer will verify.</p>
+            </div>
+            {(sent.advice?.steps?.length > 0 || sent.advice?.general?.length > 0) && (
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">What to do now</h4>
+                {sent.advice.steps?.length > 0 && (
+                  <ol className="flex flex-col gap-2.5 mb-4">
+                    {sent.advice.steps.map((s, i) => (
+                      <li key={i} className="flex gap-3 text-sm text-gray-800">
+                        <span className="w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-600 flex items-center justify-center shrink-0">{i + 1}</span>
+                        <span>{s.step}{s.timeframe && <span className="block text-xs text-gray-500 mt-0.5">{s.timeframe}</span>}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {sent.advice.general?.length > 0 && (
+                  <ul className="list-disc pl-5 text-sm text-gray-600 flex flex-col gap-1 marker:text-gray-300">
+                    {sent.advice.general.map((g, i) => <li key={i}>{g}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-3">
+              <button type="button" onClick={() => window.location.reload()} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold">Record another report</button>
+              <button type="button" onClick={() => navigate('/reports')} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-gray-50">View my reports</button>
+            </div>
+          </div>
+        ) : (<>
         <div className="flex items-center mb-8">
           {steps.map((label, i) => (
             <div key={label} className={['flex items-center', i < steps.length - 1 ? 'flex-1' : ''].join(' ')}>
-              <div className="flex flex-col items-center">
-                <div className={['w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors', i + 1 <= currentStep ? 'bg-red-600 text-white shadow-sm shadow-red-200' : 'bg-gray-200 text-gray-500'].join(' ')}>{i + 1}</div>
-                <div className={['text-xs mt-1.5 whitespace-nowrap', i + 1 <= currentStep ? 'text-red-700 font-semibold' : 'text-gray-400'].join(' ')}>{label}</div>
-              </div>
+              <button type="button" onClick={() => goToStep(i + 1)} aria-current={i + 1 === currentStep ? 'step' : undefined}
+                aria-label={`Step ${i + 1}: ${label}`} className="flex flex-col items-center rounded-lg px-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200">
+                <div className={['w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors',
+                  i + 1 === currentStep ? 'bg-red-600 text-white shadow-sm shadow-red-200'
+                    : i + 1 < currentStep ? (stepTried[i + 1] && stepHasErrors(i + 1) ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700')
+                      : 'bg-gray-200 text-gray-500 hover:bg-gray-300'].join(' ')}>{i + 1}</div>
+                <div className={['text-xs mt-1.5 whitespace-nowrap', i + 1 === currentStep ? 'text-red-700 font-semibold' : i + 1 < currentStep ? 'text-gray-700' : 'text-gray-400'].join(' ')}>{label}</div>
+              </button>
               {i < steps.length - 1 && (
                 <div className={['flex-1 h-0.5 mx-2 rounded-full transition-colors', i + 1 < currentStep ? 'bg-red-600' : 'bg-gray-200'].join(' ')}></div>
               )}
@@ -518,7 +593,7 @@ export default function RecordHealthSignal() {
               </div>
               )}
               <div className="mb-4">
-                <Field id="location_name" label="Location / village / block name" required error={shown('location_name')}>
+                <Field id="location_name" label="Location / village / block name" hint="Optional, but helps the team find the place." error={shown('location_name')}>
                   <input value={form.location_name} onChange={(e) => updateForm({ location_name: e.target.value })} onBlur={() => touch('location_name')} className={inputCls(shown('location_name'))} placeholder="e.g. Ifo camp, Block C4, near the water point" />
                 </Field>
               </div>
@@ -560,7 +635,7 @@ export default function RecordHealthSignal() {
               </div>
 
               <div className="flex justify-end">
-                <button onClick={() => goToStep(2, 1)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>
+                <button onClick={() => goToStep(2)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>
               </div>
             </div>
           )}
@@ -622,25 +697,11 @@ export default function RecordHealthSignal() {
                   </div>
                 </div>
 
-                {classifyResults.length > 0 && (
-                  <div className="mt-5 bg-gray-50 border border-gray-100 rounded-xl p-4">
-                    <div className="flex items-start gap-2.5">
-                      <Stethoscope className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">These signs match:  {classifyResults[0].name}</p>
-                        {classifyResults.length > 1 && (
-                          <p className="text-xs text-gray-500 mt-1">Also consistent with: {classifyResults.slice(1).map((r) => r.name).join(', ')}</p>
-                        )}
-                        <p className="text-xs text-gray-400 mt-1.5">Suggestion based on Ministry of Health case definitions. An officer will verify.</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="flex justify-between mt-6">
                 <button onClick={() => setCurrentStep(1)} className="border border-gray-200 rounded-lg px-6 py-2.5 text-sm font-semibold hover:bg-gray-50 transition-colors">Back</button>
-                <button onClick={() => goToStep(3, 2)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>
+                <button onClick={() => goToStep(3)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>
               </div>
             </div>
           )}
@@ -673,6 +734,13 @@ export default function RecordHealthSignal() {
                 <h3 className="text-sm font-bold text-gray-900 mb-2">Record voice note {optionalHint}</h3>
                 <VoiceField voice={voice} setVoice={setVoice} onRetry={() => uploadVoice().catch(() => {})} />
               </div>
+
+              {(photos.length > 0 || voice) && (
+                <div id="field-consent" className={`mb-6 rounded-xl border p-3 ${stepTried.consent && consentMissing ? 'border-red-300 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
+                  <ConsentQuestion value={mediaConsent} onChange={setMediaConsent} />
+                  {stepTried.consent && consentMissing && <p className="text-xs text-red-700 mt-1.5">Choose who agreed, or untick if no person is shown. Otherwise remove the photo or voice note.</p>}
+                </div>
+              )}
 
               <h3 className="text-sm font-bold text-gray-900 mb-3">Add Supporting Info</h3>
               <div className="flex gap-3 mb-2">
@@ -741,7 +809,7 @@ export default function RecordHealthSignal() {
 
               <div className="flex justify-between">
                 <button onClick={() => setCurrentStep(2)} className="border border-gray-200 rounded-lg px-6 py-2.5 text-sm font-semibold hover:bg-gray-50 transition-colors">Back</button>
-                <button onClick={() => goToStep(4, 3)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>
+                <button onClick={() => goToStep(4)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">Continue</button>
               </div>
             </div>
           )}
@@ -749,34 +817,59 @@ export default function RecordHealthSignal() {
           {currentStep === 4 && (
             <div>
               <h3 className="font-bold text-center text-gray-900 mb-6">Review your report</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4 text-sm mb-6">
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Reporter</span><span className="font-medium text-right">{form.reporter_name || '\u2014'}{form.phone_number ? ` \u00b7 ${form.phone_number}` : ''}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Category</span><span className="font-medium">{form.category || '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Signal Type</span><span className="font-medium">{form.signal_type || '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Region / Sub-county</span><span className="font-medium">{regionLabel || '\u2014'} / {subCountyLabel || '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Sub-county</span><span className="font-medium">{(subCounties.find((s) => s.name === form.sub_county) || {}).sub_county_name || '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Location</span><span className="font-medium text-right">{form.location_name || '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">GPS</span><span className="font-medium text-right">{form.latitude !== null && form.longitude !== null ? `${Number(form.latitude).toFixed(5)}, ${Number(form.longitude).toFixed(5)}${form.gps_accuracy !== null ? ` (\u00b1${Math.round(form.gps_accuracy)} m)` : ''}` : '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">People affected</span><span className="font-medium">{form.affected_count || '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Deaths</span><span className="font-medium">{form.deaths_count === '' ? '\u2014' : form.deaths_count}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Onset Date</span><span className="font-medium">{formatReadableDate(form.onset_date)}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Report Date</span><span className="font-medium">{formatReadableDate(form.report_date)}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Other attachments</span><span className="font-medium">{form.attachments.length ? `${form.attachments.length} items attached` : 'None'}</span></div>
+              <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-100 bg-red-50/60 p-4">
+                <Stethoscope className="w-5 h-5 text-red-700 shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <p className="text-xs text-gray-500">Suspected disease (from the signs you entered)</p>
+                  <p className="text-base font-semibold text-gray-900">{classifyResults[0]?.name || 'No disease matched; it will be reviewed as an unusual event'}</p>
+                  {classifyResults.length > 1 && <p className="text-xs text-gray-500 mt-0.5">Also consistent with: {classifyResults.slice(1).map((r) => r.name).join(', ')}</p>}
+                  <p className="text-xs text-gray-400 mt-1">Based on Ministry of Health case definitions. An officer will verify.</p>
+                </div>
               </div>
-              <div className="border-b border-gray-100 pb-3 mb-4">
-                <span className="text-gray-400 text-sm block mb-1.5">Symptoms</span>
-                {symptomLabels.length ? (
-                  symptomLabels.map((s) => (
-                    <span key={s} className="inline-block bg-gray-100 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full mr-1 mb-1">{s}</span>
-                  ))
-                ) : (
-                  <span className="text-sm text-gray-400">{'\u2014'}</span>
-                )}
-                {form.animal_exposure && form.animal_exposure !== 'None' && (
-                  <div className="flex justify-between text-sm mt-2"><span className="text-gray-400">Animal exposure</span><span className="font-medium">{(ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === form.animal_exposure) || {}).label}</span></div>
-                )}
-              </div>
-
+              {(() => {
+                const Item = ({ label, children, wide }) => (
+                  <div className={wide ? 'sm:col-span-2' : ''}>
+                    <dt className="text-xs text-gray-400">{label}</dt>
+                    <dd className="text-sm font-medium text-gray-900 mt-0.5 break-words">{children || '\u2014'}</dd>
+                  </div>
+                )
+                const Group = ({ title, step, children }) => (
+                  <section className="border-b border-gray-100 pb-5 mb-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h4>
+                      <button type="button" onClick={() => setCurrentStep(step)} className="text-xs font-medium text-red-700 hover:underline">Edit</button>
+                    </div>
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">{children}</dl>
+                  </section>
+                )
+                return (
+                  <>
+                    <Group title="Reporter and place" step={1}>
+                      <Item label="Reporter">{form.reporter_name}{form.phone_number ? ` \u00b7 ${form.phone_number}` : ''}</Item>
+                      <Item label="Region / Sub-county">{[regionLabel, subCountyLabel].filter(Boolean).join(' / ')}</Item>
+                      <Item label="Category">{form.category}</Item>
+                      <Item label="Signal type">{form.signal_type}</Item>
+                      <Item label="Location">{form.location_name}</Item>
+                      <Item label="GPS">{form.latitude !== null && form.longitude !== null ? `${Number(form.latitude).toFixed(5)}, ${Number(form.longitude).toFixed(5)}${form.gps_accuracy !== null ? ` (\u00b1${Math.round(form.gps_accuracy)} m)` : ''}` : ''}</Item>
+                    </Group>
+                    <Group title="What happened" step={2}>
+                      <Item label="People affected">{form.affected_count}</Item>
+                      <Item label="Deaths">{form.deaths_count === '' ? '' : String(form.deaths_count)}</Item>
+                      <Item label="Age group">{form.age_group}</Item>
+                      <Item label="Animal exposure">{form.animal_exposure && form.animal_exposure !== 'None' ? (ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === form.animal_exposure) || {}).label : 'None'}</Item>
+                      <Item label="Symptoms" wide>
+                        {symptomLabels.length ? symptomLabels.map((s) => (
+                          <span key={s} className="inline-block bg-gray-100 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full mr-1 mb-1">{s}</span>
+                        )) : null}
+                      </Item>
+                    </Group>
+                    <Group title="Dates" step={3}>
+                      <Item label="Onset date">{formatReadableDate(form.onset_date)}</Item>
+                      <Item label="Report date">{formatReadableDate(form.report_date)}</Item>
+                    </Group>
+                  </>
+                )
+              })()}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 border-b border-gray-100 pb-4 mb-4">
                 <div>
                   <span className="text-gray-400 text-sm block mb-1.5">Photos</span>
@@ -809,9 +902,15 @@ export default function RecordHealthSignal() {
                 </div>
               </div>
 
-              <div className="mb-6">
-                <span className="text-gray-400 text-sm block mb-1.5">Notes</span>
-                <p className="text-sm text-gray-700">{form.additional_notes || '\u2014'}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 mb-6">
+                <div>
+                  <span className="text-xs text-gray-400 block">Notes</span>
+                  <p className="text-sm text-gray-700 mt-0.5">{form.additional_notes || '\u2014'}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-400 block">Other attachments</span>
+                  <p className="text-sm text-gray-700 mt-0.5">{form.attachments.length ? `${form.attachments.length} attached` : 'None'}</p>
+                </div>
               </div>
               {phoneMissing && <div className="mb-4">{phoneWarning}</div>}
               <div className="flex justify-between">
@@ -824,6 +923,7 @@ export default function RecordHealthSignal() {
           )}
 
         </div>
+        </>)}
       </div>
       <ImageModal src={reviewImage} onClose={() => setReviewImage(null)} />
     </AppShell>

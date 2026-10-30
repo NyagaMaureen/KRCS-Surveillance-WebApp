@@ -534,6 +534,12 @@ T = {
 		"duplicate": lambda r: f"*Potential duplicate report detected*\n\n*{r['name']}* – {r.get('symptom_tags') or 'same symptoms'}, "
 		f"reported on {r.get('report_date')}, is still open in this region.\n\nIs this a separate incident?",
 		"submitAnyway": "New incident",
+		"consentAsk": "*Photos and voice notes*\n\nDoes any photo or voice note show or record a person? If yes, did they (or a parent or guardian, for a child) agree?",
+		"consentNone": "No person in them",
+		"consentPerson": "Person agreed",
+		"consentGuardian": "Parent agreed",
+		"consentRemove": "Remove them",
+		"consentRemoved": "The photos and voice notes were removed. Your report will be sent without them.",
 		"saveFailed": "Your report could not be saved. Please tap *Confirm & submit* to try again.",
 		"done": lambda ref: f"*Report received*\n\nReference: *{ref}*\n\nThe KRCS surveillance team has been notified and a response team will follow up. "
 		f"Keep this reference to check the status of your report.\n\nHotline: *{HOTLINE}* _(free, 24/7)_",
@@ -723,6 +729,12 @@ T = {
 		"duplicate": lambda r: f"*Huenda taarifa hii tayari ipo*\n\n*{r['name']}* – {r.get('symptom_tags') or 'dalili zilezile'}, "
 		f"iliyotumwa {r.get('report_date')}, bado iko wazi katika eneo hili.\n\nJe, hili ni tukio tofauti?",
 		"submitAnyway": "Tukio jipya",
+		"consentAsk": "*Picha na sauti*\n\nJe, picha au sauti yoyote inaonyesha au inarekodi mtu? Kama ndiyo, je alikubali (au mzazi au mlezi, kwa mtoto)?",
+		"consentNone": "Hakuna mtu",
+		"consentPerson": "Mtu alikubali",
+		"consentGuardian": "Mzazi alikubali",
+		"consentRemove": "Ziondoe",
+		"consentRemoved": "Picha na sauti zimeondolewa. Taarifa yako itatumwa bila hizo.",
 		"saveFailed": "Taarifa yako haikuweza kuhifadhiwa. Tafadhali bonyeza *Thibitisha na tuma* kujaribu tena.",
 		"done": lambda ref: f"*Taarifa imepokelewa*\n\nNamba ya kumbukumbu: *{ref}*\n\nTimu ya ufuatiliaji ya KRCS imearifiwa na timu ya kukabiliana itafuatilia. "
 		f"Hifadhi namba hii kuangalia hali ya taarifa yako.\n\nNambari ya dharura: *{HOTLINE}* _(bure, saa 24)_",

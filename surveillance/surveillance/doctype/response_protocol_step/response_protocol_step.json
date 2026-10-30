@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-16 11:00:00.000000",
- "modified": "2026-10-28 12:30:00.000000",
+ "modified": "2026-10-30 16:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -16,7 +16,8 @@
   "timeframe",
   "responsible",
   "phase",
-  "assignable"
+  "assignable",
+  "show_to_reporters"
  ],
  "fields": [
   {
@@ -53,6 +54,13 @@
    "label": "Field worker can do this",
    "default": "0",
    "description": "Ticked steps can be assigned as a task to a CHP, CHA or other field worker from the event page."
+  },
+  {
+   "fieldname": "show_to_reporters",
+   "fieldtype": "Check",
+   "label": "Show to reporters",
+   "default": "0",
+   "description": "Ticked steps are sent to the CHP / WhatsApp reporter as advice right after they report this disease (e.g. 'give ORS', 'refer to the nearest facility')."
   }
  ],
  "permissions": [],

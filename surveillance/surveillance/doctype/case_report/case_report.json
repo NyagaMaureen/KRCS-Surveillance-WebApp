@@ -10,7 +10,6 @@
   "phone_number",
   "signal_type",
   "region",
-  "sub_county",
   "location_name",
   "latitude",
   "longitude",
@@ -33,9 +32,17 @@
   "also_consistent_with",
   "classified_by",
   "classification_reason",
+  "sub_county",
   "review_outcome",
   "reviewed_by",
-  "reviewed_on"
+  "reviewed_on",
+  "sb_sync",
+  "client_ref",
+  "queued_at",
+  "cb_sync",
+  "sync_attempts",
+  "sb_updates",
+  "updates"
  ],
  "fields": [
   {
@@ -229,12 +236,63 @@
    "fieldtype": "Datetime",
    "label": "Reviewed On",
    "read_only": 1
+  },
+  {
+   "fieldname": "sb_sync",
+   "fieldtype": "Section Break",
+   "label": "Sync (mobile / WhatsApp)",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "client_ref",
+   "fieldtype": "Data",
+   "label": "Client reference",
+   "length": 64,
+   "unique": 1,
+   "no_copy": 1,
+   "search_index": 1,
+   "description": "Set by the app (or the WhatsApp message ID). A retry with the same reference returns the report already received instead of creating a duplicate.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "queued_at",
+   "fieldtype": "Datetime",
+   "label": "Queued on device at",
+   "no_copy": 1,
+   "description": "When the reporter pressed Submit on the phone (before it synced).",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_sync",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sync_attempts",
+   "fieldtype": "Int",
+   "label": "Sync attempts",
+   "default": "0",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_updates",
+   "fieldtype": "Section Break",
+   "label": "Updates from the reporter"
+  },
+  {
+   "fieldname": "updates",
+   "fieldtype": "Table",
+   "label": "Updates",
+   "options": "Case Report Update",
+   "no_copy": 1,
+   "read_only": 1,
+   "description": "Added later by the reporter (e.g. 'one more child sick'). Never changes the report's symptoms, counts or place."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-14 12:30:00.000000",
+ "modified": "2026-10-30 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",

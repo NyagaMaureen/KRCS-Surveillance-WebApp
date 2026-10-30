@@ -138,6 +138,11 @@ def community_user():
 def create_report(doc):
 	"""Insert as the reporter, so Created by (owner) and the audit trail show who reported.
 	Committed at once: the reporter is told the reference right after this."""
+	if doc.get("client_ref"):
+		existing = frappe.db.get_value("Case Report", {"client_ref": doc["client_ref"]}, "name")
+		if existing:   # the same WhatsApp message was processed twice: reuse the report
+			return _row(frappe.get_doc("Case Report", existing).as_dict(),
+				[*REPORT_FIELDS, "reporter_name", "latitude", "longitude", "suspected_disease"])
 	previous = frappe.session.user
 	# The reporter was identified by their WhatsApp number (or is the community account); acting as them
 	# makes them the owner. The previous user is always restored.
@@ -165,13 +170,9 @@ def reporter_advice(disease, user):
 	label = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
 	if not (has_capability(VIEW, user) or has_capability(MANAGE, user)):
 		return {"disease": label, "steps": []}
-	doc = approved_for(disease)
-	steps = [
-		{"step": s.step, "timeframe": s.timeframe or ""}
-		for s in (doc.get("steps") if doc else None) or []
-		if REPORTER_STEP.search(s.responsible or "")
-	]
-	return {"disease": label, "steps": steps}
+	from surveillance.field_api import UNUSUAL_EVENT, advice_steps
+	steps = advice_steps(approved_for(disease)) or advice_steps(approved_for(UNUSUAL_EVENT))
+	return {"disease": label, "steps": [{"step": s["step"], "timeframe": s["timeframe"] or ""} for s in steps]}
 
 
 def find_duplicate(region, symptoms, days=DUPLICATE_DAYS):

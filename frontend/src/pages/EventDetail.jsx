@@ -16,6 +16,7 @@ import {
   setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext, mergeEvents, getCbsContact, getTrendCbsReports,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
+import ConsentQuestion, { consentOk, consentFields } from '../components/report/ConsentQuestion'
 import { FOCUS, parseDate, fmtDateTime, relTime } from '../data/eventHelpers'
 
 // Animal events (unusual death/illness of animals) are counted in cases, not people.
@@ -734,7 +735,7 @@ function EvidenceAdder({ busy, onUpload, onText, onError }) {
   }
 
   async function upload() {
-    const ok = await onUpload(pending.type, pending.file)
+    const ok = await onUpload(pending.type, pending.file, consentFields(pending.consent || { peopleShown: false }))
     if (ok) { setPending(null); setMode(null) }
   }
 
@@ -795,8 +796,13 @@ function EvidenceAdder({ busy, onUpload, onText, onError }) {
           ) : (
             <p className="text-sm text-gray-700 break-all">{pending.file.name}</p>
           )}
+          {(pending.type === 'Photo' || pending.type === 'Voice Note') && (
+            <ConsentQuestion value={pending.consent} onChange={(v) => setPending((p) => ({ ...p, consent: v }))} />
+          )}
           <div className="flex gap-2">
-            <button type="button" aria-label={pending.type === 'Voice Note' ? 'Use voice note' : 'Upload'} disabled={busy} onClick={upload} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
+            <button type="button" aria-label={pending.type === 'Voice Note' ? 'Use voice note' : 'Upload'}
+              disabled={busy || ((pending.type === 'Photo' || pending.type === 'Voice Note') && !consentOk(pending.consent || { peopleShown: false }))}
+              onClick={upload} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
               {busy ? 'Uploading...' : pending.type === 'Voice Note' ? 'Use' : 'Upload'}
             </button>
             <button type="button" aria-label={pending.type === 'Voice Note' ? 'Discard voice note' : 'Discard'} disabled={busy} onClick={() => setPending(null)} className={`${BTN} ${SECONDARY} ${FOCUS}`}>
@@ -1662,10 +1668,10 @@ export default function EventDetail() {
     return runInv('findings', () => saveFindings(event.id, text), 'Could not save findings')
   }
 
-  function uploadEvidence(type, file) {
+  function uploadEvidence(type, file, consent) {
     return runInv('evidence', async () => {
       const url = await uploadFile(file, 1)
-      return addEvidence(event.id, type, url)
+      return addEvidence(event.id, type, url, null, consent)   // consent = { people_shown, consent, consent_recorded_on }
     }, 'Could not upload the file')
   }
 

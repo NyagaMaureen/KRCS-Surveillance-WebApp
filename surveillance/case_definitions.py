@@ -15,6 +15,19 @@ DOCTYPE = "Case Definition"
 VERIFY_CAPABILITY = "verify_suspected_disease"
 CHILD_FIELDS = ("required_symptoms", "any_of_symptoms", "excluded_symptoms")
 
+# Kenya IDSR edge cases approved by KRCS (Allan), Oct 2026:
+#  - Cholera: 5 years or older normally; during a cholera outbreak in the area, 2 years or older.
+#    The form's age groups are Under 1 / 1-4 / 5-14 / 15+, so in an outbreak "1-4 years" is accepted
+#    (it cannot separate 1-year-olds); the reason text says so.
+#  - New: diarrhoea with dehydration in children under 5 (Under 1, 1-4 years), with its own protocol.
+#  - No definition matches: reporters get the unusual-event protocol's advice (protocols.get_reporter_advice).
+CHOLERA_TEXT = ("Any person 5 years or older passing lots of watery diarrhoea. "
+	"During a cholera outbreak in the area: any person 2 years or older.")
+U5_KEY = "diarrhoea-dehydration-u5"
+U5_NAME = "Diarrhoea with dehydration (under 5)"
+U5_TEXT = "Any child under 5 years with diarrhoea (3 or more loose stools a day) and signs of dehydration."
+OUTBREAK_AGES = {"awd-cholera": ["1-4 years"]}   # extra age groups accepted while the disease has an outbreak nearby
+
 # Symptom names are matched case-insensitively; alternatives cover renames.
 FEVER = ["Fever (hot body)", "High Fever", "Fever"]
 
@@ -49,11 +62,18 @@ DEFAULT_DEFINITIONS = [
 	},
 	{
 		"disease": "awd-cholera", "match_order": 6,
-		"lay_definition": "Any person 5 years or older passing lots of watery diarrhoea.",
+		"lay_definition": CHOLERA_TEXT,
 		"required": [["Diarrhea", "Diarrhoea"]],
 		"any_of": [["Vomiting"], ["Dehydration"]],
 		"excluded": [["Bloody Stool"]],
 		"ages": ["5-14 years", "15+ years"],
+	},
+	{
+		"disease": U5_KEY, "match_order": 20,
+		"lay_definition": U5_TEXT,
+		"required": [["Diarrhea", "Diarrhoea"], ["Dehydration"]],
+		"excluded": [["Bloody Stool"]],
+		"ages": ["Under 1", "1-4 years"],
 	},
 	{
 		"disease": "measles", "match_order": 7,
@@ -236,9 +256,12 @@ def apply_to_case_report(doc):
 
 	symptoms = [r.symptom for r in doc.symptoms if r.symptom]
 	age, exposure = doc.get("age_group"), doc.get("animal_exposure")
-	found = classify_detailed(symptoms, age, exposure)
+	defs, widened = with_outbreak_ages(get_definitions(), doc.get("sub_county"))
+	found = classify_detailed(symptoms, age, exposure, defs)
 	labels = _labels()
 	rules_view = explain(found[0], symptoms, age, exposure, labels) if found else "No case definition matched the reported signs."
+	if found and found[0]["disease"] in widened and age and _norm(age) in {_norm(a) for a in OUTBREAK_AGES[found[0]["disease"]]}:
+		rules_view += " (outbreak definition: 2 years or older, because of an active outbreak in this area)"
 
 	if doc.classified_by in ("Officer", "Model"):
 		if changed_by_person:
@@ -322,3 +345,70 @@ def backfill():
 		print(f"  {name}: {found[0]['disease'] if found else '-'}")
 	frappe.db.commit()
 	print(f"Classified {count} reports")
+
+
+# ---------- outbreak context and the Oct 2026 edge cases ----------
+
+def outbreak_active(disease, sub_county_id):
+	"""An open confirmed/escalated event or an open Epi Trends alert for this disease in this sub-county."""
+	if not sub_county_id:
+		return False
+	name = frappe.db.get_value("Sub County", sub_county_id, "sub_county_name") or sub_county_id
+	if frappe.db.exists("Surveillance Event", {"disease": disease, "sub_county": name, "status": ["in", ["Confirmed", "Escalated"]]}):
+		return True
+	return bool(frappe.db.exists("Risk Alert", {"disease": disease, "sub_county": name,
+		"status": ["in", ["Pending", "Investigating", "Confirmed"]]}))
+
+
+def with_outbreak_ages(defs, sub_county_id):
+	"""Copies of the definitions with outbreak age groups added where an outbreak is active. Returns (defs, widened keys)."""
+	widened = set()
+	out = []
+	for d in defs:
+		extra = OUTBREAK_AGES.get(d["disease"])
+		if extra and d["ages"] and outbreak_active(d["disease"], sub_county_id):
+			d = dict(d, ages=set(d["ages"]) | {_norm(a) for a in extra})
+			widened.add(d["disease"])
+		out.append(d)
+	return out, widened
+
+
+U5_PROTOCOL = ("Diarrhoea with Dehydration in Children Under 5", [
+	("Give ORS after every loose stool and zinc for 10 days; keep breastfeeding and feeding", "Immediately", "CHP / caregiver", "Response", 1),
+	("Refer urgently if the child cannot drink, is very sleepy, has sunken eyes, or blood in the stool", "Immediately", "CHP", "Investigation", 1),
+	("Check for other children with diarrhoea in the household and block; report if 2 or more", "Within 24 hours", "CHP", "Investigation", 1),
+	("Notify the SCDSC if there are 2 or more linked cases or any death", "Within 24 hours", "Surveillance officer", "Investigation", 0),
+	("Check the household water source; advise safe water and handwashing with soap", "Within 48 hours", "CHP / WASH team", "Response", 1),
+])
+
+
+def apply_idsr_edge_cases():
+	"""One-off (safe to repeat): add the under-5 diarrhoea definition, its disease and a Draft protocol,
+	and update the cholera wording. Existing KRCS edits to other definitions are not touched.
+	bench --site <site> execute surveillance.case_definitions.apply_idsr_edge_cases"""
+	if not frappe.db.exists("Alert Threshold Config", U5_KEY):
+		frappe.get_doc({"doctype": "Alert Threshold Config", "disease_key": U5_KEY, "disease_name": U5_NAME,
+			"category": "Human", "threshold": 5, "priority": "Standard", "is_active": 1,
+			"note": "IDSR edge case approved by KRCS, Oct 2026. Threshold and priority to confirm.",
+			"synonyms": "watery diarrhoea child, dehydration, kuhara mtoto"}).insert(ignore_permissions=True)
+		print("Disease added:", U5_NAME)
+	seed_case_definitions()   # creates the under-5 definition (only if missing)
+	cholera = frappe.db.get_value(DOCTYPE, {"disease": "awd-cholera"}, "name")
+	if cholera:
+		frappe.db.set_value(DOCTYPE, cholera, "lay_definition", CHOLERA_TEXT)
+		print("Cholera wording updated (outbreak: 2 years or older)")
+	if not frappe.db.exists("Response Protocol", {"disease": U5_KEY}):
+		title, steps = U5_PROTOCOL
+		doc = frappe.new_doc("Response Protocol")
+		doc.update({"title": title, "disease": U5_KEY, "status": "Draft", "version": "v0.1", "summary": U5_TEXT,
+			"source": "IDSR / IMCI; edge case approved by KRCS (Allan). KRCS to review before approval."})
+		for s, tf, who, phase, show in steps:
+			doc.append("steps", {"step": s, "timeframe": tf, "responsible": who, "phase": phase,
+				"assignable": 1 if who.startswith("CHP") else 0, "show_to_reporters": show})
+		from surveillance.protocols import questions_for
+		for q, w, k in questions_for(U5_KEY, U5_TEXT, U5_NAME):
+			doc.append("verification_questions", {"question": q, "why": w, "kind": k})
+		doc.insert(ignore_permissions=True)
+		print("Draft protocol added:", title, "(approve it in Response Protocols)")
+	frappe.db.commit()
+	print("Done. Re-classify recent reports with: bench --site <site> execute surveillance.case_definitions.backfill")

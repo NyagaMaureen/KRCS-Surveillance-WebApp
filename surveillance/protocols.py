@@ -51,7 +51,8 @@ def _shape(doc, steps=True):
 	}
 	if steps:
 		out["steps"] = [{"n": i, "step": s.step, "timeframe": s.timeframe, "responsible": s.responsible,
-			"phase": s.get("phase") or "Investigation", "assignable": bool(s.get("assignable"))}
+			"phase": s.get("phase") or "Investigation", "assignable": bool(s.get("assignable")),
+			"show_to_reporters": bool(s.get("show_to_reporters"))}
 			for i, s in enumerate(doc.get("steps") or [], 1)]
 		from surveillance.investigation import is_key, is_red
 		out["questions"] = [{"n": i, "question": q.question, "why": q.why, "kind": q.kind or "Supports",
@@ -126,7 +127,8 @@ def _clean_steps(steps):
 			phase = s.get("phase") if s.get("phase") in PHASES else "Investigation"
 			out.append({"step": text, "timeframe": (s.get("timeframe") or "").strip(),
 				"responsible": (s.get("responsible") or "").strip(), "phase": phase,
-				"assignable": 1 if s.get("assignable") else 0})
+				"assignable": 1 if s.get("assignable") else 0,
+				"show_to_reporters": 1 if s.get("show_to_reporters") else 0})
 	return out
 
 
@@ -578,3 +580,49 @@ def mark_assignable(overwrite=0):
 		for i, s in enumerate(steps, 1):
 			print(f"   {'[x]' if s.assignable else '[ ]'} {i}. {s.step[:90]}")
 	frappe.db.commit()
+
+
+# ---------- advice for reporters (mobile app and WhatsApp bot) ----------
+
+def _general_advice():
+	text = frappe.db.get_single_value("Reporter Advice Settings", "general_advice") if frappe.db.exists(
+		"DocType", "Reporter Advice Settings") else ""
+	return [line.strip() for line in (text or "").splitlines() if line.strip()]
+
+
+@frappe.whitelist()
+def get_reporter_advice(disease=None, user=None):
+	"""What the reporter should do after reporting.
+	-> {disease, diseaseName, steps: [{step, timeframe}], general: [str], fallback}
+	steps: the approved protocol's steps ticked 'Show to reporters' (no ticks yet: steps for CHPs / community /
+	volunteers). No matching protocol or steps: the unusual-event protocol (fallback = true).
+	general: the lines in Reporter Advice Settings, shown after every report."""
+	from surveillance.field_api import advice_steps
+	if not (has_capability("create_reports") or has_capability("receive_tasks") or has_capability(VIEW)):
+		frappe.throw(_("You do not have permission to perform this action."), frappe.PermissionError)
+	steps = advice_steps(approved_for(disease)) if disease else []
+	fallback = not steps
+	if fallback:
+		steps = advice_steps(approved_for(GENERIC_EVENT))
+	name = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") if disease else None
+	return {"disease": disease or None, "diseaseName": name, "steps": steps, "general": _general_advice(),
+		"fallback": fallback}
+
+
+@frappe.whitelist()
+def get_community_advice(keys, language="en"):
+	"""Approved Community Advice for the public WhatsApp bot. keys: list or comma-separated. Falls back to English.
+	-> {key: text}. For the bot service account (kb_service) and protocol viewers."""
+	if not (has_capability("kb_service") or has_capability(VIEW) or has_capability(MANAGE)):
+		frappe.throw(_("You do not have permission to perform this action."), frappe.PermissionError)
+	keys = frappe.parse_json(keys) if isinstance(keys, str) and keys.strip().startswith("[") else \
+		[k.strip() for k in (keys or "").split(",") if k.strip()] if isinstance(keys, str) else list(keys or [])
+	language = language if language in ("en", "sw") else "en"
+	rows = frappe.get_all("Community Advice", filters={"key": ["in", keys or [""]], "status": "Approved"},
+		fields=["key", "language", "text"], order_by="modified desc")
+	out = {}
+	for lang in (language, "en"):
+		for r in rows:
+			if r.language == lang and r.key not in out:
+				out[r.key] = r.text
+	return out

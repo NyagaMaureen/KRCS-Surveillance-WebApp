@@ -177,6 +177,9 @@ doc_events = {
 	"Surveillance Event": {
 		"before_save": "surveillance.risk.on_event_save",
 	},
+	"Notification Log": {
+		"after_insert": "surveillance.push.on_notification",
+	},
 	"Case Report": {
 		"validate": "surveillance.case_report_rules.validate_complete",
 		"on_update": "surveillance.events.on_case_report",
@@ -208,7 +211,7 @@ doc_events = {
 scheduler_events = {
 	"daily": ["surveillance.knowledge_base.retire_expired", "surveillance.context.import_weather",
 		"surveillance.event_tasks.daily_reminders"],
-	"hourly_long": ["surveillance.cbs_feed.hourly", "surveillance.risk.refresh_open"],
+	"hourly_long": ["surveillance.cbs_feed.hourly", "surveillance.risk.refresh_open", "surveillance.push.check_receipts"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }
 # scheduler_events = {
@@ -317,3 +320,6 @@ permission_query_conditions = {
 has_permission = {
 	"Case Report": "surveillance.report_access.case_report_permission",
 }
+
+# Mobile app background sync: "Authorization: device <key>:<secret>" (one key per phone, see field_api)
+auth_hooks = ["surveillance.field_api.device_auth"]

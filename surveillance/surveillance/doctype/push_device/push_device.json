@@ -1,0 +1,67 @@
+{
+ "doctype": "DocType",
+ "name": "Push Device",
+ "module": "Surveillance",
+ "autoname": "hash",
+ "engine": "InnoDB",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "creation": "2026-10-30 16:00:00.000000",
+ "modified": "2026-10-30 16:00:00.000000",
+ "track_changes": 0,
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "label": "Expo push token",
+   "reqd": 1,
+   "unique": 1,
+   "length": 200
+  },
+  {
+   "fieldname": "platform",
+   "fieldtype": "Select",
+   "label": "Platform",
+   "options": "\nandroid\nios",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "device_name",
+   "fieldtype": "Data",
+   "label": "Device"
+  },
+  {
+   "fieldname": "last_seen",
+   "fieldtype": "Datetime",
+   "label": "Last seen",
+   "in_list_view": 1
+  }
+ ],
+ "field_order": [
+  "user",
+  "token",
+  "platform",
+  "device_name",
+  "last_seen"
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  }
+ ],
+ "links": [],
+ "states": []
+}

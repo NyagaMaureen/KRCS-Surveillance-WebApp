@@ -166,7 +166,15 @@ def _assign(sig):
 	frappe.db.set_value("Surveillance Signal", sig.name, "event", ev.name, update_modified=False)
 	recompute_event(ev.name)
 	from surveillance import notifications
-	notifications.on_new_event(ev.name, sig.signal_date)
+	notifications.on_new_event(ev.name, _received_at(sig))
+
+
+def _received_at(sig):
+	"""When the report reached us. A field report queued offline for days still alerts when it finally syncs:
+	the new-event alert looks at arrival time, not the report's own date. CBS uses its report date."""
+	if sig.source == "Field" and frappe.db.exists("Case Report", sig.ref):
+		return frappe.db.get_value("Case Report", sig.ref, "creation")
+	return sig.signal_date
 
 
 def related_events(disease, sub_county, when=None, exclude=None):
@@ -675,14 +683,19 @@ def get_map_events(status="open", disease=None, days=30):
 
 
 @frappe.whitelist(methods=["POST"])
-def add_note(event, note):
-	"""Add an investigation note to an event without changing its status."""
+def add_note(event, note, client_ref=None):
+	"""Add an investigation note to an event without changing its status.
+	client_ref (optional, from the app): a retry with the same reference does not add the note twice."""
 	require_capability(ACT)
 	note = (note or "").strip()
 	if not note:
 		frappe.throw(_("Please write a note."))
 	doc = frappe.get_doc("Surveillance Event", event)
 	_check_access(doc)
-	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Note", "note": note})
+	ref = (client_ref or "").strip()[:64] or None
+	if ref and any(a.get("client_ref") == ref for a in (doc.actions or [])):
+		return _shape(doc, detail=True)
+	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Note", "note": note,
+		"client_ref": ref})
 	doc.save(ignore_permissions=True)
 	return _shape(doc, detail=True)

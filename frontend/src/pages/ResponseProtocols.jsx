@@ -172,6 +172,7 @@ function StepView({ s, num }) {
           {s.timeframe && <span><span className="text-gray-400">When:</span> {s.timeframe}</span>}
           {s.responsible && <span><span className="text-gray-400">Who:</span> {s.responsible}</span>}
           {s.assignable && <span className="text-emerald-700">Can be assigned to a field worker</span>}
+          {s.show_to_reporters && <span className="text-sky-700">Shown to reporters as advice</span>}
         </div>
       </div>
     </li>
@@ -357,7 +358,7 @@ function Label({ text, required, children }) {
   )
 }
 
-const blankStep = () => ({ step: '', timeframe: '', responsible: '', phase: 'Investigation', assignable: false })
+const blankStep = () => ({ step: '', timeframe: '', responsible: '', phase: 'Investigation', assignable: false, show_to_reporters: false })
 const blankQuestion = () => ({ question: '', why: '', kind: 'Supports', neededToStart: false, escalateIfYes: false })
 
 // The three choices on each verification question. "Supporting information only" = neither of the first two.
@@ -415,7 +416,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
     source_url: protocol?.sourceUrl || '',
     review_date: protocol?.reviewDate ? String(protocol.reviewDate).slice(0, 10) : '',
     steps: protocol?.steps?.length
-      ? protocol.steps.map((s) => ({ step: s.step, timeframe: s.timeframe || '', responsible: s.responsible || '', phase: s.phase || 'Investigation', assignable: !!s.assignable }))
+      ? protocol.steps.map((s) => ({ step: s.step, timeframe: s.timeframe || '', responsible: s.responsible || '', phase: s.phase || 'Investigation', assignable: !!s.assignable, show_to_reporters: !!s.show_to_reporters }))
       : [blankStep()],
     questions: (protocol?.questions || []).map((q) => ({ question: q.question || '', why: q.why || '', kind: q.kind || 'Supports',
       neededToStart: !!q.neededToStart, escalateIfYes: !!q.escalateIfYes })),
@@ -452,7 +453,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
   async function submit(e) {
     e.preventDefault()
     const steps = form.steps
-      .map((s) => ({ step: s.step.trim(), timeframe: s.timeframe.trim(), responsible: s.responsible.trim(), phase: s.phase, assignable: !!s.assignable }))
+      .map((s) => ({ step: s.step.trim(), timeframe: s.timeframe.trim(), responsible: s.responsible.trim(), phase: s.phase, assignable: !!s.assignable, show_to_reporters: !!s.show_to_reporters }))
       .filter((s) => s.step)
     const questions = form.questions
       .map((q) => ({ question: q.question.trim(), why: q.why.trim(), kind: q.kind, neededToStart: !!q.neededToStart, escalateIfYes: !!q.escalateIfYes }))
@@ -492,7 +493,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
       <div className="flex-1 min-w-0 flex flex-col gap-3">
         <textarea rows={2} aria-label={`Step ${num}`} className={inputCls} placeholder="What needs to be done" value={st.step}
           onChange={(e) => setStep(i, { step: e.target.value })} />
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 md:items-center">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-3 md:items-center">
           <input aria-label={`Timeframe for step ${num}`} className={inputCls} placeholder="When (e.g. within 24 hours)" value={st.timeframe}
             onChange={(e) => setStep(i, { timeframe: e.target.value })} />
           <input aria-label={`Responsible for step ${num}`} className={inputCls} placeholder="Who is responsible" value={st.responsible}
@@ -500,6 +501,10 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer whitespace-nowrap">
             <input type="checkbox" checked={!!st.assignable} onChange={(e) => setStep(i, { assignable: e.target.checked })} className="w-4 h-4 accent-red-600" />
             Field worker can do this
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer whitespace-nowrap" title="Sent to the CHP or WhatsApp reporter as advice right after they report this disease">
+            <input type="checkbox" checked={!!st.show_to_reporters} onChange={(e) => setStep(i, { show_to_reporters: e.target.checked })} className="w-4 h-4 accent-red-600" />
+            Show to reporters
           </label>
         </div>
       </div>
