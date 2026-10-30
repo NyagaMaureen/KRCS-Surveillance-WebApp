@@ -3,7 +3,7 @@
  "autoname": "TSK-.#####",
  "naming_rule": "Expression",
  "creation": "2026-10-28 12:00:00.000000",
- "modified": "2026-10-29 12:00:00.000000",
+ "modified": "2026-10-29 14:00:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "doctype": "DocType",
@@ -25,6 +25,8 @@
   "assigned_by",
   "due_date",
   "status",
+  "progress",
+  "team",
   "sb_ref",
   "facility",
   "urgency",
@@ -61,7 +63,7 @@
    "fieldname": "task_type",
    "fieldtype": "Select",
    "label": "Type",
-   "options": "Field visit\nReferral\nSample collection\nFollow-up\nOther",
+   "options": "Field visit\nReferral\nSample collection\nFollow-up\nResponse action\nOther",
    "reqd": 1,
    "in_list_view": 1
   },
@@ -109,10 +111,22 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Assigned\nIn progress\nDone\nCould not complete",
+   "options": "Assigned\nIn progress\nBlocked\nDone\nCould not complete",
    "default": "Assigned",
    "in_list_view": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "progress",
+   "fieldtype": "Int",
+   "label": "Progress %",
+   "default": "0",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "label": "Team"
   },
   {
    "fieldname": "sb_ref",

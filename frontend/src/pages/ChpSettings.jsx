@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { User, Mail, Phone, MapPin, Shield, Lock, CalendarDays, Activity, Pencil, Camera, FileText, CheckCircle2, ArrowRightLeft, Clock, Check } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getMyAccount, updateMyProfile, changeMyPassword, uploadFile } from '../api/frappe'
+import { useCapabilities } from '../context/CapabilitiesContext'
 import { CARD, INPUT, BTN_PRIMARY, BTN_SECONDARY, StatCard, Badge, Toast, Skeleton, shortWhen } from '../components/chp/ui'
 
 const STAT_ICONS = { reports: FileText, followups: CheckCircle2, referrals: ArrowRightLeft, onTime: Clock }
@@ -19,6 +20,7 @@ function ReadField({ label, icon: Icon, value }) {
 }
 
 export default function ChpSettings() {
+  const { workspace } = useCapabilities()
   const [acc, setAcc] = useState(null)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
@@ -108,9 +110,9 @@ export default function ChpSettings() {
           )}
         </section>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {workspace === 'chp' && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {acc.stats.map((s) => <StatCard key={s.key} label={s.label} value={s.value} unit={s.unit} icon={STAT_ICONS[s.key]} hint={s.hint} />)}
-        </div>
+        </div>}
 
         <section className={`${CARD} p-5`}>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Personal information</h2>

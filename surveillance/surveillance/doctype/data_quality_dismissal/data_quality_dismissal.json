@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-29 14:00:00.000000",
+ "modified": "2026-10-29 14:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Data Quality Dismissal",
+ "description": "Data quality issues an officer has checked (hidden from the Data Quality page).",
+ "field_order": [
+  "issue_key",
+  "kind",
+  "note",
+  "dismissed_by",
+  "dismissed_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "issue_key",
+   "fieldtype": "Data",
+   "label": "Issue",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Data",
+   "label": "Kind",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "label": "Note"
+  },
+  {
+   "fieldname": "dismissed_by",
+   "fieldtype": "Link",
+   "label": "Checked by",
+   "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "dismissed_on",
+   "fieldtype": "Datetime",
+   "label": "Checked on"
+  }
+ ],
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1
+  }
+ ]
+}

@@ -25,7 +25,7 @@ export function TaskStatusPill({ status }) {
   return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLE[status] || STATUS_STYLE.Assigned}`}>{status}</span>
 }
 
-export const isOpen = (t) => t.status === 'Assigned' || t.status === 'In progress'
+export const isOpen = (t) => t.status === 'Assigned' || t.status === 'In progress' || t.status === 'Blocked'
 
 function parse(d) {
   if (!d) return null

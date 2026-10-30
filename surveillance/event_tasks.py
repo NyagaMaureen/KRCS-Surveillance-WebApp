@@ -25,16 +25,19 @@ from surveillance.capabilities import has_capability, require_capability
 DOCTYPE = "Event Task"
 ACT = "act_on_events"
 VIEW_ALL = "view_all_tasks"
-TYPES = ["Field visit", "Referral", "Sample collection", "Follow-up", "Other"]
-OPEN_STATUSES = ["Assigned", "In progress"]
-STATUSES = ["Assigned", "In progress", "Done", "Could not complete"]
+TYPES = ["Field visit", "Referral", "Sample collection", "Follow-up", "Response action", "Other"]
+OPEN_STATUSES = ["Assigned", "In progress", "Blocked"]
+STATUSES = ["Assigned", "In progress", "Blocked", "Done", "Could not complete"]
+# Response actions (Response page) read as a plan: Planned -> In progress / Blocked -> Completed
+RESPONSE_LABELS = {"Assigned": "Planned", "In progress": "In progress", "Blocked": "Blocked", "Done": "Completed",
+	"Could not complete": "Not completed"}
 FOLLOWUP_DAYS = [7, 14, 21]
 SYSTEM_ROLES = {"All", "Guest", "Administrator", "System Manager", "Desk User", "Website Manager",
 	"Report Manager", "Dashboard Manager", "Workspace Manager", "Prepared Report User", "Inbox User"}
 
 FIELDS = ["name", "event", "task_type", "title", "instructions", "assigned_to", "assigned_by", "due_date", "status",
 	"facility", "urgency", "disease_name", "sub_county", "area", "region", "step_phase", "step_no", "outcome",
-	"completed_on", "creation", "modified", "severity", "case_report", "patient_age_group", "patient_sex", "reason"]
+	"completed_on", "creation", "modified", "severity", "case_report", "patient_age_group", "patient_sex", "reason", "progress", "team"]
 
 # How a referral's status reads to people (stored statuses are the same as other tasks)
 REFERRAL_LABELS = {"Assigned": "Pending", "In progress": "On the way", "Done": "Reached facility",
@@ -74,7 +77,9 @@ def _shape(t, me=None):
 		"outcome": t.outcome or "", "completedOn": str(t.completed_on) if t.completed_on else None,
 		"createdOn": str(t.creation), "mine": t.assigned_to == me,
 		"priority": t.get("severity") or None,
-		"statusLabel": REFERRAL_LABELS.get(t.status, t.status) if t.task_type == "Referral" else t.status,
+		"statusLabel": (REFERRAL_LABELS.get(t.status, t.status) if t.task_type == "Referral"
+			else RESPONSE_LABELS.get(t.status, t.status) if t.task_type == "Response action" else t.status),
+		"progress": cint(t.get("progress")), "team": t.get("team") or None,
 		"caseReport": t.get("case_report") or None,
 		"patient": {"ageGroup": t.get("patient_age_group") or None, "sex": t.get("patient_sex") or None},
 		"reason": t.get("reason") or "",
@@ -184,7 +189,7 @@ def create_followups(event, assigned_to, days=None, instructions=None):
 
 
 @frappe.whitelist(methods=["POST"])
-def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None):
+def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None, progress=None):
 	"""The assignee updates status and outcome. Officers who can act on the event can also
 	change the due date, reassign, or update on someone's behalf."""
 	t = frappe.get_doc(DOCTYPE, task)
@@ -202,12 +207,21 @@ def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None
 			frappe.throw(_("Unknown status."))
 		if status == "Could not complete" and not (outcome or t.outcome or "").strip():
 			frappe.throw(_("Please say why it could not be completed."))
+		if status == "Blocked" and not (outcome or "").strip():
+			frappe.throw(_("Please say what is blocking it."))
 		if status != t.status:
 			changes.append(status)
 		t.status = status
 		t.completed_on = now_datetime() if status in ("Done", "Could not complete") else None
 	if outcome is not None:
 		t.outcome = outcome.strip()
+	if progress is not None and str(progress) != "":
+		p = max(0, min(100, cint(progress)))
+		if p != cint(t.get("progress")):
+			changes.append(f"{p}%")
+		t.progress = p
+	if t.status == "Done" and t.task_type == "Response action":
+		t.progress = 100
 	if is_officer and due_date:
 		t.due_date = getdate(due_date)
 	reassigned = False
@@ -378,6 +392,64 @@ def create_referral(facility, reason, case_report=None, age_group=None, sex=None
 		_log(frappe.get_doc("Surveillance Event", event), "Referral recorded",
 			f"{get_fullname(user)} referred a patient to {facility}: {reason}")
 	return _shape(t)
+
+
+# ---------- response actions (Response page) ----------
+
+def _scope_region():
+	from surveillance.events import _user_region
+	return _user_region()
+
+
+@frappe.whitelist()
+def get_response_actions(status=None, search=None, limit=300):
+	"""Response actions in the officer's region, with counts per stage."""
+	require_capability("view_review_queue")
+	base = {"task_type": "Response action"}
+	region = _scope_region()
+	if region:
+		base["region"] = region
+	counts = {k: 0 for k in ("planned", "inProgress", "blocked", "completed")}
+	key = {"Assigned": "planned", "In progress": "inProgress", "Blocked": "blocked", "Done": "completed"}
+	for r in frappe.get_all(DOCTYPE, filters=base, fields=["status", "count(name) as n"], group_by="status"):
+		if r.status in key:
+			counts[key[r.status]] += r.n
+	filters = dict(base)
+	if status in STATUSES:
+		filters["status"] = status
+	or_filters = None
+	if search:
+		like = f"%{search}%"
+		or_filters = {"title": ["like", like], "team": ["like", like], "area": ["like", like],
+			"sub_county": ["like", like], "event": ["like", like], "name": ["like", like]}
+	rows = frappe.get_all(DOCTYPE, filters=filters, or_filters=or_filters, fields=FIELDS,
+		order_by="field(status, 'Blocked', 'In progress', 'Assigned', 'Done', 'Could not complete'), due_date asc",
+		limit_page_length=min(cint(limit) or 300, 1000))
+	return {"actions": [_shape(t) for t in rows], "counts": counts, "canCreate": has_capability(ACT)}
+
+
+@frappe.whitelist()
+def get_events_for_response():
+	"""Open events in the officer's region that a response action can be linked to."""
+	from surveillance.events import _scope_filters
+	filters = dict(_scope_filters())
+	filters["status"] = ["in", ["Investigating", "Confirmed", "Escalated"]]
+	rows = frappe.get_all("Surveillance Event", filters=filters,
+		fields=["name", "title", "disease_name", "sub_county", "area", "status", "severity"],
+		order_by="last_reported desc", limit_page_length=200)
+	return [{"id": r.name, "label": f"{r.name} · {r.disease_name or r.title} · {', '.join(x for x in [r.area, r.sub_county] if x) or 'no place'}",
+		"status": r.status, "severity": r.severity} for r in rows]
+
+
+@frappe.whitelist(methods=["POST"])
+def create_response_action(event, title, assigned_to, due_date, team=None, instructions=None):
+	doc = _event(event)
+	t = _insert(doc, "Response action", title, assigned_to, due_date, instructions)
+	if team:
+		t.db_set("team", team.strip()[:140])
+	_log(doc, "Response action planned", f"{t.title} → {get_fullname(t.assigned_to)}, due {t.due_date}")
+	notify_assigned(t.name)
+	return _shape(frappe.get_doc(DOCTYPE, t.name))
 
 
 def counts_for_events(names):

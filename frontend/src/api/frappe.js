@@ -569,6 +569,51 @@ const MOCK_PRIORITY_ALERT_QUEUE = [
   { id: 'PAQ-003', title: 'Measles Suspected Cases', location: 'Kalobeyei Zone 1', status: 'pending', affected: 5, risk: 90 },
 ]
 
+// ---------- Surveillance Officer workspace ----------
+
+const OFFICER = '/api/method/surveillance.officer.'
+
+export async function getOfficerDashboard() {
+  return callMethod(`${OFFICER}get_officer_dashboard`)
+}
+
+export async function getLifecycle({ search = '', severity = '', stage = '' } = {}) {
+  const qs = new URLSearchParams()
+  if (search) qs.set('search', search)
+  if (severity) qs.set('severity', severity)
+  if (stage) qs.set('stage', stage)
+  return callMethod(`${OFFICER}get_lifecycle?${qs}`)
+}
+
+export async function getEventLifecycle(event) {
+  return callMethod(`${OFFICER}get_event_lifecycle?event=${encodeURIComponent(event)}`)
+}
+
+export async function getDataQuality(days = 30) {
+  return callMethod(`${OFFICER}get_data_quality?days=${days}`)
+}
+
+export async function dismissDataIssue(key, note) {
+  return callMethodPost(`${OFFICER}dismiss_issue`, { key, note: note || '' })
+}
+
+export async function getResponseActions(status = '', search = '') {
+  const qs = new URLSearchParams()
+  if (status) qs.set('status', status)
+  if (search) qs.set('search', search)
+  return callMethod(`/api/method/surveillance.event_tasks.get_response_actions?${qs}`)
+}
+
+export async function getEventsForResponse() {
+  return (await callMethod('/api/method/surveillance.event_tasks.get_events_for_response')) || []
+}
+
+export async function createResponseAction(a) {
+  return callMethodPost('/api/method/surveillance.event_tasks.create_response_action', {
+    event: a.event, title: a.title, assigned_to: a.assignedTo, due_date: a.dueDate, team: a.team || '', instructions: a.instructions || '',
+  })
+}
+
 export async function getSurveillanceOfficerStats() {
   return MOCK_SURVEILLANCE_OFFICER_STATS
 }
@@ -1140,6 +1185,7 @@ export async function updateEventTask(taskId, changes) {
   if (changes.outcome != null) body.outcome = changes.outcome
   if (changes.dueDate) body.due_date = changes.dueDate
   if (changes.assignedTo) body.assigned_to = changes.assignedTo
+  if (changes.progress != null) body.progress = changes.progress
   return callMethodPost(`${TASKS}update_task`, body)
 }
 

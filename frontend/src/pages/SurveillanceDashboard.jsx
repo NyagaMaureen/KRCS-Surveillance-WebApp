@@ -1,61 +1,47 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Link } from 'react-router-dom'
-import { FileText, CheckCircle, ArrowLeftRight, CheckCheck, MapPin, ArrowRight } from 'lucide-react'
+import { FileText, AlertTriangle, ShieldCheck, Search, MapPin, ArrowRight, Radio, TrendingUp } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import ChartCard from '../components/analytics/ChartCard'
-import StatCard from '../components/analytics/StatCard'
 import { CHART_FONT } from '../charts/chartSetup'
-import { getSurveillanceOfficerStats, getSignalTrend, getPriorityAlertQueue } from '../api/frappe'
+import { getOfficerDashboard } from '../api/frappe'
+import { FOCUS, CARD, Badge } from '../components/chp/ui'
 
-const ICONS = { FileText, CheckCircle, ArrowLeftRight, CheckCheck }
-const iconFor = (name) => ICONS[name] || FileText
-
-const STATUS_LABEL = { pending: 'pending', critical: 'critical' }
-
-const GRID_COLOR = '#F0F0F0'
-const TICK_COLOR = '#666666'
+const ICONS = { new: FileText, priority: AlertTriangle, verify: ShieldCheck, investigating: Search }
+const SEVERITY = { critical: { label: 'Critical', tone: 'red' }, high: { label: 'High', tone: 'amber' }, standard: { label: 'Standard', tone: 'gray' } }
+const STATUS = { New: 'new', Verifying: 'verifying', Investigating: 'in the field', Confirmed: 'confirmed', Escalated: 'escalated' }
+const GRID = '#F0F0F0'
+const TICK = '#666666'
 const tickFont = { family: CHART_FONT.family, size: 12 }
 
 export default function SurveillanceDashboard() {
-  const [stats, setStats] = useState([])
-  const [signalTrend, setSignalTrend] = useState({ labels: [], data: [] })
-  const [alertQueue, setAlertQueue] = useState([])
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    (async () => {
-      const [statsRes, trendRes, queueRes] = await Promise.all([
-        getSurveillanceOfficerStats(),
-        getSignalTrend(),
-        getPriorityAlertQueue(),
-      ])
-      setStats(statsRes)
-      setSignalTrend(trendRes)
-      setAlertQueue(queueRes)
-    })()
+    getOfficerDashboard().then(setData).catch((e) => setError(e.message || 'Could not load the dashboard'))
   }, [])
 
-  const signalTrendData = useMemo(() => {
-    if (!signalTrend.labels.length) return null
+  const chart = useMemo(() => {
+    if (!data?.trend?.length) return null
     return {
-      labels: signalTrend.labels,
+      labels: data.trend.map((w) => `Week of ${w.label}`),
       datasets: [{
-        label: 'AWD',
-        data: signalTrend.data,
-        borderColor: '#D62728',
-        backgroundColor: 'rgba(214, 39, 40, 0.15)',
+        label: 'Signals',
+        data: data.trend.map((w) => w.total),
+        borderColor: '#EE2435',
+        backgroundColor: 'rgba(238, 36, 53, 0.12)',
         fill: true,
         tension: 0.4,
-        pointRadius: 3,
-        pointBackgroundColor: '#fff',
-        pointBorderColor: '#D62728',
-        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointBackgroundColor: '#EE2435',
         borderWidth: 2,
       }],
     }
-  }, [signalTrend])
+  }, [data])
 
-  const signalTrendOptions = {
+  const options = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -63,12 +49,17 @@ export default function SurveillanceDashboard() {
       tooltip: {
         titleFont: tickFont,
         bodyFont: tickFont,
-        callbacks: { label: (ctx) => `AWD : ${ctx.parsed.y}` },
+        callbacks: {
+          label: (ctx) => {
+            const w = data.trend[ctx.dataIndex]
+            return [`${w.total} signal${w.total === 1 ? '' : 's'}`, ...(w.top ? [`Most reported: ${w.top.disease} (${w.top.count})`] : [])]
+          },
+        },
       },
     },
     scales: {
-      x: { grid: { color: GRID_COLOR }, ticks: { color: TICK_COLOR, font: tickFont } },
-      y: { grid: { color: GRID_COLOR }, ticks: { color: TICK_COLOR, font: tickFont }, beginAtZero: true },
+      x: { grid: { color: GRID }, ticks: { color: TICK, font: tickFont } },
+      y: { grid: { color: GRID }, ticks: { color: TICK, font: tickFont, precision: 0 }, beginAtZero: true },
     },
   }
 
@@ -76,55 +67,93 @@ export default function SurveillanceDashboard() {
     <AppShell>
       <div className="mb-6">
         <h2 className="text-xl font-bold text-brand-navy">Surveillance Operations Dashboard</h2>
-        <p className="text-sm text-gray-400">Review priority signals, verify alerts, investigate events, and coordinate response</p>
+        <p className="text-sm text-gray-400">Review priority signals, verify alerts, investigate events, and coordinate response in your region</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
-        {stats.map((s) => (
-          <StatCard
-            key={s.key}
-            icon={iconFor(s.icon)}
-            label={s.label}
-            value={s.value}
-            changePct={s.changePct}
-            trend={s.trend}
-            sentiment={s.sentiment}
-          />
-        ))}
+      {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {(data?.stats || ['new', 'priority', 'verify', 'investigating'].map((key) => ({ key }))).map((s) => {
+          const Icon = ICONS[s.key] || FileText
+          return (
+            <Link key={s.key} to={s.link || '/alerts-signals'} title={s.hint}
+              className={`bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4 hover:border-gray-200 ${FOCUS}`}>
+              <span className="bg-gray-100 rounded-full p-3.5 shrink-0"><Icon className="w-5 h-5 text-gray-500" aria-hidden="true" /></span>
+              <span className="min-w-0">
+                <span className="block text-xs font-medium text-gray-400">{s.label || ' '}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-2xl font-semibold text-gray-900">{data ? s.value : '–'}</span>
+                  {s.change != null && (
+                    <span className={`text-xs font-medium ${s.change > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                      {s.change > 0 ? '+' : ''}{s.change}%
+                    </span>
+                  )}
+                </span>
+              </span>
+            </Link>
+          )
+        })}
       </div>
 
       <div className="grid grid-cols-1 gap-5">
-        <ChartCard title="Signal Trend (6 weeks)" height="h-72 sm:h-96">
-          {signalTrendData && <Line data={signalTrendData} options={signalTrendOptions} />}
+        <ChartCard title="Signal Trend (6 weeks)" height="h-72 sm:h-80">
+          {chart ? <Line data={chart} options={options} /> : <p className="text-sm text-gray-400">{data ? 'No signals in the last 6 weeks.' : 'Loading…'}</p>}
         </ChartCard>
 
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
-          <div className="flex items-center justify-between mb-5">
+        <section className={`${CARD} p-5 sm:p-6`}>
+          <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm sm:text-base font-medium text-gray-900">Priority Alert Queue</h3>
-            <Link to="/epi-trends" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800">
-              View all <ArrowRight className="w-4 h-4" />
+            <Link to="/alerts-signals?tab=all" className={`inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800 rounded ${FOCUS}`}>
+              View all <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </Link>
           </div>
-          <div className="space-y-3">
-            {alertQueue.map((alert) => (
-              <div key={alert.id} className="border border-gray-100 rounded-xl p-4 flex items-center gap-4">
-                <span className="w-12 h-12 rounded-full bg-red-600/10 flex items-center justify-center shrink-0">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-600" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-900 truncate">{alert.title}</p>
-                  <p className="text-sm text-gray-500 flex items-center gap-1.5 mt-1 truncate">
-                    <MapPin className="w-3.5 h-3.5 shrink-0" />
-                    {alert.location} • {STATUS_LABEL[alert.status] || alert.status} • {alert.affected} affected
-                  </p>
-                </div>
-                <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-600/10 border border-red-600/50 rounded-full px-3 py-1.5">
-                  Risk {alert.risk}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+          {!data ? <p className="text-sm text-gray-400">Loading…</p> : !data.queue.length ? (
+            <p className="text-sm text-gray-400 py-6 text-center">No open events in your region.</p>
+          ) : (
+            <ul className="space-y-3">
+              {data.queue.map((e) => (
+                <li key={e.id}>
+                  <Link to={`/alerts-signals/${encodeURIComponent(e.id)}`} className={`border border-gray-100 rounded-xl p-4 flex items-center gap-4 hover:bg-gray-50/60 ${FOCUS}`}>
+                    <span className="w-11 h-11 rounded-full bg-red-50 flex items-center justify-center shrink-0"><Radio className="w-4 h-4 text-red-600" aria-hidden="true" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm text-gray-900 truncate">{e.diseaseName || e.title}</span>
+                      <span className="text-sm text-gray-500 flex items-center gap-1.5 mt-1 truncate">
+                        <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        {[e.area, e.subCounty].filter(Boolean).join(', ') || 'Location missing'} • {STATUS[e.status] || e.status} • {e.people} affected
+                      </span>
+                    </span>
+                    <Badge tone={SEVERITY[e.severity]?.tone}>{SEVERITY[e.severity]?.label || 'Standard'}</Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {data?.trends?.length > 0 && (
+          <section className={`${CARD} p-5 sm:p-6`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm sm:text-base font-medium text-gray-900">Rising trends (Epi Trends)</h3>
+              <Link to="/epi-trends" className={`inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800 rounded ${FOCUS}`}>
+                View all <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </Link>
+            </div>
+            <ul className="space-y-3">
+              {data.trends.map((t) => (
+                <li key={t.id}>
+                  <Link to={`/epi-trends/${t.id}`} className={`border border-gray-100 rounded-xl p-4 flex items-center gap-4 hover:bg-gray-50/60 ${FOCUS}`}>
+                    <span className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center shrink-0"><TrendingUp className="w-4 h-4 text-gray-600" aria-hidden="true" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm text-gray-900 truncate">{t.title}</span>
+                      <span className="block text-sm text-gray-500 mt-1 truncate">{t.location}{t.why ? ` • ${t.why}` : ''}</span>
+                    </span>
+                    <Badge tone={SEVERITY[t.severity]?.tone}>{SEVERITY[t.severity]?.label || 'Standard'}</Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </AppShell>
   )

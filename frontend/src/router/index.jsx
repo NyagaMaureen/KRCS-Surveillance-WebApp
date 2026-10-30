@@ -34,6 +34,7 @@ import Feedback from '../pages/Feedback'
 import FeedbackInbox from '../pages/FeedbackInbox'
 import ChpDashboard from '../pages/ChpDashboard'
 import ChpSettings from '../pages/ChpSettings'
+import DataQuality from '../pages/DataQuality'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 // One URL, a different page per workspace (CHP gets the simple version)
@@ -47,7 +48,7 @@ function byWorkspace(pages) {
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
-  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: Dashboard, chp: ChpDashboard }) },
+  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: Dashboard, chp: ChpDashboard, officer: SurveillanceDashboard }) },
   { path: '/surveillance-dashboard', name: 'surveillance-dashboard', element: SurveillanceDashboard },
   { path: '/ai-governance-dashboard', name: 'ai-governance-dashboard', element: AiGovernanceDashboard },
   { path: '/investigations', name: 'investigations', element: Investigations },
@@ -68,12 +69,13 @@ const rawRoutes = [
   { path: '/channels', name: 'channels', element: Channels },
   { path: '/facility-data', name: 'facility-data', element: FacilityData },
   { path: '/context-data', name: 'context-data', element: ContextData },
-  { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings }) },
+  { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings, officer: ChpSettings }) },
   { path: '/help-center', name: 'help-center', element: HelpCenter },
   { path: '/audit-log', name: 'audit-log', element: AuditLog },
   { path: '/ai-data-assistant', name: 'ai-data-assistant', element: AiDataAssistant },
   { path: '/knowledge-base', name: 'knowledge-base', element: KnowledgeBase },
   { path: '/my-tasks', name: 'my-tasks', element: MyTasks },
+  { path: '/data-quality', name: 'data-quality', element: DataQuality },
   { path: '/follow-ups', name: 'follow-ups', element: FollowUps },
   { path: '/referrals', name: 'referrals', element: Referrals },
   { path: '/feedback', name: 'feedback', element: Feedback },

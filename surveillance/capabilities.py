@@ -123,6 +123,12 @@ CAPABILITIES += [
 	{"key": "chp_workspace", "name": "CHP Workspace", "category": "Workspaces",
 	 "description": "Simple CHP dashboard and menu: report, follow-ups, referrals, AI assistant, feedback",
 	 "grants": {}},
+	{"key": "officer_workspace", "name": "Surveillance Officer Workspace", "category": "Workspaces",
+	 "description": "Officer dashboard and menu: Review Queue, Epi Trends, map, response, event lifecycle, data quality",
+	 "grants": {}},
+	{"key": "view_data_quality", "name": "View Data Quality", "category": "Analytics",
+	 "description": "See and check data quality issues (missing places, late or duplicate reports, facility completeness)",
+	 "grants": {}},
 	# Feedback
 	{"key": "view_feedback", "name": "View Feedback", "category": "Users & Roles",
 	 "description": "Read and resolve feedback sent by users", "grants": {}},
@@ -131,10 +137,10 @@ CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 
 # Not given to Administrator / System Manager automatically: these change what the user sees
 # (a field worker's menu and dashboard), not what they are allowed to do.
-NOT_AUTO_FOR_ADMIN = {"chp_workspace", "receive_tasks", "view_own_reports"}
+NOT_AUTO_FOR_ADMIN = {"chp_workspace", "officer_workspace", "receive_tasks", "view_own_reports"}
 
 # Workspace for each workspace capability, checked in order. Users without one get the full app.
-WORKSPACES = [("chp_workspace", "chp")]
+WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer")]
 
 # Capabilities set for the CHP role by setup_chp_role (run once; adjust later in Roles & Permissions)
 CHP_CAPABILITIES = ["chp_workspace", "create_reports", "view_own_reports", "receive_tasks", "use_knowledge_base"]
@@ -319,6 +325,25 @@ def setup_chp_role(role="CHP"):
 	sync_role_permissions(role)
 	frappe.db.commit()
 	print(f"{role}: removed {sorted(before - set(CHP_CAPABILITIES)) or 'nothing'}; now {CHP_CAPABILITIES}")
+
+
+OFFICER_CAPABILITIES = ["officer_workspace", "view_review_queue", "act_on_events", "view_alerts", "investigate_alerts",
+	"view_surveillance_map", "view_response_protocols", "view_analytics", "view_reports", "verify_suspected_disease",
+	"view_data_quality", "use_knowledge_base"]
+
+
+def setup_officer_role(role="Surveillance Officer"):
+	"""Give the Surveillance Officer role the officer workspace capabilities (keeps any others it already has).
+	bench --site <site> execute surveillance.capabilities.setup_officer_role"""
+	if not frappe.db.exists("Role", role):
+		frappe.throw(f"Role {role} does not exist")
+	have = set(frappe.get_all(ROLE_CAPABILITY, filters={"role": role}, pluck="capability"))
+	added = [k for k in OFFICER_CAPABILITIES if k not in have]
+	for key in added:
+		frappe.get_doc({"doctype": ROLE_CAPABILITY, "role": role, "capability": key}).insert(ignore_permissions=True)
+	sync_role_permissions(role)
+	frappe.db.commit()
+	print(f"{role}: added {added or 'nothing'}; now has {sorted(have | set(added))}")
 
 
 def reset_managed_permissions():
