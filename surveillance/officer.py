@@ -82,7 +82,8 @@ def get_officer_dashboard():
 	# priority queue: open events, most severe and longest waiting first
 	queue = frappe.get_all(EVENT, filters={**scope, "status": ["in", OPEN]}, fields=FIELDS,
 		order_by="first_reported asc", limit_page_length=200)
-	queue.sort(key=lambda d: (SEV_ORDER.get(d.severity, 3), get_datetime(d.first_reported) if d.first_reported else now))
+	queue.sort(key=lambda d: (-cint(d.get("risk_score")), SEV_ORDER.get(d.severity, 3),
+		get_datetime(d.first_reported) if d.first_reported else now))
 	queue = [event_shape(d) for d in queue[:5]]
 
 	return {"stats": stats, "trend": weeks, "queue": queue, "trends": _rising_trends()}

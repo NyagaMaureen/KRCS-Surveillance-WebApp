@@ -108,7 +108,7 @@ SURVEILLANCE_ROLES = [
 ]
 
 fixtures = [
-	{"dt": "Custom Field", "filters": [["name", "in", ["User-primary_role", "User-account_status", "User-assigned_region"]]]},
+	{"dt": "Custom Field", "filters": [["name", "in", ["User-primary_role", "User-account_status", "User-assigned_region", "User-assigned_sub_county"]]]},
 	{"dt": "Role", "filters": [["name", "in", SURVEILLANCE_ROLES]]},
 	{"dt": "Surveillance Role"},
 	{"dt": "Region"},
@@ -174,6 +174,9 @@ WHATSAPP_CATALOG = {
 }
 
 doc_events = {
+	"Surveillance Event": {
+		"before_save": "surveillance.risk.on_event_save",
+	},
 	"Case Report": {
 		"validate": "surveillance.case_report_rules.validate_complete",
 		"on_update": "surveillance.events.on_case_report",
@@ -205,7 +208,7 @@ doc_events = {
 scheduler_events = {
 	"daily": ["surveillance.knowledge_base.retire_expired", "surveillance.context.import_weather",
 		"surveillance.event_tasks.daily_reminders"],
-	"hourly_long": ["surveillance.cbs_feed.hourly"],
+	"hourly_long": ["surveillance.cbs_feed.hourly", "surveillance.risk.refresh_open"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }
 # scheduler_events = {

@@ -4,6 +4,7 @@ import { Search, RefreshCw, ShieldAlert, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getReviewEvents, getDiseaseOptions } from '../api/frappe'
 import { statusLabel, parseDate } from '../data/eventHelpers'
+import { RiskPill } from '../components/risk/RiskScore'
 import { FOCUS, BTN_SECONDARY, EmptyState } from '../components/surveillance/ui'
 
 const SEVERITY_RANK = { critical: 0, high: 1, standard: 2 }
@@ -29,6 +30,7 @@ const TABS = [
 ]
 
 const SORTS = [
+  { key: 'risk', label: 'Highest risk first' },
   { key: 'urgent', label: 'Most urgent first' },
   { key: 'newest', label: 'Newest first' },
   { key: 'oldest', label: 'Oldest first' },
@@ -59,7 +61,8 @@ function waitInfo(e) {
 
 function sortEvents(list, sort) {
   const out = [...list]
-  if (sort === 'oldest') out.sort((a, b) => time(a.firstSeen) - time(b.firstSeen))
+  if (sort === 'risk') out.sort((a, b) => (b.risk?.score ?? -1) - (a.risk?.score ?? -1) || (b.openHours || 0) - (a.openHours || 0))
+  else if (sort === 'oldest') out.sort((a, b) => time(a.firstSeen) - time(b.firstSeen))
   else if (sort === 'newest') out.sort((a, b) => time(b.lastSeen) - time(a.lastSeen))
   else {
     // urgent: overdue first, then severity, then longest waiting
@@ -80,7 +83,8 @@ const PRIORITY_STYLE = {
   standard: 'border-gray-300 text-gray-500',
 }
 function PriorityPill({ severity }) {
-  return <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs ${PRIORITY_STYLE[severity] || PRIORITY_STYLE.standard}`}>{(severity || 'standard').toLowerCase()}</span>
+  const s = (severity || 'standard').toLowerCase()
+  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${PRIORITY_STYLE[s] || PRIORITY_STYLE.standard}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>
 }
 
 const STATUS_STYLE = {
@@ -112,7 +116,7 @@ export default function AlertsSignalsQueue() {
   const [params, setParams] = useSearchParams()
 
   const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'new'
-  const sort = SORTS.some((s) => s.key === params.get('sort')) ? params.get('sort') : 'urgent'
+  const sort = SORTS.some((s) => s.key === params.get('sort')) ? params.get('sort') : 'risk'
   const q = params.get('q') || ''
   const disease = params.get('disease') || ''
   const source = SOURCES.includes(params.get('source')) ? params.get('source') : ''
@@ -299,7 +303,7 @@ export default function AlertsSignalsQueue() {
           <div className={`${card} p-4`}>
             <div className="flex items-center justify-between gap-3 mb-3">
               <h2 className="text-sm font-medium text-gray-900">{title}</h2>
-              <select aria-label="Sort" value={sort} onChange={(e) => setParam({ sort: e.target.value === 'urgent' ? '' : e.target.value })} className={`${SELECT_SOFT} h-8`}>
+              <select aria-label="Sort" value={sort} onChange={(e) => setParam({ sort: e.target.value === 'risk' ? '' : e.target.value })} className={`${SELECT_SOFT} h-8`}>
                 {SORTS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
               </select>
             </div>
@@ -307,7 +311,8 @@ export default function AlertsSignalsQueue() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-left text-xs text-gray-500">
-                    <th className="px-3 py-2.5 font-medium rounded-l-lg">Event ID</th>
+                    <th className="px-3 py-2.5 font-medium rounded-l-lg w-10 text-gray-400">#</th>
+                    <th className="px-3 py-2.5 font-medium">Event ID</th>
                     <th className="px-3 py-2.5 font-medium">Disease</th>
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Source</th>
                     <th className="px-3 py-2.5 font-medium hidden md:table-cell">Location</th>
@@ -320,14 +325,14 @@ export default function AlertsSignalsQueue() {
                   {loading ? (
                     <SkeletonRows />
                   ) : error ? (
-                    <tr><td colSpan={7}><EmptyState title="Couldn't load the queue" body={error} action={<button onClick={() => load()} className={BTN_SECONDARY}>Try again</button>} /></td></tr>
+                    <tr><td colSpan={8}><EmptyState title="Couldn't load the queue" body={error} action={<button onClick={() => load()} className={BTN_SECONDARY}>Try again</button>} /></td></tr>
                   ) : visibleEvents.length === 0 ? (
-                    <tr><td colSpan={7}>
+                    <tr><td colSpan={8}>
                       <EmptyState title={filtersActive ? 'No events match your filters' : 'Nothing here'} body={filtersActive ? null : EMPTY_TEXT[tab]}
                         action={filtersActive && <button onClick={clearFilters} className={BTN_SECONDARY}>Clear filters</button>} />
                     </td></tr>
                   ) : (
-                    pageRows.map((ev) => {
+                    pageRows.map((ev, i) => {
                       const place = [ev.area, ev.subCounty].filter(Boolean).join(', ')
                       const w = waitInfo(ev)
                       const extra = [
@@ -337,6 +342,7 @@ export default function AlertsSignalsQueue() {
                       ].filter(Boolean).join(' · ')
                       return (
                         <tr key={ev.id} onClick={() => open(ev)} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 cursor-pointer">
+                          <td className="px-3 py-3.5 text-gray-400 tabular-nums">{page * PAGE + i + 1}</td>
                           <td className="px-3 py-3.5 text-gray-500 whitespace-nowrap">{ev.id}</td>
                           <td className="px-3 py-3.5">
                             <span className="font-medium text-gray-900">{ev.diseaseName || ev.title}</span>
@@ -351,7 +357,10 @@ export default function AlertsSignalsQueue() {
                           <td className="px-3 py-3.5 hidden lg:table-cell text-gray-500 whitespace-nowrap">{(ev.sources || []).map((x) => SOURCE_NAME[x] || x).join(', ') || '—'}</td>
                           <td className="px-3 py-3.5 hidden md:table-cell text-gray-600">{place || <span className="text-amber-600">Location missing</span>}</td>
                           <td className="px-3 py-3.5 whitespace-nowrap">
-                            <PriorityPill severity={ev.severity} />
+                            <span className="inline-flex items-center gap-1.5 flex-nowrap">
+                              <PriorityPill severity={ev.severity} />
+                              <RiskPill risk={ev.risk} />
+                            </span>
                             {w && w.state !== 'ok' && (
                               <span className={`block text-xs mt-1 ${w.state === 'over' ? 'text-red-700' : 'text-amber-600'}`} title={`Target: start verification within ${w.target} h`}>
                                 {w.state === 'over' ? `Overdue ${w.text}` : `Waiting ${w.text}`}
@@ -361,7 +370,7 @@ export default function AlertsSignalsQueue() {
                           <td className="px-3 py-3.5"><StatusPill status={ev.status} /></td>
                           <td className="px-3 py-3.5 text-right whitespace-nowrap">
                             {['New', 'Verifying'].includes(ev.status) && (
-                              <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: '?step=3' }} onClick={(e) => e.stopPropagation()}
+                              <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: ev.status === 'New' ? '?step=2' : '?step=3' }} onClick={(e) => e.stopPropagation()}
                                 className={`mr-3 text-xs font-medium text-red-700 hover:text-red-800 hover:underline rounded ${FOCUS}`}>
                                 {ev.status === 'New' ? 'Start verification' : 'Continue verification'}
                               </Link>

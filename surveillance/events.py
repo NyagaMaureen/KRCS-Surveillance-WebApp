@@ -341,6 +341,11 @@ def on_case_report(doc, method=None):
 		"reason": doc.classification_reason or (f"Field report: {doc.signal_type}" if doc.signal_type else ""),
 		"latitude": doc.get("latitude"), "longitude": doc.get("longitude"),
 	})
+	try:
+		from surveillance.alerts import detect_soon
+		detect_soon(disease)
+	except Exception:
+		frappe.log_error(title="Queue alert detection failed", message=frappe.get_traceback())
 
 
 def on_case_report_trash(doc, method=None):
@@ -398,7 +403,11 @@ def purge_out_of_scope():
 def refresh_links():
 	"""Daily, after alert detection: refresh outbreak-alert links on open events."""
 	for name in frappe.get_all("Surveillance Event", filters={"status": ["in", OPEN]}, pluck="name"):
-		recompute_event(name)
+		try:
+			recompute_event(name)
+		except Exception:   # one broken event must not stop the others
+			frappe.db.rollback()
+			frappe.log_error(title=f"Refresh links failed for {name}", message=frappe.get_traceback())
 	frappe.db.commit()
 
 
@@ -446,7 +455,7 @@ def _signal_shape(s, can_act):
 	"""One report in an event. Field reports show their reporter's name and phone to officers who can act,
 	so they can call to verify. These come from the Case Report (our own CHP users); they are not copied onto
 	the signal. CBS reporters' contacts are never stored, so officers use the CBS case number in CBS."""
-	out = {"id": s.name, "source": s.source, "ref": s.ref, "date": str(s.signal_date), "area": s.area,
+	out = {"id": s.name, "source": s.source, "ref": s.ref, "date": str(s.signal_date), "area": s.area, "disease": s.get("disease"),
 		"people": s.people or 0, "deaths": s.deaths or 0, "reported": s.reported, "reason": s.reason,
 		"lat": s.latitude, "lng": s.longitude,
 		"check": {"reached": s.check_reached or None, "meetsCaseDefinition": s.check_case_definition or None,
@@ -464,7 +473,25 @@ def _signal_shape(s, can_act):
 
 FIELDS = ["name", "title", "disease", "disease_name", "priority", "severity", "status", "county", "sub_county",
 	"area", "region", "people", "deaths", "reports", "sources", "reason", "first_reported", "last_reported",
-	"linked_alert", "data_warning", "latitude", "longitude", "from_alert"]
+	"linked_alert", "data_warning", "latitude", "longitude", "from_alert", "risk_score", "risk_breakdown"]
+
+
+def _risk(d, detail):
+	from surveillance.risk import shape
+	r = shape(d)
+	if r and not detail:   # list views only need the number and its reasons in one line
+		r = {"score": r["score"], "level": r["level"],
+			"top": [p["label"] for p in sorted(r.get("parts") or [], key=lambda p: -p["points"])[:2] if p["points"]]}
+	return r
+
+
+def _linked_alert_shape(name):
+	a = frappe.db.get_value("Risk Alert", name, ["severity", "sub_county", "last_week", "week_start"], as_dict=True)
+	if not a:
+		return None
+	from surveillance.alerts import epi_week
+	return {"id": name, "severity": a.severity, "place": a.sub_county,
+		"week": f"week {epi_week(a.last_week or a.week_start)[1]}"}
 
 
 def _shape(d, detail=False):
@@ -477,16 +504,16 @@ def _shape(d, detail=False):
 		"sources": [s.strip() for s in (d.sources or "").split(",") if s.strip()],
 		"reason": d.reason, "firstSeen": str(d.first_reported or ""), "lastSeen": str(d.last_reported or ""),
 		"openHours": int((now_datetime() - first).total_seconds() // 3600) if first else 0,
-		"linkedAlert": ({"id": d.linked_alert, "severity": frappe.db.get_value("Risk Alert", d.linked_alert, "severity")}
-			if d.linked_alert else None),
+		"linkedAlert": _linked_alert_shape(d.linked_alert) if d.linked_alert else None,
 		"dataWarning": d.data_warning or None,
 		"fromAlert": d.get("from_alert") or None,
+		"risk": _risk(d, detail),
 		"lat": d.latitude, "lng": d.longitude,
 	}
 	if detail:
 		can_act = has_capability(ACT)
 		out["signals"] = [_signal_shape(s, can_act) for s in frappe.get_all("Surveillance Signal", filters={"event": d.name},
-			fields=["name", "source", "ref", "signal_date", "area", "people", "deaths", "reported", "reason",
+			fields=["name", "source", "ref", "signal_date", "area", "disease", "people", "deaths", "reported", "reason",
 				"latitude", "longitude", "check_reached", "check_case_definition", "check_status", "checked_by", "checked_on"],
 			order_by="signal_date desc")]
 		out["timeline"] = [{"at": str(a.at), "user": a.user, "action": a.action, "note": a.note}

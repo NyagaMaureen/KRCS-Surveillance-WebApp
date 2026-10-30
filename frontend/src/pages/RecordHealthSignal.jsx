@@ -104,6 +104,8 @@ export default function RecordHealthSignal() {
   const [attempted, setAttempted] = useState(false)
   const [touched, setTouched] = useState({})
   const [profileLoaded, setProfileLoaded] = useState(false)
+  const [locationLocked, setLocationLocked] = useState(false)   // CHPs and FHWs: always their assigned area
+  const [editLocation, setEditLocation] = useState(false)
   const [uploading, setUploading] = useState({})
   const [uploadErrors, setUploadErrors] = useState({})
   const [showTextNote, setShowTextNote] = useState(false)
@@ -164,6 +166,7 @@ export default function RecordHealthSignal() {
     photosRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl))
   }, [])
 
+  const subCountyLabel = useMemo(() => (subCounties.find((s) => s.name === form.sub_county) || {}).sub_county_name || '', [subCounties, form.sub_county])
   const regionLabel = useMemo(() => (regions.find((r) => r.name === form.region) || {}).region_name || '', [regions, form.region])
   const symptomLabels = useMemo(() => form.symptoms.map((id) => (symptoms.find((s) => s.name === id) || {}).symptom_name).filter(Boolean), [form.symptoms, symptoms])
 
@@ -359,6 +362,8 @@ export default function RecordHealthSignal() {
         sub_county: profile.assigned_sub_county || '',
 
       })
+      setLocationLocked(!!profile.location_locked)
+      if (!profile.assigned_region || !profile.assigned_sub_county) setEditLocation(true)
       setProfileLoaded(true)
     })
   }, [])
@@ -455,6 +460,20 @@ export default function RecordHealthSignal() {
                   <div className="block text-sm font-semibold mb-1">Channel <span className="text-red-700">*</span></div>
                   <p className="text-sm text-gray-700 py-1">Web</p>
                 </div>
+                {form.region && form.sub_county && (locationLocked || !editLocation) && (
+                  <div>
+                    <div className="block text-sm font-semibold mb-1">Reporting area</div>
+                    <p className="text-sm text-gray-700 py-1">
+                      <span className="text-gray-400">Region:</span> {regionLabel || '\u2014'}
+                      <span className="text-gray-300 mx-2">|</span>
+                      <span className="text-gray-400">Sub-county:</span> {subCountyLabel || '\u2014'}
+                      {!locationLocked && (
+                        <button type="button" onClick={() => setEditLocation(true)} className="ml-3 text-xs font-medium text-red-700 underline underline-offset-2 hover:text-red-800 rounded">Change</button>
+                      )}
+                    </p>
+                    {/* {locationLocked && <p className="text-xs text-gray-400">Your assigned area. Ask your supervisor to change it.</p>} */}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <Field id="category" label="Category" required error={shown('category')}>
@@ -470,6 +489,13 @@ export default function RecordHealthSignal() {
                   </select>
                 </Field>
               </div>
+              <h3 className="text-sm font-bold text-gray-900 mt-6 mb-4">Location</h3>
+              {locationLocked && !(form.region && form.sub_county) ? (
+                <p className="flex items-center gap-1.5 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                  <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  Your account has no assigned region and sub-county. Ask your supervisor to assign them before reporting.
+                </p>
+              ) : (!locationLocked && editLocation) && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <Field id="region" label="Region" required error={shown('region')}>
                   <select value={form.region} onChange={(e) => updateForm({ region: e.target.value })} onBlur={() => touch('region')} className={inputCls(shown('region'))}>
@@ -477,7 +503,7 @@ export default function RecordHealthSignal() {
                     {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
                   </select>
                 </Field>
-                <Field id="sub_county" label="Sub-county" required error={shown('sub_county')} hint="Pre-filled from your profile. Change it if the signal is from another area.">
+                <Field id="sub_county" label="Sub-county" required error={shown('sub_county')} hint="Use this when the signal is from outside your usual area.">
                   <select
                     value={form.sub_county}
                     onChange={(e) => updateForm({ sub_county: e.target.value })}
@@ -490,6 +516,7 @@ export default function RecordHealthSignal() {
                   </select>
                 </Field>
               </div>
+              )}
               <div className="mb-4">
                 <Field id="location_name" label="Location / village / block name" required error={shown('location_name')}>
                   <input value={form.location_name} onChange={(e) => updateForm({ location_name: e.target.value })} onBlur={() => touch('location_name')} className={inputCls(shown('location_name'))} placeholder="e.g. Ifo camp, Block C4, near the water point" />
@@ -726,7 +753,7 @@ export default function RecordHealthSignal() {
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Reporter</span><span className="font-medium text-right">{form.reporter_name || '\u2014'}{form.phone_number ? ` \u00b7 ${form.phone_number}` : ''}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Category</span><span className="font-medium">{form.category || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Signal Type</span><span className="font-medium">{form.signal_type || '\u2014'}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Region</span><span className="font-medium">{regionLabel || '\u2014'}</span></div>
+                <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Region / Sub-county</span><span className="font-medium">{regionLabel || '\u2014'} / {subCountyLabel || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Sub-county</span><span className="font-medium">{(subCounties.find((s) => s.name === form.sub_county) || {}).sub_county_name || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">Location</span><span className="font-medium text-right">{form.location_name || '\u2014'}</span></div>
                 <div className="flex justify-between border-b border-gray-100 pb-2"><span className="text-gray-400">GPS</span><span className="font-medium text-right">{form.latitude !== null && form.longitude !== null ? `${Number(form.latitude).toFixed(5)}, ${Number(form.longitude).toFixed(5)}${form.gps_accuracy !== null ? ` (\u00b1${Math.round(form.gps_accuracy)} m)` : ''}` : '\u2014'}</span></div>

@@ -216,6 +216,7 @@ def get_audit_logs(limit=1000, days=None):
 
 @frappe.whitelist()
 def get_my_profile():
+    from surveillance.locations import is_field_staff
     user_doc = frappe.get_doc("User", frappe.session.user)
     region = user_doc.get("assigned_region") or ""
     sub_county = user_doc.get("assigned_sub_county") or ""
@@ -227,6 +228,8 @@ def get_my_profile():
         "region_name": frappe.db.get_value("Region", region, "region_name") if region else "",
         "assigned_sub_county": sub_county,
         "sub_county_name": frappe.db.get_value("Sub County", sub_county, "sub_county_name") if sub_county else "",
+        # CHPs and FHWs always report for their assigned area (server enforces it in locations.lock_to_assigned_area)
+        "location_locked": is_field_staff(),
     }
 
 @frappe.whitelist()

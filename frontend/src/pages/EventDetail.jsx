@@ -2,20 +2,25 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, AlertTriangle, Check, Link2, ShieldAlert, Sparkles, X, ExternalLink,
-  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Radio, Users, HeartCrack, Building2, Lightbulb, ChevronDown } from 'lucide-react'
+  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Users, Building2, ChevronDown } from 'lucide-react'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { EventTasksProvider, EventTasksPanel, StepTaskLink, useStepTask, OpenTasksNotice } from '../components/tasks/EventTasks'
 import AppShell from '../components/layout/AppShell'
 import ContextPanel from '../components/context/ContextPanel'
+import { RiskAssessment } from '../components/risk/RiskScore'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
   getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
-  setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext, mergeEvents,
+  setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext, mergeEvents, getCbsContact, getTrendCbsReports,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { FOCUS, parseDate, fmtDateTime, relTime } from '../data/eventHelpers'
+
+// Animal events (unusual death/illness of animals) are counted in cases, not people.
+const isAnimal = (disease) => String(disease || '').includes('animal')
+const countLabel = (n, disease) => `${n ?? 0} ${isAnimal(disease) ? (n === 1 ? 'case' : 'cases') : (n === 1 ? 'person' : 'people')}`
 
 const BANNER = { critical: 'bg-red-600', high: 'bg-amber-500', standard: 'bg-blue-500' }
 const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
@@ -92,44 +97,39 @@ function computeSteps(event, inv) {
 function Tracker({ event, states, openStep, onSelect }) {
   const sources = (event.sources || []).join(', ')
   return (
-    <nav aria-label="Investigation progress">
-      <ol className="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+    <nav aria-label="Investigation progress" className="bg-white rounded-2xl border border-gray-100 px-4 sm:px-6 py-4 overflow-x-auto">
+      <ol className="flex items-start min-w-[560px]">
         {STEPS.map((s, i) => {
           const state = states[i]
           const isOpen = openStep === s.n
           const info = s.n === 1  // Signal captured: informational only
           const clickable = !info && (state === 'done' || state === 'current' || state === 'discarded')
-          const box =
-            state === 'current' ? 'border-red-600 bg-red-50'
-              : state === 'done' ? 'border-emerald-200 bg-emerald-50'
-                : state === 'discarded' ? 'border-gray-300 bg-gray-100'
-                  : 'border-gray-100 bg-gray-50'
+          // Red = the step on screen. Green tick = finished. Everything else grey.
           const circle =
-            state === 'current' ? 'bg-red-600 text-white'
+            isOpen ? 'bg-red-600 text-white'
               : state === 'done' ? 'bg-emerald-500 text-white'
-                : 'bg-gray-200 text-gray-400'
-          const text =
-            state === 'current' ? 'text-red-700'
-              : state === 'done' ? 'text-gray-900'
-                : state === 'discarded' ? 'text-gray-600'
-                  : 'text-gray-400'
-          const sub = state === 'discarded' ? 'Discarded' : s.n === 1 ? sources || 'Reports' : s.sub
+                : state === 'current' ? 'bg-white text-gray-700 ring-1 ring-gray-300'
+                  : 'bg-gray-100 text-gray-400'
+          const text = isOpen ? 'text-red-700 font-semibold' : state === 'done' || state === 'current' ? 'text-gray-800' : 'text-gray-400'
+          const sub = state === 'discarded' ? 'Discarded' : s.n === 1 ? sources || 'Reports'
+            : state === 'current' && !isOpen ? 'Next step' : ''
           return (
-            <li key={s.n}>
+            <li key={s.n} className="flex-1 relative">
+              {i > 0 && <span className={`absolute top-3.5 right-1/2 w-full h-0.5 ${state === 'done' || isOpen || state === 'current' ? 'bg-gray-300' : 'bg-gray-100'}`} aria-hidden="true" />}
               <button
                 type="button"
                 disabled={!clickable}
                 tabIndex={info ? -1 : undefined}
                 aria-label={`Step ${s.n}: ${s.label}${state === 'discarded' ? ', discarded' : ''}`}
-                aria-current={state === 'current' ? 'step' : undefined}
+                aria-current={isOpen ? 'step' : undefined}
                 onClick={() => onSelect(s.n)}
-                className={`w-full h-full text-left rounded-xl border p-3 flex flex-col gap-1.5 ${info ? 'cursor-default' : 'disabled:cursor-not-allowed'} ${box} ${isOpen ? 'ring-2 ring-offset-1 ring-gray-300' : ''} ${FOCUS}`}
+                className={`relative z-10 w-full flex flex-col items-center gap-1.5 rounded-lg px-1 ${info ? 'cursor-default' : 'disabled:cursor-not-allowed'} ${FOCUS}`}
               >
                 <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${circle}`}>
-                  {state === 'done' ? <Check className="w-4 h-4" aria-hidden="true" /> : state === 'discarded' ? <X className="w-4 h-4" aria-hidden="true" /> : s.n}
+                  {state === 'done' && !isOpen ? <Check className="w-4 h-4" aria-hidden="true" /> : state === 'discarded' ? <X className="w-4 h-4" aria-hidden="true" /> : s.n}
                 </span>
-                <span className={`text-xs sm:text-sm font-semibold leading-tight ${text}`}>{s.label}</span>
-                <span className="text-xs text-gray-500 truncate">{sub}</span>
+                <span className={`text-xs text-center leading-tight ${text}`}>{s.label}</span>
+                {sub && <span className="text-[11px] text-gray-400 -mt-1">{sub}</span>}
               </button>
             </li>
           )
@@ -272,7 +272,7 @@ function ReportCheckRow({ s, canVerify, canAct, canSplit, saving, onCheck, onSpl
           <div className="text-xs text-gray-400" title={fmtDateTime(s.date)}>{relTime(s.date)}</div>
         </td>
         <td className={`px-3 py-3 text-sm text-gray-700 min-w-[180px] ${strike}`}>
-          <div>{s.area || '—'} · {s.people ?? 0} people</div>
+          <div>{s.area || '—'} · {countLabel(s.people, s.disease)}</div>
           <div className="text-xs text-gray-500 mt-0.5">{s.reported || '—'}</div>
           {notCase && <div className="text-xs text-gray-400 no-underline">Not counted in the totals</div>}
         </td>
@@ -373,6 +373,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
               View the trend and chart
             </Link>
           </div>
+          <TrendCbsReports eventId={event.id} />
           {caseQ && (
             <div className="border border-gray-100 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
               <div className="flex-1 min-w-0">
@@ -1231,7 +1232,7 @@ function ReportsMap({ signals }) {
                     <div className="text-xs text-gray-600 space-y-1 min-w-[170px]">
                       <p className="text-sm font-semibold text-gray-900">{s.source}{s.ref ? ` ${s.ref}` : ''}</p>
                       <p>{s.area || '—'}</p>
-                      <p>{fmtDateTime(s.date)} · {s.people ?? 0} people</p>
+                      <p>{fmtDateTime(s.date)} · {countLabel(s.people, s.disease)}</p>
                       <p>{checkStatus(s)}</p>
                       <p className="flex gap-3 pt-1">
                         <a className={link} href={`https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}`} target="_blank" rel="noreferrer">Open in Google Maps</a>
@@ -1363,8 +1364,73 @@ function Field({ label, value, danger, icon: Icon }) {
   )
 }
 
+// Event opened from Epi Trends: the CBS reports behind the trend, fetched live from CBS (nothing saved).
+function TrendCbsReports({ eventId }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  if (!data) {
+    return (
+      <button type="button" disabled={loading} className={`mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}
+        onClick={() => { setLoading(true); getTrendCbsReports(eventId).then(setData).catch((e) => setData({ reports: [], why: e.message })).finally(() => setLoading(false)) }}>
+        <Phone className="w-4 h-4" aria-hidden="true" /> {loading ? 'Looking up CBS reports… (can take a few seconds)' : 'Show the CBS reports behind this trend'}
+      </button>
+    )
+  }
+  if (!data.reports.length) return <p className="mb-3 text-sm text-gray-500">{data.why}</p>
+  return (
+    <div className="mb-3 rounded-xl border border-gray-100">
+      <p className="px-4 pt-3 text-xs font-medium text-gray-500">CBS reports behind this trend ({data.reports.length}){data.contacts ? '' : ' · volunteer contacts are switched off'}</p>
+      <ul className="divide-y divide-gray-100">
+        {data.reports.map((r) => (
+          <li key={r.case} className="px-4 py-3 text-sm">
+            <p className="text-gray-900">{r.case} <span className="text-gray-500">· {(parseDate(r.date) || new Date(r.date)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {r.area || '—'} · {r.cases} {r.cases === 1 ? 'case' : 'cases'}</span></p>
+            {data.contacts && (r.name || r.phone) && (
+              <p className="text-xs text-gray-600 mt-0.5">
+                {r.name || '—'} · CBS volunteer
+                {r.phone && <> · <a href={`tel:${r.phone}`} className={`font-medium text-red-700 hover:underline rounded ${FOCUS}`}>Call {r.phone}</a></>}
+                {r.assignedTo?.length > 0 && <span className="text-gray-400"> · Covers: {r.assignedTo.join('; ')}</span>}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// CBS: the volunteer's contact is fetched from CBS only when asked, and never saved.
+function CbsContact({ signal: s, canAct }) {
+  const [c, setC] = useState(null)
+  const [loading, setLoading] = useState(false)
+  if (!canAct) return <span className="text-xs">CBS case {s.ref || '—'}</span>
+  if (!c) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs text-gray-500">CBS case {s.ref || '—'}</span>
+        <button type="button" disabled={loading} onClick={() => { setLoading(true); getCbsContact(s.id).then(setC).catch((e) => setC({ available: false, why: e.message })).finally(() => setLoading(false)) }}
+          className={`inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+          <Phone className="w-3 h-3" aria-hidden="true" /> {loading ? 'Getting contact…' : 'Show volunteer contact'}
+        </button>
+      </div>
+    )
+  }
+  if (!c.available) return <span className="text-xs text-gray-500">{c.why}</span>
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-gray-900">{c.name || '—'} <span className="text-xs text-gray-400">· CBS volunteer</span></span>
+      {c.phone && (
+        <a href={`tel:${c.phone}`} className={`inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+          <Phone className="w-3 h-3" aria-hidden="true" /> Call {c.phone}
+        </a>
+      )}
+      {c.assignedTo?.length > 0 && <span className="text-xs text-gray-500">Covers: {c.assignedTo.join('; ')}</span>}
+    </div>
+  )
+}
+
 function ReporterContact({ signal: s, canAct }) {
-  if (s.source !== 'Field') return <span className="text-xs">Contact through CBS (case {s.ref || '—'})</span>
+  if (s.source === 'CBS') return <CbsContact signal={s} canAct={canAct} />
+  if (s.source !== 'Field') return <span className="text-xs">Contact through {s.source} (ref {s.ref || '—'})</span>
   if (!(canAct && s.reporter)) return '—'
   return (
     <div className="flex flex-col gap-0.5">
@@ -1639,37 +1705,16 @@ export default function EventDetail() {
   const fieldWithReporter = signals.filter((s) => s.source === 'Field' && s.reporter)
   const singleReporter = canAct && fieldWithReporter.length === 1 ? fieldWithReporter[0].reporter : null
   const shown = Math.max(openStep || currentStep || 3, 2)  // step 1 has no panel
-  const shortText = (t) => (t && t.length > 90 ? `${t.slice(0, 87).trimEnd()}…` : t)
-  const supports = contextSummary?.supports || []
 
   function renderPanel() {
     switch (shown) {
       case 2:
         return (
           <div className={card}>
-            <PanelHeader title="AI triage" sub="What the system checked automatically. The officer decides." />
-            <h3 className="text-sm font-semibold text-gray-900 mb-2">Case definition match</h3>
-            {event.reason ? (
-              <div className="text-sm mb-6">
-                <p className="text-gray-700">
-                  <span className="text-gray-500">AI matched:</span> {matchedSigns(event.reason) || '—'}{' '}
-                  <button
-                    type="button"
-                    aria-expanded={reasonOpen}
-                    onClick={() => setReasonOpen((v) => !v)}
-                    className={`text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}
-                  >
-                    {reasonOpen ? 'Hide case definition' : 'Show case definition'}
-                  </button>
-                </p>
-                {reasonOpen && <p className="mt-1 text-xs text-gray-500">{event.reason}</p>}
-                <p className="mt-1 text-xs text-gray-400">The AI suggests; the officer decides.</p>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400 mb-6">No case definition match recorded.</p>
-            )}
-            <h3 className="text-sm font-semibold text-gray-900 mb-2">Local context</h3>
-            <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} />
+            <PanelHeader title="AI analysis & risk assessment" sub="A quick check of how urgent this looks" />
+            <RiskAssessment risk={event.risk} matched={event.reason ? matchedSigns(event.reason) : ''} reason={event.reason}>
+              <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} />
+            </RiskAssessment>
             <div className="mt-6 flex justify-end">
               <button type="button" onClick={() => selectStep(3)} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
                 Continue to verification →
@@ -1791,14 +1836,16 @@ export default function EventDetail() {
               </span>
             </div>
             <p className="text-sm font-medium text-white/90">
-              Event {event.id} · first reported {fmtDateTime(event.firstSeen)} · last report {fmtDateTime(event.lastSeen)}
+              Event {event.id}{(event.sources || []).length ? ` · ${event.sources.join(', ')}` : ''} · {event.reports > 1
+                ? `${event.reports} reports · first ${fmtDateTime(event.firstSeen)} · latest ${fmtDateTime(event.lastSeen)}`
+                : `Reported ${fmtDateTime(event.firstSeen)}`}
             </p>
             {event.linkedAlert && (
               <Link
                 to={`/epi-trends/${event.linkedAlert.id}`}
                 className="inline-flex items-center mt-4 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2"
               >
-                Part of an outbreak — view trend
+                Epi Trends alert: rise in {event.linkedAlert.place || event.subCounty}{event.linkedAlert.week ? `, ${event.linkedAlert.week}` : ''} →
               </Link>
             )}
             {event.dataWarning && (
@@ -1810,26 +1857,20 @@ export default function EventDetail() {
           </div>
 
           {event.related?.length > 0 && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-              <h2 className="text-base font-semibold text-gray-900">Related events in {event.subCounty}</h2>
-              <p className="text-sm text-gray-600 mb-3">These may be the same outbreak. Check them before acting.</p>
-              <ul className="flex flex-col gap-2">
-                {event.related.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-3 flex-wrap rounded-xl bg-white border border-amber-200 px-4 py-3">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Link to={`/alerts-signals/${r.id}`} className={`text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{r.title}</Link>
-                        <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600">{STATUS_LABELS[r.status] || r.status}</span>
-                        <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600">{SEVERITY_LABELS[r.severity] || SEVERITY_LABELS.standard}</span>
-                      </div>
-                      <p className="text-xs text-gray-500">{r.reports} {r.reports === 1 ? 'report' : 'reports'} · {r.people} people · last {fmtDateTime(r.lastSeen)}</p>
-                    </div>
-                    {canAct && (
-                      <button type="button" onClick={() => setMergeTarget(r)} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Merge into this event</button>
-                    )}
-                  </li>
-                ))}
-              </ul>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col gap-2">
+              {event.related.map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-3 flex-wrap text-sm">
+                  <p className="text-gray-800">
+                    <AlertTriangle className="inline w-4 h-4 text-amber-500 mr-1.5 -mt-0.5" aria-hidden="true" />
+                    Possibly the same outbreak:{' '}
+                    <Link to={`/alerts-signals/${r.id}`} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{r.id}</Link>
+                    <span className="text-gray-500"> · {STATUS_LABELS[r.status] || r.status} · {r.reports} {r.reports === 1 ? 'report' : 'reports'}, last {fmtDateTime(r.lastSeen)}</span>
+                  </p>
+                  {canAct && (
+                    <button type="button" onClick={() => setMergeTarget(r)} className={`text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>Merge into this event</button>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
@@ -1847,14 +1888,15 @@ export default function EventDetail() {
                 <MapPin className="w-3.5 h-3.5" aria-hidden="true" /> {mapOpen ? 'Hide map' : 'Show on map'}
               </button>
             </div>
-            <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-5">
-              <Field icon={Sparkles} label="Suspected disease" value={event.diseaseName || event.disease || '—'} />
+            <dl className="grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-5">
               <Field icon={MapPin} label="Location" value={place} />
-              <Field icon={Calendar} label="Reported" value={fmtDateTime(event.firstSeen)} />
-              <Field icon={Radio} label="Sources" value={(event.sources || []).join(', ') || '—'} />
-              <Field icon={Users} label="Affected people" value={event.people ?? 0} />
-              <Field icon={HeartCrack} label="Deaths" value={event.deaths ?? 0} danger={event.deaths > 0} />
-              <Field icon={FileText} label="Reports" value={event.reports ?? 0} />
+              <Field icon={Users} label="Affected" value={
+                <>
+                  {countLabel(event.people, event.disease)}
+                  {event.deaths > 0 && <span className="text-red-700"> · {event.deaths} {event.deaths === 1 ? 'death' : 'deaths'}</span>}
+                </>
+              } />
+              <Field icon={Calendar} label={event.reports > 1 ? 'Latest report' : 'Reported'} value={fmtDateTime(event.reports > 1 ? event.lastSeen : event.firstSeen)} />
               {singleReporter && (
                 <Field
                   icon={Phone}
@@ -1872,28 +1914,6 @@ export default function EventDetail() {
                 />
               )}
             </dl>
-            {(supports.length > 0 || event.reason) && (
-              <div className="mt-5 border-t border-gray-100 pt-4">
-                {supports.length > 0 ? (
-                  <p className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
-                    <Lightbulb className="w-4 h-4 shrink-0" aria-hidden="true" />
-                    <span>
-                      Context supports this signal: {supports.map((s) => shortText(s.text)).join(' · ')}{' '}
-                      <button type="button" onClick={() => selectStep(2)} className={`font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
-                        See AI triage
-                      </button>
-                    </span>
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    AI matched: {matchedSigns(event.reason) || '—'} ·{' '}
-                    <button type="button" onClick={() => selectStep(2)} className={`font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
-                      See AI triage
-                    </button>
-                  </p>
-                )}
-              </div>
-            )}
             {mapOpen && <ReportsMap signals={signals} />}
           </div>
 

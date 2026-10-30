@@ -59,3 +59,42 @@ def validate_case_report_location(doc):
 		frappe.throw(_("The selected sub-county does not belong to the selected region."))
 	if not doc.get("region"):
 		doc.region = region
+
+
+# ---------- Field staff report only for their own area ----------
+# CHPs and Facility Health Workers report only for their assigned region and sub-county (User.assigned_region,
+# User.assigned_sub_county). The server sets both from the reporter's account, whatever the client sends
+# (mobile, WhatsApp, web). Officers, HQ and the shared community account are not affected.
+FIELD_STAFF_ROLES = {"CHP", "Facility Health Worker"}
+
+
+def is_field_staff(user=None):
+	"""Only CHP / Facility Health Worker. Administrator (who has every role), System Managers and anyone who also
+	holds another surveillance role (HQ Admin, officers, ...) can still report for any area."""
+	user = user or frappe.session.user
+	if user == "Administrator":
+		return False
+	from surveillance.hooks import SURVEILLANCE_ROLES
+	roles = set(frappe.get_roles(user))
+	other = (set(SURVEILLANCE_ROLES) - FIELD_STAFF_ROLES) | {"System Manager"}
+	return bool(roles & FIELD_STAFF_ROLES) and not (roles & other)
+
+
+def lock_to_assigned_area(doc):
+	"""Called from CaseReport.validate, before the location check. New reports only."""
+	if not doc.is_new() or not doc.get("reported_by"):
+		return
+	if not is_field_staff(doc.reported_by):
+		return
+	meta = frappe.get_meta("User")
+	fields = [f for f in ("assigned_region", "assigned_sub_county") if meta.has_field(f)]
+	user = frappe.db.get_value("User", doc.reported_by, fields, as_dict=True) or {}
+	region, sub_county = user.get("assigned_region"), user.get("assigned_sub_county")
+	if not region or not sub_county:
+		frappe.throw(_("Your account has no assigned region and sub-county, so this report cannot be sent. "
+			"Ask your supervisor to assign them."), title=_("Region not assigned"))
+	if frappe.db.get_value(DOCTYPE, sub_county, "region") != region:
+		frappe.throw(_("Your assigned sub-county is not in your assigned region. Ask your supervisor to correct "
+			"your account."), title=_("Region not assigned"))
+	doc.region = region
+	doc.sub_county = sub_county

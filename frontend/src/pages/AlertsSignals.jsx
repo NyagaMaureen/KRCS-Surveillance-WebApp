@@ -23,8 +23,12 @@ const STATUS_STYLES = {
   Rejected: 'border-red-500 bg-red-500/10 text-red-700',
 }
 
+// Animal events (unusual death/illness of animals) are counted in cases, not people.
+const isAnimal = (disease) => String(disease || '').includes('animal')
+
 const TABS = [
-  { key: 'open', label: 'Open', match: (a) => a.status === 'Pending' || a.status === 'Investigating' },
+  // Open = everything not closed (incl. Confirmed), so a trend stays visible while the response is going on
+  { key: 'open', label: 'Open', match: (a) => ['Pending', 'Investigating', 'Confirmed'].includes(a.status) },
   { key: 'confirmed', label: 'Confirmed', match: (a) => a.status === 'Confirmed' },
   { key: 'resolved', label: 'Resolved', match: (a) => a.status === 'Resolved' },
   { key: 'rejected', label: 'Dismissed', match: (a) => a.status === 'Rejected' },
@@ -126,11 +130,12 @@ const STATUS_PILL = {
   Rejected: 'bg-gray-100 text-gray-400',
 }
 
-function AlertRow({ alert, onOpen }) {
+function AlertRow({ alert, onOpen, n }) {
   const community = isCommunity(alert)
   const qLink = `/alerts-signals?tab=all&q=${encodeURIComponent(diseaseOf(alert) || '')}`
   return (
     <tr onClick={onOpen} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 cursor-pointer">
+      <td className="px-3 py-3.5 text-gray-400 tabular-nums">{n}</td>
       <td className="px-3 py-3.5">
         <span className="font-medium text-gray-900">{alert.title}</span>
         {(alert.surge || alert.openEvents > 0) && (
@@ -149,10 +154,9 @@ function AlertRow({ alert, onOpen }) {
         {alert.location}
         <span className="block text-xs text-gray-400">{alert.epiWeekShort || alert.date}{alert.ongoing ? ' · ongoing' : ''}</span>
       </td>
-      <td className="px-3 py-3.5 text-gray-500 hidden lg:table-cell">{(alert.sources || []).map((x) => SOURCE_LABELS[x] || x).join(', ') || '—'}</td>
-      <td className="px-3 py-3.5 text-right tabular-nums text-gray-700">
-        {community ? alert.affected : alert.signals}
-        <span className="block text-xs text-gray-400">{community ? 'people' : 'cases'}</span>
+      <td className="px-3 py-3.5 text-gray-700">
+        <span className="tabular-nums">{community ? alert.affected : alert.signals}</span> {community && !isAnimal(alert.disease) ? 'people' : 'cases'}
+        <span className="block text-xs text-gray-400">{(alert.sources || []).map((x) => SOURCE_LABELS[x] || x).join(', ') || '—'}</span>
       </td>
       <td className="px-3 py-3.5"><span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs ${PRIORITY_STYLE[alert.severity] || PRIORITY_STYLE.standard}`}>{alert.severity || 'standard'}</span></td>
       <td className="px-3 py-3.5"><span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_PILL[alert.status] || STATUS_PILL.Rejected}`}>{STATUS_LABELS[alert.status] || alert.status}</span></td>
@@ -327,7 +331,7 @@ export default function AlertsSignals() {
   const card = 'bg-white rounded-xl border border-gray-100'
   const pageBtn = `h-9 px-4 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-white ${FOCUS}`
   const SEL = `h-9 bg-white border border-gray-200 rounded-lg px-3 text-sm text-gray-700 ${FOCUS}`
-  const cols = 7
+  const cols = 8
   const statCards = [
     { label: 'Open', value: tabCounts.open || 0, onClick: () => setParam({ tab: '', sev: '' }), on: tab === 'open' && !severities.length },
     ...SEVERITIES.map((sv) => ({
@@ -410,10 +414,10 @@ export default function AlertsSignals() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-left text-xs text-gray-500">
-                  <th className="px-3 py-2.5 font-medium rounded-l-lg">Alert</th>
+                  <th className="px-3 py-2.5 font-medium rounded-l-lg w-10 text-gray-400">#</th>
+                  <th className="px-3 py-2.5 font-medium">Alert</th>
                   <th className="px-3 py-2.5 font-medium hidden md:table-cell">Location · week</th>
-                  <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Source</th>
-                  <th className="px-3 py-2.5 font-medium text-right">Total</th>
+                  <th className="px-3 py-2.5 font-medium">Affected</th>
                   <th className="px-3 py-2.5 font-medium">Priority</th>
                   <th className="px-3 py-2.5 font-medium">Status</th>
                   <th className="px-3 py-2.5 font-medium rounded-r-lg"><span className="sr-only">Action</span></th>
@@ -429,7 +433,7 @@ export default function AlertsSignals() {
                 ) : !total ? (
                   <tr><td colSpan={cols}><EmptyState title="No alerts match your filters" action={filtersActive && <button onClick={clearFilters} className={BTN_SECONDARY}>Clear filters</button>} /></td></tr>
                 ) : (
-                  pagedAlerts.map((a) => <AlertRow key={a.id} alert={a} onOpen={() => navigate(`/epi-trends/${a.id}`)} />)
+                  pagedAlerts.map((a, i) => <AlertRow key={a.id} n={safePage * pageSize + i + 1} alert={a} onOpen={() => navigate(`/epi-trends/${a.id}`)} />)
                 )}
               </tbody>
             </table>

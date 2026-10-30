@@ -1250,3 +1250,29 @@ export async function listFeedback(status = '', type = '') {
 export async function setFeedbackStatus(name, status, response) {
   return callMethodPost(`${FEEDBACK}set_feedback_status`, { name, status, ...(response != null ? { response } : {}) })
 }
+
+// ---------- Risk score ----------
+
+export async function getRiskWeights() {
+  return callMethod('/api/method/surveillance.risk.get_weights')
+}
+
+export async function saveRiskWeights(weights) {
+  return callMethodPost('/api/method/surveillance.risk.save_weights', { weights })
+}
+
+export async function getCbsContact(signal) {
+  return callMethod(`/api/method/surveillance.cbs_feed.get_reporter_contact?signal=${encodeURIComponent(signal)}`)
+}
+
+export async function getTrendCbsReports(event) {
+  return callMethod(`/api/method/surveillance.cbs_feed.get_trend_cbs_reports?event=${encodeURIComponent(event)}`)
+}
+
+export async function getRedFlags() {
+  return callMethod('/api/method/surveillance.risk.get_red_flags')
+}
+
+export async function saveRedFlags(symptoms) {
+  return callMethodPost('/api/method/surveillance.risk.save_red_flags', { symptoms: JSON.stringify(symptoms) })
+}

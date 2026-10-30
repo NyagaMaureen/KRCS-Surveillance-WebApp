@@ -4,6 +4,8 @@ import AppShell from '../components/layout/AppShell'
 import { getCurrentUser, getMyProfile, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds, searchIcd11, setIcd11 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { FeedbackList } from './FeedbackInbox'
+import RiskWeights from '../components/risk/RiskWeights'
+import RedFlagSymptoms from '../components/risk/RedFlagSymptoms'
 import { listFeedback } from '../api/frappe'
 
 const TABS = [
@@ -510,6 +512,7 @@ export default function Settings() {
           </button>
         ))}
       </div>
+
 
       {activeTab === 'feedback' && has('view_feedback') && <FeedbackList onCounts={(c) => setNewFeedback(c.new || 0)} />}
 
@@ -1020,6 +1023,9 @@ export default function Settings() {
       )}
 
       {activeTab === 'ai-config' && (
+        <div className="space-y-6">
+        {has('manage_alert_thresholds') && <RiskWeights />}
+        {has('manage_alert_thresholds') && <RedFlagSymptoms />}
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
           <div className="flex items-center gap-3 mb-2">
             <Wand2 className="w-7 h-7 text-gray-900" />
@@ -1037,7 +1043,7 @@ export default function Settings() {
               </div>
             ))}
           </div>
-        </div>
+        </div>        </div>
       )}
 
       {activeTab === 'data' && (

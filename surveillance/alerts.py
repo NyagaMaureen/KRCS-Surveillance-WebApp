@@ -381,7 +381,9 @@ def _why_short(d):
 		times = f"{ratio:.1f}" if ratio < 3 else f"{ratio:.0f}"
 		return f"{peak} {unit} in the peak week, about {times}× the usual (usually ~{base:.0f} a week)"
 	if d.signal_strength == "outbreak":
-		return f"{peak} {unit} in the peak week, where there is usually less than 1 a week"
+		if not base:
+			return f"{peak} {unit} in the peak week; none in the weeks before"
+		return f"{peak} {unit} in the peak week; fewer than 1 a week before (most weeks had none)"
 	return f"{peak} {unit} this week (alert at {thr})"
 
 
@@ -423,7 +425,7 @@ def _shape(d, notes=None, related=None):
 	insights.append("What to do: " + RESPONSE.get(d.severity, ""))
 	return {
 		"id": d.name,
-		"title": f"{d.disease_name}" + (" (outbreak level)" if d.level == "outbreak" else ""),
+		"title": d.disease_name or d.disease,   # level is shown by the priority pill and "What happened"
 		"description": insights[0] if insights else "",
 		"location": f"{d.sub_county} · {d.county}" if d.sub_county else d.location,
 		"region": d.county or "",
@@ -623,12 +625,22 @@ def _related_events(doc):
 	if doc.sub_county:
 		names |= set(frappe.get_all("Surveillance Event", filters={"disease": doc.disease, "sub_county": doc.sub_county,
 			"last_reported": [">=", doc.week_start]}, pluck="name"))
+	# Events merged into another are empty shells: their reports now sit in the event they were merged into.
+	# They are shown under that event ("Merged in: ...") instead of as separate investigations.
+	merged = {}
+	for m in frappe.get_all("Surveillance Event Action", filters={"parent": ["in", list(names) or [""]],
+			"parenttype": "Surveillance Event", "action": "Merged", "note": ["like", "Merged into %"]},
+			fields=["parent", "note", "at"]):
+		target = m.note.split(" ")[2] if len(m.note.split(" ")) > 2 else None
+		area = frappe.db.get_value("Surveillance Event", m.parent, "area")
+		merged.setdefault(target, []).append({"id": m.parent, "area": area or "", "on": str(m.at or "")})
+		names.discard(m.parent)
 	rows = frappe.get_all("Surveillance Event", filters={"name": ["in", list(names) or [""]]},
 		fields=["name", "title", "status", "severity", "reports", "people", "deaths", "last_reported", "from_alert"],
 		order_by="last_reported desc")
 	return [{"id": r.name, "title": r.title, "status": r.status, "severity": r.severity, "reports": r.reports or 0,
 		"people": r.people or 0, "deaths": r.deaths or 0, "lastSeen": str(r.last_reported or ""),
-		"fromTrend": r.from_alert == doc.name} for r in rows]
+		"fromTrend": r.from_alert == doc.name, "mergedIn": merged.get(r.name, [])} for r in rows]
 
 
 def _note(doc, text):
@@ -750,3 +762,20 @@ def sync_all_alerts():
 	for n, old, new in changed:
 		print(f"{n}: {STATUS_LABELS.get(old, old)} -> {STATUS_LABELS.get(new, new)}")
 	print(f"Trends updated: {len(changed)} of {len(before)}")
+
+# ---------- run detection soon after a report of a critical disease ----------
+# Detection works on whole epi weeks, so the daily run is enough for most diseases. For critical diseases
+# (VHF, measles, cholera, ...) a new report should show in Epi Trends within minutes, not the next day.
+
+def detect_soon(disease):
+	"""Called when a field report is saved. Queues one detection run (duplicates are dropped)."""
+	if not disease or frappe.db.get_value("Alert Threshold Config", disease, "priority") != "Critical":
+		return
+	frappe.enqueue("surveillance.alerts.detect_now", queue="long", job_id="krcs-detect-now", deduplicate=True,
+		enqueue_after_commit=True)
+
+
+def detect_now():
+	run_detection()
+	from surveillance.events import refresh_links
+	refresh_links()

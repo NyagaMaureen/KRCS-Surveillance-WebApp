@@ -400,7 +400,6 @@ def _scope_region():
 	from surveillance.events import _user_region
 	return _user_region()
 
-
 @frappe.whitelist()
 def get_response_actions(status=None, search=None, limit=300):
 	"""Response actions in the officer's region, with counts per stage."""
@@ -411,9 +410,9 @@ def get_response_actions(status=None, search=None, limit=300):
 		base["region"] = region
 	counts = {k: 0 for k in ("planned", "inProgress", "blocked", "completed")}
 	key = {"Assigned": "planned", "In progress": "inProgress", "Blocked": "blocked", "Done": "completed"}
-	for r in frappe.get_all(DOCTYPE, filters=base, fields=["status", "count(name) as n"], group_by="status"):
-		if r.status in key:
-			counts[key[r.status]] += r.n
+	for s in frappe.get_all(DOCTYPE, filters=base, pluck="status"):   # counted here: no SQL group by
+		if s in key:
+			counts[key[s]] += 1
 	filters = dict(base)
 	if status in STATUSES:
 		filters["status"] = status
@@ -423,11 +422,13 @@ def get_response_actions(status=None, search=None, limit=300):
 		or_filters = {"title": ["like", like], "team": ["like", like], "area": ["like", like],
 			"sub_county": ["like", like], "event": ["like", like], "name": ["like", like]}
 	rows = frappe.get_all(DOCTYPE, filters=filters, or_filters=or_filters, fields=FIELDS,
-		order_by="field(status, 'Blocked', 'In progress', 'Assigned', 'Done', 'Could not complete'), due_date asc",
-		limit_page_length=min(cint(limit) or 300, 1000))
+		order_by="due_date asc", limit_page_length=min(cint(limit) or 300, 1000))
+	# Blocked first, then in progress, planned, done, could not complete (sorted here: no SQL field())
+	order = {"Blocked": 0, "In progress": 1, "Assigned": 2, "Done": 3, "Could not complete": 4}
+	rows.sort(key=lambda t: order.get(t.status, 9))
 	return {"actions": [_shape(t) for t in rows], "counts": counts, "canCreate": has_capability(ACT)}
 
-
+	
 @frappe.whitelist()
 def get_events_for_response():
 	"""Open events in the officer's region that a response action can be linked to."""

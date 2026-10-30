@@ -27,6 +27,10 @@ const STATUS_STYLES = {
   Rejected: 'border-red-500 bg-red-500/10 text-red-700',
 }
 
+// Animal events (unusual death/illness of animals) are counted in cases, not people.
+const isAnimal = (disease) => String(disease || '').includes('animal')
+const countLabel = (n, disease) => `${n ?? 0} ${isAnimal(disease) ? (n === 1 ? 'case' : 'cases') : (n === 1 ? 'person' : 'people')}`
+
 const STATUS_LABELS = { Pending: 'New', Investigating: 'Under investigation', Confirmed: 'Confirmed', Resolved: 'Resolved', Rejected: 'Dismissed' }
 const EVENT_STATUS_LABELS = { Investigating: 'In the field' }
 const EVENT_OPEN = ['New', 'Verifying', 'Investigating', 'Confirmed', 'Escalated']
@@ -248,6 +252,8 @@ export default function AlertDetail() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [note, setNote] = useState('')
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [showChecks, setShowChecks] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
   const [actionPending, setActionPending] = useState('')
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -362,6 +368,7 @@ export default function AlertDetail() {
       const entry = await addAlertNote(id, note.trim())
       setAlert((prev) => ({ ...prev, notes: [...(prev.notes || []), entry] }))
       setNote('')
+      setNoteOpen(false)
     } catch (e) {
       showToast(e.message || 'Could not save note', true)
     } finally {
@@ -369,7 +376,10 @@ export default function AlertDetail() {
     }
   }
 
-  const timeline = alert?.timeline || []
+  const allSteps = alert?.timeline || []
+  const isCheck = (s) => /^Latest check/i.test(s.label || '')
+  const checks = allSteps.filter(isCheck).length
+  const timeline = showChecks ? allSteps : allSteps.filter((s) => !isCheck(s))
   const nextStep = alert ? NEXT_STEP[alert.status] : null
   const card = 'bg-white rounded-2xl border border-gray-100 p-6 sm:p-7'
 
@@ -465,7 +475,7 @@ export default function AlertDetail() {
               <Tile Icon={Users} label={isCommunityAlert(alert) ? 'Reports' : 'Cases'}>
                 <div className="text-sm font-medium text-gray-600">
                   {isCommunityAlert(alert)
-                    ? `${alert.signals} reports · ${alert.affected} people affected · peak ${alert.peak} reports/week`
+                    ? `${alert.signals} reports · ${isAnimal(alert.disease) ? `${alert.affected} cases` : `${alert.affected} people affected`} · peak ${alert.peak} reports/week`
                     : `${alert.signals} cases · peak ${alert.peak}/week`}
                 </div>
               </Tile>
@@ -507,7 +517,14 @@ export default function AlertDetail() {
           </div>
 
           <div className={card}>
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Timeline</h2>
+            <div className="flex items-center justify-between gap-3 mb-6">
+              <h2 className="text-xl font-semibold text-gray-900">Timeline</h2>
+              {checks > 0 && (
+                <button type="button" onClick={() => setShowChecks((v) => !v)} className={`text-xs font-medium text-gray-500 hover:text-gray-900 underline underline-offset-2 rounded ${FOCUS}`}>
+                  {showChecks ? 'Hide system checks' : 'Show system checks'}
+                </button>
+              )}
+            </div>
             <div className="flex flex-col">
               {timeline.map((step, i) => {
                 const last = i === timeline.length - 1 && !nextStep
@@ -566,9 +583,14 @@ export default function AlertDetail() {
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-medium text-gray-900 truncate">{e.title}</span>
                         <span className="block text-xs text-gray-500">
-                          {e.id} · {e.reports} report(s) · {e.people} people{e.deaths ? ` · ${e.deaths} deaths` : ''}
+                          {e.id} · {e.reports} report(s) · {countLabel(e.people, alert.disease)}{e.deaths ? ` · ${e.deaths} deaths` : ''}
                           {e.fromTrend ? ' · opened from this trend' : ''}
                         </span>
+                        {(e.mergedIn || []).length > 0 && (
+                          <span className="block text-xs text-gray-500 mt-0.5">
+                            Investigated together with {e.mergedIn.map((m) => `${m.id}${m.area ? ` (${m.area})` : ''}`).join(', ')}, merged into this event{e.mergedIn.length === 1 && e.mergedIn[0].on ? ` on ${fmtDateTime(e.mergedIn[0].on)}` : ''}
+                          </span>
+                        )}
                       </span>
                       <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full border ${EVENT_OPEN.includes(e.status) ? 'border-purple-300 bg-purple-50 text-purple-600' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
                         {EVENT_STATUS_LABELS[e.status] || e.status}
@@ -678,7 +700,13 @@ export default function AlertDetail() {
           </div>
 
           <div className={card}>
-            <h2 className="text-xl font-semibold text-gray-900 mb-5">Notes</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold text-gray-900">Notes{(alert.notes || []).length ? ` (${alert.notes.length})` : ''}</h2>
+              {!noteOpen && (
+                <button type="button" onClick={() => setNoteOpen(true)} className={`text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>+ Add note</button>
+              )}
+            </div>
+            {noteOpen && (<div className="mt-4">
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -687,13 +715,17 @@ export default function AlertDetail() {
               placeholder="Add a note about this trend..."
               className="w-full border border-gray-200 rounded-lg px-4 py-3.5 text-sm text-gray-700 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-red-100 mb-4"
             />
-            <button
-              onClick={handleSaveNote}
-              disabled={savingNote || !note.trim()}
-              className={`w-full bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-xl py-2.5 text-base font-semibold transition-colors ${FOCUS}`}
-            >
-              {savingNote ? 'Saving...' : 'Save Note'}
-            </button>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => { setNoteOpen(false); setNote('') }} className={`border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 ${FOCUS}`}>Cancel</button>
+              <button
+                onClick={handleSaveNote}
+                disabled={savingNote || !note.trim()}
+                className={`bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors ${FOCUS}`}
+              >
+                {savingNote ? 'Saving…' : 'Save note'}
+              </button>
+            </div>
+            </div>)}
 
             {!!(alert.notes || []).length && (
               <div className="mt-5 flex flex-col gap-3">

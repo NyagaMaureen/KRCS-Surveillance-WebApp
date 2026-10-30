@@ -1,0 +1,77 @@
+{
+ "actions": [],
+ "creation": "2026-10-30 12:00:00.000000",
+ "modified": "2026-10-30 13:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Risk Score Settings",
+ "issingle": 1,
+ "description": "Maximum points per factor in the event risk score (agreed with KRCS; tune after testing).",
+ "field_order": [
+  "weight_priority",
+  "weight_redflags",
+  "weight_people",
+  "weight_unusual",
+  "weight_context",
+  "sb_red",
+  "red_flag_symptoms"
+ ],
+ "fields": [
+  {
+   "fieldname": "weight_priority",
+   "fieldtype": "Int",
+   "label": "Disease priority (max points)",
+   "default": "30"
+  },
+  {
+   "fieldname": "weight_redflags",
+   "fieldtype": "Int",
+   "label": "Red flags and deaths (max points)",
+   "default": "25"
+  },
+  {
+   "fieldname": "weight_people",
+   "fieldtype": "Int",
+   "label": "People affected (max points)",
+   "default": "15"
+  },
+  {
+   "fieldname": "weight_unusual",
+   "fieldtype": "Int",
+   "label": "Unusual for this area (max points)",
+   "default": "20"
+  },
+  {
+   "fieldname": "weight_context",
+   "fieldtype": "Int",
+   "label": "Local context (WASH, rain, population) (max points)",
+   "default": "10"
+  },
+  {
+   "fieldname": "sb_red",
+   "fieldtype": "Section Break",
+   "label": "Red-flag symptoms"
+  },
+  {
+   "fieldname": "red_flag_symptoms",
+   "fieldtype": "Table",
+   "label": "Red-flag symptoms",
+   "options": "Risk Red Flag Symptom",
+   "description": "A report with any of these symptoms gets red-flag points in the risk score."
+  }
+ ],
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  }
+ ]
+}

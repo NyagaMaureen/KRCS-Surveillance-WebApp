@@ -202,3 +202,142 @@ def daily():
 		refresh_links()
 	except Exception:
 		frappe.log_error(title="Review Queue refresh failed", message=frappe.get_traceback())
+
+
+# ---------- CBS volunteer contact, fetched live when an officer clicks "Show contact" ----------
+# Only the CBS volunteer/staff member who handled the report (personnel.user): name and phone, plus the region(s)
+# they are assigned to (supervisor location). Never the community member's phone number. Nothing is saved:
+# it is fetched from CBS, returned to the officer and dropped. Switched off until KRCS approves:
+#     bench --site <site> set-config cbs_reporter_contact 1
+
+def contact_enabled():
+	return bool(frappe.conf.get("cbs_reporter_contact"))
+
+
+def _find_report(client, case_number, signal_date=None):
+	"""The CBS report with this case number. Tries a direct lookup first, then the newest pages of the list."""
+	base = f"{client.base}/api/reports/{client.project_id}"
+	for url, params in ((f"{base}/{case_number}", {}), (base, {"caseNumber": case_number}), (base, {"search": case_number})):
+		try:
+			r = client.s.get(url, params=params, timeout=TIMEOUT)
+			if r.status_code != 200:
+				continue
+			data = r.json()
+			rows = data.get("reports") if isinstance(data, dict) and "reports" in data else [data.get("report") or data]
+			hit = next((x for x in rows or [] if isinstance(x, dict) and x.get("caseNumber") == case_number), None)
+			if hit:
+				return hit
+		except Exception:
+			continue
+	for page in range(1, 31):   # fallback: scan up to 30 pages (3,000 reports)
+		data = client.get(base, page=page, limit=PAGE_SIZE)
+		rows = data.get("reports") or []
+		hit = next((x for x in rows if x.get("caseNumber") == case_number), None)
+		if hit:
+			return hit
+		pages = data.get("pages") or (data.get("pagination") or {}).get("pages", 1)
+		if page >= pages:
+			break
+	return None
+
+
+def _assigned_regions(client, assignments):
+	ids = []
+	for a in assignments or []:
+		reg = a.get("region") if isinstance(a, dict) else a
+		rid = _id(reg) if reg else None
+		if rid:
+			ids.append(rid)
+	if not ids:
+		return []
+	resolve, _ = _region_resolver(client)
+	out = []
+	for rid in ids:
+		county, sub, area, _lat, _lng = resolve(rid)
+		label = ", ".join(x for x in (area, sub, county) if x)
+		if label and label not in out:
+			out.append(label)
+	return out
+
+
+@frappe.whitelist()
+def get_reporter_contact(signal):
+	"""Live lookup for one CBS signal. Returns {name, phone, assignedTo: [...]} or {available: False, why}."""
+	from surveillance.capabilities import require_capability
+	require_capability("act_on_events")
+	if not contact_enabled():
+		return {"available": False, "why": "Showing CBS volunteer contacts is switched off. Use the case number in CBS."}
+	s = frappe.db.get_value("Surveillance Signal", signal, ["source", "ref", "signal_date"], as_dict=True)
+	if not s or s.source != "CBS" or not s.ref:
+		frappe.throw("Not a CBS report")
+	try:
+		client = CBSClient()
+		rep = _find_report(client, s.ref, s.signal_date)
+	except Exception:
+		frappe.log_error(title="CBS contact lookup failed", message=frappe.get_traceback())
+		return {"available": False, "why": "CBS could not be reached. Try again, or use the case number in CBS."}
+	if not rep:
+		return {"available": False, "why": f"Case {s.ref} was not found in CBS."}
+	person = rep.get("personnel") if isinstance(rep.get("personnel"), dict) else {}
+	user = person.get("user") if isinstance(person.get("user"), dict) else {}
+	# only these three things leave this function; nothing is logged or saved
+	out = {"available": True, "name": user.get("fullName") or None, "phone": user.get("phone") or None,
+		"assignedTo": _assigned_regions(client, person.get("assignments"))}
+	if not (out["name"] or out["phone"]):
+		return {"available": False, "why": "CBS has no volunteer contact on this report."}
+	return out
+
+
+@frappe.whitelist()
+def get_trend_cbs_reports(event):
+	"""Live list of the CBS reports behind an event opened from Epi Trends (same disease, sub-county and weeks).
+	Case number, date, place and number of cases always; volunteer contact only when cbs_reporter_contact is on.
+	Nothing is saved."""
+	from surveillance.capabilities import require_capability
+	require_capability("act_on_events")
+	alert_name = frappe.db.get_value("Surveillance Event", event, "from_alert")
+	a = frappe.db.get_value("Risk Alert", alert_name, ["disease", "sub_county", "week_start", "last_week", "sources"],
+		as_dict=True) if alert_name else None
+	if not a:
+		frappe.throw("This event was not opened from an Epi Trends alert")
+	if "CBS" not in (a.sources or ""):
+		return {"reports": [], "why": "This trend has no CBS reports (it comes from facility data)."}
+	start = frappe.utils.getdate(a.week_start)
+	end = frappe.utils.add_days(frappe.utils.getdate(a.last_week or a.week_start), 6)
+	sub = (a.sub_county or "").strip().lower()
+	show_contact = contact_enabled()
+	try:
+		client = CBSClient()
+		resolve, _ = _region_resolver(client)
+		found = []
+		for page in range(1, 31):   # newest reports are scanned; up to 3,000
+			data = client.get(f"{client.base}/api/reports/{client.project_id}", page=page, limit=PAGE_SIZE)
+			for rep in data.get("reports") or []:
+				if rep.get("isTest") or "dismiss" in str(rep.get("status", "")).lower() or not rep.get("date"):
+					continue
+				ev = (rep.get("event") or {}).get("name")
+				if not ev or to_key(ev) != a.disease:
+					continue
+				d = datetime.fromisoformat(str(rep["date"]).replace("Z", "+00:00")).date()
+				if not (start <= d <= end):
+					continue
+				rid = _id(rep.get("region"))
+				county, sub_county, area, _lat, _lng = resolve(rid) if rid else (None, None, "", None, None)
+				if (sub_county or "").strip().lower() != sub:
+					continue
+				row = {"case": rep.get("caseNumber"), "date": str(d), "area": area or sub_county, "cases": int(rep.get("noOfCases") or 0)}
+				if show_contact:
+					person = rep.get("personnel") if isinstance(rep.get("personnel"), dict) else {}
+					user = person.get("user") if isinstance(person.get("user"), dict) else {}
+					row.update({"name": user.get("fullName") or None, "phone": user.get("phone") or None,
+						"assignedTo": _assigned_regions(client, person.get("assignments"))})
+				found.append(row)
+			pages = data.get("pages") or (data.get("pagination") or {}).get("pages", 1)
+			if page >= pages:
+				break
+	except Exception:
+		frappe.log_error(title="CBS trend reports lookup failed", message=frappe.get_traceback())
+		return {"reports": [], "why": "CBS could not be reached. Try again later."}
+	found.sort(key=lambda r: r["date"])
+	return {"reports": found, "contacts": show_contact,
+		"why": None if found else "No matching CBS reports found for this disease, place and weeks."}
