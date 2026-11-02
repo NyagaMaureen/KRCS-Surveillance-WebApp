@@ -14,7 +14,9 @@ from surveillance.whatsapp.conversation.core import (
 	go,
 	normalize,
 	quiet,
+	region_label,
 	stay,
+	sub_county_label,
 	t,
 )
 from surveillance.whatsapp.extract import find_symptoms
@@ -57,23 +59,31 @@ def step_text(s, body):
 	return text(with_hint(s, body))
 
 
+def area_locked(s):
+	"""CHPs and Facility Health Workers: Frappe sets the region and sub-county from their account."""
+	return bool(s.staff and s.staff.get("area_locked"))
+
+
 def new_draft(s):
+	locked = area_locked(s)
 	return AttrDict(
 		reporter_name=s.staff.full_name if s.staff else None,
 		category=None,
 		signal_type=None if s.staff else COMMUNITY_SIGNAL,
 		symptoms=[],
 		affected_count=None,
-		sex=None,
 		age_group=None,
 		animal_exposure=None,
 		deaths_count=None,
 		onset_date=None,
-		region=None,
-		sub_county=None,
+		region=s.staff.region if locked else None,
+		sub_county=s.staff.sub_county if locked else None,
 		location_name=None,
 		latitude=None,
 		longitude=None,
+		region_from_pin=False,
+		sub_county_from_pin=False,
+		category_assumed=False,
 		notes=[],
 		media=[],
 		skip_duplicate_check=False,
@@ -107,7 +117,6 @@ STEPS = [
 	("r_signal", lambda s, ctx, cat: bool(s.staff)),
 	("r_symptoms", None),
 	("r_count", None),
-	("r_sex", lambda s, ctx, cat: bool(cat["options"].get("sex"))),
 	("r_age", lambda s, ctx, cat: is_human(s) and bool(cat["options"].get("age_group"))),
 	("r_exposure", lambda s, ctx, cat: is_human(s) and bool(cat["options"].get("animal_exposure"))),
 	("r_deaths", None),
@@ -133,16 +142,28 @@ def step_back(s, ctx):
 		return go("r_symptoms")
 	if BACK_TO[s.state]:
 		return go(BACK_TO[s.state])
-	if s.editing:
-		return go("r_review")
 	steps = active_steps(s, ctx)
+	if s.editing or s.state not in steps:
+		return go("r_review")
 	i = steps.index(s.state)
 	return go(steps[i - 1]) if i > 0 else stay()
 
 
-def active_steps(s, ctx):
+def active_steps(s, ctx, editable=False):
+	"""The steps that apply, in order. `editable` keeps the region and sub-county a pin gave, for Edit."""
 	cat = ctx.data.catalog()
-	return [sid for sid, when in STEPS if not when or when(s, ctx, cat)]
+	steps = [sid for sid, when in STEPS if not when or when(s, ctx, cat)]
+	if area_locked(s):
+		steps = [sid for sid in steps if sid not in ("r_region", "r_subcounty")]
+	if not s.staff:
+		# Community reporters share the pin first; it usually gives the region and sub-county too.
+		steps = ["r_place", *(sid for sid in steps if sid != "r_place")]
+	return steps if editable else [sid for sid in steps if not from_pin(s, sid)]
+
+
+def from_pin(s, sid):
+	d = s.draft
+	return (sid == "r_region" and d.region_from_pin) or (sid == "r_subcounty" and d.sub_county_from_pin)
 
 
 def step_no(s, sid, ctx):
@@ -153,7 +174,7 @@ def step_no(s, sid, ctx):
 			q.append(sid)
 		return (q.index(sid) + 1, len(q)) if sid in q else (None, None)
 	steps = active_steps(s, ctx)
-	return steps.index(sid) + 1, len(steps)
+	return (steps.index(sid) + 1, len(steps)) if sid in steps else (None, None)
 
 
 def after(s, sid, ctx, ignore_editing=False):
@@ -161,7 +182,8 @@ def after(s, sid, ctx, ignore_editing=False):
 	if sid == "r_region":
 		auto_sub_county(s, ctx)
 	if s.editing and not ignore_editing:
-		return "r_review"
+		# A new pin can move the report to a region whose sub-county the pin does not settle.
+		return first_missing(s, ctx) if sid == "r_place" else "r_review"
 	if s.draft.free:  # free text: only what is still missing; the optional questions are left to Edit
 		return first_missing(s, ctx)
 	steps = active_steps(s, ctx)
@@ -201,20 +223,21 @@ def place_answer(s, inp, ctx):
 	"""Required place: a typed name is kept and the pin asked for; a pin without a name asks for the name."""
 	if inp["type"] == "text" and normalize(inp["text"]) in ("skip", "ruka", "no", "hapana"):
 		return quiet(text(t(s)["placeNoSkip"]))
-	if not set_place(s, inp):
+	if not set_place(s, inp, ctx):
 		return None
 	required = ctx.data.catalog()["required"]
 	if "latitude" in required and s.draft.latitude is None:
 		return go("r_place_gps", text(t(s)["placeNeedPin"](s.draft.location_name)))
 	if place_missing(s, ctx):
-		return go("r_place_name", *place_ack(s, inp))
-	return go(after(s, "r_place", ctx), *place_ack(s, inp))
+		return go("r_place_name", *place_ack(s, inp, ctx))
+	return go(after(s, "r_place", ctx), *place_ack(s, inp, ctx))
 
 
-def set_place(s, inp):
+def set_place(s, inp, ctx):
 	if inp["type"] == "location":
 		name = ", ".join(x for x in (inp.get("name"), inp.get("address")) if x)[:140]
 		s.draft.update(location_name=name or s.draft.location_name, latitude=inp["lat"], longitude=inp["lng"])
+		area_from_pin(s, ctx)
 		return True
 	if inp["type"] == "text" and len(inp["text"].strip()) >= 2:
 		s.draft.location_name = inp["text"].strip()[:140]
@@ -222,12 +245,61 @@ def set_place(s, inp):
 	return False
 
 
-def place_ack(s, inp):
-	"""Echo a shared GPS pin back, as the prototype does. A typed place name needs no echo."""
+PIN_RADIUS_KM = 100  # a pin farther than this from every sub-county centre gives neither
+PIN_MARGIN = 1.5  # the nearest centre must be this many times closer than the next one in the region
+
+
+def area_from_pin(s, ctx):
+	"""Community reports: the region and sub-county whose centre is nearest the pin, so they are not asked.
+	Sub County coordinates are approximate centres, so a pin about as close to two of them leaves the
+	sub-county to the reporter. What the reporter chose or typed is kept; values from an earlier pin are not."""
+	d = s.draft
+	if s.staff or d.latitude is None:
+		return
+	if d.region_from_pin:
+		d.region = None
+	if d.sub_county_from_pin:
+		d.sub_county = None
+	d.region_from_pin = d.sub_county_from_pin = False
+	if d.region and d.sub_county:
+		return
+	ranked = sorted(
+		(km(d.latitude, d.longitude, p["latitude"], p["longitude"]), p)
+		for p in ctx.data.sub_county_centres()
+		if p["latitude"] and p["longitude"] and (not d.region or p["region"] == d.region)
+	)
+	if not ranked or ranked[0][0] > PIN_RADIUS_KM:
+		return
+	if not d.region:
+		d.region, d.region_from_pin = ranked[0][1]["region"], True
+	near = [(dist, p) for dist, p in ranked if p["region"] == d.region]
+	if len(near) == 1 or near[1][0] >= PIN_MARGIN * near[0][0]:
+		d.sub_county, d.sub_county_from_pin = near[0][1]["name"], True
+
+
+def km(lat1, lng1, lat2, lng2):
+	"""Distance on the ground, close enough at this scale (equirectangular)."""
+	x = math.radians(lng2 - lng1) * math.cos(math.radians((lat1 + lat2) / 2))
+	return 6371 * math.hypot(x, math.radians(lat2 - lat1))
+
+
+def place_ack(s, inp, ctx):
+	"""Echo a shared GPS pin back, as the prototype does, with the area it gave. A typed name needs no echo."""
 	if inp["type"] != "location":
 		return []
 	coords = f"{float(inp['lat']):.5f}, {float(inp['lng']):.5f}"
-	return [text(t(s)["placeReceived"](coords, s.draft.location_name))]
+	d = s.draft
+	area = None
+	if d.region_from_pin or d.sub_county_from_pin:
+		area = ", ".join(
+			x
+			for x in (
+				d.sub_county and sub_county_label(d.region, d.sub_county, ctx),
+				region_label(d.region, ctx),
+			)
+			if x
+		)
+	return [text(t(s)["placeReceived"](coords, d.location_name, area))]
 
 
 def symptom_key(label):
@@ -265,7 +337,6 @@ def step_name(s, sid):
 		"r_signal": f["signal_type"],
 		"r_symptoms": f["symptoms"],
 		"r_count": f["affected_count"],
-		"r_sex": f["sex"],
 		"r_age": f["age_group"],
 		"r_exposure": f["animal_exposure"],
 		"r_deaths": f["deaths_count"],
@@ -287,14 +358,25 @@ def missing_steps(s, ctx):
 		"r_signal": d.signal_type,
 		"r_symptoms": len(d.symptoms),
 		"r_count": d.affected_count,
-		"r_sex": d.sex,
-		"r_deaths": d.deaths_count is not None,
+		"r_deaths": d.deaths_count is not None or not deaths_needed(s),
 		"r_onset": d.onset_date,
 		"r_region": d.region,
 		"r_subcounty": d.sub_county,
 		"r_place": not place_missing(s, ctx),
 	}
 	return [sid for sid in active_steps(s, ctx) if sid in filled and not filled[sid]]
+
+
+def deaths_needed(s):
+	"""A community member describing one sick person with no danger signs is not asked about deaths; the
+	question is kept for staff, step-by-step reports, danger signs and more than one affected."""
+	d = s.draft
+	if s.staff or not d.free:
+		return True
+	x = d.extraction or {}
+	return (
+		bool(x.get("danger_signs")) or x.get("threat", "routine") != "routine" or (d.affected_count or 0) > 1
+	)
 
 
 def first_missing(s, ctx):

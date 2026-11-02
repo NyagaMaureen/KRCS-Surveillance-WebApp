@@ -1,4 +1,4 @@
-"""Free-text report -> Case Report fields (AI/ML spec §3.1, SRS H.12). A port of node/src/extract.js.
+"""Free-text report -> Case Report fields (AI/ML spec §3.1, SRS H.12).
 
 The extraction service (agents/chatbot POST /extract, later the NLP service W-16) does the work. When it is not
 configured or can't be reached, a small keyword fallback here finds symptoms, a count, today/yesterday and
@@ -30,7 +30,10 @@ class ExtractionError(Exception):
 class ExtractionClient:
 	def __init__(self, url, token=None, timeout=8):
 		self.url = url.rstrip("/") + "/extract"
-		self.headers = {"Accept": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})}
+		self.headers = {
+			"Accept": "application/json",
+			**({"Authorization": f"Bearer {token}"} if token else {}),
+		}
 		self.timeout = timeout
 
 	def post(self, body):
@@ -143,7 +146,10 @@ def local_extract(value, catalog, sub_counties, today):
 			break
 	onset = next((w for w in words if w in ("today", "leo", "yesterday", "jana")), None)
 	if onset:
-		fields["onset_date"] = {"value": today if onset in ("today", "leo") else _shift(today, -1), "confidence": 0.9}
+		fields["onset_date"] = {
+			"value": today if onset in ("today", "leo") else _shift(today, -1),
+			"confidence": 0.9,
+		}
 	people = any(w in PEOPLE for w in words)
 	animals = any(w in ANIMALS for w in words)
 	if people or animals:
@@ -154,13 +160,14 @@ def local_extract(value, catalog, sub_counties, today):
 		"extractor": "keywords-fallback",
 		"language": "sw" if sum(w in SW_MARKERS for w in words) >= 2 else "en",
 		"is_report": bool(fields.get("symptoms") or fields.get("affected_count")),
-		"fields": {k: {**f, "autofill": f["confidence"] >= AUTOFILL, "evidence": []} for k, f in fields.items()},
+		"fields": {
+			k: {**f, "autofill": f["confidence"] >= AUTOFILL, "evidence": []} for k, f in fields.items()
+		},
 		"danger_signs": [],
 		"threat": "routine",
 		"mentioned_diseases": [],
 		"notes": ["extraction service not used: keyword fallback"],
 	}
-
 
 
 def _vocabulary(ctx):
@@ -189,7 +196,8 @@ def extract_report(value, ctx, today, language=None):
 						],
 						"regions": [{"id": r["name"], "label": r["label"]} for r in catalog["regions"]],
 						"sub_counties": [
-							{"id": x["name"], "label": x["label"], "region": x["region"]} for x in sub_counties
+							{"id": x["name"], "label": x["label"], "region": x["region"]}
+							for x in sub_counties
 						],
 					},
 				}

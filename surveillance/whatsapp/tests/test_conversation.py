@@ -37,6 +37,16 @@ SUB_COUNTIES = {
 		{"name": "Turkana-Turkana West", "label": "Turkana West", "county": "Turkana"},
 	],
 }
+# Approximate centres, as surveillance/locations.py seeds them.
+CENTRES = {
+	"Garissa-Dadaab": (0.0560, 40.3110),
+	"Garissa-Fafi": (0.0010, 40.3700),
+	"Garissa-Liboi": (0.3500, 40.8800),
+	"Turkana-Lokichogio": (4.2050, 34.3500),
+	"Turkana-Turkana West": (3.8100, 34.7500),
+}
+NEAR_DADAAB = {"type": "location", "lat": 0.0573, "lng": 40.2974, "name": "Block B4"}  # 1.5 km from Dadaab
+BETWEEN = {"type": "location", "lat": 0.03, "lng": 40.34}  # about as far from Dadaab as from Fafi
 SYMPTOMS = [
 	{"name": f"sym-{i}", "label": label, "category": cat}
 	for i, (label, cat) in enumerate(
@@ -76,7 +86,6 @@ SYMPTOMS = [
 OPTIONS = {
 	"signal_type": ["Suspected Outbreak", "Community Signal", "Facility Signal"],
 	"category": ["Human Disease", "Animal Disease", "All Disease"],
-	"sex": ["Male", "Female", "Mixed"],
 	"age_group": ["Under 1", "1-4 years", "5-14 years", "15+ years"],
 	"animal_exposure": ["None", "Bite or scratch", "Handled sick or dead animal"],
 	"status": ["Submitted", "Reviewed", "Linked", "Investigating", "Closed"],
@@ -91,9 +100,9 @@ DEMO_STAFF = {
 		"region": "reg-dadaab",
 	}
 }
-# The live Case Report since 16/10/2026: no `sex` field; GPS and place name required.
+# The live Case Report since 16/10/2026: GPS and place name required.
 LIVE_SCHEMA = {
-	"options": {k: v for k, v in OPTIONS.items() if k != "sex"},
+	"options": OPTIONS,
 	"required": ["latitude", "longitude", "location_name", "sub_county"],
 }
 
@@ -110,6 +119,9 @@ class FakeData:
 		self.disease = None  # suspected_disease the rules give a new report
 		self.advice = None  # reporter_advice() result, or an exception to raise
 		self.advice_asked = []
+		self.staff_extra = {}  # added to the staff record, e.g. area_locked and sub_county
+		self.community = {}  # approved Community Advice by key
+		self.advice_langs = []
 
 	def catalog(self):
 		return {**self.schema, "regions": self.regions, "symptoms": SYMPTOMS}
@@ -117,9 +129,17 @@ class FakeData:
 	def sub_counties(self, region):
 		return self.sub_county_map.get(region, [])
 
+	def sub_county_centres(self):
+		return [
+			{"name": x["name"], "region": region, "latitude": lat, "longitude": lng}
+			for region, rows in self.sub_county_map.items()
+			for x in rows
+			for lat, lng in [CENTRES.get(x["name"], (None, None))]
+		]
+
 	def find_staff(self, phone):
 		st = DEMO_STAFF.get(normalize_phone(phone))
-		return dict(st) if st else None
+		return {**st, **self.staff_extra} if st else None
 
 	def roles_of(self, user):
 		return [s["role"] for s in DEMO_STAFF.values() if s["user"] == user]
@@ -162,6 +182,10 @@ class FakeData:
 
 	def get_report(self, name):
 		return next((r for r in self.reports if r["name"] == name), None)
+
+	def community_advice(self, lang):
+		self.advice_langs.append(lang)
+		return self.community
 
 	def reporter_advice(self, disease, user):
 		self.advice_asked.append((disease, user))
@@ -317,7 +341,6 @@ def submit_staff_report(h):
 	h.tap("Unexplained Bleeding")
 	h.tap("Continue")
 	h.say("30")
-	h.tap("Mixed")
 	h.say("4")
 	h.tap("Specific date")
 	h.say("10/10/2026")
@@ -341,25 +364,34 @@ def start(h, lang="English", guided=True):
 
 
 def fill_location(h, place="skip"):
-	"""The report starts with location: Dadaab / Fafi, then the place step. `place` is a message to send
-	there, "skip" (typed, so it works in either language), or None to stop on the place step."""
-	h.tap("Dadaab")
-	h.tap("Fafi")
+	"""The report starts with location. Community: the place step, then Dadaab / Fafi when the pin did not give
+	them. Staff: Dadaab / Fafi, then the place step. `place` is a message to send on the place step, "skip"
+	(typed, so it works in either language), or None to stop on the place step."""
+
+	def area():
+		if h.s.state == "r_region":
+			h.tap("Dadaab")
+		if h.s.state == "r_subcounty":
+			h.tap("Fafi")
+
+	if h.s.staff:
+		area()
 	if place == "skip":
 		h.say("skip")
 	elif place:
 		h.send(place)
+	if place and not h.s.staff:
+		area()
 
 
 def fill_common_steps(h):
-	"""Human disease -> Diarrhea + Vomiting -> 12 -> Mixed -> skip age/exposure -> no deaths."""
+	"""Human disease -> Diarrhea + Vomiting -> 12 -> skip age/exposure -> no deaths."""
 	h.tap("Human disease")
 	h.tap("Diarrhea")  # a common symptom, no group needed
 	h.say("vomiting")  # typed symptom name is added directly
 	h.test.assertIn("Diarrhea\n• Vomiting", h.bodies())
 	h.tap("Continue")
 	h.say("12")
-	h.tap("Mixed")
 	h.tap("Skip")
 	h.tap("Skip")
 	h.tap("None")
@@ -374,9 +406,10 @@ class TestConversation(FrappeTestCase):
 	def test_community_report_end_to_end(self):
 		h = Harness(self, PUBLIC)
 		start(h)
-		self.assertIn("Step 1 of 13: Where is it happening?", h.bodies())
+		self.assertIn("Step 1 of 12: Exact location", h.bodies())  # community: the pin first
 		fill_location(h, {"type": "location", "lat": 0.05, "lng": 40.31, "name": "Ifo Camp"})
-		self.assertIn("Step 4 of 13: Your name", h.bodies())
+		self.assertIn("Sub-county and region: *Dadaab, Dadaab*", h.bodies())
+		self.assertIn("Step 2 of 10: Your name", h.bodies())  # region and sub-county came from the pin
 		h.tap("Amina")
 		fill_common_steps(h)
 		self.assertIn("When did it start", h.bodies())
@@ -393,6 +426,8 @@ class TestConversation(FrappeTestCase):
 		h.tap("Proceed to review")
 		self.assertIn("*Symptoms:* Diarrhea, Vomiting", h.bodies())
 		h.tap("Confirm & submit")
+		self.assertIn("Does any photo or voice note show or record a person?", h.bodies())  # a photo: consent first
+		h.tap("No person in them")
 		self.assertRegex(h.bodies(), r"Report received[\s\S]*RPT-001")
 
 		r = h.data.reports[0]
@@ -406,9 +441,8 @@ class TestConversation(FrappeTestCase):
 			"phone_number": "+254799000000",
 			"category": "Human Disease",
 			"region": "reg-dadaab",
-			"sub_county": "Garissa-Fafi",
+			"sub_county": "Garissa-Dadaab",
 			"affected_count": 12,
-			"sex": "Mixed",
 			"deaths_count": 0,
 			"onset_date": "2026-10-13",
 			"location_name": "Ifo Camp",
@@ -417,11 +451,12 @@ class TestConversation(FrappeTestCase):
 		}
 		self.assertEqual({k: r.get(k) for k in expected}, expected)
 		self.assertEqual(len(r["symptoms"]), 2)
+		self.assertNotIn("sex", r)
 		[(report, media)] = h.submitted
 		self.assertEqual(report["name"], "RPT-001")
 		self.assertEqual(
-			[(m["kind"], m["media_id"], m["caption"]) for m in media],
-			[("image", "m1", "children at the water point")],
+			[(m["kind"], m["media_id"], m["caption"], m["people_shown"], m["consent"]) for m in media],
+			[("image", "m1", "children at the water point", 0, "No one")],
 		)
 
 		h.tap("Main menu")
@@ -435,12 +470,12 @@ class TestConversation(FrappeTestCase):
 			r"Identity verified[\s\S]*Welcome back, \*Ahmed Abdi\*!\nRole: \*CHP\*\nRegion: \*Dadaab\*",
 		)
 		h.tap("Submit health report")
-		self.assertIn("Step 1 of 13: Where is it happening?", h.bodies())
+		self.assertIn("Step 1 of 12: Where is it happening?", h.bodies())  # staff keep region first
 		self.assertEqual(h.s.shown[0], "r:reg-dadaab")
 		h.tap("Kalobeyei")
 		h.tap("Lokichogio")
 		h.tap("Skip")
-		self.assertIn("Step 4 of 13: Signal category", h.bodies())
+		self.assertIn("Step 4 of 12: Signal category", h.bodies())
 		h.tap("Animal disease")
 		self.assertIn("Signal type", h.bodies())
 		h.tap("Suspected Outbreak")
@@ -448,7 +483,6 @@ class TestConversation(FrappeTestCase):
 		h.tap("Continue")
 		self.assertIn("Number of animals affected", h.bodies())
 		h.say("30")
-		h.tap("Mixed")
 		self.assertIn("Deaths", h.bodies())  # animals: no age group / animal-contact questions
 		h.say("4")
 		h.tap("Specific date")
@@ -494,7 +528,9 @@ class TestConversation(FrappeTestCase):
 		h = Harness(self, STAFF)
 		h.data.advice = {"disease": "Anthrax", "steps": []}  # no approved protocol, or no right to view it
 		submit_staff_report(h)
-		self.assertIn("Suspected disease: *Anthrax*\n\n*What happens next*\n• Keep your phone on.", h.bodies())
+		self.assertIn(
+			"Suspected disease: *Anthrax*\n\n*What happens next*\n• Keep your phone on.", h.bodies()
+		)
 		self.assertNotIn("What to do for", h.bodies())
 
 		h = Harness(self, STAFF)
@@ -504,6 +540,56 @@ class TestConversation(FrappeTestCase):
 		submit_staff_report(h)
 		self.assertEqual(logged, ["WhatsApp next steps could not be loaded"])
 		self.assertRegex(h.bodies(), r"Report received[\s\S]*\*Next steps\*\n\n\*What happens next\*")
+
+	def test_staff_next_steps_use_reporter_advice_settings(self):
+		"""The general lines KRCS sets in Reporter Advice Settings replace the bot's own."""
+		h = Harness(self, STAFF)
+		h.data.advice = {"disease": None, "steps": [], "general": ["Call your link officer within 24 hours."]}
+		submit_staff_report(h)
+		self.assertIn("*What happens next*\n• Call your link officer within 24 hours.", h.bodies())
+		self.assertNotIn("Keep your phone on", h.bodies())
+
+	def test_field_staff_report_for_their_assigned_area(self):
+		"""CHPs and Facility Health Workers: Frappe sets the region and sub-county, so they are not asked."""
+		h = Harness(self, STAFF)
+		h.data.staff_extra = {"area_locked": True, "sub_county": "Garissa-Fafi"}
+		start(h, "staff")
+		h.tap("Submit health report")
+		self.assertNotIn(h.s.state, ("r_region", "r_subcounty"))
+		self.assertIn("Step 1 of 10:", h.bodies())
+		h.tap("Skip")  # place
+		self.assertIn("Step 2 of 10: Signal category", h.bodies())
+		h.tap("Animal disease")
+		h.tap("Suspected Outbreak")
+		h.tap("Unexplained Bleeding")
+		h.tap("Continue")
+		h.say("30")
+		h.say("4")
+		h.tap("Today")
+		h.tap("Skip & review")
+		self.assertIn("*Sub-county:* Fafi", h.bodies())
+		h.tap("Edit")
+		titles = " | ".join(o["title"] for o in h.options())
+		self.assertNotIn("Region", titles)
+		self.assertNotIn("Sub-county", titles)
+		h.tap("Back")
+		h.tap("Confirm & submit")
+		r = h.data.reports[0]
+		self.assertEqual((r["region"], r["sub_county"]), ("reg-dadaab", "Garissa-Fafi"))
+
+	def test_field_staff_without_an_assigned_area_are_told_before_the_steps(self):
+		for extra in (
+			{"area_locked": True, "sub_county": None},  # no sub-county assigned
+			{"area_locked": True, "sub_county": "Turkana-Lokichogio"},  # not in their region (Dadaab)
+		):
+			h = Harness(self, STAFF)
+			h.data.staff_extra = extra
+			start(h, "staff")
+			h.tap("Submit health report")
+			self.assertIn("Your account has no assigned region and sub-county", h.bodies())
+			self.assertEqual(h.s.state, "menu")
+			self.assertIsNone(h.s.draft)
+			self.assertEqual(h.data.reports, [])
 
 	def test_unknown_number_cannot_use_staff_portal(self):
 		h = Harness(self, PUBLIC)
@@ -517,9 +603,9 @@ class TestConversation(FrappeTestCase):
 	def test_kiswahili_and_typed_numbers(self):
 		h = Harness(self, PUBLIC)
 		start(h, "Kiswahili")
-		self.assertIn("Hatua 1 kati ya 13: Linatokea wapi?", h.bodies())
+		self.assertIn("Hatua 1 kati ya 12: Mahali hasa", h.bodies())
 		fill_location(h)
-		self.assertIn("Hatua 4 kati ya 13: Jina lako", h.bodies())
+		self.assertIn("Hatua 4 kati ya 12: Jina lako", h.bodies())
 		h.say("Juma Hassan")
 		self.assertEqual(h.s.draft.reporter_name, "Juma Hassan")
 		h.say("1")  # Ugonjwa wa binadamu
@@ -625,14 +711,14 @@ class TestConversation(FrappeTestCase):
 		fill_location(h, None)
 		h.tap("Use my location")
 		h.say("skip")
-		self.assertEqual(h.s.state, "r_name")
+		self.assertEqual(h.s.state, "r_region")  # no pin: region and sub-county are asked
 		self.assertIsNone(h.s.draft.location_name)
 
 		g = Harness(self, PUBLIC)
 		start(g)
 		fill_location(g, None)
 		g.tap("Use my location")
-		g.send({"type": "location", "lat": 0.0573, "lng": 40.2974, "name": "Block B4"})
+		g.send(NEAR_DADAAB)
 		self.assertEqual(g.s.state, "r_name")
 		self.assertRegex(
 			g.bodies(), r"Location received[\s\S]*`0\.05730, 40\.29740`[\s\S]*Area: \*Block B4\*"
@@ -676,13 +762,14 @@ class TestConversation(FrappeTestCase):
 			{"name": f"r{i}", "label": f"Region number {i + 1} with a very long name"} for i in range(15)
 		]
 		h = Harness(self, PUBLIC, data=FakeData(regions=regions, sub_counties={}))
-		start(h)  # the region list is the first step
+		start(h)
+		h.say("skip")  # no pin: the region list comes next
 		self.assertEqual(h.s.state, "r_region")
 		h.tap("More")
 		self.assertIn("prev", h.s.shown)
 		h.say("Region number 15 with a very long name")  # full typed name works
 		self.assertEqual(h.s.draft.region, "r14")
-		self.assertEqual(h.s.state, "r_place")  # no sub-counties: question skipped
+		self.assertEqual(h.s.state, "r_name")  # no sub-counties: question skipped
 
 	def test_step_header_and_footer(self):
 		h = Harness(self, PUBLIC)
@@ -693,7 +780,7 @@ class TestConversation(FrappeTestCase):
 		h.tap("English")
 		h.tap("Step by step")
 		[m] = h.last
-		self.assertEqual(m["header"], "Step 1 of 13: Where is it happening?")
+		self.assertEqual(m["header"], "Step 1 of 12: Exact location (optional)")
 		self.assertNotIn("Step 1", m["body"])
 		self.assertEqual(m["footer"], "Type back for the previous step, cancel to stop")
 
@@ -723,12 +810,17 @@ class TestConversation(FrappeTestCase):
 		g = Harness(self, PUBLIC)
 		start(g)
 		g.say("back")  # first step: stays put
-		self.assertEqual(g.s.state, "r_region")
-		fill_location(g, None)
+		self.assertEqual(g.s.state, "r_place")
 		g.tap("Use my location")
 		g.say("back")
 		self.assertEqual(g.s.state, "r_place")
 		g.tap("Skip")
+		self.assertEqual(g.s.state, "r_region")
+		g.say("back")  # community: the place step comes before the region
+		self.assertEqual(g.s.state, "r_place")
+		g.tap("Skip")
+		g.tap("Dadaab")
+		g.tap("Fafi")
 		self.assertEqual(g.s.state, "r_name")
 		g.tap("Amina")
 		fill_common_steps(g)
@@ -740,10 +832,10 @@ class TestConversation(FrappeTestCase):
 		g.say("back")  # on review, "back" still opens the edit menu
 		self.assertEqual(g.s.state, "r_edit")
 		g.tap("More")  # location fills the first page of the edit list
-		g.tap("Sex")
+		g.tap("Deaths")
 		g.say("back")  # editing: back to review, not to the previous step
 		self.assertEqual(g.s.state, "r_review")
-		self.assertEqual(g.s.draft.sex, "Mixed")
+		self.assertEqual(g.s.draft.deaths_count, 0)
 
 	def test_last_step_button(self):
 		h = Harness(self, PUBLIC)
@@ -826,6 +918,23 @@ class TestConversation(FrappeTestCase):
 		self.assertNotIn("ask", h.s.shown)
 		h.tap("KRCS Staff")
 		self.assertNotIn("ask", h.s.shown)
+
+	def test_emergency_in_a_sentence_shows_the_emergency_numbers(self):
+		for phone in (PUBLIC, STAFF):
+			for chatbot in (None, FakeChatbot()):
+				h = Harness(self, phone, chatbot=chatbot)
+				h.say("hi")
+				h.say("I have an emergency")
+				self.assertEqual(h.s.state, "help")
+				self.assertIn("*999* or *112*", h.bodies())
+				self.assertNotIn("didn't understand", h.bodies())
+				if chatbot:
+					self.assertEqual(chatbot.calls, [])
+		h = Harness(self, STAFF, chatbot=FakeChatbot())
+		h.say("hi")
+		h.tap("KRCS Staff")
+		h.say("Kuna dharura hapa")
+		self.assertEqual(h.s.state, "help")
 
 	def test_staff_question_uses_frappe_roles(self):
 		chatbot = FakeChatbot()
@@ -993,7 +1102,7 @@ class TestConversation(FrappeTestCase):
 		h.tap("Human disease")
 		h.tap("Diarrhea")
 		h.tap("Continue")
-		h.say("12")  # no sex step on the live schema
+		h.say("12")
 		self.assertRegex(h.bodies(), r"(?i)age group")
 		self.assertEqual(len(h.last), 1)
 
@@ -1031,7 +1140,17 @@ class FakeExtractor:
 
 
 class TestFreeText(FrappeTestCase):
-	"""Free-text community reports (AI/ML §1.4, SRS H.12): mirrors the free-text tests of node/test/flow.test.js."""
+	"""Free-text community reports (AI/ML §1.4, SRS H.12)."""
+
+	def test_emergency_report_gets_the_numbers_first_and_carries_on(self):
+		h = Harness(self, PUBLIC)
+		start(h, guided=False)
+		h.say("Emergency! 5 children have diarrhoea and vomiting since yesterday in Fafi")
+		self.assertTrue(
+			h.last[0]["body"].startswith("If someone's life is in danger, call *999* or *112* now.")
+		)
+		self.assertIn("From your message I noted:", h.bodies())
+		self.assertEqual(h.s.state, "r_deaths")  # five affected: deaths are asked
 
 	def test_message_fills_what_it_states_only_missing_questions_asked_advice_follows(self):
 		h = Harness(self, PUBLIC)
@@ -1040,28 +1159,113 @@ class TestFreeText(FrappeTestCase):
 		h.say("5 children have diarrhoea and vomiting since yesterday in Fafi")
 		self.assertRegex(
 			h.bodies(),
-			r"From your message I noted:[\s\S]*Sub-county: Fafi[\s\S]*Symptoms: Diarrhea, Vomiting[\s\S]*Number affected: 5[\s\S]*2 more questions",
+			r"From your message I noted:[\s\S]*Sub-county: Fafi[\s\S]*Symptoms: Diarrhea, Vomiting[\s\S]*Number affected: 5[\s\S]*One more question",
 		)
-		self.assertEqual(h.s.state, "r_sex")
-		self.assertIn("Step 1 of 2: Sex", h.bodies())
-		h.tap("Mixed")
-		self.assertIn("Step 2 of 2: Deaths", h.bodies())
+		self.assertEqual(h.s.state, "r_deaths")
+		self.assertIn("Step 1 of 1: Deaths", h.bodies())
 		h.tap("None")
 		self.assertEqual(h.s.state, "r_review")
 		self.assertIn("*Your message:* _5 children have diarrhoea", h.bodies())
 		self.assertIn("*Name:* Amina", h.bodies())  # WhatsApp profile name (AI/ML §6.6)
 		self.assertIn("Some answers were taken from your message", h.bodies())
+		h.data.community = {"Gastrointestinal": "*Diarrhoea:* approved text from Community Advice."}
 		h.tap("Confirm & submit")
-		self.assertRegex(h.bodies(), r"Report received[\s\S]*While you wait for the KRCS team[\s\S]*Diarrhoea or vomiting")
+		self.assertRegex(
+			h.bodies(),
+			r"Report received[\s\S]*While you wait for the KRCS team[\s\S]*approved text from Community Advice",
+		)
+		self.assertNotIn("Diarrhoea or vomiting", h.bodies())  # the draft gives way to the approved text
+		self.assertEqual(h.data.advice_langs, ["en"])
 		r = h.data.reports[0]
 		self.assertEqual(
-			(r["region"], r["sub_county"], r["affected_count"], r["onset_date"], r["category"], r["reporter_name"]),
+			(
+				r["region"],
+				r["sub_county"],
+				r["affected_count"],
+				r["onset_date"],
+				r["category"],
+				r["reporter_name"],
+			),
 			("reg-dadaab", "Garissa-Fafi", 5, "2026-10-12", "Human Disease", "Amina"),
 		)
 		self.assertRegex(
 			r["additional_notes"],
-			r'Message: "5 children have diarrhoea[\s\S]*affected_count = 5 \(0\.90\)[\s\S]*Asked as follow-up questions: Sex, Deaths',
+			r'Message: "5 children have diarrhoea[\s\S]*affected_count = 5 \(0\.90\)[\s\S]*Asked as follow-up questions: Deaths',
 		)
+
+	def test_pin_gives_the_area_category_assumed_deaths_not_asked_for_one(self):
+		stats = []
+		h = Harness(self, PUBLIC, data=FakeData(schema=LIVE_SCHEMA))
+		h.ctx.on_report_stats = lambda **kw: stats.append(kw)
+		start(h, guided=False)
+		h.say("my child has diarrhoea and vomiting")
+		self.assertEqual(h.s.state, "r_place")
+		h.send(NEAR_DADAAB)
+		self.assertIn("Sub-county and region: *Dadaab, Dadaab*", h.bodies())
+		self.assertEqual(h.s.state, "r_count")
+		h.tap("Just one")
+		self.assertEqual(h.s.state, "r_onset")
+		h.tap("Today")
+		self.assertEqual(h.s.state, "r_review")
+		self.assertRegex(
+			h.bodies(), r"\*Region:\* Dadaab[\s\S]*\*Sub-county:\* Dadaab[\s\S]*\*Category:\* Human disease"
+		)
+		h.tap("Confirm & submit")
+		r = h.data.reports[0]
+		self.assertEqual(
+			(r["region"], r["sub_county"], r["category"], r["affected_count"], r["deaths_count"]),
+			("reg-dadaab", "Garissa-Dadaab", "Human Disease", 1, 0),
+		)
+		self.assertIn("Category: Human Disease assumed", r["additional_notes"])
+		self.assertIn("Deaths: not asked", r["additional_notes"])
+		[st] = stats
+		self.assertEqual((st["draft"].messages, st["seconds"]), (5, 50))
+
+	def test_area_from_pin_can_be_changed_at_review(self):
+		h = Harness(self, PUBLIC, data=FakeData(schema=LIVE_SCHEMA))
+		start(h, guided=False)
+		h.say("my child has diarrhoea and vomiting")
+		h.send(NEAR_DADAAB)
+		h.tap("Just one")
+		h.tap("Today")
+		h.tap("Back / edit")
+		h.tap("Region")
+		h.tap("Kalobeyei")
+		self.assertEqual(h.s.state, "r_subcounty")
+		h.tap("Turkana West")
+		self.assertEqual(h.s.state, "r_review")
+		self.assertFalse(h.s.draft.region_from_pin or h.s.draft.sub_county_from_pin)
+		h.tap("Back / edit")
+		h.tap("Exact location")
+		h.send(NEAR_DADAAB)  # the reporter's own choice is kept
+		self.assertEqual((h.s.draft.region, h.s.draft.sub_county), ("reg-kalobeyei", "Turkana-Turkana West"))
+
+	def test_unclear_or_distant_pin_asks_what_it_cannot_tell(self):
+		h = Harness(self, PUBLIC, data=FakeData(schema=LIVE_SCHEMA))
+		start(h, guided=False)
+		h.say("my child has diarrhoea")
+		h.send(BETWEEN)  # a pin without a name
+		self.assertEqual(h.s.state, "r_place_name")
+		h.say("Block C")
+		self.assertEqual(h.s.state, "r_subcounty")  # the region is clear, the sub-county is not
+		self.assertEqual(h.s.draft.region, "reg-dadaab")
+		h.tap("Fafi")
+		h.say("3")
+		self.assertEqual(h.s.state, "r_deaths")  # more than one affected: deaths are asked
+
+		g = Harness(self, PUBLIC, data=FakeData(schema=LIVE_SCHEMA))
+		start(g, guided=False)
+		g.say("my child has diarrhoea")
+		g.send({"type": "location", "lat": -1.2921, "lng": 36.8219, "name": "Nairobi"})
+		self.assertEqual(g.s.state, "r_region")
+		self.assertIsNone(g.s.draft.region)
+
+	def test_animals_are_not_assumed_human(self):
+		h = Harness(self, PUBLIC, extractor=FakeExtractor({"category": ("Animal Disease", 0.5)}))
+		start(h, guided=False)
+		h.say("my goats have diarrhoea")
+		self.assertIsNone(h.s.draft.category)
+		self.assertIn("r_category", h.s.draft.followups)
 
 	def test_service_values_below_threshold_or_unknown_are_asked_and_danger_comes_first(self):
 		extractor = FakeExtractor(
@@ -1094,7 +1298,9 @@ class TestFreeText(FrappeTestCase):
 		self.assertEqual(h.s.state, "r_review")
 		h.tap("Confirm & submit")
 		self.assertIn("Bleeding:* take the person to a health facility now", h.bodies())
-		self.assertIn("Danger signs mentioned: deaths, bleeding (threat: high)", h.data.reports[0]["additional_notes"])
+		self.assertIn(
+			"Danger signs mentioned: deaths, bleeding (threat: high)", h.data.reports[0]["additional_notes"]
+		)
 
 	def test_service_down_falls_back_to_keywords(self):
 		class Down:
@@ -1114,7 +1320,10 @@ class TestFreeText(FrappeTestCase):
 		h.say("the water at the borehole is dirty")
 		self.assertIn("could not find signs of illness", h.bodies())
 		h.tap("Something else")
-		self.assertEqual([(e["reason"], e["question"]) for e in h.escalated], [("not_a_report", "the water at the borehole is dirty")])
+		self.assertEqual(
+			[(e["reason"], e["question"]) for e in h.escalated],
+			[("not_a_report", "the water at the borehole is dirty")],
+		)
 		self.assertIn("passed to the KRCS team", h.bodies())
 		g = Harness(self, PUBLIC)
 		start(g, guided=False)
@@ -1140,6 +1349,14 @@ class TestFreeText(FrappeTestCase):
 		start(h, guided=False)
 		h.send({"type": "media", "kind": "audio", "media_id": "v1", "mime_type": "audio/ogg", "voice": True})
 		self.assertRegex(h.bodies(), r"Voice note saved[\s\S]*type a short description")
-		h.send({"type": "media", "kind": "image", "media_id": "p1", "mime_type": "image/jpeg", "caption": "rash on 2 children"})
+		h.send(
+			{
+				"type": "media",
+				"kind": "image",
+				"media_id": "p1",
+				"mime_type": "image/jpeg",
+				"caption": "rash on 2 children",
+			}
+		)
 		self.assertEqual(h.s.draft.symptoms, ["sym-21"])
 		self.assertEqual(len(h.s.draft.media), 2)

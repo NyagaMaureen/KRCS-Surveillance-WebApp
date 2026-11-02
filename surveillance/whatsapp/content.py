@@ -25,6 +25,7 @@ KEYWORDS = {
 	"cancel": {"cancel", "stop", "ghairi", "acha"},
 	"language": {"language", "lugha"},
 	"back": {"back", "rudi"},
+	"emergency": {"emergency", "emergencies", "dharura"},  # anywhere in a message, not only on its own
 }
 
 HELP_EN = f"""*KRCS Surveillance Support & Hotlines*
@@ -79,7 +80,6 @@ LABELS = {
 			"Animal Disease": "Animal disease",
 			"All Disease": "Human and animal",
 		},
-		"sex": {"Male": "Male", "Female": "Female", "Mixed": "Mixed"},
 		"age_group": {
 			"Under 1": "Under 1 year",
 			"1-4 years": "1–4 years",
@@ -114,7 +114,6 @@ LABELS = {
 			"Animal Disease": "Ugonjwa wa wanyama",
 			"All Disease": "Binadamu na wanyama",
 		},
-		"sex": {"Male": "Kiume", "Female": "Kike", "Mixed": "Mchanganyiko"},
 		"age_group": {
 			"Under 1": "Chini ya mwaka 1",
 			"1-4 years": "Miaka 1–4",
@@ -261,7 +260,8 @@ def _step_sw(n, total, title):
 
 
 # What to do while waiting, by Symptom.category, shown after a community report (SRS R10) and, for danger signs,
-# straight after the description. DRAFT: to be approved by the KRCS Public Health Specialist.
+# straight after the description. DRAFT: to be approved by the KRCS Public Health Specialist. An Approved
+# Community Advice record with the same key (and language) replaces the text here; see data.community_advice.
 ADVICE = {
 	"en": {
 		"title": "*While you wait for the KRCS team*",
@@ -372,6 +372,7 @@ T = {
 	"en": {
 		"help": HELP_EN,
 		"invalid": "Sorry, I didn't understand that. Please choose one of the options, or type *menu*.",
+		"emergency": f"If someone's life is in danger, call *999* or *112* now. KRCS toll-free: *{HOTLINE}* _(free, 24 hours)_.",
 		"errorGeneric": f"Sorry, something went wrong on our side. Type *menu* to start again, or call *{HOTLINE}*.",
 		"welcome": "*Welcome to Kenya Red Cross Society*\n\nI'm the KRCS Health Surveillance & Community Alert Assistant.\n\n"
 		"_Serving both authorised health workers and community members across Kenya._\n\nPlease choose an option:",
@@ -460,9 +461,9 @@ T = {
 			if who == "both"
 			else "individuals are"
 		)
-		+ " presenting with these symptoms? Type a number, e.g. 10.",
+		+ " presenting with these symptoms? Tap *Just one*, or type the number, e.g. 10.",
+		"countOne": "Just one",
 		"countInvalid": "*Invalid number*\n\nPlease enter a whole number from 1 to 100000.\n\nExample: `10`",
-		"sex": lambda n, t: f"{_step_en(n, t, 'Sex')}\nAre those affected male, female, or mixed?",
 		"age": lambda n,
 		t: f"{_step_en(n, t, 'Age group')} _(optional)_\nWhat is the age of the sick person(s)?",
 		"exposure": lambda n, t: f"{_step_en(n, t, 'Contact with animals')} _(optional)_\n"
@@ -485,8 +486,9 @@ T = {
 		"placeNeedPin": lambda name: f"Noted: *{name}*.\nThe map location is also needed.",
 		"placeName": "Please type the name of the place: village, camp block or landmark.",
 		"placeNoSkip": "The location is needed for this report. Tap *Send location* above, or type the place name.",
-		"placeReceived": lambda coords, name: f"*Location received*\n\nCoordinates: `{coords}`"
-		+ (f"\nArea: *{name}*" if name else ""),
+		"placeReceived": lambda coords, name, area=None: f"*Location received*\n\nCoordinates: `{coords}`"
+		+ (f"\nArea: *{name}*" if name else "")
+		+ (f"\nSub-county and region: *{area}* (you can change them at review)" if area else ""),
 		"onset": lambda n,
 		t: f"{_step_en(n, t, 'When did it start?')}\nWhen were the first symptoms noticed?",
 		"onsetToday": "Today",
@@ -541,6 +543,9 @@ T = {
 		"consentRemove": "Remove them",
 		"consentRemoved": "The photos and voice notes were removed. Your report will be sent without them.",
 		"saveFailed": "Your report could not be saved. Please tap *Confirm & submit* to try again.",
+		"areaMissing": "*Your area is not set*\n\nYour account has no assigned region and sub-county, so reports cannot be "
+		"sent from it yet. Please ask your supervisor to set them, then try again.\n\n"
+		f"To report something urgent now, call *{HOTLINE}* _(free, 24/7)_.",
 		"done": lambda ref: f"*Report received*\n\nReference: *{ref}*\n\nThe KRCS surveillance team has been notified and a response team will follow up. "
 		f"Keep this reference to check the status of your report.\n\nHotline: *{HOTLINE}* _(free, 24/7)_",
 		"advice": "Health advice",
@@ -553,7 +558,6 @@ T = {
 			"signal_type": "Signal type",
 			"symptoms": "Symptoms",
 			"affected_count": "Number affected",
-			"sex": "Sex",
 			"age_group": "Age group",
 			"animal_exposure": "Animal contact",
 			"deaths_count": "Deaths",
@@ -576,6 +580,7 @@ T = {
 	"sw": {
 		"help": HELP_SW,
 		"invalid": "Samahani, sijaelewa. Tafadhali chagua mojawapo ya chaguo, au andika *menyu*.",
+		"emergency": f"Ikiwa maisha ya mtu yako hatarini, piga *999* au *112* sasa. Nambari ya bure ya KRCS: *{HOTLINE}* _(bure, saa 24)_.",
 		"errorGeneric": f"Samahani, kuna hitilafu upande wetu. Andika *menyu* kuanza upya, au piga *{HOTLINE}*.",
 		"welcome": "*Karibu Kenya Red Cross Society*\n\nMimi ni Msaidizi wa Ufuatiliaji wa Afya na Tahadhari za Jamii wa KRCS.\n\n"
 		"_Nikihudumia wahudumu wa afya walioidhinishwa na wanajamii kote Kenya._\n\nTafadhali chagua:",
@@ -654,10 +659,9 @@ T = {
 		"symptomsClear": "Futa",
 		"count": lambda n, t, who: f"{_step_sw(n, t, 'Idadi walioathirika')}\nNi "
 		+ ("wanyama" if who == "animals" else "watu au wanyama" if who == "both" else "watu")
-		+ " wangapi wana dalili hizi? Andika idadi, k.m. 10.",
+		+ " wangapi wana dalili hizi? Bonyeza *Mmoja tu*, au andika idadi, k.m. 10.",
+		"countOne": "Mmoja tu",
 		"countInvalid": "*Idadi si sahihi*\n\nTafadhali andika namba kamili kati ya 1 na 100000.\n\nMfano: `10`",
-		"sex": lambda n,
-		t: f"{_step_sw(n, t, 'Jinsia')}\nWalioathirika ni wa kiume, wa kike, au mchanganyiko?",
 		"age": lambda n, t: f"{_step_sw(n, t, 'Umri')} _(si lazima)_\nWagonjwa wana umri gani?",
 		"exposure": lambda n, t: f"{_step_sw(n, t, 'Kugusana na wanyama')} _(si lazima)_\n"
 		"Je, mgonjwa aliumwa au kukwaruzwa na mnyama, au alishika mnyama mgonjwa au aliyekufa?",
@@ -681,8 +685,9 @@ T = {
 		"placeNeedPin": lambda name: f"Nimeandika: *{name}*.\nMahali kwenye ramani pia panahitajika.",
 		"placeName": "Tafadhali andika jina la mahali: kijiji, block ya kambi au alama inayojulikana.",
 		"placeNoSkip": "Mahali panahitajika kwa taarifa hii. Bonyeza *Send location* hapo juu, au andika jina la mahali.",
-		"placeReceived": lambda coords, name: f"*Mahali pamepokelewa*\n\nKuratibu: `{coords}`"
-		+ (f"\nEneo: *{name}*" if name else ""),
+		"placeReceived": lambda coords, name, area=None: f"*Mahali pamepokelewa*\n\nKuratibu: `{coords}`"
+		+ (f"\nEneo: *{name}*" if name else "")
+		+ (f"\nKaunti ndogo na eneo: *{area}* (unaweza kubadilisha wakati wa kukagua)" if area else ""),
 		"onset": lambda n, t: f"{_step_sw(n, t, 'Ilianza lini?')}\nDalili za kwanza zilionekana lini?",
 		"onsetToday": "Leo",
 		"onsetYesterday": "Jana",
@@ -736,6 +741,9 @@ T = {
 		"consentRemove": "Ziondoe",
 		"consentRemoved": "Picha na sauti zimeondolewa. Taarifa yako itatumwa bila hizo.",
 		"saveFailed": "Taarifa yako haikuweza kuhifadhiwa. Tafadhali bonyeza *Thibitisha na tuma* kujaribu tena.",
+		"areaMissing": "*Eneo lako halijawekwa*\n\nAkaunti yako haina eneo na kaunti ndogo ulizopangiwa, kwa hiyo bado "
+		"huwezi kutuma taarifa. Tafadhali mwombe msimamizi wako aziweke, kisha ujaribu tena.\n\n"
+		f"Kuripoti jambo la dharura sasa, piga *{HOTLINE}* _(bure, saa 24)_.",
 		"done": lambda ref: f"*Taarifa imepokelewa*\n\nNamba ya kumbukumbu: *{ref}*\n\nTimu ya ufuatiliaji ya KRCS imearifiwa na timu ya kukabiliana itafuatilia. "
 		f"Hifadhi namba hii kuangalia hali ya taarifa yako.\n\nNambari ya dharura: *{HOTLINE}* _(bure, saa 24)_",
 		"advice": "Ushauri wa afya",
@@ -748,7 +756,6 @@ T = {
 			"signal_type": "Aina ya ishara",
 			"symptoms": "Dalili",
 			"affected_count": "Idadi",
-			"sex": "Jinsia",
 			"age_group": "Umri",
 			"animal_exposure": "Kugusana na wanyama",
 			"deaths_count": "Vifo",

@@ -30,6 +30,7 @@ from surveillance.whatsapp.conversation.free_text import _clip, advice_for, desc
 from surveillance.whatsapp.conversation.status import one_report
 from surveillance.whatsapp.conversation.steps import (
 	active_steps,
+	area_locked,
 	ask,
 	choose,
 	first_step,
@@ -68,7 +69,7 @@ class RDescribe(State):
 			body = t(s)["describeVoice"] if inp.get("kind") == "audio" else t(s)["describeMedia"]
 			return quiet(choose(s, body, self.options(s, ctx)))
 		if inp["type"] == "location":
-			set_place(s, inp)
+			set_place(s, inp, ctx)
 			return quiet(choose(s, t(s)["describeLocation"], self.options(s, ctx)))
 		if inp["type"] == "text" and len(normalize(inp.get("text"))) >= 3:
 			return describe(s, inp["text"], ctx)
@@ -113,7 +114,11 @@ class RReview(State):
 		return submit(s, ctx)
 
 
-CONSENT_CHOICES = {"none": (0, "No one"), "person": (1, "Person agreed"), "guardian": (1, "Parent or guardian agreed")}
+CONSENT_CHOICES = {
+	"none": (0, "No one"),
+	"person": (1, "Person agreed"),
+	"guardian": (1, "Parent or guardian agreed"),
+}
 
 
 def needs_consent(s):
@@ -126,10 +131,26 @@ class RConsent(State):
 
 	def options(self, s, ctx):
 		return [
-			{"id": "none", "title": t(s)["consentNone"], "aliases": ["no", "none", "no one", "hapana", "hakuna"]},
-			{"id": "person", "title": t(s)["consentPerson"], "aliases": ["yes", "agreed", "ndiyo", "alikubali"]},
-			{"id": "guardian", "title": t(s)["consentGuardian"], "aliases": ["parent", "guardian", "mzazi", "mlezi"]},
-			{"id": "remove", "title": t(s)["consentRemove"], "aliases": ["remove", "delete", "ondoa", "futa"]},
+			{
+				"id": "none",
+				"title": t(s)["consentNone"],
+				"aliases": ["no", "none", "no one", "hapana", "hakuna"],
+			},
+			{
+				"id": "person",
+				"title": t(s)["consentPerson"],
+				"aliases": ["yes", "agreed", "ndiyo", "alikubali"],
+			},
+			{
+				"id": "guardian",
+				"title": t(s)["consentGuardian"],
+				"aliases": ["parent", "guardian", "mzazi", "mlezi"],
+			},
+			{
+				"id": "remove",
+				"title": t(s)["consentRemove"],
+				"aliases": ["remove", "delete", "ondoa", "futa"],
+			},
 		]
 
 	def prompt(self, s, ctx):
@@ -182,7 +203,7 @@ class RDuplicate(State):
 class REdit(State):
 	def options(self, s, ctx):
 		return [
-			*({"id": sid, "title": step_name(s, sid)} for sid in active_steps(s, ctx)),
+			*({"id": sid, "title": step_name(s, sid)} for sid in active_steps(s, ctx, editable=True)),
 			{"id": "back", "title": t(s)["editBack"]},
 			*nav(s),
 		]
@@ -261,9 +282,12 @@ def start_report(s, ctx):
 		if not s.staff:
 			s.mode = None
 			return go("not_staff")
+		if area_locked(s) and not assigned_area_ok(s, ctx):
+			return go("menu", text(t(s)["areaMissing"]))
 	else:
 		s.staff = None
 	s.draft = new_draft(s)
+	s.draft.started = ctx.now()
 	s.editing = False
 	s.symptom_group = None
 	if not s.staff:
@@ -272,6 +296,13 @@ def start_report(s, ctx):
 		seed, s.seed = s.seed, None
 		return describe(s, seed["text"], ctx, seed["extraction"]) if seed else go("r_describe")
 	return go(first_step(s, ctx))
+
+
+def assigned_area_ok(s, ctx):
+	"""Case Report refuses a field-staff report when the account has no region and sub-county, or the
+	sub-county is not in the region, so the reporter is told before filling in the steps."""
+	region, sub_county = s.staff.region, s.staff.sub_county
+	return bool(region and sub_county) and any(x["name"] == sub_county for x in ctx.data.sub_counties(region))
 
 
 def summary(s, ctx):
@@ -289,7 +320,6 @@ def summary(s, ctx):
 		s.staff and (f["signal_type"], d.signal_type),
 		(f["symptoms"], symptom_labels(d.symptoms, symptoms)),
 		(f["affected_count"], d.affected_count),
-		d.sex and (f["sex"], L(s, "sex", d.sex)),
 		d.age_group and (f["age_group"], L(s, "age_group", d.age_group)),
 		d.animal_exposure and (f["animal_exposure"], L(s, "animal_exposure", d.animal_exposure)),
 		(f["deaths_count"], d.deaths_count),
@@ -320,11 +350,11 @@ def build_doc(s, ctx):
 		"latitude": d.latitude,
 		"longitude": d.longitude,
 		"affected_count": d.affected_count,
-		**({"sex": d.sex} if d.sex else {}),  # the field was removed from Case Report on 16/10/2026
 		"symptoms": [{"symptom": sid} for sid in d.symptoms],
 		"onset_date": d.onset_date,
 		"age_group": d.age_group,
 		"animal_exposure": d.animal_exposure,
+		# An Int column is never blank; extraction_note says when deaths were not asked.
 		"deaths_count": d.deaths_count or 0,
 		"additional_notes": "\n\n".join(x for x in [*d.notes, extraction_note(s)] if x) or None,
 		"channel": "WhatsApp",
@@ -338,7 +368,8 @@ def _client_ref(ctx):
 	if not mid:
 		return None
 	import hashlib
-	return "wa:" + hashlib.sha1(str(mid).encode()).hexdigest()   # WhatsApp IDs can exceed 64 characters
+
+	return "wa:" + hashlib.sha1(str(mid).encode()).hexdigest()  # WhatsApp IDs can exceed 64 characters
 
 
 def submit(s, ctx):
@@ -354,6 +385,8 @@ def submit(s, ctx):
 	s.draft = None
 	if draft.description:
 		_call(ctx, "on_extract", report=report, session=s, draft=draft)
+	seconds = round(ctx.now() - draft.started) if draft.started else None
+	_call(ctx, "on_report_stats", report=report, session=s, draft=draft, seconds=seconds)
 	_call(ctx, "on_submit", report=report, session=s, media=list(draft.media), extraction=draft.extraction)
 	return go("r_done", text(t(s)["done"](report["name"])), *advice)
 
@@ -369,6 +402,7 @@ def next_steps(s, report, ctx):
 			ctx.log_error("WhatsApp next steps could not be loaded")
 		a = {}
 	disease, steps = a.get("disease"), a.get("steps") or []
+	general = a.get("general") or N["general"]  # Reporter Advice Settings, else the app's default lines
 	parts = [N["title"]]
 	if disease:
 		parts.append(N["disease"](disease))
@@ -378,7 +412,7 @@ def next_steps(s, report, ctx):
 			for i, x in enumerate(steps, 1)
 		)
 		parts.append("\n".join([N["steps"](disease), *numbered]))
-	parts.append("\n".join([N["also"] if steps else N["next"], *(f"• {g}" for g in N["general"])]))
+	parts.append("\n".join([N["also"] if steps else N["next"], *(f"• {g}" for g in general)]))
 	return [text(p) for p in split_text("\n\n".join(parts))]
 
 
