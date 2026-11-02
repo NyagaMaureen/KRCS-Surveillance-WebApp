@@ -194,6 +194,7 @@ doc_events = {
 	"Region": WHATSAPP_CATALOG,
 	"Sub County": WHATSAPP_CATALOG,
 	"Symptom": WHATSAPP_CATALOG,
+	"Community Advice": WHATSAPP_CATALOG,
 }
 # doc_events = {
 # 	"*": {

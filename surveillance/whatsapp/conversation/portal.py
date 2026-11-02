@@ -16,6 +16,7 @@ from surveillance.whatsapp.conversation.core import (
 	region_label,
 	stay,
 	t,
+	urgent,
 )
 from surveillance.whatsapp.conversation.report import begin_report, seed_report, start_report, verify_staff
 from surveillance.whatsapp.conversation.status import one_report, recent_reports, report_status
@@ -67,7 +68,11 @@ class Welcome(State):
 		# Anything else typed here: a report in the sender's own words starts one; anything else is a question.
 		if inp["type"] != "text" or len(normalize(inp.get("text"))) < 3:
 			return None
-		return seed_report(s, inp["text"], ctx) or (ask_chatbot(s, inp["text"], ctx) if ctx.chatbot else None)
+		if seeded := seed_report(s, inp["text"], ctx):
+			return seeded
+		if urgent(inp):
+			return go("help")
+		return ask_chatbot(s, inp["text"], ctx) if ctx.chatbot else None
 
 
 class NotStaff(State):
@@ -165,6 +170,8 @@ class Menu(State):
 		ref = ref_from(inp)
 		if ref:
 			return stay(text(one_report(s, ctx, ref)))
+		if urgent(inp):
+			return go("help")
 		if _is_question(inp, ctx):
 			return ask_chatbot(s, inp["text"], ctx)
 		return None

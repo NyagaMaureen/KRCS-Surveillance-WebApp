@@ -20,6 +20,7 @@ PHONE = "254799111222"
 STAFF_PHONE = "254711000222"
 STAFF_USER = "wa-staff@example.com"
 DESK = "254700000009"
+DISEASE = "wa-test-disease"
 
 
 class FakeWhatsApp:
@@ -93,7 +94,9 @@ class TestWhatsAppIntegration(FrappeTestCase):
 				"notify_template": "",
 			}
 		).save()
-		cls.sub_county = frappe.get_all("Sub County", fields=["name", "region"], limit=1)[0]
+		cls.sub_county = frappe.get_all(
+			"Sub County", fields=["name", "region", "latitude", "longitude"], limit=1
+		)[0]
 		cls.symptom = (
 			frappe.db.get_value("Symptom", {"symptom_name": "Diarrhea"})
 			or frappe.get_all("Symptom", pluck="name", limit=1)[0]
@@ -110,10 +113,16 @@ class TestWhatsAppIntegration(FrappeTestCase):
 					"roles": [{"role": "CHP"}],
 				}
 			).insert(ignore_permissions=True)
+		# CHPs report only for their assigned region and sub-county (locations.lock_to_assigned_area)
 		frappe.db.set_value(
 			"User",
 			STAFF_USER,
-			{"assigned_region": cls.sub_county.region, "account_status": "Active", "primary_role": "CHP"},
+			{
+				"assigned_region": cls.sub_county.region,
+				"assigned_sub_county": cls.sub_county.name,
+				"account_status": "Active",
+				"primary_role": "CHP",
+			},
 		)
 		data.clear_staff_cache()
 		data.clear_catalog_cache()
@@ -174,6 +183,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 	def test_staff_matched_by_mobile_number_in_any_format(self):
 		st = data.find_staff(STAFF_PHONE)
 		self.assertEqual((st["user"], st["role"], st["region"]), (STAFF_USER, "CHP", self.sub_county.region))
+		self.assertEqual((st["sub_county"], st["area_locked"]), (self.sub_county.name, True))
 		self.assertIn("CHP", data.roles_of(STAFF_USER))
 		user = frappe.get_doc("User", STAFF_USER)
 		user.account_status = "Suspended"
@@ -197,35 +207,78 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertIsNone(data.find_duplicate(self.sub_county.region, []))
 
 	def test_staff_next_steps_from_the_approved_protocol(self):
-		def steps(user=STAFF_USER):
-			a = data.reporter_advice("awd-cholera", user)
+		from surveillance.field_api import UNUSUAL_EVENT, advice_steps
+		from surveillance.protocols import approved_for
+
+		def steps(user=STAFF_USER, disease=DISEASE):
+			a = data.reporter_advice(disease, user)
 			return a["disease"], [s["step"] for s in a["steps"]]
 
-		# Start from a site where CHPs may not view protocols and no AWD protocol is approved.
+		# The site's unusual-event protocol, if it has an approved one, stands in when the disease has none.
+		fallback = [s["step"] for s in advice_steps(approved_for(UNUSUAL_EVENT))]
+		# A disease of its own (a fresh site has none until migrate seeds them). CHPs get the steps because they
+		# create reports, as in protocols.get_reporter_advice; they need not view protocols.
+		if not frappe.db.exists("Role Capability", {"role": "CHP", "capability": "create_reports"}):
+			frappe.get_doc({"doctype": "Role Capability", "role": "CHP", "capability": "create_reports"}).insert(
+				ignore_permissions=True
+			)
+		frappe.get_doc(
+			{
+				"doctype": "Alert Threshold Config",
+				"disease_key": DISEASE,
+				"disease_name": "WA test disease",
+				"threshold": 1,
+			}
+		).insert(ignore_permissions=True)
 		frappe.db.delete("Role Capability", {"role": "CHP", "capability": ["like", "%_response_protocols"]})
-		frappe.db.set_value("Response Protocol", {"disease": "awd-cholera", "status": "Approved"}, "status", "Draft")
 		protocol = frappe.get_doc(
 			{
 				"doctype": "Response Protocol",
-				"title": "AWD / cholera",
-				"disease": "awd-cholera",
+				"title": "WA test protocol",
+				"disease": DISEASE,
 				"status": "Draft",
 				"steps": [
-					{"step": "Give ORS and refer severe cases", "timeframe": "Immediately", "responsible": "CHP"},
+					{
+						"step": "Give ORS and refer severe cases",
+						"timeframe": "Immediately",
+						"responsible": "CHP",
+					},
 					{"step": "Collect stool samples", "responsible": "Surveillance Officer"},
 					{"step": "Tell households to treat water", "responsible": "Community volunteers"},
 				],
 			}
 		).insert(ignore_permissions=True)
-		disease = "Acute Watery Diarrhoea (AWD) / Cholera"
-		self.assertEqual(steps(), (disease, []))  # CHP may not view protocols yet
-		frappe.get_doc({"doctype": "Role Capability", "role": "CHP", "capability": "view_response_protocols"}).insert(
-			ignore_permissions=True
-		)
-		self.assertEqual(steps(), (disease, []))  # only an Approved protocol counts
+		disease = "WA test disease"
+		self.assertEqual(steps("Guest"), (disease, []))  # no right to report, get follow-ups or view protocols
+		self.assertEqual(steps(), (disease, fallback))  # only an Approved protocol counts
 		protocol.db_set("status", "Approved")
-		self.assertEqual(steps(), (disease, ["Give ORS and refer severe cases", "Tell households to treat water"]))
-		self.assertIsNone(data.reporter_advice(None, STAFF_USER))
+		self.assertEqual(
+			steps(), (disease, ["Give ORS and refer severe cases", "Tell households to treat water"])
+		)
+		frappe.db.set_value("Response Protocol Step", protocol.steps[1].name, "show_to_reporters", 1)
+		self.assertEqual(steps(), (disease, ["Collect stool samples"]))  # ticked steps win
+		self.assertEqual(steps(disease=None), (None, fallback))  # no suspected disease
+
+		frappe.db.set_single_value("Reporter Advice Settings", "general_advice", "Line one\n\n  Line two \n")
+		self.assertEqual(data.reporter_advice(DISEASE, STAFF_USER)["general"], ["Line one", "Line two"])
+
+	def test_community_advice_replaces_the_draft_once_approved(self):
+		frappe.db.delete("Community Advice", {"key": "Gastrointestinal"})
+		data.clear_catalog_cache()
+		self.assertNotIn("Gastrointestinal", data.community_advice("sw"))
+
+		def advice(language, text, status="Approved"):
+			return frappe.get_doc(
+				{"doctype": "Community Advice", "key": "Gastrointestinal", "language": language, "text": text, "status": status}
+			).insert(ignore_permissions=True)  # doc_events clear the cache
+
+		advice("sw", "Rasimu", status="Draft")
+		self.assertNotIn("Gastrointestinal", data.community_advice("sw"))  # drafts are not used
+		advice("en", "Approved English")
+		self.assertEqual(data.community_advice("sw")["Gastrointestinal"], "Approved English")  # English fallback
+		advice("sw", "Kiswahili kilichoidhinishwa")
+		self.assertEqual(data.community_advice("sw")["Gastrointestinal"], "Kiswahili kilichoidhinishwa")
+		self.assertEqual(data.community_advice("en")["Gastrointestinal"], "Approved English")
 
 	def test_community_report_end_to_end(self):
 		sent_media = False
@@ -250,7 +303,9 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertEqual(state, "r_done")
 		received = [m for _, m in self.wa.sent if "Report received" in (m.get("body") or "")]
 		self.assertRegex(received[-1]["body"], r"Reference: \*(RPT-\d+)\*")
-		self.assertTrue(any("While you wait for the KRCS team" in (m.get("body") or "") for _, m in self.wa.sent))
+		self.assertTrue(
+			any("While you wait for the KRCS team" in (m.get("body") or "") for _, m in self.wa.sent)
+		)
 		name = self.last_report()
 		doc = frappe.get_doc("Case Report", name)
 		community = frappe.db.get_single_value("WhatsApp Settings", "community_user")
@@ -271,6 +326,8 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		doc.reload()
 		[row] = doc.attachments
 		self.assertEqual(row.attachment_type, "Photo")
+		self.assertEqual((row.people_shown, row.consent), (1, "Parent or guardian agreed"))
+		self.assertTrue(row.consent_recorded_on)
 		self.assertTrue(row.file.startswith("/private/files/"))
 		self.assertEqual(frappe.db.get_value("File", {"file_url": row.file}, "attached_to_name"), name)
 		[(to, alert)] = self.wa.sent
@@ -285,7 +342,14 @@ class TestWhatsAppIntegration(FrappeTestCase):
 
 	def answer(self, state):
 		reply = lambda i: {"type": "reply", "id": i}  # noqa: E731
-		location = {"type": "location", "lat": 0.05, "lng": 40.31, "name": "Ifo Camp"}
+		# At the sub-county's centre, so the pin gives that region and sub-county (or they are asked, if it has none).
+		sc = self.sub_county
+		location = {
+			"type": "location",
+			"lat": sc.latitude or 0.05,
+			"lng": sc.longitude or 40.31,
+			"name": "Ifo Camp",
+		}
 		return {
 			"welcome": reply("community"),
 			"lang": reply("en"),
@@ -295,7 +359,6 @@ class TestWhatsAppIntegration(FrappeTestCase):
 			"r_symptoms": {"type": "text", "text": "diarrhoea"},
 			"r_symptoms_more": reply("done"),
 			"r_count": {"type": "text", "text": "12"},
-			"r_sex": reply("v:Mixed"),
 			"r_age": reply("skip"),
 			"r_exposure": reply("skip"),
 			"r_deaths": reply("none"),
@@ -307,6 +370,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 			"r_onset": reply("today"),
 			"r_extra": reply("review"),
 			"r_review": reply("submit"),
+			"r_consent": reply("guardian"),
 			"r_duplicate": reply("submit"),
 		}[state]
 

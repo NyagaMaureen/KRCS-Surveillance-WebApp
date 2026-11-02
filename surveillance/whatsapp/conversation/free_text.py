@@ -2,7 +2,9 @@
 
 from surveillance.whatsapp import content as C
 from surveillance.whatsapp.conversation.core import (
+	ALL_DISEASE,
 	ANIMALS,
+	HUMANS,
 	AttrDict,
 	L,
 	_unique,
@@ -14,12 +16,12 @@ from surveillance.whatsapp.conversation.core import (
 	symptom_labels,
 	t,
 )
-from surveillance.whatsapp.conversation.steps import auto_sub_county, missing_steps, step_name
+from surveillance.whatsapp.conversation.steps import auto_sub_county, deaths_needed, missing_steps, step_name
 from surveillance.whatsapp.extract import extract_report
 from surveillance.whatsapp.messages import text
 
 FREE_FIELDS = [
-	"region", "sub_county", "location_name", "category", "symptoms", "affected_count", "sex", "age_group",
+	"region", "sub_county", "location_name", "category", "symptoms", "affected_count", "age_group",
 	"animal_exposure", "deaths_count", "onset_date",
 ]  # fmt: skip
 
@@ -53,6 +55,11 @@ def describe(s, value, ctx, x=None):
 		else:
 			d[field] = val
 		d.extraction.filled[field] = val
+	humans = HUMANS in (ctx.data.catalog()["options"].get("category") or [])
+	if humans and not d.category and x["offered"].get("category") not in (ANIMALS, ALL_DISEASE):
+		# Nothing points to animals: a human disease, shown at review where one tap changes it.
+		d.category = HUMANS
+		d.category_assumed = True
 	if d.category == ANIMALS:
 		d.age_group = d.animal_exposure = None
 	if d.region and not d.sub_county:
@@ -82,7 +89,7 @@ def noted_list(s, ctx):
 			continue
 		if field in show:
 			value = show[field]()
-		elif field in ("category", "sex", "age_group", "animal_exposure"):
+		elif field in ("category", "age_group", "animal_exposure"):
 			value = L(s, field, d[field])
 		else:
 			value = d[field]
@@ -116,6 +123,12 @@ def extraction_note(s):
 			filled and "Filled in from the message: " + "; ".join(filled),
 			d.followups
 			and "Asked as follow-up questions: " + ", ".join(step_name(en, sid) for sid in d.followups),
+			d.category_assumed
+			and d.category == HUMANS
+			and "Category: Human Disease assumed (the message did not mention animals).",
+			d.deaths_count is None
+			and not deaths_needed(s)
+			and "Deaths: not asked (one affected, no danger signs).",
 			x.danger_signs and f"Danger signs mentioned: {', '.join(x.danger_signs)} (threat: {x.threat})",
 			x.diseases and f"Disease named by the reporter: {', '.join(x.diseases)}",
 			*(f"Note: {n}" for n in x.notes),
@@ -124,10 +137,23 @@ def extraction_note(s):
 	)
 
 
+def approved_advice(s, ctx):
+	get = getattr(ctx.data, "community_advice", None)
+	if not get:
+		return {}
+	try:
+		return get(s.lang or "en") or {}
+	except Exception:
+		if getattr(ctx, "log_error", None):
+			ctx.log_error("WhatsApp community advice could not be loaded")
+		return {}
+
+
 def advice_for(s, ctx):
-	"""What to do while waiting, for the groups of symptoms reported (draft content, content.ADVICE)."""
+	"""What to do while waiting, for the groups of symptoms reported: approved Community Advice where KRCS
+	has set it, else the draft in content.ADVICE."""
 	d = s.draft
-	A = C.ADVICE.get(s.lang) or C.ADVICE["en"]
+	A = {**(C.ADVICE.get(s.lang) or C.ADVICE["en"]), **approved_advice(s, ctx)}
 	categories = {x["name"]: x.get("category") for x in ctx.data.catalog()["symptoms"]}
 	groups = {categories.get(sid) for sid in d.symptoms}
 	signs = (d.extraction or {}).get("danger_signs") or []
@@ -145,7 +171,7 @@ def advice_for(s, ctx):
 	]
 	parts = [A[g] for g in order if g in groups]
 	animals = (
-		d.category in (ANIMALS, "All Disease")
+		d.category in (ANIMALS, ALL_DISEASE)
 		or d.animal_exposure == "Handled sick or dead animal"
 		or "animal deaths" in signs
 	)

@@ -51,6 +51,7 @@ from surveillance.whatsapp.conversation.core import (
 	split_text,
 	t,
 	to_media,
+	urgent,
 )
 from surveillance.whatsapp.conversation.fields import (
 	OptionalSelect,
@@ -104,6 +105,8 @@ def dispatch(s, inp, ctx):
 
 	kw = normalize(inp.get("text")) if inp["type"] == "text" else None
 	drafting = bool(s.draft) and s.state != "resume"
+	if s.draft:  # messages sent while drafting, for on_report_stats
+		s.draft.messages = (s.draft.messages or 0) + 1
 	if first or (kw and kw in C.KEYWORDS["greeting"]):
 		return pause(s, ctx, idle) if drafting else enter(s, "welcome", ctx)
 	if kw and kw in C.KEYWORDS["language"]:
@@ -127,7 +130,11 @@ def dispatch(s, inp, ctx):
 	choice = resolve_choice(st.options(s, ctx), inp, s.shown)
 	res = st.on(s, inp, choice, ctx)
 	if res:
-		return run(s, res, ctx)
+		out = run(s, res, ctx)
+		# The help screen already lists the emergency numbers; anywhere else they go first.
+		return [text(t(s)["emergency"]), *out] if urgent(inp) and s.state != "help" else out
+	if urgent(inp):
+		return enter(s, "help", ctx)
 
 	if inp["type"] == "media" and s.draft:
 		s.draft.media.append(to_media(inp))
@@ -153,7 +160,6 @@ STATES.update(
 		"r_symptoms": RSymptoms(),
 		"r_symptoms_more": RSymptomsMore(),
 		"r_count": RCount(),
-		"r_sex": SelectStep("r_sex", "sex", "sex"),
 		"r_age": OptionalSelect("r_age", "age_group", "age"),
 		"r_exposure": OptionalSelect("r_exposure", "animal_exposure", "exposure"),
 		"r_deaths": RDeaths(),
