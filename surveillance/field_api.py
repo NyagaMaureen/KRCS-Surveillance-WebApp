@@ -189,7 +189,11 @@ def device_auth():
 		return
 	if not frappe.db.get_value("User", row.user, "enabled"):
 		return
+	# frappe.set_user empties frappe.local.form_dict (the request's parameters). Keep them, as Frappe's own
+	# API-key login does; otherwise every device-key request arrives without its arguments and filters.
+	form_dict = frappe.local.form_dict
 	frappe.set_user(row.user)
+	frappe.local.form_dict = form_dict
 	frappe.local.device_key = row.name
 	frappe.db.set_value("Device Key", row.name, "last_used", now_datetime(), update_modified=False)
 
