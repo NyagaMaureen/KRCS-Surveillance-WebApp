@@ -16,7 +16,7 @@ from surveillance.whatsapp.conversation.core import (
 )
 from surveillance.whatsapp.conversation.free_text import describe
 from surveillance.whatsapp.conversation.report import begin_report, seed_report
-from surveillance.whatsapp.conversation.steps import ask, choose, first_missing
+from surveillance.whatsapp.conversation.steps import ask, choose, first_missing, missing_steps
 from surveillance.whatsapp.messages import menu, text
 
 
@@ -77,6 +77,7 @@ class RNotReport(State):
 
 	def on(self, s, inp, choice, ctx):
 		if choice == "sick":
+			s.draft.followups = missing_steps(s, ctx)
 			return go(first_missing(s, ctx))
 		if choice == "menu":
 			s.draft = None

@@ -5,14 +5,20 @@ Graph API reference: https://developers.facebook.com/docs/whatsapp/cloud-api
 
 import hashlib
 import hmac
+import re
 
 import requests
 
 GRAPH = "https://graph.facebook.com"
 TIMEOUT = 30
+MAX_MEDIA_BYTES = 10 * 1024 * 1024  # the same limit as the web form
 
 
 class WhatsAppError(Exception):
+	pass
+
+
+class MediaTooLarge(WhatsAppError):
 	pass
 
 
@@ -54,8 +60,12 @@ class WhatsAppClient:
 		meta = self.s.get(f"{self.base}/{media_id}", timeout=TIMEOUT)
 		meta.raise_for_status()
 		meta = meta.json()
+		if int(meta.get("file_size") or 0) > MAX_MEDIA_BYTES:
+			raise MediaTooLarge(f"{meta['file_size']} bytes")
 		f = self.s.get(meta["url"], timeout=120)
 		f.raise_for_status()
+		if len(f.content) > MAX_MEDIA_BYTES:
+			raise MediaTooLarge(f"{len(f.content)} bytes")
 		return f.content, meta.get("mime_type")
 
 
@@ -99,7 +109,11 @@ def to_payload(to, msg):
 			},
 		}
 	if kind == "template":
-		params = [{"type": "text", "text": str(p)[:1000]} for p in msg.get("params") or []]
+		# Meta refuses template values with line breaks, tabs or more than three spaces in a row.
+		params = [
+			{"type": "text", "text": re.sub(r"\s*[\r\n\t]+\s*| {4,}", " ", str(p))[:1000]}
+			for p in msg.get("params") or []
+		]
 		return {
 			**base,
 			"type": "template",
@@ -140,6 +154,25 @@ def parse_webhook(body):
 					}
 				)
 	return events
+
+
+def parse_statuses(body):
+	"""Delivery updates for messages we sent, as {id, status, recipient, timestamp, errors}."""
+	return [
+		{
+			"id": x.get("id"),
+			"status": x.get("status"),
+			"recipient": x.get("recipient_id"),
+			"timestamp": int(x.get("timestamp") or 0),
+			"errors": [
+				{"code": e.get("code"), "title": e.get("title") or e.get("message")}
+				for e in x.get("errors") or []
+			],
+		}
+		for entry in (body or {}).get("entry") or []
+		for change in entry.get("changes") or []
+		for x in (change.get("value") or {}).get("statuses") or []
+	]
 
 
 def to_input(m):

@@ -28,6 +28,22 @@ COMMUNITY_SIGNAL = "Community Signal"
 GROUPS = "*"  # s.symptom_group while the list of symptom groups is shown
 
 
+# The files a report accepts (SRS R5), with the extension each is saved under.
+MEDIA_TYPES = {
+	"image/jpeg": "jpg",
+	"image/png": "png",
+	"image/webp": "webp",
+	"audio/ogg": "ogg",
+	"audio/mpeg": "mp3",
+	"audio/mp4": "m4a",
+	"audio/aac": "aac",
+	"audio/amr": "amr",
+	"video/mp4": "mp4",
+	"video/3gpp": "3gp",
+	"application/pdf": "pdf",
+}
+
+
 STATES = {}  # state id -> State, filled in by the package __init__
 
 
@@ -218,6 +234,11 @@ def parse_date(value, now):
 
 def show_date(iso):
 	return "/".join(reversed(str(iso).split("-"))) if iso else "—"
+
+
+def media_allowed(inp):
+	"""WhatsApp voice notes arrive as "audio/ogg; codecs=opus"."""
+	return (inp.get("mime_type") or "").split(";")[0].strip().lower() in MEDIA_TYPES
 
 
 def to_media(inp):

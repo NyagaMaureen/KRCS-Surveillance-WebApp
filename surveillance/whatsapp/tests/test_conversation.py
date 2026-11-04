@@ -7,6 +7,7 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from frappe.tests.utils import FrappeTestCase
 
@@ -426,7 +427,7 @@ class TestConversation(FrappeTestCase):
 		h.tap("Proceed to review")
 		self.assertIn("*Symptoms:* Diarrhea, Vomiting", h.bodies())
 		h.tap("Confirm & submit")
-		self.assertIn("Does any photo or voice note show or record a person?", h.bodies())  # a photo: consent first
+		self.assertIn("Does any photo, video, voice note or file show or record a person?", h.bodies())  # a photo: consent first
 		h.tap("No person in them")
 		self.assertRegex(h.bodies(), r"Report received[\s\S]*RPT-001")
 
@@ -1330,6 +1331,20 @@ class TestFreeText(FrappeTestCase):
 		g.say("please come and see us")
 		g.tap("Someone is sick")
 		self.assertEqual(g.s.state, "r_region")
+		# The total is known from the first question and does not grow as each one is asked.
+		first = re.findall(r"Step (\d+) of (\d+)", g.bodies())[-1]
+		g.tap("Dadaab")
+		second = re.findall(r"Step (\d+) of (\d+)", g.bodies())[-1]
+		self.assertEqual((first[0], second[0]), ("1", "2"))
+		self.assertEqual(first[1], second[1])
+
+	def test_animal_bite_is_a_report_without_the_service(self):
+		h = Harness(self, PUBLIC)
+		start(h, guided=False)
+		h.say("Someone in my area was bitten by a dog")
+		self.assertNotIn("could not find signs of illness", h.bodies())
+		self.assertEqual(h.s.draft.animal_exposure, "Bite or scratch")
+		self.assertEqual(h.s.draft.extraction.extractor, "keywords-fallback")
 
 	def test_report_typed_on_welcome_screen_starts_free_text_report_in_its_language(self):
 		h = Harness(self, PUBLIC)
@@ -1360,3 +1375,101 @@ class TestFreeText(FrappeTestCase):
 		)
 		self.assertEqual(h.s.draft.symptoms, ["sym-21"])
 		self.assertEqual(len(h.s.draft.media), 2)
+
+	def test_file_types_outside_the_list_are_refused(self):
+		h = Harness(self, PUBLIC)
+		start(h, guided=False)
+		h.send({"type": "media", "kind": "document", "media_id": "x", "mime_type": "application/x-msdownload"})
+		self.assertIn("cannot be added to a report", h.bodies())
+		self.assertEqual(h.s.draft.media, [])
+		h.send({"type": "media", "kind": "audio", "media_id": "v", "mime_type": "audio/ogg; codecs=opus"})
+		self.assertEqual([m["media_id"] for m in h.s.draft.media], ["v"])
+
+	def _to_review_with_media(self, h, *media):
+		start(h)
+		fill_location(h)
+		h.tap("Amina")
+		fill_common_steps(h)
+		h.tap("Today")
+		for m in media:
+			h.send(m)
+		h.tap("Proceed to review" if media else "Skip & review")
+
+	def test_videos_and_files_need_consent_too(self):
+		for kind, mime in (("video", "video/mp4"), ("document", "application/pdf")):
+			h = Harness(self, PUBLIC)
+			self._to_review_with_media(h, {"type": "media", "kind": kind, "media_id": "m1", "mime_type": mime})
+			h.tap("Confirm & submit")
+			self.assertEqual(h.s.state, "r_consent")
+			h.tap("Person agreed")
+			[(_, media)] = h.submitted
+			self.assertEqual((media[0]["people_shown"], media[0]["consent"]), (1, "Person agreed"))
+
+	def test_removing_attachments_removes_all_of_them(self):
+		h = Harness(self, PUBLIC)
+		self._to_review_with_media(
+			h,
+			{"type": "media", "kind": "image", "media_id": "m1", "mime_type": "image/jpeg"},
+			{"type": "media", "kind": "document", "media_id": "m2", "mime_type": "application/pdf"},
+		)
+		h.tap("Confirm & submit")
+		h.tap("Remove them")
+		[(_, media)] = h.submitted
+		self.assertEqual(media, [])
+
+	def test_a_file_sent_at_the_duplicate_question_still_needs_consent(self):
+		h = Harness(self, PUBLIC)
+		self._to_review_with_media(h)
+		h.tap("Confirm & submit")
+		self._to_review_with_media(h)
+		h.tap("Confirm & submit")
+		self.assertEqual(h.s.state, "r_duplicate")
+		h.send({"type": "media", "kind": "image", "media_id": "m9", "mime_type": "image/jpeg"})
+		h.send({"type": "reply", "id": "submit"})  # the button shown before the photo arrived
+		self.assertEqual(h.s.state, "r_consent")
+		h.tap("No person in them")
+		self.assertEqual(h.s.state, "r_done")
+		self.assertEqual(h.submitted[-1][1][0]["consent"], "No one")
+
+	def test_a_deactivated_staff_member_loses_staff_access_at_once(self):
+		bot = FakeChatbot()
+		h = Harness(self, STAFF, chatbot=bot)
+		start(h, "staff")
+		h.tap("Ask a question")
+		h.say("cholera steps")
+		self.assertEqual(bot.calls[-1]["roles"], ["CHP"])
+		asked = len(bot.calls)
+		with patch.dict(DEMO_STAFF, clear=True):
+			h.say("cholera steps again")
+			self.assertEqual(h.s.state, "not_staff")
+			self.assertIsNone(h.s.staff)
+			self.assertEqual(len(bot.calls), asked)
+
+	def test_a_draft_does_not_survive_the_account_being_deactivated(self):
+		h = Harness(self, STAFF)
+		start(h, "staff")
+		h.tap("Report")
+		self.assertTrue(h.s.draft)
+		with patch.dict(DEMO_STAFF, clear=True):
+			h.say("hello")
+		self.assertIsNone(h.s.draft)
+		self.assertEqual(h.s.state, "not_staff")
+
+	def test_a_number_given_to_another_user_starts_again_as_them(self):
+		h = Harness(self, STAFF)
+		start(h, "staff")
+		other = {**DEMO_STAFF[STAFF], "user": "new.person@krcs.test", "full_name": "New Person"}
+		with patch.dict(DEMO_STAFF, {STAFF: other}):
+			h.say("hello")
+		self.assertEqual(h.s.staff.user, "new.person@krcs.test")
+		self.assertEqual(h.s.state, "menu")
+
+	def test_staff_details_stay_current_between_messages(self):
+		h = Harness(self, STAFF)
+		start(h, "staff")
+		self.assertEqual(h.s.staff.region_label, "Dadaab")
+		moved = {**DEMO_STAFF[STAFF], "region": "reg-kalobeyei"}
+		with patch.dict(DEMO_STAFF, {STAFF: moved}):
+			h.say("something")
+		self.assertEqual(h.s.staff.region, "reg-kalobeyei")
+		self.assertNotEqual(h.s.staff.region_label, "Dadaab")  # not the old region's name

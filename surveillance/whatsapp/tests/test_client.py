@@ -2,10 +2,19 @@
 
 import hashlib
 import hmac
+from types import SimpleNamespace
 
 from frappe.tests.utils import FrappeTestCase
 
-from surveillance.whatsapp.client import parse_webhook, to_payload, verify_signature
+from surveillance.whatsapp.client import (
+	MAX_MEDIA_BYTES,
+	MediaTooLarge,
+	WhatsAppClient,
+	parse_statuses,
+	parse_webhook,
+	to_payload,
+	verify_signature,
+)
 from surveillance.whatsapp.messages import menu
 
 
@@ -110,6 +119,68 @@ class TestClient(FrappeTestCase):
 			"1", {"kind": "template", "name": "report_alert", "lang": "en", "params": ["RPT-1", 2]}
 		)
 		self.assertEqual(tpl["template"]["components"][0]["parameters"][1], {"type": "text", "text": "2"})
+
+	def test_template_values_are_made_acceptable_to_meta(self):
+		tpl = to_payload(
+			"1", {"kind": "template", "name": "t", "lang": "en", "params": ["line one\n\nline two\tend     x"]}
+		)
+		self.assertEqual(tpl["template"]["components"][0]["parameters"][0]["text"], "line one line two end x")
+
+	def test_delivery_updates(self):
+		body = {
+			"entry": [
+				{
+					"changes": [
+						{
+							"value": {
+								"statuses": [
+									{"id": "w1", "status": "delivered", "recipient_id": "254700", "timestamp": "5"},
+									{
+										"id": "w2",
+										"status": "failed",
+										"recipient_id": "254701",
+										"timestamp": "6",
+										"errors": [{"code": 131047, "title": "Re-engagement message"}],
+									},
+								]
+							}
+						}
+					]
+				}
+			]
+		}
+		[ok, failed] = parse_statuses(body)
+		self.assertEqual((ok["id"], ok["status"], ok["recipient"], ok["errors"]), ("w1", "delivered", "254700", []))
+		self.assertEqual(failed["errors"], [{"code": 131047, "title": "Re-engagement message"}])
+		self.assertEqual(parse_statuses(wrap({"from": "1", "id": "w", "type": "text"})), [])
+
+	def _client_serving(self, meta, content=b"x"):
+		class Reply:
+			def __init__(self, json_body=None, content=b""):
+				self.body, self.content = json_body, content
+
+			def raise_for_status(self):
+				pass
+
+			def json(self):
+				return self.body
+
+		wa = WhatsAppClient("token", "1")
+		wa.s = SimpleNamespace(
+			calls=[],
+			get=lambda url, timeout: Reply(content=content) if url == meta["url"] else Reply(meta),
+		)
+		return wa
+
+	def test_media_over_the_limit_is_refused(self):
+		ok = {"url": "https://m/f", "mime_type": "image/png", "file_size": 3}
+		self.assertEqual(self._client_serving(ok).download_media("m"), (b"x", "image/png"))
+		with self.assertRaises(MediaTooLarge):
+			self._client_serving({**ok, "file_size": MAX_MEDIA_BYTES + 1}).download_media("m")
+		with self.assertRaises(MediaTooLarge):  # Meta did not give a size
+			self._client_serving(
+				{"url": "https://m/f", "mime_type": "image/png"}, content=b"x" * (MAX_MEDIA_BYTES + 1)
+			).download_media("m")
 
 	def test_signatures(self):
 		body = b'{"a":1}'

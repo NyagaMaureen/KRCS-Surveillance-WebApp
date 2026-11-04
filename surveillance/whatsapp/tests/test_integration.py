@@ -6,15 +6,18 @@ test data is rolled back with the test.
 
 import hashlib
 import hmac
+import io
 import json
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from pypdf import PdfWriter
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from surveillance.whatsapp import data, jobs, sessions, setup, webhook
+from surveillance.whatsapp.client import MediaTooLarge
 
 PHONE = "254799111222"
 STAFF_PHONE = "254711000222"
@@ -26,6 +29,7 @@ DISEASE = "wa-test-disease"
 class FakeWhatsApp:
 	def __init__(self):
 		self.sent = []
+		self.files = {}
 
 	def send(self, to, msg):
 		self.sent.append((to, msg))
@@ -35,7 +39,9 @@ class FakeWhatsApp:
 		pass
 
 	def download_media(self, media_id):
-		return b"\x89PNG\r\n\x1a\n fake image", "image/png"
+		if media_id == "big":
+			raise MediaTooLarge("11 MB")
+		return self.files.get(media_id) or (b"\x89PNG\r\n\x1a\n fake image", "image/png")
 
 
 def set_request(method="GET", query=None, body=b"", headers=None):
@@ -205,6 +211,84 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		dup = data.find_duplicate(self.sub_county.region, [self.symptom])
 		self.assertEqual(dup["name"], report["name"])
 		self.assertIsNone(data.find_duplicate(self.sub_county.region, []))
+
+	def test_delivery_updates_are_logged_and_failures_reach_the_error_log(self):
+		body = json.dumps(
+			{
+				"entry": [
+					{
+						"changes": [
+							{
+								"value": {
+									"statuses": [
+										{"id": "w1", "status": "delivered", "recipient_id": DESK, "timestamp": "5"},
+										{
+											"id": "w2",
+											"status": "failed",
+											"recipient_id": DESK,
+											"timestamp": "6",
+											"errors": [{"code": 131047, "title": "Re-engagement message"}],
+										},
+									]
+								}
+							}
+						]
+					}
+				]
+			}
+		).encode()
+		set_request("POST", body=body, headers=signed(body))
+		with patch.object(jobs.frappe, "log_error") as log_error:
+			self.assertEqual(webhook.webhook().status_code, 200)
+		[call] = log_error.call_args_list
+		self.assertIn("131047", call.kwargs["title"])
+		self.assertEqual(self.enqueue.call_count, 0)  # a delivery update is not a message to answer
+
+	def test_escalation_uses_the_template_when_one_is_set(self):
+		st = frappe._dict(
+			escalation_numbers=DESK, notify_numbers="", escalation_template="", notify_template_language="sw"
+		)
+		with patch.object(data, "settings", return_value=st):
+			jobs.send_escalation("Why?", "Amina", PHONE, None, "no_match")
+			self.assertEqual(self.wa.sent[-1][1]["kind"], "text")
+			st.escalation_template = "question_for_desk"
+			jobs.send_escalation("Why?\nReally?", "Amina", PHONE, None, None)
+		[(to, msg)] = self.wa.sent[-1:]
+		self.assertEqual((to, msg["kind"], msg["name"], msg["lang"]), (DESK, "template", "question_for_desk", "sw"))
+		self.assertEqual(msg["params"], [f"Amina {jobs.format_phone(PHONE)}", "—", "—", "Why?\nReally?"])
+
+	def test_media_rows_carry_consent_and_a_failed_file_is_reported(self):
+		name = data.create_report(self.case_report(STAFF_USER, STAFF_PHONE))["name"]
+		answer = {"people_shown": 1, "consent": "Person agreed"}
+		media = [
+			{"kind": "video", "media_id": "video", "mime_type": "video/mp4", **answer},
+			{"kind": "document", "media_id": "pdf", "mime_type": "application/pdf", **answer},
+			{"kind": "image", "media_id": "big", "mime_type": "image/png", **answer},
+			{"kind": "document", "media_id": "exe", "mime_type": "application/pdf", **answer},
+		]
+		pdf = io.BytesIO()  # a real one: Frappe checks PDFs when a File is saved
+		writer = PdfWriter()
+		writer.add_blank_page(72, 72)
+		writer.write(pdf)
+		self.wa.files = {
+			"video": (b"\x00\x00\x00\x18ftypmp42", "video/mp4"),
+			"pdf": (pdf.getvalue(), "application/pdf"),
+			"exe": (b"MZ", "application/x-msdownload"),  # not what WhatsApp declared
+		}
+		with patch.object(frappe, "log_error"):
+			jobs.after_submit(name, media, PHONE, lang="sw")
+		rows = frappe.get_doc("Case Report", name).attachments
+		self.assertEqual(
+			[(r.attachment_type, r.people_shown, r.consent) for r in rows[:2]],
+			[("Attachment", 1, "Person agreed"), ("Attachment", 1, "Person agreed")],
+		)
+		self.assertTrue(all(r.consent_recorded_on for r in rows[:2]))
+		self.assertEqual(rows[2].attachment_type, "Text Note")
+		self.assertIn("2 of 4", rows[2].text_content)
+		told = [m for to, m in self.wa.sent if to == PHONE]
+		self.assertEqual(len(told), 1)
+		self.assertIn(name, told[0]["body"])
+		self.assertIn("MB 10", told[0]["body"])
 
 	def test_staff_next_steps_from_the_approved_protocol(self):
 		from surveillance.field_api import UNUSUAL_EVENT, advice_steps
