@@ -11,10 +11,10 @@ const SEVERITY_RANK = { critical: 0, high: 1, standard: 2 }
 const SEVERITIES = [
   { key: 'critical', label: 'Critical' },
   { key: 'high', label: 'High' },
-  { key: 'standard', label: 'Standard' },
+  { key: 'standard', label: 'Normal' },
 ]
-const SOURCES = ['CBS', 'Field']
-const SOURCE_NAME = { CBS: 'CBS', Field: 'Field report' }
+// The channel is where each report came from: Mobile, WhatsApp, Web, SMS, USSD, or CBS / EMR for those feeds
+const channelsOf = (e) => (e.channels && e.channels.length ? e.channels : (e.sources || []).map((x) => (x === 'Field' ? 'Field report' : x)))
 // Target time to start verification, by severity (same as the Epi Trends recommended actions)
 const TARGET_HOURS = { critical: 24, high: 48, standard: 72 }
 const WAITING_STATUSES = ['New', 'Verifying']
@@ -77,16 +77,6 @@ function sortEvents(list, sort) {
 
 const SELECT_SOFT = `h-9 bg-white border border-gray-200 rounded-lg px-3 text-sm text-gray-700 ${FOCUS}`
 
-const PRIORITY_STYLE = {
-  critical: 'border-red-300 text-red-700',
-  high: 'border-amber-300 text-amber-600',
-  standard: 'border-gray-300 text-gray-500',
-}
-function PriorityPill({ severity }) {
-  const s = (severity || 'standard').toLowerCase()
-  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${PRIORITY_STYLE[s] || PRIORITY_STYLE.standard}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>
-}
-
 const STATUS_STYLE = {
   New: 'bg-red-600 text-white',
   Verifying: 'bg-gray-200 text-gray-700',
@@ -119,7 +109,7 @@ export default function AlertsSignalsQueue() {
   const sort = SORTS.some((s) => s.key === params.get('sort')) ? params.get('sort') : 'risk'
   const q = params.get('q') || ''
   const disease = params.get('disease') || ''
-  const source = SOURCES.includes(params.get('source')) ? params.get('source') : ''
+  const channel = params.get('channel') || ''
   const sevFilter = SEVERITIES.some((s) => s.key === params.get('sev')) ? params.get('sev') : ''
   const overdueOnly = params.get('overdue') === '1'
 
@@ -170,7 +160,7 @@ export default function AlertsSignalsQueue() {
         setLoading(true)
         setError('')
       }
-      return getReviewEvents({ status: 'All', disease, source, search: q, limit: 500 })
+      return getReviewEvents({ status: 'All', disease, search: q, limit: 500 })
         .then((res) => {
           if (mine !== reqId.current) return
           setEvents(res?.events || [])
@@ -188,7 +178,7 @@ export default function AlertsSignalsQueue() {
           if (mine === reqId.current && !silent) setLoading(false)
         })
     },
-    [disease, source, q]
+    [disease, q]
   )
 
   useEffect(() => {
@@ -208,27 +198,30 @@ export default function AlertsSignalsQueue() {
     let list = events
     if (statuses) list = list.filter((e) => statuses.includes(e.status))
     if (sevFilter) list = list.filter((e) => e.severity === sevFilter)
+    if (channel) list = list.filter((e) => channelsOf(e).includes(channel))
     if (overdueOnly) list = list.filter((e) => waitInfo(e)?.state === 'over')
     return sortEvents(list, sort)
-  }, [events, statuses, sevFilter, overdueOnly, sort])
+  }, [events, statuses, sevFilter, channel, overdueOnly, sort])
+  const channelOptions = useMemo(() => [...new Set(events.flatMap(channelsOf))].sort(), [events])
 
   const tabCount = (t) => (t.statuses ? events.filter((e) => t.statuses.includes(e.status)).length : events.length)
 
-  const filtersActive = !!(q || disease || source || sevFilter || overdueOnly)
+  const filtersActive = !!(q || disease || channel || sevFilter || overdueOnly)
   const clearFilters = () => {
     setSearchText('')
-    setParam({ q: '', disease: '', source: '', sev: '', overdue: '' })
+    setParam({ q: '', disease: '', channel: '', sev: '', overdue: '' })
   }
   const open = (ev) => navigate({ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: location.search })
 
   const [page, setPage] = useState(0)
-  useEffect(() => setPage(0), [tab, q, disease, source, sevFilter, overdueOnly, sort])
+  useEffect(() => setPage(0), [tab, q, disease, channel, sevFilter, overdueOnly, sort])
   const PAGE = 10
   const lastPage = Math.max(0, Math.ceil(visibleEvents.length / PAGE) - 1)
   const pageRows = visibleEvents.slice(page * PAGE, page * PAGE + PAGE)
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000
   const closedThisWeek = events.filter((e) => ['Closed', 'Discarded'].includes(e.status) && time(e.closedAt || e.modified || e.lastSeen) >= weekAgo).length
   const stats = [
+    { key: 'all', label: 'All statuses', value: events.length },
     { key: 'new', label: 'To review', value: tabCount(TABS[0]) },
     { key: 'verifying', label: 'Verifying', value: tabCount(TABS[1]) },
     { key: 'investigating', label: 'In the field', value: tabCount(TABS[2]) },
@@ -242,7 +235,7 @@ export default function AlertsSignalsQueue() {
   return (
     <AppShell>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
-        <div className="max-w-2xl">
+        <div className="w-full max-w-none">
           <h1 className="text-xl font-semibold text-brand-navy">Review Queue</h1>
           <p className="text-sm text-gray-500 mt-0.5">Individual reports of priority diseases from CHPs and CBS. Each one needs an officer to verify it, investigate if needed, and record a decision.</p>
           <Link to="/epi-trends" className={`inline-block text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2 mt-1 rounded ${FOCUS}`}>Looking for diseases rising over several weeks? See Epi Trends</Link>
@@ -261,7 +254,7 @@ export default function AlertsSignalsQueue() {
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {stats.map(({ key, label, value }) => {
               const on = key === 'overdue' ? overdueOnly : tab === key && !overdueOnly
               const alarm = key === 'overdue' && value > 0
@@ -289,9 +282,9 @@ export default function AlertsSignalsQueue() {
               <option value="">All diseases</option>
               {diseases.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
             </select>
-            <select aria-label="Source" value={source} onChange={(e) => setParam({ source: e.target.value })} className={SELECT_SOFT}>
-              <option value="">All sources</option>
-              {SOURCES.map((x) => <option key={x} value={x}>{SOURCE_NAME[x]}</option>)}
+            <select aria-label="Channel" value={channel} onChange={(e) => setParam({ channel: e.target.value })} className={SELECT_SOFT}>
+              <option value="">All channels</option>
+              {channelOptions.map((x) => <option key={x} value={x}>{x}</option>)}
             </select>
             {filtersActive && (
               <button onClick={clearFilters} className={`inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 rounded ${FOCUS}`}>
@@ -314,9 +307,9 @@ export default function AlertsSignalsQueue() {
                     <th className="px-3 py-2.5 font-medium rounded-l-lg w-10 text-gray-400">#</th>
                     <th className="px-3 py-2.5 font-medium">Event ID</th>
                     <th className="px-3 py-2.5 font-medium">Disease</th>
-                    <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Source</th>
+                    <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Channel</th>
                     <th className="px-3 py-2.5 font-medium hidden md:table-cell">Location</th>
-                    <th className="px-3 py-2.5 font-medium">Priority</th>
+                    <th className="px-3 py-2.5 font-medium">Risk</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
                     <th className="px-3 py-2.5 font-medium rounded-r-lg"><span className="sr-only">Actions</span></th>
                   </tr>
@@ -354,12 +347,11 @@ export default function AlertsSignalsQueue() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-3.5 hidden lg:table-cell text-gray-500 whitespace-nowrap">{(ev.sources || []).map((x) => SOURCE_NAME[x] || x).join(', ') || '—'}</td>
+                          <td className="px-3 py-3.5 hidden lg:table-cell text-gray-500 whitespace-nowrap">{channelsOf(ev).join(', ') || '—'}</td>
                           <td className="px-3 py-3.5 hidden md:table-cell text-gray-600">{place || <span className="text-amber-600">Location missing</span>}</td>
                           <td className="px-3 py-3.5 whitespace-nowrap">
                             <span className="inline-flex items-center gap-1.5 flex-nowrap">
-                              <PriorityPill severity={ev.severity} />
-                              <RiskPill risk={ev.risk} />
+                              <RiskPill risk={ev.risk} severity={ev.severity} />
                             </span>
                             {w && w.state !== 'ok' && (
                               <span className={`block text-xs mt-1 ${w.state === 'over' ? 'text-red-700' : 'text-amber-600'}`} title={`Target: start verification within ${w.target} h`}>

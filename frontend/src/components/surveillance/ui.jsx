@@ -6,7 +6,7 @@ export const BTN_SECONDARY = `inline-flex items-center gap-1.5 h-9 border border
 const SEVERITY = {
   critical: { label: 'Critical', dot: 'bg-red-600' },
   high: { label: 'High', dot: 'bg-amber-500' },
-  standard: { label: 'Standard', dot: 'bg-gray-400' },
+  standard: { label: 'Normal', dot: 'bg-gray-400' },
 }
 export const sev = (s) => SEVERITY[s] || SEVERITY.standard
 

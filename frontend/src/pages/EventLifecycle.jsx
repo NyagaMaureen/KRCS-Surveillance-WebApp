@@ -5,7 +5,7 @@ import AppShell from '../components/layout/AppShell'
 import { getLifecycle, getEventLifecycle } from '../api/frappe'
 import { FOCUS, CARD, INPUT, Badge, Skeleton } from '../components/chp/ui'
 
-const SEVERITY = { critical: { label: 'Critical', tone: 'red' }, high: { label: 'High', tone: 'amber' }, standard: { label: 'Standard', tone: 'gray' } }
+const SEVERITY = { critical: { label: 'Critical', tone: 'red' }, high: { label: 'High', tone: 'amber' }, standard: { label: 'Normal', tone: 'gray' } }
 
 function fmt(d) {
   if (!d) return ''
@@ -61,7 +61,7 @@ export default function EventLifecycle() {
             className={`${INPUT} pl-9 bg-gray-50 border-gray-100`} />
         </div>
         <select aria-label="Severity" value={severity} onChange={(e) => setSeverity(e.target.value)} className={`${INPUT} w-auto`}>
-          <option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="standard">Standard</option>
+          <option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="standard">Normal</option>
         </select>
       </div>
 
@@ -76,7 +76,7 @@ export default function EventLifecycle() {
                     className={`w-full text-left rounded-xl border p-3.5 ${FOCUS} ${selected === e.id ? 'border-gray-900' : 'border-gray-100 hover:bg-gray-50/60'}`}>
                     <span className="flex items-center justify-between gap-2">
                       <span className="text-xs text-gray-400">{e.id}</span>
-                      <Badge tone={SEVERITY[e.severity]?.tone}>{SEVERITY[e.severity]?.label || 'Standard'}</Badge>
+                      <Badge tone={SEVERITY[e.severity]?.tone}>{SEVERITY[e.severity]?.label || 'Normal'}</Badge>
                     </span>
                     <span className="block text-sm font-medium text-gray-900 mt-1">{e.title}</span>
                     <span className="block text-xs text-gray-500 mt-0.5">

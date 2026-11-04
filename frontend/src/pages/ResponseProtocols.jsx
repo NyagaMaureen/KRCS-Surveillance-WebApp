@@ -504,7 +504,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
           </label>
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer whitespace-nowrap" title="Sent to the CHP or WhatsApp reporter as advice right after they report this disease">
             <input type="checkbox" checked={!!st.show_to_reporters} onChange={(e) => setStep(i, { show_to_reporters: e.target.checked })} className="w-4 h-4 accent-red-600" />
-            Show to reporters
+            Show to  CHP/Community Reporters
           </label>
         </div>
       </div>

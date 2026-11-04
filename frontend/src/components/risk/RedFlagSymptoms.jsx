@@ -42,7 +42,6 @@ export default function RedFlagSymptoms() {
           <h3 className="text-base font-semibold text-gray-900">Red-flag symptoms</h3>
           <p className="text-sm text-gray-500 mt-1">
             Symptoms that suggest a severe case. A report with any of these gets red-flag points in the risk score.
-            CHPs pick symptoms as usual; nothing changes for them.
           </p>
         </div>
         <button type="button" disabled={saving} onClick={() => setPicking((v) => !v)}

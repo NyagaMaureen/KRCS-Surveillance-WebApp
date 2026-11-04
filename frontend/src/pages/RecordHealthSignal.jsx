@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Paperclip, FileText, X, Stethoscope, MapPin, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Loader2, Paperclip, FileText, X, Stethoscope, MapPin, AlertCircle, CheckCircle2, HelpCircle } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import SymptomPicker from '../components/report/SymptomPicker'
 import PhotoField, { ImageModal, UploadStatus } from '../components/report/PhotoField'
 import VoiceField from '../components/report/VoiceField'
 import ConsentQuestion, { consentOk, consentFields } from '../components/report/ConsentQuestion'
-import { getList, createReport, getMyProfile, getLoggedInUserPhone, getSubCounties, uploadFile, uploadFileWithProgress, classifyPreview, getReporterAdvice } from '../api/frappe'
+import { getList, createReport, getMyProfile, getLoggedInUserPhone, getSubCounties, uploadFile, uploadFileWithProgress, classifyPreview, getModelHint, getReporterAdvice } from '../api/frappe'
 import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS } from '../data/formOptions'
 import { formatDuration, photoExtension } from '../utils/media'
 
@@ -165,6 +165,16 @@ export default function RecordHealthSignal() {
     }, 400)
     return () => clearTimeout(classifyTimerRef.current)
   }, [form.symptoms, form.age_group, form.animal_exposure])
+
+  const [modelHint, setModelHint] = useState([])
+  useEffect(() => {
+    if (currentStep !== 4 || !form.symptoms.length) { setModelHint([]); return }
+    let live = true
+    getModelHint({ symptoms: form.symptoms, age_group: form.age_group })
+      .then((r) => live && setModelHint((r.suggestions || []).filter((m) => !(m.key && classifyResults.some((c) => c.key === m.key)))))
+      .catch(() => live && setModelHint([]))
+    return () => { live = false }
+  }, [currentStep, form.symptoms, form.age_group, classifyResults])
 
   useEffect(() => () => {
     photosRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl))
@@ -453,7 +463,7 @@ export default function RecordHealthSignal() {
             </div>
             <div className="rounded-xl border border-red-100 bg-red-50/60 p-4 mb-6">
               <p className="text-xs text-gray-500">Suspected disease</p>
-              <p className="text-base font-semibold text-gray-900">{sent.diseaseName || 'No disease matched: treated as an unusual event'}</p>
+              <p className="text-base font-semibold text-gray-900">{sent.diseaseName || (modelHint.length ? `Possible: ${modelHint.map((m) => m.name).join(', ')} (AI model, to be confirmed by an officer)` : 'No disease matched: treated as an unusual event')}</p>
               <p className="text-xs text-gray-400 mt-0.5">Based on the signs you entered. An officer will verify.</p>
             </div>
             {(sent.advice?.steps?.length > 0 || sent.advice?.general?.length > 0) && (
@@ -614,9 +624,7 @@ export default function RecordHealthSignal() {
                       <CheckCircle2 className="w-3.5 h-3.5" /> Captured ✓ {form.latitude.toFixed(5)}, {form.longitude.toFixed(5)} (±{Math.round(form.gps_accuracy)} m)
                     </span>
                   )}
-                  {!manualGps && (
-                    <button type="button" onClick={() => setManualGps(true)} className="text-xs text-gray-500 underline hover:text-gray-800">Enter manually</button>
-                  )}
+                 
                 </div>
                 {geoError && <p className="text-xs text-red-700 mt-1.5">{geoError}</p>}
                 {manualGps && (
@@ -817,14 +825,49 @@ export default function RecordHealthSignal() {
           {currentStep === 4 && (
             <div>
               <h3 className="font-bold text-center text-gray-900 mb-6">Review your report</h3>
-              <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-100 bg-red-50/60 p-4">
-                <Stethoscope className="w-5 h-5 text-red-700 shrink-0 mt-0.5" aria-hidden="true" />
-                <div>
-                  <p className="text-xs text-gray-500">Suspected disease (from the signs you entered)</p>
-                  <p className="text-base font-semibold text-gray-900">{classifyResults[0]?.name || 'No disease matched; it will be reviewed as an unusual event'}</p>
-                  {classifyResults.length > 1 && <p className="text-xs text-gray-500 mt-0.5">Also consistent with: {classifyResults.slice(1).map((r) => r.name).join(', ')}</p>}
-                  <p className="text-xs text-gray-400 mt-1">Based on Ministry of Health case definitions. An officer will verify.</p>
+              <div className="mb-6 rounded-xl border border-red-100 bg-red-50/60 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Stethoscope className="w-5 h-5 text-red-700 shrink-0" aria-hidden="true" />
+                  <p className="text-sm font-semibold text-gray-900">What the signs suggest</p>
                 </div>
+                {!classifyResults.length && !modelHint.length && (
+                  <p className="text-sm text-gray-700">No disease matched. It will be reviewed as an unusual event.</p>
+                )}
+                <div className="space-y-2">
+                  {classifyResults.map((r) => (
+                    <div key={r.key} className="rounded-lg bg-white border border-red-100 px-3 py-2">
+                      <p className="text-sm font-semibold text-gray-900">{r.name}</p>
+                      <p className="text-xs text-gray-500">Matches the official case definition</p>
+                    </div>
+                  ))}
+                  {modelHint.map((m) => {
+                    const signs = ((m.why && m.why.for) || []).filter((x) => !x.startsWith('age '))
+                    const ask = (m.why && m.why.ask) || []
+                    return (
+                      <div key={m.name} className="rounded-lg bg-white border border-gray-100 px-3 py-2">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <p className="text-sm font-semibold text-gray-900">{m.name}</p>
+                          <span className="shrink-0 text-xs text-gray-500">AI estimate {Math.round(m.probability * 100)}%</span>
+                        </div>
+                        {signs.length > 0 && <p className="text-xs text-gray-600 mt-0.5"><span className="text-gray-400">Signs:</span> {signs.join(', ')}</p>}
+                        {ask.length > 0 && (
+                          <p className="flex items-start gap-1 text-xs text-gray-700 mt-0.5">
+                            <HelpCircle className="w-3.5 h-3.5 mt-[2px] text-blue-600 shrink-0" aria-hidden="true" />
+                            <span><span className="text-gray-500">If you can, check with the patient:</span> {ask.map((x) => `${x}?`).join('  ')}</span>
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                {(classifyResults.length > 0 || modelHint.length > 0) && (
+                  <p className="text-xs text-gray-500 mt-3">
+                    {classifyResults.length > 1
+                      ? 'More than one case definition matches. '
+                      : !classifyResults.length ? 'No official case definition matched; these are AI model suggestions. ' : ''}
+                    An officer will review and decide.
+                  </p>
+                )}
               </div>
               {(() => {
                 const Item = ({ label, children, wide }) => (

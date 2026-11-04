@@ -3,16 +3,33 @@ import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye, Camera, Mic } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc } from '../api/frappe'
-import { formatDateTime, parseDateOnly, formatDateOnly, STATUSES } from '../data/formOptions'
+import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties } from '../api/frappe'
+import { STATUSES, CHANNELS } from '../data/formOptions'
 
-const PAGE_SIZE = 6
+const PAGE_SIZES = [10, 25, 50]
 
 const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-700', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500' }
 const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-700', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
 const channelColor = (c) => CHANNEL_COLORS[c] || 'bg-gray-100 text-gray-600'
 const EXPOSURE_TAGS = { 'Bite or scratch': 'Animal bite or scratch', 'Handled sick or dead animal': 'Handled sick or dead animal' }
+const timeText = (v) => {
+  const d = new Date(String(v || '').replace(' ', 'T'))
+  return isNaN(d) ? '' : d.toLocaleTimeString('en-US', { timeStyle: 'short' })
+}
+const EXPORT_FIELDS = [
+  'name', 'creation', 'report_date', 'status', 'channel', 'signal_type', 'category',
+  'reporter_name', 'phone_number', 'reported_by',
+  'region', 'sub_county', 'location_name', 'latitude', 'longitude',
+  'onset_date', 'affected_count', 'deaths_count', 'age_group', 'animal_exposure',
+  'symptom_tags', 'severity', 'additional_notes',
+  'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with',
+  'review_outcome', 'reviewed_by', 'reviewed_on',
+]
+const dateText = (v) => {
+  const d = new Date(String(v || '').replace(' ', 'T'))
+  return isNaN(d) ? '' : d.toLocaleDateString('en-US', { dateStyle: 'medium' })
+}
 const symptomTags = (s) => (s || '').split(',').map((t) => t.trim()).filter(Boolean).slice(0, 3)
 
 export default function Reports() {
@@ -21,6 +38,12 @@ export default function Reports() {
   const isChp = workspace === 'chp'          // CHPs only ever receive their own reports (enforced on the server)
   const canExport = has('export_reports')
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
+  const [channelFilter, setChannelFilter] = useState('')
+  const [subCountyFilter, setSubCountyFilter] = useState('')
+  const [reporterText, setReporterText] = useState('')
+  const [reporterFilter, setReporterFilter] = useState('')
+  const [subCounties, setSubCounties] = useState([])
   const [totalCount, setTotalCount] = useState(0)
   const [reports, setReports] = useState([])
   const [counts, setCounts] = useState({ total: 0, submitted: 0, reviewed: 0, linked: 0 })
@@ -49,11 +72,12 @@ export default function Reports() {
     { label: 'Linked', value: counts.linked, icon: LinkIcon },
   ], [counts])
 
-  const lastPage = Math.max(0, Math.floor((totalCount - 1) / PAGE_SIZE))
-  const paginationLabel = (() => {
-    const start = page * PAGE_SIZE + 1
-    const end = Math.min(start + PAGE_SIZE - 1, totalCount)
-    return `Showing ${start} to ${end} of ${totalCount}`
+  const lastPage = Math.max(0, Math.ceil(totalCount / pageSize) - 1)
+  const paginationLabel = totalCount === 0 ? 'No reports' : `Showing ${page * pageSize + 1} to ${Math.min((page + 1) * pageSize, totalCount)} of ${totalCount}`
+  const pageNumbers = (() => {
+    const from = Math.max(0, Math.min(page - 2, lastPage - 4))
+    const to = Math.min(lastPage, from + 4)
+    return Array.from({ length: to - from + 1 }, (_, i) => from + i)
   })()
 
   async function loadCounts() {
@@ -62,7 +86,6 @@ export default function Reports() {
       getCount('Case Report', { status: 'Reviewed' }), getCount('Case Report', { status: 'Linked' }),
     ])
     setCounts({ total, submitted, reviewed, linked })
-    setTotalCount(total)
   }
 
   async function loadReports(p = page) {
@@ -70,10 +93,14 @@ export default function Reports() {
     if (statusFilter) filters.status = statusFilter
     if (regionFilter) filters.region = regionFilter
     if (diseaseFilter) filters.suspected_disease = diseaseFilter
+    if (channelFilter) filters.channel = channelFilter
+    if (subCountyFilter) filters.sub_county = subCountyFilter
+    if (reporterFilter) filters.reporter_name = ['like', `%${reporterFilter}%`]
+    getCount('Case Report', filters).then(setTotalCount)
     const list = await getList(
       'Case Report',
       ['name', 'reporter_name', 'symptom_tags', 'location_name', 'sub_county', 'channel', 'status', 'report_date', 'creation', 'age_group', 'animal_exposure', 'deaths_count', 'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with'],
-      { limit: PAGE_SIZE, start: p * PAGE_SIZE, orderBy: 'creation desc', filters }
+      { limit: pageSize, start: p * pageSize, orderBy: 'creation desc', filters }
     )
     setReports(list)
     Promise.all(list.map((r) => getDoc('Case Report', r.name).then((doc) => {
@@ -89,7 +116,15 @@ export default function Reports() {
   }
 
   function handleExport() {
-    exportExcel('Case Report', ['name', 'reporter_name', 'symptom_tags', 'animal_exposure', 'location_name', 'channel', 'status', 'report_date'])
+    // everything on the report, for the reports matching the filters on screen
+    const filters = []
+    if (statusFilter) filters.push(['Case Report', 'status', '=', statusFilter])
+    if (regionFilter) filters.push(['Case Report', 'region', '=', regionFilter])
+    if (diseaseFilter) filters.push(['Case Report', 'suspected_disease', '=', diseaseFilter])
+    if (channelFilter) filters.push(['Case Report', 'channel', '=', channelFilter])
+    if (subCountyFilter) filters.push(['Case Report', 'sub_county', '=', subCountyFilter])
+    if (reporterFilter) filters.push(['Case Report', 'reporter_name', 'like', `%${reporterFilter}%`])
+    exportExcel('Case Report', EXPORT_FIELDS, filters)
   }
 
   function openView(r) {
@@ -105,22 +140,28 @@ export default function Reports() {
   useEffect(() => {
     getReferenceLabels().then((labels) => setRegions(labels.regions || {}))
     getDiseaseOptions().then(setDiseaseOptions)
+    getSubCounties('').then(setSubCounties).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    const t = setTimeout(() => setReporterFilter(reporterText.trim()), 400)
+    return () => clearTimeout(t)
+  }, [reporterText])
 
   useEffect(() => {
     setPage(0)
     loadReports(0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, regionFilter, diseaseFilter])
+  }, [statusFilter, regionFilter, diseaseFilter, channelFilter, subCountyFilter, reporterFilter, pageSize])
 
   return (
     <AppShell>
-      <div className="flex items-start justify-between mb-6">
-        <div>
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
+        <div className="min-w-0">
           <h2 className="text-xl font-bold text-brand-navy">{isChp ? 'My Reports' : 'Reports Management'}</h2>
           <p className="text-sm text-gray-400">{isChp ? 'Everything you have reported. Tell us what you see in your community; you can finish a report even without network.' : 'Generate, import, export, and manage surveillance reports'}</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           {canExport && (
             <button onClick={handleExport} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 flex items-center gap-2 hover:bg-gray-50">
               <Upload className="w-4 h-4" /> Export Report
@@ -132,7 +173,7 @@ export default function Reports() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {statCards.map((c) => (
           <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between">
             <div>
@@ -145,46 +186,81 @@ export default function Reports() {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl p-4 flex gap-3 mb-4 border border-gray-100">
-        <div className="relative flex-1">
+      <div className="bg-white rounded-xl p-3 sm:p-4 flex flex-wrap gap-3 mb-4 border border-gray-100">
+        <div className="relative flex-1 min-w-[200px] basis-full sm:basis-auto">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} type="text" placeholder="Search" className="w-full bg-gray-50 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 text-sm text-gray-600">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Status</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={diseaseFilter} onChange={(e) => setDiseaseFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 text-sm text-gray-600">
+        <select value={diseaseFilter} onChange={(e) => setDiseaseFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Suspected Diseases</option>
           {diseaseOptions.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
         </select>
-        <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 text-sm text-gray-600">
+        <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Locations</option>
           {Object.entries(regions).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
+        <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} aria-label="Channel" className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
+          <option value="">All Channels</option>
+          {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={subCountyFilter} onChange={(e) => setSubCountyFilter(e.target.value)} aria-label="Sub-county" className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
+          <option value="">All Sub-counties</option>
+          {subCounties.map((sc) => <option key={sc.name} value={sc.name}>{sc.sub_county_name || sc.name}</option>)}
+        </select>
+        {!isChp && (
+          <input value={reporterText} onChange={(e) => setReporterText(e.target.value)} type="text" aria-label="Reporter" placeholder="Reporter name"
+            className="w-full sm:w-40 bg-gray-50 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="px-5 py-4 font-semibold text-gray-900 text-sm">{isChp ? 'My Reports List' : 'Reports List'}</div>
-        <div className="overflow-x-auto">
+        <div className="lg:hidden divide-y divide-gray-100 border-t border-gray-100">
+          {reports.map((r, i) => (
+            <button key={r.name} onClick={() => openView(r)} className="w-full text-left px-4 py-3 hover:bg-gray-50">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-gray-900 inline-flex items-center gap-1.5">
+                  <span className="text-gray-400 font-normal tabular-nums">{page * pageSize + i + 1}.</span> {r.name}
+                  {mediaByReport[r.name]?.photo && <Camera className="w-3.5 h-3.5 text-gray-400" aria-label="Has photo" />}
+                  {mediaByReport[r.name]?.voice && <Mic className="w-3.5 h-3.5 text-gray-400" aria-label="Has voice note" />}
+                </span>
+                <span className={['text-xs font-medium px-2 py-1 rounded-full shrink-0', statusColor(r.status)].join(' ')}>{r.status}</span>
+              </div>
+              <div className="mt-1 text-sm text-gray-700">{diseaseName(r.suspected_disease)}</div>
+              <div className="mt-0.5 text-xs text-gray-500">{[r.location_name, r.sub_county].filter(Boolean).join(', ') || '—'}</div>
+              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                <span className={['text-xs font-medium px-2 py-0.5 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span>
+                {!isChp && r.reporter_name && <span className="text-xs text-gray-500">{r.reporter_name}</span>}
+                <span className="text-xs text-gray-400">{[dateText(r.creation), timeText(r.creation)].filter(Boolean).join(' · ')}</span>
+              </div>
+            </button>
+          ))}
+          {!reports.length && <p className="px-5 py-10 text-center text-sm text-gray-400">No reports found</p>}
+        </div>
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-gray-400 text-xs border-t border-b border-gray-100">
+                <th className="px-5 py-3 font-medium w-10">#</th>
                 <th className="px-5 py-3 font-medium">Report ID</th>
                 {!isChp && <th className="px-5 py-3 font-medium">Reporter</th>}
                 <th className="px-5 py-3 font-medium">Symptoms</th>
                 <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Sub-county</th>
                 <th className="px-5 py-3 font-medium">Suspected Disease</th>
                 <th className="px-5 py-3 font-medium">Channel</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium text-right">Actions</th>
+                <th className="px-5 py-3 font-medium text-right sticky right-0 bg-white">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {reports.map((r) => (
+              {reports.map((r, i) => (
                 <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="px-5 py-3 text-gray-400 tabular-nums">{page * pageSize + i + 1}</td>
                   <td className="px-5 py-3 font-medium text-gray-900">
                     <span className="inline-flex items-center gap-1.5">
                       {r.name}
@@ -201,13 +277,18 @@ export default function Reports() {
                       <span className="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full mr-1">{EXPOSURE_TAGS[r.animal_exposure]}</span>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-gray-700">{r.location_name}</td>
-                  <td className="px-5 py-3 text-gray-700">{r.sub_county || '—'}</td>
+                  <td className="px-5 py-3 text-gray-700">
+                    {r.location_name || r.sub_county || '—'}
+                    {r.location_name && r.sub_county && <span className="block text-xs text-gray-400">{r.sub_county}</span>}
+                  </td>
                   <td className="px-5 py-3 text-gray-700">{diseaseName(r.suspected_disease)}</td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span></td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', statusColor(r.status)].join(' ')}>{r.status}</span></td>
-                  <td className="px-5 py-3 text-gray-500 whitespace-nowrap">{parseDateOnly(r.creation) ? formatDateOnly(parseDateOnly(r.creation)) : formatDateTime(r.creation)}</td>
-                  <td className="px-5 py-3">
+                  <td className="px-5 py-3 text-gray-500 whitespace-nowrap">
+                    {dateText(r.creation) || '—'}
+                    {timeText(r.creation) && <span className="block text-xs text-gray-400">{timeText(r.creation)}</span>}
+                  </td>
+                  <td className="px-5 py-3 sticky right-0 bg-white">
                     <div className="flex items-center justify-end">
                       <button
                         onClick={() => openView(r)}
@@ -229,11 +310,26 @@ export default function Reports() {
           </table>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-t border-gray-100">
-          <button onClick={() => goToPage(0)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600">First</button>
-          <button onClick={() => goToPage(page - 1)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600">Previous</button>
-          <span className="text-xs text-gray-500">{paginationLabel}</span>
-          <button onClick={() => goToPage(page + 1)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600">Next</button>
-          <button onClick={() => goToPage(lastPage)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600">Last</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => goToPage(0)} disabled={page === 0} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 disabled:text-gray-300">First</button>
+            <button onClick={() => goToPage(page - 1)} disabled={page === 0} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 disabled:text-gray-300">Previous</button>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap justify-center">
+            <span className="text-xs text-gray-500">{paginationLabel}</span>
+            <div className="flex items-center gap-1">
+              {pageNumbers.map((n) => (
+                <button key={n} onClick={() => goToPage(n)} aria-current={n === page ? 'page' : undefined}
+                  className={['min-w-[2rem] rounded-lg px-2 py-1.5 text-xs', n === page ? 'bg-red-600 text-white font-semibold' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'].join(' ')}>{n + 1}</button>
+              ))}
+            </div>
+            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} aria-label="Rows per page" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-600">
+              {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} per page</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => goToPage(page + 1)} disabled={page >= lastPage} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 disabled:text-gray-300">Next</button>
+            <button onClick={() => goToPage(lastPage)} disabled={page >= lastPage} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 disabled:text-gray-300">Last</button>
+          </div>
         </div>
       </div>
     </AppShell>

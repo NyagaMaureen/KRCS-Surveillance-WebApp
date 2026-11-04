@@ -8,11 +8,19 @@ const TONE = {
 }
 
 /** Small "Risk 78" pill for lists. */
-export function RiskPill({ risk }) {
+const PRIORITY_PILL = {
+  critical: 'bg-red-100 text-red-700',
+  high: 'bg-amber-100 text-amber-700',
+  standard: 'bg-gray-100 text-gray-600',
+}
+
+export function RiskPill({ risk, severity }) {
   if (!risk) return null
+  const tone = (severity && PRIORITY_PILL[severity]) || TONE[risk.level] || TONE.Low
+  const priority = severity === 'standard' ? 'Normal' : severity ? severity[0].toUpperCase() + severity.slice(1) : ''
   return (
-    <span title={risk.top?.length ? `Mostly: ${risk.top.join(', ')}` : `${risk.level} risk`}
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums whitespace-nowrap ${TONE[risk.level] || TONE.Low}`}>
+    <span title={[priority && `${priority} priority`, risk.top?.length ? `Mostly: ${risk.top.join(', ')}` : `${risk.level} risk`].filter(Boolean).join(' · ')}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums whitespace-nowrap ${tone}`}>
       Risk {risk.score}
     </span>
   )
@@ -64,68 +72,75 @@ const ORDER = ['priority', 'redflags', 'people', 'unusual', 'context']
 // The server joins reasons with "; " - show each on its own line
 const reasons = (why) => String(why || '').split(/;\s+/).map((s) => s.trim()).filter(Boolean).map(cap)
 
-/** Compact triage card: score, reasons with their points (fixed order), recommended action. */
-export function RiskAssessment({ risk, matched, reason, children }) {
-  const [open, setOpen] = useState('')
-  const toggle = (k) => setOpen((o) => (o === k ? '' : k))
+/** AI triage: the disease check first (so it is not missed), then the risk score with every weight shown. */
+export function RiskAssessment({ risk, disease, children }) {
+  const [ctxOpen, setCtxOpen] = useState(false)
   const bar = !risk ? 'bg-gray-300' : risk.level === 'Very high' || risk.level === 'High' ? 'bg-red-500' : risk.level === 'Medium' ? 'bg-amber-400' : 'bg-gray-400'
   const parts = [...(risk?.parts || [])].sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key))
   const link = 'text-xs font-medium text-gray-600 hover:text-gray-900 underline underline-offset-2'
 
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-medium text-gray-700">Risk score</span>
-        {risk ? (
-          <span className="text-sm text-gray-900"><span className="text-2xl font-semibold tabular-nums">{risk.score}</span><span className="text-gray-400"> / 100</span>
-            <span className={`ml-2 rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONE[risk.level] || TONE.Low}`}>{risk.level}</span></span>
-        ) : <span className="text-sm text-gray-400">Not calculated yet</span>}
-      </div>
-      <div className="h-2 rounded-full bg-gray-100 overflow-hidden mt-2" aria-hidden="true">
-        <div className={`h-full rounded-full ${bar}`} style={{ width: `${risk?.score || 0}%` }} />
-      </div>
+      <div className="grid gap-4 lg:grid-cols-2 items-start">
+        {disease}
 
-      {(parts.length > 0 || matched) && (
-        <>
-          <h4 className="text-sm font-medium text-gray-700 mt-6 mb-1">Why</h4>
-          <div className="divide-y divide-gray-100">
-            {parts.map((p) => (
-              <div key={p.key} className="py-3">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm font-medium text-gray-900">{p.label}</span>
-                  {/* <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{pts(p.points)} / {p.max}</span> */}
-                </div>
-                <ul className="mt-1 flex flex-col gap-1">
-                  {reasons(p.why).map((t, i) => <li key={i} className="text-sm text-gray-700 leading-snug">{t}</li>)}
-                </ul>
-              </div>
-            ))}
-            {matched && (
-              <div className="py-3">
-                <span className="text-sm font-medium text-gray-900">Case definition</span>
-                <p className="mt-1 text-sm text-gray-700">{matched}</p>
-              </div>
-            )}
+        <section aria-label="Risk score" className="rounded-xl border border-gray-200 p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Risk score</h3>
+              <p className="text-xs text-gray-400 mt-0.5">How urgent this looks. Each line adds points.</p>
+            </div>
+            {risk ? (
+              <span className="text-right">
+                <span className="text-3xl font-semibold tabular-nums text-gray-900">{risk.score}</span>
+                <span className="text-sm text-gray-400"> / 100</span>
+                <span className={`block mt-1 rounded-full px-2.5 py-0.5 text-xs font-semibold text-center ${TONE[risk.level] || TONE.Low}`}>{risk.level}</span>
+              </span>
+            ) : <span className="text-sm text-gray-400">Not calculated yet</span>}
           </div>
-          {risk?.skipped?.length > 0 && (
-            <p className="text-xs text-gray-400 mt-1">Not counted (no data): {risk.skipped.map((s) => s.label).join(', ')}</p>
+          <div className="h-2 rounded-full bg-gray-100 overflow-hidden mt-3" aria-hidden="true">
+            <div className={`h-full rounded-full ${bar}`} style={{ width: `${risk?.score || 0}%` }} />
+          </div>
+
+          {parts.length > 0 && (
+            <ul className="mt-4 flex flex-col gap-3.5">
+              {parts.map((p) => {
+                return (
+                  <li key={p.key}>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-medium text-gray-900">{p.label}</span>
+                      <span className="text-sm tabular-nums text-gray-900 whitespace-nowrap">
+                        <span className="font-semibold">{pts(p.points)}</span><span className="text-gray-400"> / {p.max}</span>
+                      </span>
+                    </div>
+                    <ul className="mt-1 flex flex-col gap-0.5">
+                      {reasons(p.why).map((t, i) => <li key={i} className="text-xs text-gray-500 leading-snug">{t}</li>)}
+                    </ul>
+                  </li>
+                )
+              })}
+            </ul>
           )}
-        </>
-      )}
+          {risk?.floorNote && <p className="text-xs text-gray-600 mt-3">{risk.floorNote}</p>}
+          {risk?.skipped?.length > 0 && (
+            <p className="text-xs text-gray-400 mt-3">Not counted (no data): {risk.skipped.map((s) => s.label).join(', ')}</p>
+          )}
+        </section>
+      </div>
 
       {risk?.action && (
-        <div className="mt-5 rounded-lg bg-gray-50 px-4 py-3">
+        <div className="mt-4 rounded-lg bg-gray-50 px-4 py-3">
           <p className="text-xs text-gray-500">Recommended action</p>
           <p className="text-sm font-medium text-gray-900">{risk.action}</p>
         </div>
       )}
 
-      <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4">
-        {reason && <button type="button" className={link} aria-expanded={open === 'case'} onClick={() => toggle('case')}>Full case definition</button>}
-        {children && <button type="button" className={link} aria-expanded={open === 'context'} onClick={() => toggle('context')}>Local context</button>}
-      </div>
-      {open === 'case' && <p className="mt-3 text-xs text-gray-600 leading-relaxed">{reason}</p>}
-      {open === 'context' && <div className="mt-3">{children}</div>}
+      {children && (
+        <div className="mt-4">
+          <button type="button" className={link} aria-expanded={ctxOpen} onClick={() => setCtxOpen((v) => !v)}>Local context</button>
+          {ctxOpen && <div className="mt-3">{children}</div>}
+        </div>
+      )}
       <p className="mt-4 text-xs text-gray-400">The system suggests; the officer decides.</p>
     </div>
   )

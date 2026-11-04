@@ -6,10 +6,12 @@ import AppShell from '../components/layout/AppShell'
 import { CHART_FONT } from '../charts/chartSetup'
 import {
   getSubCounties, getContextOptions, getWashAssessments, saveWashAssessment, getPopulationFigures,
-  savePopulationFigure, deleteContextRecord, getWeatherStatus, getWeatherSeries, refreshWeather,
+  savePopulationFigure, deleteContextRecord, getWeatherStatus, getWeatherSeries, refreshWeather, getAreaContext,
 } from '../api/frappe'
+import { ContextBody } from '../components/context/ContextPanel'
 
 const TABS = [
+  { key: 'overview', label: 'Overview', icon: Info },
   { key: 'wash', label: 'WASH assessments', icon: Droplets },
   { key: 'population', label: 'Population', icon: Users },
   { key: 'weather', label: 'Weather', icon: CloudRain },
@@ -31,7 +33,7 @@ function fmtDate(v) {
 
 export default function ContextData() {
   const [params, setParams] = useSearchParams()
-  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'wash'
+  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'overview'
   const [subCounties, setSubCounties] = useState([])
   const [options, setOptions] = useState(null)
 
@@ -59,10 +61,38 @@ export default function ContextData() {
         ))}
       </div>
 
+      {tab === 'overview' && <OverviewTab />}
       {tab === 'wash' && <WashTab subCounties={subCounties} options={options} />}
       {tab === 'population' && <PopulationTab subCounties={subCounties} options={options} />}
       {tab === 'weather' && <WeatherTab canManage={!!options?.canManage} />}
     </AppShell>
+  )
+}
+
+/* ---------------- Overview: current conditions per sub-county ---------------- */
+
+function OverviewTab() {
+  const [rows, setRows] = useState(null)
+  useEffect(() => { getAreaContext().then(setRows).catch(() => setRows([])) }, [])
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
+      <h3 className="text-base font-semibold text-gray-900">Current conditions</h3>
+      <p className="text-xs text-gray-400 mt-0.5 mb-4">Rainfall and temperature, population and WASH for each sub-county in your area. Background only; not used by the alert engine.</p>
+      {rows === null ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : !rows.length ? (
+        <p className="text-sm text-gray-400">No context recorded for your area yet.</p>
+      ) : (
+        <div className="space-y-5">
+          {rows.map((c) => (
+            <div key={c.subCounty}>
+              <div className="text-sm font-semibold text-gray-900 mb-2">{c.subCountyName} <span className="text-xs font-normal text-gray-400">· {c.county}</span></div>
+              <ContextBody ctx={c} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

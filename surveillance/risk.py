@@ -22,35 +22,65 @@ LABELS = {"priority": "Disease priority", "redflags": "Red flags and deaths", "p
 	"unusual": "Unusual for this area", "context": "Local context (WASH, rain, population)"}
 LEVELS = [(75, "Very high"), (50, "High"), (25, "Medium"), (0, "Low")]
 
-# =====================================================================================================
-# PERCENTAGE STEPS: how much of each factor's maximum points an event earns (1.0 = 100%, 0.6 = 60%).
-# Points for a factor = weight (Settings -> AI Config) x share. Shares are capped at 1.0.
-# Starting values, to be reviewed with KRCS (Allan) after testing. Change them here only.
-# =====================================================================================================
+# EDITABLE PARAMETERS (Settings -> AI Config -> open each factor). These are the starting values, to be reviewed with
+# KRCS after testing. kind: share = fraction of the factor's maximum points (shown as %), count = a number of people or
+# cases, times = how many times the usual level, score = a score from 0 to 100.
+PARAM_GROUPS = [
+	{"key": "priority", "label": "Disease priority", "items": [
+		("share_critical", "Critical priority disease", "share", 1.0),
+		("share_high", "High priority disease", "share", 0.6),
+		("share_standard", "Normal priority disease", "share", 0.25),
+	]},
+	{"key": "redflags", "label": "Red flags and deaths", "items": [
+		("death_one", "1 death", "share", 0.6),
+		("death_many", "2 or more deaths", "share", 0.8),
+		("red_answer_each", "Each red-flag question answered Yes", "share", 0.4),
+		("red_symptom_first", "First red-flag symptom", "share", 0.3),
+		("red_symptom_extra", "Each extra red-flag symptom", "share", 0.1),
+		("death_min_score", "Lowest risk score when there is at least 1 death (50 = High)", "score", 50),
+	]},
+	{"key": "people", "label": "People affected", "items": [
+		("people_n1", "Top step: at least this many people", "count", 10), ("people_s1", "Top step: share", "share", 1.0),
+		("people_n2", "Second step: at least this many people", "count", 5), ("people_s2", "Second step: share", "share", 0.75),
+		("people_n3", "Third step: at least this many people", "count", 2), ("people_s3", "Third step: share", "share", 0.5),
+		("people_n4", "Fourth step: at least this many people", "count", 1), ("people_s4", "Fourth step: share", "share", 0.2),
+	]},
+	{"key": "unusual", "label": "Unusual for this area", "items": [
+		("unusual_x1", "Top step: at least this many times the usual week", "times", 3), ("unusual_s1", "Top step: share", "share", 1.0),
+		("unusual_x2", "Second step: at least this many times usual", "times", 2), ("unusual_s2", "Second step: share", "share", 0.7),
+		("unusual_x3", "Third step: at least this many times usual", "times", 1.5), ("unusual_s3", "Third step: share", "share", 0.4),
+		("first_in_8_weeks", "First report of this disease here in 8 weeks", "share", 0.6),
+		("epi_alert_min", "An Epi Trends alert raises the share to at least", "share", 0.8),
+	]},
+	{"key": "context", "label": "Local context (WASH, rain, population)", "items": [
+		("context_sign_each", "Each warning sign for this disease (heavy rain, poor WASH)", "share", 0.5),
+		("population_rate", "Many cases for the population size", "share", 0.3),
+		("population_per10k", "...meaning at least this many cases per 10,000 people", "count", 5),
+	]},
+]
+PARAM_DEFAULTS = {k: d for g in PARAM_GROUPS for (k, _l, _kind, d) in g["items"]}
+PARAM_KIND = {k: kind for g in PARAM_GROUPS for (k, _l, kind, _d) in g["items"]}
 
-# 1. Disease priority (from Alert Thresholds)
-PRIORITY_SHARE = {"critical": 1.0, "high": 0.6, "standard": 0.25}
 
-# 2. Red flags: these add up
-DEATH_ONE = 0.6               # 1 death
-DEATH_MANY = 0.8              # 2 or more deaths
-RED_ANSWER_EACH = 0.4         # each "Yes means escalate now" question answered Yes
-RED_SYMPTOM_FIRST = 0.3       # first red-flag symptom found
-RED_SYMPTOM_EXTRA = 0.1       # each extra red-flag symptom
+def params():
+	"""Defaults, overridden by what was saved in Settings -> AI Config."""
+	out = dict(PARAM_DEFAULTS)
+	if frappe.db.exists("DocType", SETTINGS):
+		raw = frappe.get_cached_doc(SETTINGS).get("params_json")
+		if raw:
+			try:
+				for k, v in (frappe.parse_json(raw) or {}).items():
+					if k in out and isinstance(v, (int, float)):
+						out[k] = v
+			except Exception:
+				pass
+	return out
 
-# 3. People affected: (at least this many people, share); first match wins
-PEOPLE_STEPS = [(10, 1.0), (5, 0.75), (2, 0.5), (1, 0.2)]
 
-# 4. Unusual for this area: this week's reports vs the usual week (average of the 8 weeks before)
-UNUSUAL_STEPS = [(3, 1.0), (2, 0.7), (1.5, 0.4)]   # (at least this many times usual, share)
-FIRST_IN_8_WEEKS = 0.6        # first report of this disease in the sub-county in 8 weeks
-EPI_TRENDS_ALERT_MIN = 0.8    # an Epi Trends alert raises the share to at least this
-
-# 5. Local context: these add up
-CONTEXT_SIGN_EACH = 0.5       # each warning sign for this disease (heavy rain, poor WASH)
-POPULATION_RATE = 0.3         # many cases for the population size
-POPULATION_RATE_PER10K = 5    # ... meaning at least this many cases per 10,000 people
-# =====================================================================================================
+def _steps(c, prefix, n_key, s_key):
+	"""[(at_least, share), ...] highest first, from the saved parameters."""
+	pairs = [(flt(c[f"{prefix}_{n_key}{i}"]), flt(c[f"{prefix}_{s_key}{i}"])) for i in (1, 2, 3, 4) if f"{prefix}_{n_key}{i}" in c]
+	return sorted(pairs, key=lambda x: -x[0])
 
 
 def _step(value, steps):
@@ -101,21 +131,24 @@ def level_for(score):
 # ---------- factors: each returns (share 0..1, reason) or None when there is no data ----------
 
 def _priority(doc):
+	c = params()
 	p = (doc.priority or doc.severity or "standard").lower()
-	share = PRIORITY_SHARE.get(p, 0.25)
-	return share, f"{(doc.priority or 'Standard').title()} priority disease ({doc.disease_name or doc.disease})"
+	share = c.get(f"share_{p}", c["share_standard"])
+	name = "Normal" if p == "standard" else p.title()
+	return share, f"{name} priority disease ({doc.disease_name or doc.disease})"
 
 
 def _redflags(doc):
+	c = params()
 	share, why = 0.0, []
 	deaths = cint(doc.deaths)
 	if deaths:
-		share += DEATH_ONE if deaths == 1 else DEATH_MANY
+		share += c["death_one"] if deaths == 1 else c["death_many"]
 		why.append(f"{deaths} death{'s' if deaths > 1 else ''} reported")
 	from surveillance.investigation import is_red
 	yes = [a for a in (doc.get("verification") or []) if is_red(a) and a.answer == "Yes"]
 	if yes:
-		share += RED_ANSWER_EACH * len(yes)
+		share += c["red_answer_each"] * len(yes)
 		why.append(f"{len(yes)} red-flag question{'s' if len(yes) > 1 else ''} answered Yes")
 	flags = red_flag_symptoms()
 	if flags:
@@ -123,7 +156,7 @@ def _redflags(doc):
 		text = (doc.reason or "").lower()   # CBS reports: symptoms only appear in the report text
 		found = sorted({name for sid, name in flags.items() if sid in picked or (name and name.lower() in text)})
 		if found:
-			share += RED_SYMPTOM_FIRST + RED_SYMPTOM_EXTRA * (len(found) - 1)
+			share += c["red_symptom_first"] + c["red_symptom_extra"] * (len(found) - 1)
 			why.append("red-flag symptom" + ("s" if len(found) > 1 else "") + ": " + ", ".join(found[:3]))
 	if not why:
 		return 0.0, "No deaths or red-flag symptoms reported"
@@ -132,7 +165,7 @@ def _redflags(doc):
 
 def _people(doc):
 	n = cint(doc.people)
-	share = _step(n, PEOPLE_STEPS)
+	share = _step(n, _steps(params(), "people", "n", "s"))
 	if "animal" in (doc.disease or ""):
 		return share, f"{n} {'case' if n == 1 else 'cases'} (animals)"
 	return share, f"{n} {'person' if n == 1 else 'people'} affected"
@@ -143,6 +176,7 @@ def _unusual(doc):
 	place, its finding is used, so both pages tell the same story. Otherwise: this epi week vs the 8 weeks before."""
 	if not (doc.disease and doc.sub_county):
 		return None
+	c = params()
 	from surveillance.alerts import epi_label, _why_short
 	from surveillance.weekly_counts import week_start
 	alert = frappe.db.get_value("Risk Alert", doc.linked_alert, ["name", "last_week", "week_start", "status"], as_dict=True) \
@@ -158,15 +192,15 @@ def _unusual(doc):
 	reports = f"{now} report{'' if now == 1 else 's'}"
 	share, why = 0.0, ""
 	if now and usual == 0:
-		share, why = FIRST_IN_8_WEEKS, f"{reports} in {doc.sub_county} in {week}; none in the 8 weeks before"
+		share, why = c["first_in_8_weeks"], f"{reports} in {doc.sub_county} in {week}; none in the 8 weeks before"
 	elif usual:
 		ratio = now / usual
-		share = _step(ratio, UNUSUAL_STEPS)
+		share = _step(ratio, _steps(c, "unusual", "x", "s"))
 		usual_txt = "less than 1" if usual < 1 else f"about {usual:.0f}"
 		if now:
 			why = f"{reports} in {doc.sub_county} in {week}; usually {usual_txt} a week" + (f" ({ratio:.1f}x usual)" if share else "")
 	if alert:
-		share = max(share, EPI_TRENDS_ALERT_MIN)
+		share = max(share, c["epi_alert_min"])
 		a = frappe.get_doc("Risk Alert", alert.name)
 		why = f"Epi Trends alert {alert.name}, {epi_label(alert.last_week or alert.week_start)}: {_why_short(a)}"
 	return share, why or f"No reports of this disease in {doc.sub_county} in {week}"
@@ -176,6 +210,7 @@ def _context(doc):
 	"""WASH and rainfall only for the diseases they relate to; skipped when nothing is recorded."""
 	if not doc.sub_county:
 		return None
+	c = params()
 	from surveillance import context as ctx_mod
 	sc = ctx_mod.resolve_sub_county(doc.sub_county, doc.county)
 	if not sc:
@@ -188,10 +223,10 @@ def _context(doc):
 		return None    # nothing recorded that relates to this disease: skip and rescale
 	share, why = 0.0, []
 	for s in ctx.get("supports") or []:
-		share += CONTEXT_SIGN_EACH
+		share += c["context_sign_each"]
 		why.append(s["text"] + (": " + s["why"] if s.get("why") else ""))
-	if pop.get("per10k") is not None and flt(pop["per10k"]) >= POPULATION_RATE_PER10K:
-		share += POPULATION_RATE
+	if pop.get("per10k") is not None and flt(pop["per10k"]) >= c["population_per10k"]:
+		share += c["population_rate"]
 		why.append(f"{pop['per10k']} per 10,000 people affected: many cases for the population size, so wider spread is likely")
 	if not why:
 		checked = [x for x, ok in (("rainfall", rain_relevant), ("WASH", wash_relevant), ("population", pop)) if ok]
@@ -222,8 +257,14 @@ def compute(doc):
 		possible += w[key]
 		parts.append({"key": key, "label": LABELS[key], "points": pts, "max": w[key], "why": why})
 	score = round(got * 100 / possible) if possible else 0
+	floor_note = None
+	deaths = cint(doc.deaths)
+	min_with_death = cint(params()["death_min_score"])
+	if deaths >= 1 and score < min_with_death:
+		floor_note = f"{deaths} death{'s' if deaths > 1 else ''} reported: the risk is at least {level_for(min_with_death)} (score {min_with_death})"
+		score = min_with_death
 	return {"score": score, "level": level_for(score), "parts": parts, "skipped": skipped,
-		"rescaled": bool(skipped), "computedOn": str(now_datetime())}
+		"rescaled": bool(skipped), "floorNote": floor_note, "computedOn": str(now_datetime())}
 
 
 def on_event_save(doc, method=None):
@@ -275,16 +316,38 @@ def shape(doc_or_row):
 def get_weights():
 	from surveillance.capabilities import require_capability
 	require_capability("view_review_queue")
-	return {"weights": weights(), "labels": LABELS, "defaults": DEFAULT_WEIGHTS}
+	return {"weights": weights(), "labels": LABELS, "defaults": DEFAULT_WEIGHTS,
+		"groups": [{"key": g["key"], "label": g["label"],
+			"items": [{"key": k, "label": l, "kind": kind, "default": d} for (k, l, kind, d) in g["items"]]} for g in PARAM_GROUPS],
+		"params": params()}
 
 
 @frappe.whitelist(methods=["POST"])
-def save_weights(weights):
+def save_weights(weights=None, params_values=None):
 	"""Change the factor weights (Settings -> AI Config), then re-score open events."""
 	from surveillance.capabilities import require_capability
 	require_capability("manage_alert_thresholds")
-	data = frappe.parse_json(weights) if isinstance(weights, str) else weights
+	data = (frappe.parse_json(weights) if isinstance(weights, str) else weights) or {}
 	s = frappe.get_doc(SETTINGS)
+	if params_values:
+		given = frappe.parse_json(params_values) if isinstance(params_values, str) else params_values
+		merged = dict(params())
+		for k, v in given.items():
+			if k not in PARAM_KIND:
+				continue
+			try:
+				v = float(v)
+			except (TypeError, ValueError):
+				frappe.throw(f"{k}: use a number.")
+			kind = PARAM_KIND[k]
+			if kind == "share" and not 0 <= v <= 1:
+				frappe.throw("Shares must be between 0% and 100%.")
+			if kind == "score" and not 0 <= v <= 100:
+				frappe.throw("A score must be between 0 and 100.")
+			if kind in ("count", "times") and v < 0:
+				frappe.throw("Use a number of 0 or more.")
+			merged[k] = v
+		s.set("params_json", frappe.as_json(merged))
 	for k in DEFAULT_WEIGHTS:
 		if k in data:
 			v = cint(data[k])

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, AlertTriangle, Check, Link2, ShieldAlert, Sparkles, X, ExternalLink,
@@ -10,6 +10,8 @@ import { EventTasksProvider, EventTasksPanel, StepTaskLink, useStepTask, OpenTas
 import AppShell from '../components/layout/AppShell'
 import ContextPanel from '../components/context/ContextPanel'
 import { RiskAssessment } from '../components/risk/RiskScore'
+import DiseaseInsight from '../components/risk/DiseaseInsight'
+import ReportTriage from '../components/risk/ReportTriage'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
   getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
@@ -96,14 +98,14 @@ function computeSteps(event, inv) {
 }
 
 function Tracker({ event, states, openStep, onSelect }) {
-  const sources = (event.sources || []).join(', ')
+  const sources = (event.channels?.length ? event.channels : (event.sources || [])).join(', ')
   return (
     <nav aria-label="Investigation progress" className="bg-white rounded-2xl border border-gray-100 px-4 sm:px-6 py-4 overflow-x-auto">
       <ol className="flex items-start min-w-[560px]">
         {STEPS.map((s, i) => {
           const state = states[i]
           const isOpen = openStep === s.n
-          const info = s.n === 1  // Signal captured: informational only
+          const info = false
           const clickable = !info && (state === 'done' || state === 'current' || state === 'discarded')
           // Red = the step on screen. Green tick = finished. Everything else grey.
           const circle =
@@ -202,15 +204,6 @@ function SuggestionBox({ suggestion }) {
   )
 }
 
-function matchedSigns(text) {
-  const t = text || ''
-  const i = t.indexOf('Matched:')
-  if (i === -1) return t
-  const rest = t.slice(i + 8)
-  const j = rest.indexOf('MOH IDSR definition')
-  return (j === -1 ? rest : rest.slice(0, j)).trim().replace(/[.;,]\s*$/, '')
-}
-
 function MiniSeg({ options, value, onChange, disabled, label }) {
   return (
     <div role="group" aria-label={label} className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
@@ -234,24 +227,6 @@ function MiniSeg({ options, value, onChange, disabled, label }) {
   )
 }
 
-function SectionHeading({ letter, title, sub, done, total }) {
-  const complete = total > 0 && done >= total
-  return (
-    <div className="flex items-start gap-3 mb-3">
-      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${complete ? 'bg-emerald-500 text-white' : 'bg-gray-900 text-white'}`}>
-        {complete ? <Check className="w-4 h-4" aria-hidden="true" /> : letter}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-          {total > 0 && <span className="text-xs text-gray-500 tabular-nums">{done}/{total}</span>}
-        </div>
-        {sub && <p className="text-sm text-gray-500">{sub}</p>}
-      </div>
-    </div>
-  )
-}
-
 function ReportCheckRow({ s, canVerify, canAct, canSplit, saving, onCheck, onSplit }) {
   const [noteOpen, setNoteOpen] = useState(false)
   const [note, setNote] = useState('')
@@ -264,7 +239,7 @@ function ReportCheckRow({ s, canVerify, canAct, canSplit, saving, onCheck, onSpl
     <>
       <tr className={`border-t border-gray-100 align-top ${notCase ? 'bg-gray-50' : ''} ${saving ? 'opacity-60' : ''}`}>
         <td className="px-3 py-3 whitespace-nowrap">
-          <div className="text-sm font-medium text-gray-900">{s.source}</div>
+          <div className="text-sm font-medium text-gray-900">{s.channel || s.source}</div>
           {s.source === 'Field' && s.ref ? (
             <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`font-mono text-xs text-red-700 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
           ) : (
@@ -327,8 +302,108 @@ function KeyCheckLine({ check }) {
   )
 }
 
+const DISCARD_REASONS = ['Known false alarm', 'Duplicate of another report', 'Does not meet the case definition']
+
+function DiscardBox({ busy, initial = '', onDiscard, onCancel }) {
+  const [reason, setReason] = useState(initial)
+  return (
+    <div className="mt-3 rounded-xl border border-gray-200 p-4 flex flex-col gap-3">
+      <label className="block">
+        <span className="block text-sm font-medium text-gray-900 mb-1.5">Why discard? <span className="text-red-700">*</span></span>
+        <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} className={INPUT} />
+      </label>
+      <div className="flex flex-wrap gap-1.5">
+        {DISCARD_REASONS.map((r) => (
+          <button key={r} type="button" onClick={() => setReason(r)} className={`rounded-full border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 ${FOCUS}`}>{r}</button>
+        ))}
+      </div>
+      <p className="text-xs text-gray-500">Field reporters get a thank-you note saying it was checked and closed. The event stays in the history as Discarded.</p>
+      <div className="flex gap-2">
+        <button type="button" disabled={busy || !reason.trim()} onClick={() => onDiscard(reason.trim())} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Discard signal</button>
+        <button type="button" disabled={busy} onClick={onCancel} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, onDiscard }) {
+  const [showAll, setShowAll] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
+  const [openRef, setOpenRef] = useState(null)
+  const rows = showAll ? signals : signals.slice(0, 8)
+  return (
+    <div className={card}>
+      <PanelHeader title="Signal captured" sub="The reports behind this event, as they came in. Nothing to answer here." />
+      {signals.length === 0 ? (
+        <p className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">{event.reason || 'No individual reports are linked to this event.'}</p>
+      ) : (
+        <>
+          <div className="border border-gray-100 rounded-xl overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-xs text-gray-400 border-b border-gray-100">
+                  <th className="px-3 py-2.5 font-medium">Report</th>
+                  <th className="px-3 py-2.5 font-medium">Where · what was reported</th>
+                  <th className="px-3 py-2.5 font-medium">Reporter</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((s, i) => (
+                  <Fragment key={s.id || i}>
+                  <tr className={`border-t border-gray-100 align-top ${checkStatus(s) === 'Not a case' ? 'bg-gray-50' : ''}`}>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">{s.channel || s.source}</div>
+                      {s.source === 'Field' && s.ref ? (
+                        <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`font-mono text-xs text-red-700 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
+                      ) : (
+                        <div className="font-mono text-xs text-gray-500">{s.ref || '—'}</div>
+                      )}
+                      <div className="text-xs text-gray-400" title={fmtDateTime(s.date)}>{relTime(s.date)}</div>
+                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-700 min-w-[200px]">
+                      <div>{s.area || '—'} · {countLabel(s.people, s.disease)}{s.deaths > 0 && <span className="text-red-700"> · {s.deaths} {s.deaths === 1 ? 'death' : 'deaths'}</span>}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{s.reported || '—'}</div>
+                    </td>
+                    <td className="px-3 py-3 text-sm min-w-[150px]">
+                      <ReporterContact signal={s} canAct={canAct} />
+                      {event.disease === 'unclassified-illness' && s.source === 'Field' && s.ref && (
+                        <button type="button" aria-expanded={openRef === s.ref} onClick={() => setOpenRef(openRef === s.ref ? null : s.ref)} className={`mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+                          <Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> {openRef === s.ref ? 'Hide triage' : 'View triage'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {openRef === s.ref && s.ref && (
+                    <tr className="bg-gray-50"><td colSpan={3} className="px-4 py-4"><ReportTriage eventId={event.id} reportId={s.ref} /></td></tr>
+                  )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {signals.length > 8 && (
+            <button type="button" onClick={() => setShowAll(!showAll)} className={`mt-2 text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+              {showAll ? 'Show fewer' : `Show ${signals.length - 8} more`}
+            </button>
+          )}
+        </>
+      )}
+      <div className="mt-6 flex items-center justify-between gap-3 flex-wrap">
+        {editable && !discarding ? (
+          <button type="button" disabled={busy} onClick={() => setDiscarding(true)} className={`text-sm font-medium text-gray-500 hover:text-gray-900 underline underline-offset-2 rounded ${FOCUS}`}>
+            Already a known false alarm? Discard signal
+          </button>
+        ) : <span />}
+        <button type="button" onClick={onNext} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Continue to AI triage →</button>
+      </div>
+      {editable && discarding && <DiscardBox busy={busy} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
+    </div>
+  )
+}
+
 function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVerify, canAct, canSplit, onCheck, onSplit, onAnswer, onProceed, onDecide, onDiscard }) {
   const [showAll, setShowAll] = useState(false)
+  const [tab, setTab] = useState('A')
   const [discarding, setDiscarding] = useState(false)
   const keyCheck = inv.gates?.keyCheck
   const keyFailed = !!keyCheck?.failed
@@ -363,11 +438,37 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
 
   return (
     <div className={card}>
-      <PanelHeader title="Guided verification" sub="A: check the reports. B: answer questions about the situation. C: decide the next step." />
+      <PanelHeader title="Verification" sub="Check the reports, then answer questions about the situation. Then decide the next step." />
 
-      {fromTrend && (
+      <div role="tablist" aria-label="Verification steps" className="mb-6 flex gap-1 border-b border-gray-200 overflow-x-auto">
+        {[
+          { k: 'A', t: fromTrend ? 'Check the trend' : 'Check the reports', d: fromTrend ? (caseQ?.answer ? 1 : 0) : checkedCount, n: fromTrend ? 1 : signals.length },
+          { k: 'B', t: 'About the situation', d: answered, n: questions.length },
+        ].map((x) => {
+          const on = tab === x.k
+          const done = x.n > 0 && x.d >= x.n
+          return (
+            <button
+              key={x.k}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setTab(x.k)}
+              className={`-mb-px flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium ${on ? 'border-red-600 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-900'} ${FOCUS}`}
+            >
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-semibold ${done ? 'bg-emerald-500 text-white' : on ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                {done ? <Check className="w-3 h-3" aria-hidden="true" /> : x.k}
+              </span>
+              {x.t}
+              <span className="text-xs text-gray-400 tabular-nums">{x.d}/{x.n}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {tab === 'A' && fromTrend && (
         <section aria-label="Check the trend" className="mb-8">
-          <SectionHeading letter="A" title="Check the trend" sub="This investigation was opened from Epi Trends: there are no individual reports. Call the facility or the CHA to check the cases." done={caseQ?.answer ? 1 : 0} total={1} />
+          <p className="mb-3 text-sm text-gray-500">This investigation was opened from Epi Trends: there are no individual reports. Call the facility or the CHA to check the cases.</p>
           <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 text-sm text-purple-900 mb-3">
             <p>{event.reason}</p>
             <Link to={`/epi-trends/${encodeURIComponent(event.fromAlert)}`} className={`inline-block mt-2 text-xs font-semibold text-purple-700 hover:underline rounded ${FOCUS}`}>
@@ -393,9 +494,9 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
         </section>
       )}
 
-      {!fromTrend && (
+      {tab === 'A' && !fromTrend && (
       <section aria-label="Check the reports" className="mb-8">
-        <SectionHeading letter="A" title="Check the reports" sub="Call each reporter and confirm the case. You need at least one checked report." done={checkedCount} total={signals.length} />
+        <p className="mb-3 text-sm text-gray-500">Call each reporter and confirm the case. You need at least one checked report.</p>
         {definition && (
           <p className="mb-3 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-800">
             <span className="font-semibold">Case definition:</span> {definition}
@@ -442,14 +543,15 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
 
       )}
 
+      {tab === 'A' && reportsDone && (
+        <div className="mb-8 flex justify-end">
+          <button type="button" onClick={() => setTab('B')} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Next: about the situation →</button>
+        </div>
+      )}
+
+      {tab === 'B' && (
       <section aria-label="Questions about the situation" className={`mb-8 ${!reportsDone ? 'opacity-50' : ''}`}>
-        <SectionHeading
-          letter="B"
-          title="About the situation"
-          sub="These are about the whole situation in this place, not one report. Ask the reporter, the facility or the team."
-          done={answered}
-          total={questions.length}
-        />
+        <p className="mb-3 text-sm text-gray-500">These are about the whole situation in this place, not one report. Ask the reporter, the facility or the team.</p>
         {!reportsDone && <p className="mb-3 text-sm text-gray-500">{fromTrend ? 'Answer A first.' : 'Check a report in A first.'}</p>}
         {questions.length === 0 ? (
           <p className="text-sm text-gray-400">No other questions for this event.</p>
@@ -486,9 +588,9 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
           </ul>
         )}
       </section>
+      )}
 
-      <section aria-label="Next step">
-        <SectionHeading letter="C" title="Next step" />
+      <section aria-label="Next step" className="border-t border-gray-100 pt-6">
         <KeyCheckLine check={inv.gates?.keyCheck} />
         <SuggestionBox suggestion={inv.suggestion} />
         {editable && open && (
@@ -516,22 +618,15 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
                   Escalate instead
                 </button>
               )}
+              {!discarding && !(action === 'discard' || keyFailed) && (
+                <button type="button" disabled={busy} onClick={() => setDiscarding(true)} className={`text-sm font-medium text-gray-500 hover:text-gray-900 underline underline-offset-2 rounded ${FOCUS}`}>
+                  Discard signal
+                </button>
+              )}
             </div>
           </div>
         )}
-        {editable && open && discarding && (
-          <div className="mt-3 rounded-xl border border-gray-200 p-4 flex flex-col gap-3">
-            <label className="block">
-              <span className="block text-sm font-medium text-gray-900 mb-1.5">Why discard? <span className="text-red-700">*</span></span>
-              <textarea rows={2} value={discardReason} onChange={(e) => setDiscardReason(e.target.value)} className={INPUT} />
-            </label>
-            <p className="text-xs text-gray-500">Field reporters get a thank-you note saying it was checked and closed.</p>
-            <div className="flex gap-2">
-              <button type="button" disabled={busy || !discardReason.trim()} onClick={() => onDiscard(discardReason.trim())} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Discard signal</button>
-              <button type="button" disabled={busy} onClick={() => setDiscarding(false)} className={`${BTN} ${SECONDARY} ${FOCUS}`}>Cancel</button>
-            </div>
-          </div>
-        )}
+        {editable && open && discarding && <DiscardBox busy={busy} initial={discardReason} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
       </section>
     </div>
   )
@@ -1236,7 +1331,7 @@ function ReportsMap({ signals }) {
                 >
                   <Popup>
                     <div className="text-xs text-gray-600 space-y-1 min-w-[170px]">
-                      <p className="text-sm font-semibold text-gray-900">{s.source}{s.ref ? ` ${s.ref}` : ''}</p>
+                      <p className="text-sm font-semibold text-gray-900">{s.channel || s.source}{s.ref ? ` ${s.ref}` : ''}</p>
                       <p>{s.area || '—'}</p>
                       <p>{fmtDateTime(s.date)} · {countLabel(s.people, s.disease)}</p>
                       <p>{checkStatus(s)}</p>
@@ -1535,7 +1630,7 @@ export default function EventDetail() {
 
   const status = event?.status
   useEffect(() => {
-    if (status && currentStep) setOpenStep(status === 'New' ? 2 : currentStep)
+    if (status && currentStep) setOpenStep(status === 'New' ? 1 : currentStep)
     // only re-open the current step when the status changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
@@ -1710,15 +1805,27 @@ export default function EventDetail() {
   const canSplit = canAct && !['Closed', 'Discarded'].includes(status) && signals.length >= 2
   const fieldWithReporter = signals.filter((s) => s.source === 'Field' && s.reporter)
   const singleReporter = canAct && fieldWithReporter.length === 1 ? fieldWithReporter[0].reporter : null
-  const shown = Math.max(openStep || currentStep || 3, 2)  // step 1 has no panel
+  const shown = openStep || currentStep || 3
 
   function renderPanel() {
     switch (shown) {
+      case 1:
+        return (
+          <SignalCapturePanel
+            event={event}
+            signals={signals}
+            canAct={canAct}
+            editable={canAct && (status === 'New' || status === 'Verifying')}
+            busy={busy}
+            onNext={() => selectStep(2)}
+            onDiscard={(reason) => runAction('discard', reason)}
+          />
+        )
       case 2:
         return (
           <div className={card}>
             <PanelHeader title="AI analysis & risk assessment" sub="A quick check of how urgent this looks" />
-            <RiskAssessment risk={event.risk} matched={event.reason ? matchedSigns(event.reason) : ''} reason={event.reason}>
+            <RiskAssessment risk={event.risk} disease={<DiseaseInsight eventId={event.id} diseaseName={event.disease === 'unclassified-illness' ? '' : event.diseaseName} eventReason={event.disease === 'unclassified-illness' ? '' : event.reason} onOpenCapture={() => selectStep(1)} />}>
               <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} />
             </RiskAssessment>
             <div className="mt-6 flex justify-end">
@@ -1842,7 +1949,7 @@ export default function EventDetail() {
               </span>
             </div>
             <p className="text-sm font-medium text-white/90">
-              Event {event.id}{(event.sources || []).length ? ` · ${event.sources.join(', ')}` : ''} · {event.reports > 1
+              Event {event.id}{(event.channels?.length ? event.channels : (event.sources || [])).length ? ` · ${(event.channels?.length ? event.channels : event.sources).join(', ')}` : ''} · {event.reports > 1
                 ? `${event.reports} reports · first ${fmtDateTime(event.firstSeen)} · latest ${fmtDateTime(event.lastSeen)}`
                 : `Reported ${fmtDateTime(event.firstSeen)}`}
             </p>

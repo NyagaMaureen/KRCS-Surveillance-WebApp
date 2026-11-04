@@ -502,6 +502,27 @@ def _linked_alert_shape(name):
 		"week": f"week {epi_week(a.last_week or a.week_start)[1]}"}
 
 
+def _channels_for(events):
+	"""{event: ['WhatsApp', 'Mobile', 'CBS', ...]}: where each event's reports came from (Field reports use the report's own channel)."""
+	if not events:
+		return {}
+	sigs = frappe.get_all("Surveillance Signal", filters={"event": ["in", list(events)]}, fields=["event", "source", "ref"], order_by="signal_date asc")
+	refs = [s.ref for s in sigs if s.source == "Field" and s.ref]
+	chan = {r.name: r.channel for r in frappe.get_all("Case Report", filters={"name": ["in", refs]}, fields=["name", "channel"])} if refs else {}
+	out = {}
+	for s in sigs:
+		label = (chan.get(s.ref) or "Field report") if s.source == "Field" else s.source
+		if label and label not in out.setdefault(s.event, []):
+			out[s.event].append(label)
+	return out
+
+
+def _signal_channel(sig):
+	if sig.get("source") != "Field":
+		return sig.get("source")
+	return frappe.db.get_value("Case Report", sig.get("ref"), "channel") or "Field report" if sig.get("ref") else "Field report"
+
+
 def _shape(d, detail=False):
 	first = get_datetime(d.first_reported) if d.first_reported else None
 	out = {
@@ -526,6 +547,9 @@ def _shape(d, detail=False):
 			order_by="signal_date desc")]
 		out["timeline"] = [{"at": str(a.at), "user": a.user, "action": a.action, "note": a.note}
 			for a in sorted(d.actions or [], key=lambda a: a.at or now_datetime(), reverse=True)]
+		for sg in out["signals"]:
+			sg["channel"] = _signal_channel(sg)
+		out["channels"] = _channels_for([d.name]).get(d.name, [])
 		out["canAct"] = has_capability(ACT)
 		out["related"] = related_events(d.disease, d.sub_county, d.last_reported, exclude=d.name) if d.status in OPEN else []
 		merged = next((a.note for a in (d.actions or []) if a.action == "Merged"), None)
@@ -582,6 +606,9 @@ def get_events(status=None, disease=None, region=None, source=None, search=None,
 		else:
 			shaped["relatedCount"] = 0
 		events.append(shaped)
+	chans = _channels_for([e["id"] for e in events])
+	for e in events:
+		e["channels"] = chans.get(e["id"], [])
 	from surveillance.event_tasks import counts_for_events
 	task_counts = counts_for_events([e["id"] for e in events])
 	for e in events:

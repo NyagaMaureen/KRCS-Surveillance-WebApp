@@ -7,7 +7,7 @@ import { sev, BTN_SECONDARY, EmptyState } from '../components/surveillance/ui'
 
 const SEVERITIES = ['critical', 'high', 'standard']
 const SEVERITY_RANK = { critical: 0, high: 1, standard: 2 }
-const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
+const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Normal' }
 
 const SEVERITY_BAR = {
   critical: 'bg-red-600',
@@ -39,7 +39,7 @@ const STATUS_LABELS = { Pending: 'New', Investigating: 'Under investigation', Co
 
 const SOURCE_LABELS = {
   CBS: 'Community (CBS)',
-  'Case Report': 'Field reports',
+  'Case Report': 'Mobile & WhatsApp reports',
   IDSR: 'Health facilities (MOH 505)',
 }
 
@@ -343,7 +343,7 @@ export default function AlertsSignals() {
   return (
     <AppShell>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
-        <div className="max-w-2xl">
+        <div className="w-full max-w-none">
           <h1 className="text-xl font-semibold text-brand-navy">Epi Trends</h1>
           <p className="text-sm text-gray-400 mt-0.5">Weekly case counts compared with what is normal for each place. An alert means a disease is rising above its usual level and may need an investigation.</p>
           <Link to="/alerts-signals" className={`inline-block text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2 mt-1 rounded ${FOCUS}`}>Looking for individual reports to verify? See the Review Queue</Link>

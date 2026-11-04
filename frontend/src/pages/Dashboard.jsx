@@ -19,8 +19,7 @@ import MyTasksCard from '../components/tasks/MyTasksCard'
 import ChartCard from '../components/analytics/ChartCard'
 import StatCard from '../components/analytics/StatCard'
 import { CHART_FONT } from '../charts/chartSetup'
-import { getDashboard, getAreaContext, exportCsv } from '../api/frappe'
-import { ContextBody } from '../components/context/ContextPanel'
+import { getDashboard, getWeatherStatus, getWeatherSeries, exportCsv } from '../api/frappe'
 
 const ICONS = { MapPin, AlertTriangle, Radio, CheckCheck }
 const iconFor = (name) => ICONS[name] || MapPin
@@ -34,10 +33,21 @@ const SEVERITY_STYLES = {
 const SERIES_COLORS = ['#F15A67', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#14B8A6', '#6B7280']
 
 const TREND_SOURCES = [
-  { key: 'community', label: 'Community', hint: 'Field reports and CBS signals' },
-  { key: 'facility', label: 'Facility', hint: 'MOH 505 (IDSR) weekly cases' },
-  { key: 'all', label: 'All sources', hint: 'Community and facility together' },
+  { key: 'all', label: 'All sources', hint: 'Mobile, web, WhatsApp, CBS and facility together' },
+  { key: 'mobile', label: 'Mobile app', hint: 'Reports from the mobile app' },
+  { key: 'web', label: 'Web', hint: 'Reports from the web app' },
+  { key: 'whatsapp', label: 'WhatsApp', hint: 'Reports from WhatsApp' },
+  { key: 'cbs', label: 'CBS', hint: 'Community-based surveillance signals' },
+  { key: 'facility', label: 'Facility', hint: 'MOH 505 (IDSR) weekly cases and EMR' },
 ]
+
+const TIME_RANGES = [
+  { key: '4w', label: 'Last 4 weeks', weeks: 4 },
+  { key: '12w', label: 'Last 12 weeks', weeks: 12 },
+  { key: '6m', label: 'Last 6 months', weeks: 26 },
+  { key: '12m', label: 'Last 12 months', weeks: 52 },
+]
+const FILTER_SELECT = 'h-9 bg-white border border-gray-200 rounded-lg px-3 text-sm text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400'
 
 const QUICK_ACTIONS = [
   { label: 'View All Alerts', icon: Radio, to: '/epi-trends', color: '#3E85C5', bg: 'rgba(62, 133, 197, 0.05)' },
@@ -62,12 +72,6 @@ const baseScales = {
   y: { grid: { color: GRID_COLOR }, ticks: { color: TICK_COLOR, font: tickFont, precision: 0 }, beginAtZero: true },
 }
 
-function formatChangePct(pct) {
-  if (pct > 0) return { label: `+${pct}%`, className: 'text-red-700' }
-  if (pct < 0) return { label: `${pct}%`, className: 'text-gray-600' }
-  return { label: '±0%', className: 'text-gray-600' }
-}
-
 function fmtWeek(v) {
   if (!v) return null
   const d = new Date(String(v).slice(0, 10))
@@ -80,32 +84,51 @@ function Empty({ children }) {
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
-  const [trendSource, setTrendSource] = useState('community')
+  const [trendSource, setTrendSource] = useState('all')
   const [trends, setTrends] = useState(null)
   const [hidden, setHidden] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [areaContext, setAreaContext] = useState(null)
+  const [range, setRange] = useState('12w')
+  const [area, setArea] = useState('')
+  const [disease, setDisease] = useState('')
+  const [diseaseOptions, setDiseaseOptions] = useState([])
+  const [areas, setAreas] = useState([])
+  const [rainArea, setRainArea] = useState('')
+  const [rain, setRain] = useState(null)
+  const weeks = TIME_RANGES.find((r) => r.key === range)?.weeks || 12
 
   useEffect(() => {
-    getAreaContext().then(setAreaContext).catch(() => setAreaContext([]))
+    getWeatherStatus().then((s) => {
+      setAreas(s)
+      if (s.length) setRainArea((cur) => cur || s[0].subCounty)
+    }).catch(() => setAreas([]))
   }, [])
+
+  useEffect(() => { if (area) setRainArea(area) }, [area])
+
+  useEffect(() => {
+    if (!rainArea) return
+    setRain(null)
+    getWeatherSeries(rainArea, 90).then(setRain).catch(() => setRain([]))
+  }, [rainArea])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    getDashboard(trendSource)
+    getDashboard(trendSource, weeks, area, disease)
       .then((d) => {
         if (cancelled) return
-        if (!data) setData(d)
+        setData(d)
         setTrends(d.trends)
+        setDiseaseOptions(d.diseaseOptions || [])
         setError('')
       })
       .catch((e) => !cancelled && setError(e.message || 'Could not load the dashboard'))
       .finally(() => !cancelled && setLoading(false))
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trendSource])
+  }, [trendSource, weeks, area, disease])
 
   const stats = data?.stats || []
   const alerts = data?.alerts || []
@@ -140,10 +163,22 @@ export default function Dashboard() {
     if (!dailyVolume.labels.length) return null
     return {
       labels: dailyVolume.labels,
-      datasets: [{ label: 'New events', data: dailyVolume.data, backgroundColor: '#D62728', borderRadius: 4, barThickness: 36 }],
+      datasets: [{ label: 'New events', data: dailyVolume.data, backgroundColor: '#D62728', borderRadius: 4, maxBarThickness: 36 }],
     }
   }, [dailyVolume])
   const dailyVolumeOptions = { ...baseOptions, scales: baseScales }
+
+  const rainData = useMemo(() => {
+    if (!rain?.length) return null
+    return {
+      labels: rain.map((d) => new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+      datasets: [{ label: 'Rainfall (mm)', data: rain.map((d) => d.rainfall_mm), backgroundColor: '#3B82F6', borderRadius: 2 }],
+    }
+  }, [rain])
+  const rainOptions = {
+    ...baseOptions,
+    scales: { x: { grid: { display: false }, ticks: { color: TICK_COLOR, font: tickFont, maxTicksLimit: 12 } }, y: baseScales.y },
+  }
 
   const distributionData = useMemo(() => {
     if (!distribution.labels.length) return null
@@ -157,9 +192,9 @@ export default function Dashboard() {
 
   function handleExportReport() {
     const rows = [
-      ...stats.map((s) => ({ section: 'Summary', item: s.label, value: s.value, change: `${s.changePct}% ${s.compare || ''}`.trim() })),
+      ...stats.map((s) => ({ section: 'Summary', item: s.label, value: s.value, change: s.compare || '' })),
       ...alerts.map((a) => ({ section: 'Open events', item: `${a.title} (${a.location})`, value: `${a.affected} affected`, change: `${a.severity} · ${a.status}` })),
-      ...distribution.labels.map((l, i) => ({ section: 'Events by disease (30 days)', item: l, value: distribution.data[i], change: `${distribution.changePct[i]}%` })),
+      ...distribution.labels.map((l, i) => ({ section: `Events by disease (${data?.weeks || weeks} weeks)`, item: l, value: distribution.data[i], change: '' })),
       ...series.map((s) => ({ section: `Disease trends (${trends.source}, weeks ${trends.labels[0]} to ${trends.labels[trends.labels.length - 1]})`, item: s.name, value: s.total, change: 'cases' })),
     ]
     exportCsv('dashboard-overview.csv', rows, [
@@ -192,17 +227,36 @@ export default function Dashboard() {
 
       {error && <p className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">{error}</p>}
 
+      <div className="bg-white rounded-2xl border border-gray-100 p-3 sm:p-4 mb-6 flex items-center gap-3 flex-wrap">
+        <span className="text-xs font-medium text-gray-500">Filter</span>
+        <select aria-label="Time range" value={range} onChange={(e) => setRange(e.target.value)} className={FILTER_SELECT}>
+          {TIME_RANGES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+        </select>
+        <select aria-label="Area" value={area} onChange={(e) => { setArea(e.target.value); setHidden({}) }} className={FILTER_SELECT}>
+          <option value="">All areas</option>
+          {areas.map((a) => <option key={a.subCounty} value={a.subCounty}>{a.subCountyName}</option>)}
+        </select>
+        <select aria-label="Source" value={trendSource} onChange={(e) => { setTrendSource(e.target.value); setHidden({}) }} className={FILTER_SELECT}>
+          {TREND_SOURCES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+        </select>
+        <select aria-label="Disease" value={disease} onChange={(e) => { setDisease(e.target.value); setHidden({}) }} className={FILTER_SELECT}>
+          <option value="">All diseases</option>
+          {(disease && !diseaseOptions.includes(disease) ? [disease, ...diseaseOptions] : diseaseOptions).map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+        <span className="text-xs text-gray-400">Applies to the stats, lists and charts. The rainfall chart follows the area.</span>
+        {(range !== '12w' || area || disease || trendSource !== 'all') && (
+          <button onClick={() => { setRange('12w'); setArea(''); setDisease(''); setTrendSource('all'); setHidden({}) }} className="text-sm text-gray-500 hover:text-gray-900 underline underline-offset-2">Reset</button>
+        )}
+      </div>
+
       {data?.eventsAvailable && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
           {stats.map((s) => (
-            <div key={s.key} title={s.compare ? `Change: ${s.compare}` : undefined}>
+            <div key={s.key} title={s.compare || undefined}>
               <StatCard
                 icon={iconFor(s.icon)}
                 label={s.label}
                 value={s.value}
-                changePct={s.changePct}
-                trend={s.trend}
-                sentiment={s.sentiment}
               />
             </div>
           ))}
@@ -211,38 +265,13 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 gap-5">
         <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
-          <h3 className="text-sm sm:text-base font-medium text-gray-900 mb-5">Quick Actions</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {QUICK_ACTIONS.map((action) => (
-              <Link
-                key={action.label}
-                to={action.to}
-                className="rounded-xl p-6 flex flex-col items-center gap-4 text-center hover:opacity-80 transition-opacity"
-                style={{ backgroundColor: action.bg }}
-              >
-                <action.icon className="w-10 h-10" style={{ color: action.color }} />
-                <span className="text-sm font-medium text-gray-700">{action.label}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
             <div>
               <h3 className="text-sm sm:text-base font-medium text-gray-900">Disease Trends (cases per week, top 5 diseases)</h3>
               <p className="text-xs text-gray-400 mt-0.5">
-                {sourceInfo?.hint} · {trends?.area || 'Pilot sites'} · last 12 complete weeks
-                {trendSource !== 'community' && latestWeek && <> · facility data up to week of {latestWeek}</>}
+                {sourceInfo?.hint} · {trends?.area || 'Pilot sites'} · last {trends?.labels?.length || weeks} complete weeks
+                {['facility', 'all'].includes(trendSource) && latestWeek && <> · facility data up to week of {latestWeek}</>}
               </p>
-            </div>
-            <div className="bg-gray-50 border border-gray-100 rounded-lg p-1 flex gap-1">
-              {TREND_SOURCES.map((s) => (
-                <button key={s.key} onClick={() => { setTrendSource(s.key); setHidden({}) }}
-                  className={['px-3 py-1.5 rounded-md text-xs font-medium transition-colors', trendSource === s.key ? 'bg-red-600 text-white' : 'text-gray-900'].join(' ')}>
-                  {s.label}
-                </button>
-              ))}
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap mb-4">
@@ -283,7 +312,7 @@ export default function Dashboard() {
                       {alert.location} • {alert.date} • {alert.affected} affected
                       {alert.deaths > 0 && <> • {alert.deaths} death{alert.deaths === 1 ? '' : 's'}</>}
                       {' '}• {alert.reports} report{alert.reports === 1 ? '' : 's'}
-                      {alert.sources.length > 0 && <> • Source: {alert.sources.join(', ')}</>}
+                      {(alert.channels?.length || alert.sources.length) > 0 && <> • Channel: {(alert.channels?.length ? alert.channels : alert.sources).join(', ')}</>}
                       {' '}• {alert.status}
                     </p>
                   </div>
@@ -298,32 +327,28 @@ export default function Dashboard() {
         )}
 
         {data?.eventsAvailable && (
-          <ChartCard title="Daily Alert Volume (new events, last 7 days)" height="h-72 sm:h-80">
+          <ChartCard title={`New events per week (last ${data?.weeks || weeks} weeks)`} height="h-72 sm:h-80">
             {dailyVolumeData && dailyVolume.data.some((n) => n > 0)
               ? <Bar data={dailyVolumeData} options={dailyVolumeOptions} />
-              : <Empty>{loading ? 'Loading…' : 'No new events in the last 7 days.'}</Empty>}
+              : <Empty>{loading ? 'Loading…' : 'No new events in this period.'}</Empty>}
           </ChartCard>
         )}
 
         {data?.eventsAvailable && (
           <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
             <h3 className="text-sm sm:text-base font-medium text-gray-900 mb-1">Disease Distribution</h3>
-            <p className="text-xs text-gray-400 mb-5">Events in the last 30 days by disease (discarded left out); change vs the previous 30 days</p>
+            <p className="text-xs text-gray-400 mb-5">Events in the last {data?.weeks || weeks} weeks by disease (discarded left out)</p>
             <div className="relative w-full h-64 sm:h-72 mb-5">
               {distributionData ? <Pie data={distributionData} options={distributionOptions} />
-                : <Empty>{loading ? 'Loading…' : 'No events in the last 30 days.'}</Empty>}
+                : <Empty>{loading ? 'Loading…' : 'No events in this period.'}</Empty>}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {distribution.labels.map((label, i) => {
-                const change = formatChangePct(distribution.changePct[i])
-                return (
-                  <div key={label} className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: distributionColors[i] }} />
-                    <span className="text-xs text-gray-700 flex-1">{label} <span className="text-gray-400">({distribution.data[i]})</span></span>
-                    <span className={['text-xs font-medium shrink-0', change.className].join(' ')}>{change.label}</span>
-                  </div>
-                )
-              })}
+              {distribution.labels.map((label, i) => (
+                <div key={label} className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: distributionColors[i] }} />
+                  <span className="text-xs text-gray-700 flex-1">{label} <span className="text-gray-400">({distribution.data[i]})</span></span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -331,28 +356,41 @@ export default function Dashboard() {
         <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
             <div>
-              <h3 className="text-sm sm:text-base font-medium text-gray-900">Environmental & Population Context</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Rainfall, population and WASH per sub-county. Background only; not used by the alert engine.</p>
+              <h3 className="text-sm sm:text-base font-medium text-gray-900">Daily rainfall, last 90 days</h3>
+              <p className="text-xs text-gray-400 mt-0.5">{areas.find((a) => a.subCounty === rainArea)?.subCountyName || 'Select an area'} · background only; not used by the alert engine</p>
             </div>
-            <Link to="/context-data" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800">
-              Context data <ArrowRight className="w-4 h-4" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <select aria-label="Rainfall area" value={rainArea} onChange={(e) => setRainArea(e.target.value)} className={FILTER_SELECT}>
+                {areas.map((a) => <option key={a.subCounty} value={a.subCounty}>{a.subCountyName}</option>)}
+              </select>
+              <Link to="/context-data?tab=weather" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800">
+                Context data <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
           </div>
-          {areaContext === null ? (
-            <p className="text-sm text-gray-400">Loading context…</p>
-          ) : !areaContext.length ? (
-            <p className="text-sm text-gray-400">No context recorded for your area yet.</p>
-          ) : (
-            <div className="space-y-5">
-              {areaContext.map((c) => (
-                <div key={c.subCounty}>
-                  <div className="text-sm font-semibold text-gray-900 mb-2">{c.subCountyName} <span className="text-xs font-normal text-gray-400">· {c.county}</span></div>
-                  <ContextBody ctx={c} />
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="relative w-full h-64">
+            {rainData ? <Bar data={rainData} options={rainOptions} />
+              : <Empty>{rain === null && rainArea ? 'Loading…' : 'No weather data yet for this area.'}</Empty>}
+          </div>
         </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
+          <h3 className="text-sm sm:text-base font-medium text-gray-900 mb-5">Quick Actions</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {QUICK_ACTIONS.map((action) => (
+              <Link
+                key={action.label}
+                to={action.to}
+                className="rounded-xl p-6 flex flex-col items-center gap-4 text-center hover:opacity-80 transition-opacity"
+                style={{ backgroundColor: action.bg }}
+              >
+                <action.icon className="w-10 h-10" style={{ color: action.color }} />
+                <span className="text-sm font-medium text-gray-700">{action.label}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
       </div>
     </AppShell>
   )

@@ -1,7 +1,7 @@
 export const STATUSES = ['Submitted', 'Reviewed', 'Investigating', 'Linked', 'Closed']
 export const SEVERITIES = ['Mild', 'Moderate', 'Severe', 'Critical']
 export const AGE_BANDS = ['Under 5', '5-17', '18-59', '60+']
-export const CATEGORIES = ['Human Disease', 'Animal Disease', 'All Diseases']
+export const CATEGORIES = ['Human Disease', 'Animal Disease']
 export const NATIONALITIES = ['Kenyan', 'Non-Kenyan', 'Refugee', 'Prefer not to say']
 export const CHANNELS = ['Web', 'Mobile', 'SMS', 'USSD', 'WhatsApp']
 

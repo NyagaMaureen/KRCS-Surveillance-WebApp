@@ -9,7 +9,7 @@ Disease trends come from Weekly Count for the pilot sub-counties, split by sourc
 from collections import defaultdict
 
 import frappe
-from frappe.utils import add_days, getdate, now_datetime, nowdate
+from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
 
 from surveillance.capabilities import has_capability
 
@@ -21,6 +21,7 @@ SEVERITY_ORDER = {"critical": 0, "high": 1, "standard": 2}
 TREND_SOURCES = {
 	"community": ["Case Report", "CBS"],
 	"facility": ["IDSR", "EMR"],
+	"cbs": ["CBS"],
 	"all": ["Case Report", "CBS", "IDSR", "EMR"],
 }
 TREND_WEEKS = 12
@@ -63,61 +64,106 @@ def _week_start(d):
 	return add_days(d, -d.weekday())
 
 
+CHANNEL_SOURCES = {"mobile": "Mobile", "web": "Web", "whatsapp": "WhatsApp"}
+EVENT_SIGNAL_SOURCE = {"cbs": "CBS", "facility": "EMR"}
+
+
+def _sub_county_name(sub_county):
+	return (frappe.db.get_value("Sub County", sub_county, "sub_county_name") or sub_county) if sub_county else None
+
+
+def _filtered_names(names, source, sub_county):
+	"""Event names allowed by the user's scope AND the dashboard filters (area, source). None = no limit."""
+	allowed = None if names is None else set(names)
+	extra = None
+	if sub_county:
+		extra = set(frappe.get_all("Surveillance Event", filters={"sub_county": _sub_county_name(sub_county)}, pluck="name"))
+	if source in CHANNEL_SOURCES:
+		refs = frappe.get_all("Case Report", filters={"channel": CHANNEL_SOURCES[source]}, pluck="name")
+		ev = set(frappe.get_all("Surveillance Signal", filters={"source": "Field", "ref": ["in", refs or [""]], "event": ["is", "set"]},
+			pluck="event")) if refs else set()
+		extra = ev if extra is None else extra & ev
+	elif source in EVENT_SIGNAL_SOURCE:
+		ev = set(frappe.get_all("Surveillance Signal", filters={"source": EVENT_SIGNAL_SOURCE[source], "event": ["is", "set"]}, pluck="event"))
+		extra = ev if extra is None else extra & ev
+	if extra is None:
+		return None if allowed is None else sorted(allowed)
+	return sorted(extra if allowed is None else allowed & extra)
+
+
 @frappe.whitelist()
-def get_dashboard(trend_source="community"):
+def get_dashboard(trend_source="all", weeks=None, sub_county=None, disease=None):
+	"""trend_source: all | mobile | web | whatsapp | cbs | facility. weeks: 4..52. sub_county: one Sub County, or empty. disease: one disease name, or empty.
+	The filters apply to the stats, the lists, the charts and the trends alike."""
 	if not (has_capability(VIEW_EVENTS) or has_capability("view_alerts") or has_capability("view_reports")):
 		frappe.throw("You do not have permission to view the dashboard.", frappe.PermissionError)
 
 	today = getdate(nowdate())
+	n_weeks = min(max(cint(weeks) or TREND_WEEKS, 4), 52)
 	out = {"stats": [], "alerts": [], "dailyVolume": {"labels": [], "data": []},
-		"distribution": {"labels": [], "data": [], "changePct": []}, "eventsAvailable": False}
+		"distribution": {"labels": [], "data": [], "changePct": []}, "eventsAvailable": False, "weeks": n_weeks}
 
 	if has_capability(VIEW_EVENTS):
-		out.update(_event_sections(today))
+		out.update(_event_sections(today, n_weeks, trend_source, sub_county, disease))
 		out["eventsAvailable"] = True
-	out["trends"] = _trends(trend_source, today)
+	out["trends"] = _trends(trend_source, today, weeks=n_weeks, sub_county=sub_county, disease=disease)
+	# the disease list offers only diseases shown in the charts (before the disease filter), so it stays stable once one is picked
+	out["diseaseOptions"] = sorted(set(out.pop("_diseases", [])) | set(out["trends"].pop("_diseases", [])))
 	out["generatedAt"] = str(now_datetime())
 	return out
 
 
-def _event_sections(today):
-	names = _event_names()
-	d30, d60, d7, d14 = add_days(today, -30), add_days(today, -60), add_days(today, -7), add_days(today, -14)
+def _event_sections(today, n_weeks=12, source="all", sub_county=None, disease=None):
+	names = _filtered_names(_event_names(), source, sub_county)
+	days = n_weeks * 7
+	start, prev_start = add_days(today, -days), add_days(today, -2 * days)
+	present = {r.disease_name for r in frappe.get_all("Surveillance Event",
+		filters=_events(names, status=["!=", "Discarded"], creation=[">=", start]), fields=["disease_name"]) if r.disease_name}
+	if disease:
+		names = frappe.get_all("Surveillance Event", filters=_events(names, disease_name=disease), pluck="name")
 	count = lambda **f: frappe.db.count("Surveillance Event", _events(names, **f))
+	window = lambda a, b: ["between", [a, b]]
 
-	open_now = count(status=["in", OPEN])
-	new_30 = count(creation=[">=", d30])
-	new_prev_30 = count(creation=["between", [d60, add_days(d30, -1)]])
+	open_now = count(status=["in", OPEN], last_reported=[">=", start])
+	new_win = count(creation=[">=", start])
+	new_prev = count(creation=window(prev_start, add_days(start, -1)))
 
-	# every report submitted in our system (web, mobile, WhatsApp), any disease; officers see their own region
+	# reports submitted in our system (web, mobile, WhatsApp); the channel filter applies, CBS / facility have no case reports
 	report_filters = {}
-	if names is not None:
-		from surveillance.events import _user_region
-		region = _user_region()
-		if region:
-			report_filters["region"] = region
-	reports_today = frappe.db.count("Case Report", {**report_filters, "creation": [">=", today]})
-	reports_yesterday = frappe.db.count("Case Report", {**report_filters,
-		"creation": ["between", [add_days(today, -1), add_days(today, -1)]]})
+	from surveillance.events import _user_region
+	region = _user_region()
+	if region:
+		report_filters["region"] = region
+	if sub_county:
+		report_filters["sub_county"] = sub_county
+	if source in CHANNEL_SOURCES:
+		report_filters["channel"] = CHANNEL_SOURCES[source]
+	if disease:
+		report_filters["suspected_disease"] = ["in", [k for k, v in _disease_names().items() if v == disease] + [disease]]
+	no_reports = source in EVENT_SIGNAL_SOURCE
+	rc = lambda **f: 0 if no_reports else frappe.db.count("Case Report", {**report_filters, **f})
+	reports_win = rc(creation=[">=", start])
+	reports_prev = rc(creation=window(prev_start, add_days(start, -1)))
 
-	waiting = count(status=["in", WAITING])
-	waiting_new_7 = count(status=["in", WAITING], creation=[">=", d7])
-	waiting_new_prev = count(status=["in", WAITING], creation=["between", [d14, add_days(d7, -1)]])
+	waiting = count(status=["in", WAITING], last_reported=[">=", start])
+	waiting_new = count(status=["in", WAITING], creation=[">=", start])
+	waiting_prev = count(status=["in", WAITING], creation=window(prev_start, add_days(start, -1)))
 
 	esc_filters = {"parenttype": "Surveillance Event", "action": ESCALATED_ACTION}
 	if names is not None:
 		esc_filters["parent"] = ["in", names or [""]]
-	esc_30 = len(set(frappe.get_all("Surveillance Event Action", filters={**esc_filters, "at": [">=", d30]}, pluck="parent")))
+	esc_win = len(set(frappe.get_all("Surveillance Event Action", filters={**esc_filters, "at": [">=", start]}, pluck="parent")))
 	esc_prev = len(set(frappe.get_all("Surveillance Event Action",
-		filters={**esc_filters, "at": ["between", [d60, add_days(d30, -1)]]}, pluck="parent")))
+		filters={**esc_filters, "at": window(prev_start, add_days(start, -1))}, pluck="parent")))
 
+	label = f"last {n_weeks} weeks"
 	stats = [
-		_stat("open_events", "Open Events", open_now, "MapPin", new_30, new_prev_30, compare="new events vs previous 30 days"),
-		_stat("reports_today", "Reports Today", reports_today, "AlertTriangle", reports_today, reports_yesterday,
-			more_is_bad=False, compare="reports submitted in the system vs yesterday"),
-		_stat("waiting_verification", "Waiting for Verification", waiting, "Radio", waiting_new_7, waiting_new_prev,
-			compare="new this week vs last week"),
-		_stat("escalated", "Escalated to MOH (30 days)", esc_30, "CheckCheck", esc_30, esc_prev, compare="vs previous 30 days"),
+		_stat("open_events", "Open Events", open_now, "MapPin", new_win, new_prev, compare=f"open events with a report in the {label}"),
+		_stat("reports", f"Reports ({n_weeks} weeks)", reports_win, "AlertTriangle", reports_win, reports_prev,
+			more_is_bad=False, compare=f"reports submitted in the {label}"),
+		_stat("waiting_verification", "Waiting for Verification", waiting, "Radio", waiting_new, waiting_prev,
+			compare=f"events with a report in the {label} not yet verified"),
+		_stat("escalated", f"Escalated to MOH ({n_weeks} weeks)", esc_win, "CheckCheck", esc_win, esc_prev, compare=f"events escalated to county / MoH in the {label}"),
 	]
 
 	# most urgent open events
@@ -132,33 +178,38 @@ def _event_sections(today):
 		"affected": r.people or 0, "deaths": r.deaths or 0, "reports": r.reports or 0,
 		"sources": [s.strip() for s in (r.sources or "").split(",") if s.strip()],
 	} for r in rows[:5]]
+	from surveillance.events import _channels_for
+	chans = _channels_for([a["id"] for a in alerts])
+	for a in alerts:
+		a["channels"] = chans.get(a["id"], [])
 
-	# new events per day, last 7 days
-	days = [add_days(today, -i) for i in reversed(range(7))]
-	per_day = defaultdict(int)
-	for c in frappe.get_all("Surveillance Event", filters=_events(names, creation=[">=", days[0]]), pluck="creation"):
-		per_day[getdate(c)] += 1
-	volume = {"labels": [d.strftime("%a %-d") for d in days], "data": [per_day[d] for d in days]}
+	# new events per week across the chosen range
+	weeks = [add_days(_week_start(today), -7 * i) for i in reversed(range(n_weeks))]
+	per_week = defaultdict(int)
+	for c in frappe.get_all("Surveillance Event", filters=_events(names, creation=[">=", weeks[0]]), pluck="creation"):
+		per_week[_week_start(c)] += 1
+	volume = {"labels": [w.strftime("%-d %b") for w in weeks], "data": [per_week[w] for w in weeks]}
 
-	# events by disease, last 30 days (discarded left out), with change vs previous 30 days
-	def by_disease(start, end=None):
-		f = {"status": ["!=", "Discarded"], "creation": [">=", start] if end is None else ["between", [start, end]]}
+	# events by disease in the range (discarded left out), with change vs the range before
+	def by_disease(a, b=None):
+		f = {"status": ["!=", "Discarded"], "creation": [">=", a] if b is None else ["between", [a, b]]}
 		res = defaultdict(int)
 		for r in frappe.get_all("Surveillance Event", filters=_events(names, **f), fields=["disease_name"]):
 			res[r.disease_name or "Unknown"] += 1
 		return res
-	cur, prev = by_disease(d30), by_disease(d60, add_days(d30, -1))
+	cur, prev = by_disease(start), by_disease(prev_start, add_days(start, -1))
 	order = sorted(cur, key=lambda k: -cur[k])
 	distribution = {"labels": order, "data": [cur[k] for k in order], "changePct": [_pct(cur[k], prev.get(k, 0)) for k in order]}
 
-	return {"stats": stats, "alerts": alerts, "dailyVolume": volume, "distribution": distribution}
+	return {"stats": stats, "alerts": alerts, "dailyVolume": volume, "distribution": distribution, "_diseases": sorted(present)}
 
 
-def _trends(source, today):
+def _trends(source, today, weeks=None, sub_county=None, disease=None):
 	from surveillance.events import _scope
-	source = source if source in TREND_SOURCES else "community"
+	source = source if source in TREND_SOURCES or source in CHANNEL_SOURCES else "all"
 	last = add_days(_week_start(today), -7)                     # last complete week
-	weeks = [add_days(last, -7 * i) for i in reversed(range(TREND_WEEKS))]
+	n_weeks = min(max(int(weeks or TREND_WEEKS), 4), 52)
+	weeks = [add_days(last, -7 * i) for i in reversed(range(n_weeks))]
 	subs, _ = _scope()
 	area = "Dadaab and Kalobeyei sites"
 	from surveillance.events import _user_region
@@ -169,12 +220,28 @@ def _trends(source, today):
 		area = (frappe.db.get_value("Region", region, "region_name") or region) + " site"
 
 
-	rows = frappe.db.sql("""
-		select disease, sub_county, week_start, sum(signals) as n
-		from `tabWeekly Count`
-		where source in %(sources)s and week_start between %(first)s and %(last)s
-		group by disease, sub_county, week_start
-	""", {"sources": tuple(TREND_SOURCES[source]), "first": weeks[0], "last": last}, as_dict=True)
+	if sub_county:   # one sub-county, only if it is inside this user's area
+		key = (frappe.db.get_value("Sub County", sub_county, "sub_county_name") or sub_county).strip().lower()
+		subs = {key} & subs
+		area = frappe.db.get_value("Sub County", sub_county, "sub_county_name") or sub_county
+
+	if source in CHANNEL_SOURCES:   # case reports from one channel, counted by suspected disease and week
+		raw = frappe.db.sql("""
+			select suspected_disease as disease, sub_county, date_sub(date(creation), interval weekday(creation) day) as week_start, count(*) as n
+			from `tabCase Report`
+			where channel = %(channel)s and suspected_disease is not null and suspected_disease != ''
+				and date(creation) >= %(first)s and date(creation) < %(after)s
+			group by suspected_disease, sub_county, week_start
+		""", {"channel": CHANNEL_SOURCES[source], "first": weeks[0], "after": add_days(last, 7)}, as_dict=True)
+		sc_names = {r.name: r.sub_county_name for r in frappe.get_all("Sub County", fields=["name", "sub_county_name"])}
+		rows = [frappe._dict(disease=r.disease, sub_county=sc_names.get(r.sub_county, r.sub_county), week_start=r.week_start, n=r.n) for r in raw]
+	else:
+		rows = frappe.db.sql("""
+			select disease, sub_county, week_start, sum(signals) as n
+			from `tabWeekly Count`
+			where source in %(sources)s and week_start between %(first)s and %(last)s
+			group by disease, sub_county, week_start
+		""", {"sources": tuple(TREND_SOURCES[source]), "first": weeks[0], "last": last}, as_dict=True)
 
 	totals, series = defaultdict(int), defaultdict(lambda: defaultdict(int))
 	for r in rows:
@@ -186,8 +253,11 @@ def _trends(source, today):
 
 	names = _disease_names()
 	top = [d for d in sorted(totals, key=lambda k: -totals[k]) if totals[d] > 0][:TOP_DISEASES]
-	latest = frappe.db.sql("select max(week_start) from `tabWeekly Count` where source in %(s)s",
-		{"s": tuple(TREND_SOURCES[source])})[0][0]
+	shown = sorted({names.get(d, d) for d in top})
+	if disease:
+		top = [d for d in sorted(totals, key=lambda k: -totals[k]) if totals[d] > 0 and names.get(d, d) == disease]
+	latest = None if source in CHANNEL_SOURCES else frappe.db.sql(
+		"select max(week_start) from `tabWeekly Count` where source in %(s)s", {"s": tuple(TREND_SOURCES[source])})[0][0]
 	return {
 		"source": source,
 		"labels": [w.strftime("%-d %b") for w in weeks],
@@ -195,5 +265,6 @@ def _trends(source, today):
 		"series": [{"key": d, "name": names.get(d, d), "data": [series[d][w] for w in weeks], "total": totals[d]} for d in top],
 		"latestWeek": str(latest) if latest else None,
 		"area": area,
+		"_diseases": shown,
 
 	}

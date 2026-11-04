@@ -9,7 +9,7 @@ import { getOfficerDashboard } from '../api/frappe'
 import { FOCUS, CARD, Badge } from '../components/chp/ui'
 
 const ICONS = { new: FileText, priority: AlertTriangle, verify: ShieldCheck, investigating: Search }
-const SEVERITY = { critical: { label: 'Critical', tone: 'red' }, high: { label: 'High', tone: 'amber' }, standard: { label: 'Standard', tone: 'gray' } }
+const SEVERITY = { critical: { label: 'Critical', tone: 'red' }, high: { label: 'High', tone: 'amber' }, standard: { label: 'Normal', tone: 'gray' } }
 const STATUS = { New: 'new', Verifying: 'verifying', Investigating: 'in the field', Confirmed: 'confirmed', Escalated: 'escalated' }
 const GRID = '#F0F0F0'
 const TICK = '#666666'
@@ -122,7 +122,7 @@ export default function SurveillanceDashboard() {
                         {[e.area, e.subCounty].filter(Boolean).join(', ') || 'Location missing'} • {STATUS[e.status] || e.status} • {e.people} affected
                       </span>
                     </span>
-                    <Badge tone={SEVERITY[e.severity]?.tone}>{SEVERITY[e.severity]?.label || 'Standard'}</Badge>
+                    <Badge tone={SEVERITY[e.severity]?.tone}>{SEVERITY[e.severity]?.label || 'Normal'}</Badge>
                   </Link>
                 </li>
               ))}
@@ -147,7 +147,7 @@ export default function SurveillanceDashboard() {
                       <span className="block text-sm text-gray-900 truncate">{t.title}</span>
                       <span className="block text-sm text-gray-500 mt-1 truncate">{t.location}{t.why ? ` • ${t.why}` : ''}</span>
                     </span>
-                    <Badge tone={SEVERITY[t.severity]?.tone}>{SEVERITY[t.severity]?.label || 'Standard'}</Badge>
+                    <Badge tone={SEVERITY[t.severity]?.tone}>{SEVERITY[t.severity]?.label || 'Normal'}</Badge>
                   </Link>
                 </li>
               ))}

@@ -35,6 +35,7 @@ const PERIOD_OPTIONS = [
 const EMPTY_DATA = { events: [], unmapped: 0, stats: { open: 0, critical: 0, waiting: 0, escalated: 0 } }
 
 function cap(s) {
+  if (s === 'standard') return 'Normal'
   return s ? s[0].toUpperCase() + s.slice(1) : s
 }
 
@@ -190,7 +191,7 @@ export default function SurveillanceMap() {
       { label: 'Status', value: (a) => a.status },
       { label: 'People', value: (a) => a.people },
       { label: 'Reports', value: (a) => a.reports },
-      { label: 'Sources', value: (a) => (a.sources || []).join('; ') },
+      { label: 'Sources', value: (a) => (a.channels?.length ? a.channels : (a.sources || [])).join('; ') },
       { label: 'First reported', value: (a) => a.firstSeen },
       { label: 'Last reported', value: (a) => a.lastSeen },
       { label: 'Latitude', value: (a) => a.lat },

@@ -21,7 +21,7 @@ const SEVERITY_BADGE = {
   high: 'bg-amber-400',
   standard: 'bg-blue-500',
 }
-const SEVERITY_LABEL = { critical: 'Critical', high: 'High', standard: 'Standard' }
+const SEVERITY_LABEL = { critical: 'Critical', high: 'High', standard: 'Normal' }
 
 const PULSE_CSS = `
 @keyframes map-critical-pulse { 0% { transform: scale(0.6); opacity: 0.7; } 100% { transform: scale(1.6); opacity: 0; } }

@@ -56,7 +56,7 @@ const INITIAL_AI_FEATURES = [
 const PRIORITY_OPTIONS = [
   { value: 'Critical', colorClass: 'text-red-700' },
   { value: 'High', colorClass: 'text-amber-600' },
-  { value: 'Standard', colorClass: 'text-gray-600' },
+  { value: 'Standard', label: 'Normal', colorClass: 'text-gray-600' },
 ]
 
 const INITIAL_NOTIFICATION_PREFS = [
@@ -910,7 +910,7 @@ export default function Settings() {
                         ].join(' ')}
                       >
                         {PRIORITY_OPTIONS.map((p) => (
-                          <option key={p.value} value={p.value}>{p.value}</option>
+                          <option key={p.value} value={p.value}>{p.label || p.value}</option>
                         ))}
                       </select>
                     </div>
@@ -955,7 +955,7 @@ export default function Settings() {
                       ].join(' ')}
                     >
                       {PRIORITY_OPTIONS.map((p) => (
-                        <option key={p.value} value={p.value}>{p.value}</option>
+                        <option key={p.value} value={p.value}>{p.label || p.value}</option>
                       ))}
                     </select>
                   </div>

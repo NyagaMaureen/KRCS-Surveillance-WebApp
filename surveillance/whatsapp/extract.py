@@ -147,7 +147,7 @@ def local_extract(value, catalog, sub_counties, today):
 	people = any(w in PEOPLE for w in words)
 	animals = any(w in ANIMALS for w in words)
 	if people or animals:
-		category = "All Disease" if people and animals else "Animal Disease" if animals else "Human Disease"
+		category = "Human Disease" if people else "Animal Disease"   # the "All Disease" category was retired; animal contact is kept in animal_exposure
 		fields["category"] = {"value": category, "confidence": 0.8}
 	fields.update(_find_places(words, catalog["regions"], sub_counties))
 	return {

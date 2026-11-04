@@ -17,7 +17,7 @@ const SEVERITY_ACCENT = {
   standard: { banner: 'bg-blue-500', dot: 'bg-blue-500' },
 }
 
-const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
+const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Normal' }
 
 const STATUS_STYLES = {
   Pending: 'border-amber-400 bg-amber-400/10 text-amber-500',
@@ -41,7 +41,7 @@ const REVIEW_OUTCOMES = [
 
 const SOURCE_LABELS = {
   CBS: 'Community (CBS)',
-  'Case Report': 'Field reports',
+  'Case Report': 'Mobile & WhatsApp reports',
   IDSR: 'Health facilities (MOH 505)',
 }
 const SOURCE_COLORS = {

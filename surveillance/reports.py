@@ -117,3 +117,21 @@ def record_sync_stats(stats):
 		frappe.get_doc({"doctype": "Mobile Sync Stats", "user": frappe.session.user, "device_id": device, "day": day,
 			**values}).insert(ignore_permissions=True)
 	return {"ok": True}
+
+
+@frappe.whitelist()
+def get_reporter_role(report):
+	"""System role of whoever submitted a report (e.g. 'CHP', 'Surveillance Officer'), shown next to their name."""
+	if not frappe.has_permission("Case Report", "read", doc=report):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	user = frappe.db.get_value("Case Report", report, "reported_by") or frappe.db.get_value("Case Report", report, "owner")
+	if not user:
+		return {"role": None}
+	if user == "Administrator":
+		return {"role": "Administrator"}
+	roles = set(frappe.get_roles(user))
+	rows = frappe.get_all("Surveillance Role", fields=["name", "role"], order_by="creation asc")
+	mine = [r.name for r in rows if r.role in roles]
+	if mine:
+		return {"role": mine[0]}
+	return {"role": "Administrator" if "System Manager" in roles else None}

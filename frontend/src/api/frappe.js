@@ -156,7 +156,7 @@ export async function getList(doctype, fields, opts = {}) {
   })
   if (opts.orderBy) params.set('order_by', opts.orderBy)
   if (opts.filters && Object.keys(opts.filters).length) {
-    params.set('filters', JSON.stringify(Object.entries(opts.filters).map(([k, v]) => [k, '=', v])))
+    params.set('filters', JSON.stringify(Object.entries(opts.filters).map(([k, v]) => (Array.isArray(v) ? [k, v[0], v[1]] : [k, '=', v]))))
   }
   const res = await fetch(`${BASE}/api/resource/${encodeURIComponent(doctype)}?${params}`)
   const data = await res.json()
@@ -165,7 +165,7 @@ export async function getList(doctype, fields, opts = {}) {
 
 
 export async function getCount(doctype, filtersObj = {}) {
-  const filters = Object.entries(filtersObj).map(([k, v]) => [k, '=', v])
+  const filters = Object.entries(filtersObj).map(([k, v]) => (Array.isArray(v) ? [k, v[0], v[1]] : [k, '=', v]))
   const res = await fetch(`${BASE}/api/method/frappe.client.get_count?doctype=${encodeURIComponent(doctype)}&filters=${encodeURIComponent(JSON.stringify(filters))}`)
   const data = await res.json()
   return data.message || 0
@@ -186,12 +186,13 @@ export async function insertDoc(doc) {
 }
 
 
-export function exportExcel(doctype, fields) {
+export function exportExcel(doctype, fields, filters) {
   const form = document.createElement('form')
   form.method = 'POST'
   form.action = '/api/method/frappe.desk.reportview.export_query'
   form.target = '_blank'
   const data = { doctype, file_format_type: 'Excel', fields: JSON.stringify(fields) }
+  if (filters && filters.length) data.filters = JSON.stringify(filters)
   Object.entries(data).forEach(([k, v]) => {
     const input = document.createElement('input')
     input.type = 'hidden'; input.name = k; input.value = v
@@ -536,8 +537,10 @@ export async function getAnalytics({ weeks = 13, source = 'all', disease = '' } 
 
 
 
-export async function getDashboard(trendSource = 'community') {
-  return callMethod('/api/method/surveillance.dashboard.get_dashboard?trend_source=' + encodeURIComponent(trendSource))
+export async function getDashboard(trendSource = 'community', weeks = 12, subCounty = '', disease = '') {
+  return callMethod('/api/method/surveillance.dashboard.get_dashboard?trend_source=' + encodeURIComponent(trendSource)
+    + '&weeks=' + encodeURIComponent(weeks) + (subCounty ? '&sub_county=' + encodeURIComponent(subCounty) : '')
+    + (disease ? '&disease=' + encodeURIComponent(disease) : ''))
 }
 
 /*
@@ -758,6 +761,11 @@ export async function getAuditLogs(opts = {}) {
 }
 
 // --- Case Report (health signal) CRUD ---
+export async function getReporterRole(report) {
+  const r = await callMethod(`/api/method/surveillance.reports.get_reporter_role?report=${encodeURIComponent(report)}`)
+  return r?.role || ''
+}
+
 export async function getReport(name) {
   return getDoc('Case Report', name)
 }
@@ -781,6 +789,12 @@ export async function updateReport(name, fields) {
 
 export async function deleteReport(name) {
   return deleteDoc('Case Report', name)
+}
+
+export async function getModelHint({ symptoms, age_group }) {
+  const params = new URLSearchParams({ symptoms: JSON.stringify(symptoms || []) })
+  if (age_group) params.set('age_group', age_group)
+  return (await callMethod(`/api/method/surveillance.ai_classifier.get_model_hint?${params}`)) || { suggestions: [] }
 }
 
 export async function classifyPreview({ symptoms, age_group, animal_exposure }) {
@@ -1257,12 +1271,24 @@ export async function getRiskWeights() {
   return callMethod('/api/method/surveillance.risk.get_weights')
 }
 
-export async function saveRiskWeights(weights) {
-  return callMethodPost('/api/method/surveillance.risk.save_weights', { weights })
+export async function saveRiskWeights(weights, paramsValues) {
+  return callMethodPost('/api/method/surveillance.risk.save_weights', { weights, ...(paramsValues ? { params_values: paramsValues } : {}) })
 }
 
 export async function getCbsContact(signal) {
   return callMethod(`/api/method/surveillance.cbs_feed.get_reporter_contact?signal=${encodeURIComponent(signal)}`)
+}
+
+export async function getTriageInsight(event) {
+  return callMethod(`/api/method/surveillance.ai_classifier.get_triage_insight?event=${encodeURIComponent(event)}`)
+}
+
+export async function getReportCandidates(report) {
+  return callMethod(`/api/method/surveillance.ai_classifier.get_report_candidates?report=${encodeURIComponent(report)}`)
+}
+
+export async function getReportTriage(event, report) {
+  return callMethod(`/api/method/surveillance.ai_classifier.get_report_triage?event=${encodeURIComponent(event)}&report=${encodeURIComponent(report)}`)
 }
 
 export async function getTrendCbsReports(event) {

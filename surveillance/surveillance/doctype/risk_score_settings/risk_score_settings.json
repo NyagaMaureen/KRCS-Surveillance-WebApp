@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-30 12:00:00.000000",
- "modified": "2026-10-30 13:00:00.000000",
+ "modified": "2026-11-04 10:45:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "doctype": "DocType",
@@ -16,6 +16,7 @@
   "weight_people",
   "weight_unusual",
   "weight_context",
+  "params_json",
   "sb_red",
   "red_flag_symptoms"
  ],
@@ -49,6 +50,13 @@
    "fieldtype": "Int",
    "label": "Local context (WASH, rain, population) (max points)",
    "default": "10"
+  },
+  {
+   "fieldname": "params_json",
+   "fieldtype": "Long Text",
+   "label": "Score parameters (JSON)",
+   "hidden": 1,
+   "description": "Shares and thresholds edited in Settings -> AI Config. Do not edit by hand."
   },
   {
    "fieldname": "sb_red",
