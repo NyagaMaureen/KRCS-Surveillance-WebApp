@@ -8,14 +8,12 @@ Staff are recognised by WhatsApp number = User.mobile_no (any format), if the us
 account_status is Active or empty. The phone index is cleared whenever a User is saved.
 """
 
-import re
-
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, today
 from frappe.utils.caching import redis_cache
 
-from surveillance.locations import get_sub_counties
+from surveillance.locations import get_sub_counties, is_field_staff
 from surveillance.whatsapp.conversation import normalize_phone
 
 SETTINGS = "WhatsApp Settings"
@@ -33,8 +31,6 @@ REPORT_FIELDS = [
 	"creation",
 ]
 DUPLICATE_DAYS = 3
-# Protocol steps a reporter can act on; the same test as the mobile app's forReporters.
-REPORTER_STEP = re.compile(r"\b(chps?|community|volunteers?)\b", re.IGNORECASE)
 IGNORED_ROLES = {"All", "Guest", "Desk User"}
 
 
@@ -76,20 +72,53 @@ def sub_counties(region):
 	]
 
 
+@redis_cache(ttl=600)
+def sub_county_centres():
+	"""Active sub-counties with their region and approximate centre, to place a community reporter's GPS pin."""
+	return [
+		dict(x)
+		for x in frappe.get_all(
+			"Sub County", filters={"is_active": 1}, fields=["name", "region", "latitude", "longitude"]
+		)
+	]
+
+
+@redis_cache(ttl=600)
+def community_advice(lang):
+	"""Approved Community Advice by key (the keys of content.ADVICE), in `lang` or else English, as
+	protocols.get_community_advice gives it. Keys with no approved text keep the bot's draft."""
+	if not frappe.db.exists("DocType", "Community Advice"):
+		return {}
+	rows = frappe.get_all(
+		"Community Advice",
+		filters={"status": "Approved", "language": ["in", list({lang, "en"})]},
+		fields=["key", "language", "text"],
+		order_by="modified desc",
+	)
+	out = {}
+	for want in (lang, "en"):
+		for r in rows:
+			key, value = (r.key or "").strip(), (r.text or "").strip()
+			if r.language == want and key and value and key not in out:
+				out[key] = value
+	return out
+
+
 def clear_catalog_cache(doc=None, method=None):
-	"""doc_events on Region, Sub County and Symptom."""
+	"""doc_events on Region, Sub County, Symptom and Community Advice."""
+	community_advice.clear_cache()
 	catalog.clear_cache()
 	sub_counties.clear_cache()
+	sub_county_centres.clear_cache()
 
 
 @redis_cache(ttl=600)
 def _staff_index():
 	"""normalised phone -> active users with that mobile number."""
-	users = frappe.get_all(
-		"User",
-		filters={"enabled": 1, "mobile_no": ["is", "set"]},
-		fields=["name", "full_name", "mobile_no", "primary_role", "assigned_region", "account_status"],
-	)
+	fields = ["name", "full_name", "mobile_no", "primary_role", "assigned_region", "account_status"]
+	if frappe.get_meta("User").has_field("assigned_sub_county"):
+		fields.append("assigned_sub_county")
+	users = frappe.get_all("User", filters={"enabled": 1, "mobile_no": ["is", "set"]}, fields=fields)
 	cc = country_code()
 	index = {}
 	for u in users:
@@ -121,6 +150,9 @@ def find_staff(phone):
 		"full_name": u.full_name or u.name,
 		"role": u.primary_role or None,
 		"region": u.assigned_region or None,
+		"sub_county": u.get("assigned_sub_county") or None,
+		# CHPs and Facility Health Workers report only for their assigned area (Case Report validate)
+		"area_locked": is_field_staff(u.name),
 	}
 
 
@@ -140,9 +172,11 @@ def create_report(doc):
 	Committed at once: the reporter is told the reference right after this."""
 	if doc.get("client_ref"):
 		existing = frappe.db.get_value("Case Report", {"client_ref": doc["client_ref"]}, "name")
-		if existing:   # the same WhatsApp message was processed twice: reuse the report
-			return _row(frappe.get_doc("Case Report", existing).as_dict(),
-				[*REPORT_FIELDS, "reporter_name", "latitude", "longitude", "suspected_disease"])
+		if existing:  # the same WhatsApp message was processed twice: reuse the report
+			return _row(
+				frappe.get_doc("Case Report", existing).as_dict(),
+				[*REPORT_FIELDS, "reporter_name", "latitude", "longitude", "suspected_disease"],
+			)
 	previous = frappe.session.user
 	# The reporter was identified by their WhatsApp number (or is the community account); acting as them
 	# makes them the owner. The previous user is always restored.
@@ -159,20 +193,35 @@ def create_report(doc):
 
 
 def reporter_advice(disease, user):
-	"""Next steps for a staff reporter, as the mobile app shows them (src/frappe/advice.ts): the steps of the
-	approved Response Protocol for the suspected disease that are for CHPs, the community or volunteers.
-	Steps only for users who may view protocols; the others get the disease name alone."""
+	"""Next steps for a staff reporter, as the mobile app gets them (protocols.get_reporter_advice): the
+	approved protocol's steps ticked 'Show to reporters' (the unusual-event protocol's when the disease has
+	none, or no disease was suggested) and the general lines in Reporter Advice Settings.
+	Steps for the users get_reporter_advice serves (reporters, follow-up receivers, protocol viewers); the
+	others get the disease name and the general lines."""
 	from surveillance.capabilities import has_capability
+	from surveillance.field_api import UNUSUAL_EVENT, advice_steps
 	from surveillance.protocols import MANAGE, VIEW, approved_for
 
-	if not disease:
-		return None
-	label = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
-	if not (has_capability(VIEW, user) or has_capability(MANAGE, user)):
-		return {"disease": label, "steps": []}
-	from surveillance.field_api import UNUSUAL_EVENT, advice_steps
-	steps = advice_steps(approved_for(disease)) or advice_steps(approved_for(UNUSUAL_EVENT))
-	return {"disease": label, "steps": [{"step": s["step"], "timeframe": s["timeframe"] or ""} for s in steps]}
+	label = None
+	if disease:
+		label = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
+	steps = []
+	if any(has_capability(c, user) for c in ("create_reports", "receive_tasks", VIEW, MANAGE)):
+		steps = advice_steps(approved_for(disease)) if disease else []
+		steps = steps or advice_steps(approved_for(UNUSUAL_EVENT))
+	return {
+		"disease": label,
+		"steps": [{"step": s["step"], "timeframe": s["timeframe"] or ""} for s in steps],
+		"general": general_advice(),
+	}
+
+
+def general_advice():
+	"""The lines in Reporter Advice Settings, shown after every staff report (empty: the bot's own lines)."""
+	if not frappe.db.exists("DocType", "Reporter Advice Settings"):
+		return []
+	value = frappe.db.get_single_value("Reporter Advice Settings", "general_advice") or ""
+	return [line.strip() for line in value.splitlines() if line.strip()]
 
 
 def find_duplicate(region, symptoms, days=DUPLICATE_DAYS):

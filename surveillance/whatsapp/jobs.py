@@ -81,7 +81,6 @@ def numbers(value):
 	]
 
 
-
 def queue_message(ev):
 	"""Called by the webhook for each new message."""
 	inbox = INBOX.format(ev["from"])
@@ -144,11 +143,11 @@ def make_context(st):
 		extractor=extraction_client(st),
 		on_submit=on_submit,
 		on_extract=log_extraction,
+		on_report_stats=log_report_stats,
 		on_chatbot=log_chatbot,
 		on_escalate=on_escalate,
 		log_error=lambda title: frappe.log_error(title=title),
 	)
-
 
 
 def on_submit(report, session, media, extraction=None):
@@ -178,7 +177,8 @@ def log_extraction(report, session, draft):
 		return draft.symptoms if k == "symptoms" else draft.get(k)
 
 	fields = {
-		k: {"extracted": v, "kept": final(k) == v, "confidence": x.confidence.get(k)} for k, v in x.filled.items()
+		k: {"extracted": v, "kept": final(k) == v, "confidence": x.confidence.get(k)}
+		for k, v in x.filled.items()
 	}
 	logger().info(
 		"[extract] "
@@ -190,6 +190,24 @@ def log_extraction(report, session, draft):
 				"danger_signs": x.danger_signs,
 				"fields": fields,
 				"asked": draft.followups,
+			}
+		)
+	)
+
+
+def log_report_stats(report, session, draft, seconds):
+	"""One line per report in logs/whatsapp.log: how long it took and how many messages the reporter sent,
+	to measure the time to submit a report (community and staff, free text and step by step)."""
+	logger().info(
+		"[report] "
+		+ json.dumps(
+			{
+				"report": report["name"],
+				"mode": session.mode,
+				"free_text": bool(draft.free),
+				"messages": draft.messages or 0,
+				"seconds": seconds,
+				"asked": draft.followups if draft.free else None,
 			}
 		)
 	)
@@ -279,7 +297,6 @@ def notify_desk(report, phone, reporter_role=None, danger_signs=None):
 			+ (f"\n• *Danger signs:* {', '.join(danger_signs)}" if danger_signs else "")
 		)
 	_send_all(to_numbers, msg, "WhatsApp desk alert failed")
-
 
 
 def log_chatbot(request, response, session):

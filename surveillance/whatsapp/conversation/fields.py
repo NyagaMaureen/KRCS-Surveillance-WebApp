@@ -226,13 +226,21 @@ class RSymptomsMore(State):
 
 
 class RCount(State):
+	"""Most reports are about one person or animal: one tap for that, a typed number for more."""
+
+	def options(self, s, ctx):
+		return [{"id": "one", "title": t(s)["countOne"], "aliases": ["one", "moja"]}]
+
 	def prompt(self, s, ctx):
 		n, total = step_no(s, "r_count", ctx)
 		cat = s.draft.category
 		who = "animals" if cat == ANIMALS else "both" if cat and cat != HUMANS else "people"
-		return [step_text(s, t(s)["count"](n, total, who))]
+		return [choose(s, t(s)["count"](n, total, who), self.options(s, ctx))]
 
 	def on(self, s, inp, choice, ctx):
+		if choice == "one":
+			s.draft.affected_count = 1
+			return go(after(s, "r_count", ctx))
 		if inp["type"] != "text":
 			return None
 		v = whole_number(inp["text"])
@@ -296,7 +304,9 @@ class RRegion(State):
 		region = choice[2:]
 		if region != s.draft.region:
 			s.draft.sub_county = None
+			s.draft.sub_county_from_pin = False
 		s.draft.region = region
+		s.draft.region_from_pin = False
 		# A new region needs a new sub-county, even when editing.
 		next_state = after(s, "r_region", ctx, ignore_editing=not s.draft.sub_county)
 		return go(next_state if next_state == "r_subcounty" or not s.editing else "r_review")
@@ -325,6 +335,7 @@ class RSubCounty(State):
 		if not (choice and choice.startswith("c:")):
 			return None
 		s.draft.sub_county = choice[2:]
+		s.draft.sub_county_from_pin = False
 		return go(after(s, "r_subcounty", ctx))
 
 
@@ -351,9 +362,9 @@ class RPlace(State):
 		if choice == "skip":
 			_clear_place(s)
 			return go(after(s, "r_place", ctx))
-		if not set_place(s, inp):
+		if not set_place(s, inp, ctx):
 			return None
-		return go(after(s, "r_place", ctx), *place_ack(s, inp))
+		return go(after(s, "r_place", ctx), *place_ack(s, inp, ctx))
 
 
 class RPlaceGps(State):
@@ -370,9 +381,9 @@ class RPlaceGps(State):
 		if inp["type"] == "text" and normalize(inp["text"]) in ("skip", "ruka"):
 			_clear_place(s)
 			return go(after(s, "r_place", ctx))
-		if not set_place(s, inp):
+		if not set_place(s, inp, ctx):
 			return None
-		return go(after(s, "r_place", ctx), *place_ack(s, inp))
+		return go(after(s, "r_place", ctx), *place_ack(s, inp, ctx))
 
 
 class RPlaceName(State):
@@ -382,7 +393,7 @@ class RPlaceName(State):
 		return [step_text(s, t(s)["placeName"])]
 
 	def on(self, s, inp, choice, ctx):
-		if inp["type"] != "text" or not set_place(s, inp):
+		if inp["type"] != "text" or not set_place(s, inp, ctx):
 			return None
 		return go(after(s, "r_place", ctx))
 

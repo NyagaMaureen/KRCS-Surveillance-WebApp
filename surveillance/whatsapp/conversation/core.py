@@ -19,6 +19,7 @@ HUMANS = "Human Disease"
 
 
 ANIMALS = "Animal Disease"
+ALL_DISEASE = "All Disease"
 
 
 COMMUNITY_SIGNAL = "Community Signal"
@@ -120,6 +121,11 @@ def L(s, field, value):
 def normalize(value):
 	value = re.sub(r"[^\w' ]+|_", " ", str(value or "").lower())
 	return re.sub(r"\s+", " ", value).strip()
+
+
+def urgent(inp):
+	"""Typed text that mentions an emergency anywhere, e.g. "I have an emergency"."""
+	return inp["type"] == "text" and bool(set(normalize(inp.get("text")).split()) & C.KEYWORDS["emergency"])
 
 
 def resolve_choice(options, inp, shown=()):
