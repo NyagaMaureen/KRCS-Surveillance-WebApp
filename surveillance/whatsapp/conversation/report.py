@@ -419,12 +419,24 @@ def next_steps(s, report, ctx):
 
 def seed_report(s, value, ctx):
 	"""A report typed outside the report flow (the welcome screen, a question the chatbot routes as a report)
-	starts a free-text report from it. A staff number keeps the staff portal."""
+	starts a free-text report from it. A staff number keeps the staff portal, unless it chose Community member."""
 	x = extract_report(value, ctx, nairobi_date(ctx.now()), s.lang)
-	if not x["is_report"] or ctx.data.find_staff(s.phone):
+	if not x["is_report"] or (s.mode != "community" and ctx.data.find_staff(s.phone)):
 		return None
+	return start_seeded(s, value, x, ctx)
+
+
+def report_from_question(s, value, ctx):
+	"""The report button under a message the chatbot took for a report: that message is the report, so it is not
+	asked for again. Staff in the portal keep the guided steps."""
+	if s.mode == "staff":
+		return begin_report(s, ctx)
+	return start_seeded(s, value, extract_report(value, ctx, nairobi_date(ctx.now()), s.lang), ctx)
+
+
+def start_seeded(s, value, extraction, ctx):
 	s.mode = "community"
 	s.staff = None
-	s.lang = s.lang or x["language"]
-	s.seed = {"text": value, "extraction": x}
+	s.lang = s.lang or extraction["language"]
+	s.seed = {"text": value, "extraction": extraction}
 	return start_report(s, ctx)

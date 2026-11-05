@@ -987,6 +987,39 @@ class TestConversation(FrappeTestCase):
 		self.assertIn("send it as a report", h.bodies())
 		h.tap("Submit health report")
 		self.assertIsNotNone(h.s.draft)
+		self.assertFalse(h.s.draft.free)  # staff in the portal keep the guided steps
+		self.assertIsNone(h.s.seed)
+
+	def test_report_button_keeps_the_message_for_a_staff_number_outside_the_portal(self):
+		h = Harness(self, STAFF, chatbot=FakeChatbot())
+		h.say("hi")
+		h.say("5 people have unexplained bleeding and fever")
+		self.assertIn("send it as a report", h.bodies())
+		h.tap("Submit health report")
+		self.assertEqual(h.s.draft.description, "5 people have unexplained bleeding and fever")
+		self.assertEqual(h.s.draft.affected_count, 5)
+		self.assertTrue(h.s.draft.symptoms)
+		self.assertNotEqual(h.s.state, "r_describe")
+		self.assertIn("From your message I noted:", h.bodies())
+
+	def test_staff_number_that_chose_community_goes_straight_into_the_report(self):
+		h = Harness(self, STAFF, chatbot=FakeChatbot())
+		h.say("hi")
+		h.s.mode = "community"
+		h.s.lang = "en"
+		h.say("5 people have unexplained bleeding and fever")
+		self.assertNotIn("send it as a report", h.bodies())
+		self.assertEqual(h.s.draft.description, "5 people have unexplained bleeding and fever")
+
+	def test_leaving_the_report_offer_does_not_carry_the_message_into_a_later_report(self):
+		h = Harness(self, STAFF, chatbot=FakeChatbot())
+		h.say("hi")
+		h.say("5 people have unexplained bleeding and fever")
+		h.tap("Main menu")
+		h.tap("Community member")
+		h.tap("English")
+		self.assertEqual(h.s.state, "r_describe")
+		self.assertIsNone(h.s.draft.description)
 
 	def test_count_questions(self):
 		h = Harness(self, STAFF, chatbot=FakeChatbot())
