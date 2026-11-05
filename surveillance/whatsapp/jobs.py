@@ -11,7 +11,7 @@ import time
 from types import SimpleNamespace
 
 import frappe
-from frappe.utils import cint
+from frappe.utils import cint, now_datetime
 
 from surveillance.whatsapp import data, sessions
 from surveillance.whatsapp.chatbot import ChatbotClient
@@ -27,6 +27,18 @@ LOCK_SECONDS = 120  # longer than one message can take (chatbot: 2 tries x timeo
 DAY = 24 * 3600
 
 ATTACHMENT_TYPES = {"image": "Photo", "audio": "Voice Note"}
+
+# Meta limits a template to 1024 characters once its values are filled in, so the question leaves room for the rest.
+TEMPLATE_QUESTION_CHARS = 650
+ESCALATION_REASONS = {
+	"not_a_report": "Message was not a health report",
+	"service_unavailable": "Assistant was unavailable",
+	"no_match": "No approved answer found",
+	"low_confidence": "No confident answer found",
+	"ambiguous": "Question could mean several things",
+	"missing_capability": "Asker lacks access to this answer",
+	"count_disease_unknown": "Disease in the question not recognised",
+}
 
 
 def logger():
@@ -300,6 +312,7 @@ def notify_desk(report, phone, reporter_role=None, danger_signs=None):
 		f"{where or '—'}{pin}",
 		str(r.affected_count or "—"),
 		who,
+		", ".join(danger_signs or [])[:200] or "None noted",
 	]
 	if st.notify_template:
 		msg = {
@@ -374,28 +387,41 @@ def on_escalate(question, session, request, reason, error=None, response=None):
 		phone=session.phone,
 		region=staff.get("region_label") or staff.get("region"),
 		reason=reason,
+		asked_at=format_time(now_datetime()),
 	)
 
 
-def send_escalation(question, who, phone, region, reason):
+def format_time(when):
+	return when.strftime("%d %b %Y %H:%M")
+
+
+def reason_label(reason):
+	"""Unknown reasons still read as words: the chatbot service can add new ones."""
+	return ESCALATION_REASONS.get(reason) or (reason or "—").replace("_", " ")
+
+
+def send_escalation(question, who, phone, region, reason, asked_at=None):
 	"""With an approved template it reaches anyone (AI/ML §6.2). Without one it is plain text, which only
-	reaches numbers that messaged the bot in the last 24 hours."""
+	reaches numbers that messaged the bot in the last 24 hours.
+	asked_at is when the person asked, because a late delivery would otherwise look like a new question."""
 	st = data.settings()
 	to_numbers = numbers(st.escalation_numbers) or numbers(st.notify_numbers)
 	if not to_numbers:
 		return
 	sender = f"{who} {format_phone(phone)}"
+	why = reason_label(reason)
+	asked_at = asked_at or format_time(now_datetime())
 	if st.escalation_template:
 		msg = {
 			"kind": "template",
 			"name": st.escalation_template,
 			"lang": st.notify_template_language or "en",
-			"params": [sender, region or "—", reason or "—", (question or "—")[:900]],
+			"params": [sender, region or "—", why, (question or "—")[:TEMPLATE_QUESTION_CHARS], asked_at],
 		}
 	else:
 		msg = text(
 			f"*Question needs a reply*\n\n• From: {sender}\n• Region: {region or '—'}\n"
-			f"• Why: {reason}\n\n{question[:1000]}"
+			f"• Why: {why}\n• Asked: {asked_at}\n\n{question[:1000]}"
 		)
 	_send_all(to_numbers, msg, "WhatsApp escalation failed", purpose="escalation")
 

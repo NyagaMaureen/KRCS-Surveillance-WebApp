@@ -23,6 +23,12 @@ PHONE = "254799111222"
 STAFF_PHONE = "254711000222"
 STAFF_USER = "wa-staff@example.com"
 DESK = "254700000009"
+# The approved body in META_SETUP.md §8, without its variables.
+QUESTION_FOR_DESK_FIXED_TEXT = (
+	"A question sent to the KRCS WhatsApp assistant needs a reply from the team.\n\n"
+	"From: \nRegion: \nReason: \nQuestion: \nAsked: \n\n"
+	"Please contact this person directly on the number above."
+)
 DISEASE = "wa-test-disease"
 
 
@@ -249,13 +255,50 @@ class TestWhatsAppIntegration(FrappeTestCase):
 			escalation_numbers=DESK, notify_numbers="", escalation_template="", notify_template_language="sw"
 		)
 		with patch.object(data, "settings", return_value=st):
-			jobs.send_escalation("Why?", "Amina", PHONE, None, "no_match")
-			self.assertEqual(self.wa.sent[-1][1]["kind"], "text")
+			jobs.send_escalation("Why?", "Amina", PHONE, None, "no_match", asked_at="04 Nov 2026 09:30")
+			plain = self.wa.sent[-1][1]
+			self.assertEqual(plain["kind"], "text")
+			self.assertIn("• Why: No approved answer found\n• Asked: 04 Nov 2026 09:30", plain["body"])
 			st.escalation_template = "question_for_desk"
-			jobs.send_escalation("Why?\nReally?", "Amina", PHONE, None, None)
+			jobs.send_escalation("Why?\nReally?", "Amina", PHONE, None, None, asked_at="04 Nov 2026 09:30")
 		[(to, msg)] = self.wa.sent[-1:]
 		self.assertEqual((to, msg["kind"], msg["name"], msg["lang"]), (DESK, "template", "question_for_desk", "sw"))
-		self.assertEqual(msg["params"], [f"Amina {jobs.format_phone(PHONE)}", "—", "—", "Why?\nReally?"])
+		self.assertEqual(
+			msg["params"], [f"Amina {jobs.format_phone(PHONE)}", "—", "—", "Why?\nReally?", "04 Nov 2026 09:30"]
+		)
+
+	def test_escalation_template_fits_within_meta_limit(self):
+		st = frappe._dict(escalation_numbers=DESK, escalation_template="question_for_desk")
+		with patch.object(data, "settings", return_value=st):
+			jobs.send_escalation("x" * 2000, "A" * 60, PHONE, "R" * 30, "service_unavailable")
+		[(_, msg)] = self.wa.sent[-1:]
+		self.assertEqual(len(msg["params"][3]), jobs.TEMPLATE_QUESTION_CHARS)
+		self.assertLessEqual(len(QUESTION_FOR_DESK_FIXED_TEXT) + sum(len(p) for p in msg["params"]), 1024)
+
+	def test_escalation_keeps_the_time_it_was_asked(self):
+		session = frappe._dict(staff=None, profile_name="Amina", phone=PHONE)
+		request = {"request_id": "r1", "user_ref": "u1"}
+		jobs.on_escalate("Why?", session, request, "no_match")
+		[call] = [c for c in self.enqueue.call_args_list if c.args[0].endswith("send_escalation")]
+		self.assertRegex(call.kwargs["asked_at"], r"^\d{2} \w{3} \d{4} \d{2}:\d{2}$")
+
+	def test_unknown_escalation_reason_reads_as_words(self):
+		self.assertEqual(jobs.reason_label("new_chatbot_reason"), "new chatbot reason")
+
+	def test_report_notice_template_carries_danger_signs(self):
+		name = data.create_report(self.case_report(STAFF_USER, STAFF_PHONE))["name"]
+		st = frappe._dict(notify_numbers=DESK, notify_template="new_report_notice", notify_template_language="en")
+		with patch.object(data, "settings", return_value=st):
+			jobs.notify_desk(name, PHONE, danger_signs=["Severe dehydration", "Blood in stool"])
+			with_signs = self.wa.sent[-1][1]
+			jobs.notify_desk(name, PHONE)
+			without_signs = self.wa.sent[-1][1]
+		self.assertEqual(
+			(with_signs["kind"], with_signs["name"], len(with_signs["params"])),
+			("template", "new_report_notice", 6),
+		)
+		self.assertEqual(with_signs["params"][5], "Severe dehydration, Blood in stool")
+		self.assertEqual(without_signs["params"][5], "None noted")
 
 	def test_media_rows_carry_consent_and_a_failed_file_is_reported(self):
 		name = data.create_report(self.case_report(STAFF_USER, STAFF_PHONE))["name"]

@@ -159,7 +159,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Approved Utility template with 5 body variables: reference, what, where, affected, reporter. Without it, alerts are plain text and only reach numbers that wrote to the bot in the last 24 hours.",
+   "description": "Approved Utility template (new_report_notice) with 6 body variables: reference, symptoms, location, people affected, reported by, danger signs. Without it, alerts are plain text and only reach numbers that wrote to the bot in the last 24 hours.",
    "fieldname": "notify_template",
    "fieldtype": "Data",
    "label": "Alert Template Name"
@@ -172,7 +172,7 @@
    "label": "Alert Template Language"
   },
   {
-   "description": "Approved Utility template with 4 body variables: from, region, why, question. Without it, escalations are plain text and only reach numbers that wrote to the bot in the last 24 hours.",
+   "description": "Approved Utility template (question_for_desk) with 5 body variables: from, region, reason, question, asked. Without it, escalations are plain text and only reach numbers that wrote to the bot in the last 24 hours.",
    "fieldname": "escalation_template",
    "fieldtype": "Data",
    "label": "Escalation Template Name"
@@ -228,7 +228,7 @@
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-04 12:00:00.000000",
+ "modified": "2026-11-04 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "WhatsApp Settings",

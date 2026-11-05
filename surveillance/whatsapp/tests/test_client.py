@@ -116,7 +116,7 @@ class TestClient(FrappeTestCase):
 		loc = to_payload("1", {"kind": "location_request", "body": "Where?"})
 		self.assertEqual(loc["interactive"]["type"], "location_request_message")
 		tpl = to_payload(
-			"1", {"kind": "template", "name": "report_alert", "lang": "en", "params": ["RPT-1", 2]}
+			"1", {"kind": "template", "name": "new_report_notice", "lang": "en", "params": ["RPT-1", 2]}
 		)
 		self.assertEqual(tpl["template"]["components"][0]["parameters"][1], {"type": "text", "text": "2"})
 
