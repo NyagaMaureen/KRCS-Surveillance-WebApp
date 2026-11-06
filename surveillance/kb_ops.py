@@ -25,6 +25,9 @@ LICENCES = {
 	"bm25": ("Apache-2.0", True),
 	"jina-reranker-v2-base-multilingual": ("CC-BY-NC-4.0", False),
 	"bge-reranker-v2-m3": ("Apache-2.0", True),
+	"bge-reranker-base": ("MIT", True),
+	"ms-marco-MiniLM-L-12-v2": ("Apache-2.0", True),
+	"ms-marco-MiniLM-L-6-v2": ("Apache-2.0", True),
 	"qwen3": ("Apache-2.0", True),
 	"off": ("-", True),
 }
