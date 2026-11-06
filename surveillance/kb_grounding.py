@@ -120,10 +120,90 @@ def check(answer, sources):
 	return problems
 
 
+BULLET = re.compile(r"^\s*(?:[\u2022\u25cf\u25aa\u25e6\u00b7\u2013*-]|o\s)\s*")
+NUMBERED = re.compile(r"^\s*\d{1,2}[.)]\s+")
+LETTERED = re.compile(r"^\s*[a-z][.)]\s+", re.I)
+
+
+def tidy(text):
+	"""Approved text laid out for reading: list items as bullets, short labels in bold, paragraphs apart.
+	The words are not changed."""
+	text = re.sub(r"[ \t]+([\u2022\u25cf\u25aa\u25e6])[ \t]+", r"\n\1 ", text or "")   # bullets run into one line
+	lines = [ln.strip().lstrip("#").strip() for ln in text.splitlines() if ln.strip()]
+	if not lines:
+		return ""
+	short = sum(1 for ln in lines if len(ln) <= 160)
+	# plain short lines are read as a list only when the text has no bullets of its own
+	marked = any(BULLET.match(ln) or NUMBERED.match(ln) for ln in lines)
+	listy = not marked and len(lines) >= 3 and short / len(lines) >= 0.6
+	blocks = []   # (is_list_item, text)
+	for ln in lines:
+		if BULLET.match(ln):
+			blocks.append((True, "- " + BULLET.sub("", ln, count=1)))
+		elif NUMBERED.match(ln):
+			blocks.append((True, ln))
+		elif LETTERED.match(ln):
+			blocks.append((True, "- " + ln))
+		elif ln.endswith(":") and len(ln) <= 90:
+			blocks.append((False, f"**{ln}**"))
+		elif listy and len(ln) <= 160:
+			blocks.append((True, "- " + ln))
+		else:
+			blocks.append((False, ln))
+	out = blocks[0][1]
+	for (prev_list, _), (is_list, txt) in zip(blocks, blocks[1:]):
+		out += ("\n" if prev_list and is_list else "\n\n") + txt
+	return out
+
+
+COMMUNITY = re.compile(r"(?<!\w)(chps?|chvs?|chas?|community health (promoters?|volunteers?|assistants?|workers?)"
+	r"|chws?|community level|in the community|at community|household level)(?!\w)", re.I)
+FACILITY = re.compile(r"(?<!\w)(scdsc|cdsc|ddsr|pheoc|clinicians?|nurses?|doctors?|health facility|facility level"
+	r"|sub-?county level|county level|national level|the (sub-?)?county|(sub-?)?county (team|officers?|health)"
+	r"|surveillance officers?|laborator(y|ies))(?!\w)", re.I)
+LEVEL_LABEL = re.compile(r"^.{0,140}\b(response|level|actions?)\b.{0,80}:$", re.I)
+
+
+def level_of(question, roles=()):
+	"""'community' or 'facility' when the question (or, for community health users, their role) says who is asking."""
+	c, f = bool(COMMUNITY.search(question or "")), bool(FACILITY.search(question or ""))
+	if c != f:
+		return "community" if c else "facility"
+	if c or f:
+		return None
+	roles = set(roles or ())
+	if "System Manager" not in roles and any(COMMUNITY.search(r) for r in roles):
+		return "community"
+	return None
+
+
+def pick_level(text, level):
+	"""The block of a protocol section for one level ("Immediate Response - CHP/CHV & CHA (Community Level):" and the
+	lines under it). The text is returned unchanged when it has no such blocks."""
+	lines = (text or "").splitlines()
+	blocks, current = [], None
+	for ln in lines:
+		if LEVEL_LABEL.match(ln.strip()):
+			current = [ln]
+			blocks.append(current)
+		elif current is not None:
+			current.append(ln)
+	want = COMMUNITY if level == "community" else FACILITY
+	keep = [b for b in blocks if want.search(b[0])]
+	return "\n".join(ln for b in keep for ln in b) if keep else text
+
+
 def verbatim(sources, language="English", count=2):
-	"""The passages as they were approved, with citation numbers."""
+	"""The passages as they were approved, with citation numbers, under their section headings."""
 	shown = sources[:count]
-	body = "\n\n".join(f"{(s['text'] or '').strip()} [{s['n']}]" for s in shown)
+	parts, heading = [], None
+	for s in shown:
+		section = (s.get("section") or "").strip()
+		if section and section != heading:
+			parts.append(f"**{section}**")
+			heading = section
+		parts.append(f"{tidy(s['text'])} [{s['n']}]")
+	body = "\n\n".join(parts)
 	note = ""
 	if language == "Kiswahili" and shown and all((s.get("language") or "English") == "English" for s in shown):
 		note = NOTES["english_only"]["Kiswahili"]

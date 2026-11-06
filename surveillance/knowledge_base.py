@@ -52,7 +52,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, getdate, now_datetime, today
 
-from surveillance import kb_access, kb_grounding, kb_ops, kb_safety
+from surveillance import kb_access, kb_grounding, kb_ops, kb_safety, kb_trusted
 from surveillance.capabilities import has_capability, require_capability
 from surveillance.kb_access import KBAccessDenied  # noqa: F401  (re-exported for callers and tests)
 
@@ -118,7 +118,9 @@ def retrieval_config():
 # ---------- clients ----------
 
 def _conf(key, default=None):
-	return frappe.conf.get(key) or default
+	"""Site config value; the default only when the key is not set (0 is a real value, e.g. kb_generation_enabled 0)."""
+	value = frappe.conf.get(key)
+	return default if value is None or value == "" else value
 
 
 def _collection():
@@ -368,6 +370,17 @@ def _served(name):
 
 # ---------- text extraction and chunking ----------
 
+NUMBERED_TITLE = re.compile(r"^\d{1,2}(\.\d{1,2})*[.)]?\s+\S")
+
+
+def _looks_like_heading(p, text):
+	"""A numbered, short, all-bold line ("10. Suspected Viral Haemorrhagic Fever") typed without a Heading style."""
+	if len(text) > 120 or text.endswith((".", ":", ";")) or not NUMBERED_TITLE.match(text):
+		return False
+	runs = [r for r in p.runs if r.text.strip()]
+	return bool(runs) and all(r.bold for r in runs)
+
+
 def extract_units(path, ext):
 	"""return [{section, page, text}] so every chunk can be cited.
 	PDF: one unit per page. DOCX: one per heading section, one per table row (named by its first cell).
@@ -401,7 +414,7 @@ def extract_units(path, ext):
 				if not t:
 					continue
 				style = (p.style.name if p.style is not None else "").lower()
-				if style.startswith(("heading", "title")):
+				if style.startswith(("heading", "title")) or _looks_like_heading(p, t):
 					flush()
 					state["heading"] = t
 				else:
@@ -411,17 +424,24 @@ def extract_units(path, ext):
 				rows = Table(el, d).rows
 				if not rows:
 					continue
-				header = [c.text.strip() for c in rows[0].cells]
-				for r in rows[1:]:
+				header = [" ".join(c.text.split()) for c in rows[0].cells]
+				body = rows[1:] if len(rows) > 1 else rows
+				for r in body:
 					lines, seen = [], set()
 					for h, c in zip(header, r.cells):
 						t = c.text.strip()
-						if t and t not in seen:  # merged cells repeat their text
-							seen.add(t)
-							lines.append(f"{h}: {t}" if h and h != t else t)
+						if not t or t in seen:  # merged cells repeat their text
+							continue
+						seen.add(t)
+						if h and h != " ".join(t.split()) and len(rows) > 1:
+							lines.append(f"{h}:")   # the column heading, e.g. "Immediate Response (Community Level):"
+						lines.append(t)
 					if lines:
-						first = r.cells[0].text.strip()
-						units.append({"section": (first or state["heading"] or "Table")[:140], "page": None, "text": "\n".join(lines)})
+						# a table belongs to the heading above it (e.g. "10. Suspected VHF"), so its rows are found and
+						# shown with that section; the first cell names the row only when there is no heading
+						first = " ".join(r.cells[0].text.split())
+						units.append({"section": (state["heading"] or first or "Table")[:140], "page": None,
+							"text": "\n".join(lines)})
 		flush()
 		return units
 
@@ -933,15 +953,113 @@ def _vocabulary():
 	return out
 
 
+def _disease_terms(d):
+	"""Key, name, synonyms and the names in brackets: 'Suspected VHF (Ebola/Marburg)' -> vhf, ebola, marburg, ..."""
+	name = d.get("name") or ""
+	terms = [d.get("key"), name, *(d.get("synonyms") or [])]
+	for inner in re.findall(r"\(([^)]*)\)", name):
+		terms += re.split(r"[/,]", inner)
+	# "Acute Watery Diarrhoea (AWD) / Cholera" -> "acute watery diarrhoea", "cholera"; "Suspected Measles" -> "measles"
+	for part in re.split(r"/", re.sub(r"\([^)]*\)", "", name)):
+		terms.append(re.sub(r"^suspected\s+", "", part.strip(), flags=re.I))
+	return {t.strip().lower() for t in terms if t and len(t.strip()) >= 3}
+
+
+def _covers_disease(detected, ranked, top=3):
+	"""True when one of the best passages is tagged with, or sits in a section headed by, the detected disease."""
+	if not detected:
+		return False
+	terms = _disease_terms(detected)
+	for _, p in ranked[:top]:
+		pl = p.payload
+		if detected.get("key") in (pl.get("diseases") or []):
+			return True
+		heading = f"{pl.get('section') or ''}".lower()
+		if any(re.search(rf"(?<!\w){re.escape(t)}(?!\w)", heading) for t in terms):
+			return True
+	return False
+
+
+def _stitch(texts):
+	"""Join consecutive chunks of one section, dropping the overlap each chunk repeats from the one before."""
+	out = ""
+	for t in texts:
+		t = t or ""
+		if out:
+			for n in range(min(len(out), len(t), 600), 19, -1):
+				if out.endswith(t[:n]):
+					t = t[n:]
+					break
+			out = out.rstrip() + "\n" + t.lstrip()
+		else:
+			out = t
+	return out.strip()
+
+
+def _whole_section(top, ctx, max_chars=6000):
+	"""The full section the top passage sits in, as one passage, or None."""
+	from qdrant_client.models import FieldCondition, Filter, MatchValue
+	rank_score, point = top
+	pl = point.payload
+	if not pl.get("doc") or not pl.get("section"):
+		return None
+	try:
+		from qdrant_client import QdrantClient
+		quick = QdrantClient(url=_conf("qdrant_url", "http://localhost:6333"), api_key=_conf("qdrant_api_key"), timeout=10)
+		points, _ = quick.scroll(_collection(), scroll_filter=Filter(must=[
+			FieldCondition(key="doc", match=MatchValue(value=pl["doc"])),
+			FieldCondition(key="section", match=MatchValue(value=pl["section"]))]),
+			limit=60, with_payload=True, with_vectors=False)
+	except Exception:
+		return None
+	parts = sorted((p for p in points if _visible(p.payload, ctx)), key=lambda p: cint(p.payload.get("chunk")))
+	if not parts:
+		return None
+	text = _stitch([p.payload.get("text") for p in parts])[:max_chars]
+	return (rank_score, SimpleNamespace(id=point.id, payload={**pl, "text": text}, dense=point.dense))
+
+
+BACK_MATTER = re.compile(r"^(sources?|references?|reference websites?|bibliography|acknowledg(e)?ments?|(table of )?contents"
+	r"|abbreviations|annex(es)?|appendix)\b", re.I)
+
+
+def _heading_names(terms, heading):
+	return any(re.search(rf"(?<!\w){re.escape(t)}(?!\w)", heading) for t in terms)
+
+
+def _focus(ranked, dense, detected, ctx):
+	"""Keep the answer on the question: no reference lists, no sections about other diseases, and when the question
+	names a disease that has its own section, that whole section in order."""
+	pairs = [(r, d) for r, d in zip(ranked, dense) if not BACK_MATTER.match((r[1].payload.get("section") or "").strip())]
+	if detected:
+		mine = _disease_terms(detected)
+		others = [_disease_terms(v) - mine for v in _vocabulary() if v["key"] != detected.get("key")]
+		def about_other(r):
+			heading = (r[1].payload.get("section") or "").lower()
+			return not _heading_names(mine, heading) and any(_heading_names(t, heading) for t in others)
+		pairs = [(r, d) for r, d in pairs if not about_other(r)] or pairs
+		own = next((r for r, _ in pairs[:5] if detected.get("key") in (r[1].payload.get("diseases") or [])
+			or _heading_names(mine, (r[1].payload.get("section") or "").lower())), None)
+		if own:
+			# the response steps are often a few passages after the definition: answer from the whole section
+			section = _whole_section(own, ctx)
+			if section:
+				return [section], [section[1].dense]
+	if not pairs:
+		return ranked, dense
+	return [r for r, _ in pairs], [d for _, d in pairs]
+
+
 def _detect_disease(query):
 	"""Find a disease named in the question by key, name or synonym (e.g. 'kipindupindu' -> awd-cholera)."""
 	text = query.lower()
+	best, best_len = None, 0
 	for d in _vocabulary():
-		for term in [d["key"], d["name"], *d["synonyms"]]:
-			term = (term or "").strip().lower()
-			if len(term) >= 3 and re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text):
-				return d
-	return None
+		for term in _disease_terms(d):
+			# the longest matching name wins ("bloody diarrhoea" over "diarrhoea")
+			if len(term) > best_len and re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text):
+				best, best_len = d, len(term)
+	return best
 
 
 def _client():
@@ -1256,6 +1374,11 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 			"log_id": audit.name, "correlation_id": audit.correlation_id}
 
 	def no_match(trace, reason):
+		# approved KRCS documents did not answer: try the trusted external sources (kb_trusted), clearly labelled
+		ext = kb_trusted.lookup(query, language, detected)
+		if ext:
+			return finish(ext["answer"], "trusted_source", ext["sources"], [s["n"] for s in ext["sources"]], trace,
+				reason=f"{reason}|trusted:{','.join(ext['names'])}", outcome="Escalated", escalate=True)
 		answer = kb_grounding.NO_MATCH[language].format(contact=escalation_contact())
 		return finish(answer, "not_found", [], [], trace, reason=reason, escalate=True)
 
@@ -1267,6 +1390,11 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 	# KB-11: evidence decides no-match, with or without the re-ranker
 	floor_ok = (ranked[0][0] >= float(_conf("kb_min_rerank_score", 0.15))) if reranked \
 		else (max(dense) >= float(_conf("kb_min_dense_score", 0.30)))
+	# a short question ("response for vhf") can score low on meaning alone; if the best passages come from the
+	# section written for the disease asked about, the approved document does cover it
+	floor_ok = floor_ok or _covers_disease(detected, ranked)
+	if floor_ok:
+		ranked, dense = _focus(ranked, dense, detected, ctx)
 	if not floor_ok:
 		return no_match(trace, "below_score_floor")
 
@@ -1278,6 +1406,11 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 		return finish(answer, "conflict", [], [], trace, reason=f"conflict:{unresolved[0]}|{unresolved[1]}",
 			outcome="Conflict", escalate=True)
 	sources = [_source(i, rs, d, p, t) for i, ((rs, p), d) in enumerate(scored, 1)]
+	level = kb_grounding.level_of(query, frappe.get_roles())
+	if level:
+		# "as a CHP ..." or a community health user: the community-level steps, not the county ones
+		for src in sources:
+			src["text"] = kb_grounding.pick_level(src["text"], level)
 	trace = _passage_trace([(rs, d, p, True) for (rs, p), d in scored])
 	extra = {"reason": f"conflict_resolved:{','.join(dropped)}"} if dropped else {}
 
