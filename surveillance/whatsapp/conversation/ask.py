@@ -15,8 +15,8 @@ from surveillance.whatsapp.conversation.core import (
 	t,
 )
 from surveillance.whatsapp.conversation.free_text import describe
-from surveillance.whatsapp.conversation.report import begin_report, seed_report
-from surveillance.whatsapp.conversation.steps import ask, choose, first_missing
+from surveillance.whatsapp.conversation.report import begin_report, report_from_question, seed_report
+from surveillance.whatsapp.conversation.steps import ask, choose, first_missing, missing_steps
 from surveillance.whatsapp.messages import menu, text
 
 
@@ -54,7 +54,8 @@ class Ask(State):
 		if choice == "menu":
 			return go(home(s))
 		if choice == "report":
-			return begin_report(s, ctx)
+			q = s.question
+			return report_from_question(s, q.text, ctx) if q and q.get("report") else begin_report(s, ctx)
 		if choice and choice.startswith("p:") and s.question:
 			return ask_chatbot(s, s.question.text, ctx, choice[2:])
 		if inp["type"] == "text" and normalize(inp.get("text")):
@@ -77,6 +78,7 @@ class RNotReport(State):
 
 	def on(self, s, inp, choice, ctx):
 		if choice == "sick":
+			s.draft.followups = missing_steps(s, ctx)
 			return go(first_missing(s, ctx))
 		if choice == "menu":
 			s.draft = None
@@ -134,6 +136,7 @@ def ask_chatbot(s, question, ctx, selected_protocol_id=None):
 	s.question = None
 
 	def offer_report():
+		s.question = AttrDict(text=question, options=[], report=True)
 		return choose(
 			s,
 			t(s)["askRouted"] if r.get("outcome") == "routed" else t(s)["askMixed"],

@@ -418,6 +418,8 @@ T = {
 		"cancelled": "*Report discarded*\n\nYour draft report has been cancelled. Nothing was sent.",
 		"media": {"image": "Photo", "document": "Document", "audio": "Voice note", "video": "Video"},
 		"mediaAdded": lambda what, n: f"*{what} attached*\n\nSupporting items attached: *{n}*",
+		"mediaRefused": "That file type cannot be added to a report. Please send a photo, video, voice note or PDF.",
+		"mediaNotSaved": lambda ref, n: f"Report *{ref}* was saved, but {n} attached file(s) could not be added. Each file must be 10 MB or smaller.",
 		"moreOrReview": "_You can add more photos, files or voice notes, or tap *Proceed to review*._",
 		"skip": "Skip",
 		"more": "More",
@@ -536,12 +538,12 @@ T = {
 		"duplicate": lambda r: f"*Potential duplicate report detected*\n\n*{r['name']}* – {r.get('symptom_tags') or 'same symptoms'}, "
 		f"reported on {r.get('report_date')}, is still open in this region.\n\nIs this a separate incident?",
 		"submitAnyway": "New incident",
-		"consentAsk": "*Photos and voice notes*\n\nDoes any photo or voice note show or record a person? If yes, did they (or a parent or guardian, for a child) agree?",
+		"consentAsk": "*Attachments*\n\nDoes any photo, video, voice note or file show or record a person? If yes, did they (or a parent or guardian, for a child) agree?",
 		"consentNone": "No person in them",
 		"consentPerson": "Person agreed",
 		"consentGuardian": "Parent agreed",
 		"consentRemove": "Remove them",
-		"consentRemoved": "The photos and voice notes were removed. Your report will be sent without them.",
+		"consentRemoved": "The attachments were removed. Your report will be sent without them.",
 		"saveFailed": "Your report could not be saved. Please tap *Confirm & submit* to try again.",
 		"areaMissing": "*Your area is not set*\n\nYour account has no assigned region and sub-county, so reports cannot be "
 		"sent from it yet. Please ask your supervisor to set them, then try again.\n\n"
@@ -624,6 +626,8 @@ T = {
 		"cancelled": "*Taarifa imefutwa*\n\nRasimu ya taarifa yako imeghairiwa. Hakuna kilichotumwa.",
 		"media": {"image": "Picha", "document": "Hati", "audio": "Ujumbe wa sauti", "video": "Video"},
 		"mediaAdded": lambda what, n: f"*{what} imeambatanishwa*\n\nVitu vilivyoambatanishwa: *{n}*",
+		"mediaRefused": "Aina hii ya faili haiwezi kuongezwa kwenye taarifa. Tafadhali tuma picha, video, ujumbe wa sauti au PDF.",
+		"mediaNotSaved": lambda ref, n: f"Taarifa *{ref}* imehifadhiwa, lakini faili {n} hazikuweza kuongezwa. Kila faili lisizidi MB 10.",
 		"moreOrReview": "_Unaweza kuongeza picha, hati au ujumbe wa sauti zaidi, au bonyeza *Endelea kukagua*._",
 		"skip": "Ruka",
 		"more": "Zaidi",
@@ -734,12 +738,12 @@ T = {
 		"duplicate": lambda r: f"*Huenda taarifa hii tayari ipo*\n\n*{r['name']}* – {r.get('symptom_tags') or 'dalili zilezile'}, "
 		f"iliyotumwa {r.get('report_date')}, bado iko wazi katika eneo hili.\n\nJe, hili ni tukio tofauti?",
 		"submitAnyway": "Tukio jipya",
-		"consentAsk": "*Picha na sauti*\n\nJe, picha au sauti yoyote inaonyesha au inarekodi mtu? Kama ndiyo, je alikubali (au mzazi au mlezi, kwa mtoto)?",
+		"consentAsk": "*Viambatisho*\n\nJe, picha, video, sauti au faili yoyote inaonyesha au inarekodi mtu? Kama ndiyo, je alikubali (au mzazi au mlezi, kwa mtoto)?",
 		"consentNone": "Hakuna mtu",
 		"consentPerson": "Mtu alikubali",
 		"consentGuardian": "Mzazi alikubali",
 		"consentRemove": "Ziondoe",
-		"consentRemoved": "Picha na sauti zimeondolewa. Taarifa yako itatumwa bila hizo.",
+		"consentRemoved": "Viambatisho vimeondolewa. Taarifa yako itatumwa bila hivyo.",
 		"saveFailed": "Taarifa yako haikuweza kuhifadhiwa. Tafadhali bonyeza *Thibitisha na tuma* kujaribu tena.",
 		"areaMissing": "*Eneo lako halijawekwa*\n\nAkaunti yako haina eneo na kaunti ndogo ulizopangiwa, kwa hiyo bado "
 		"huwezi kutuma taarifa. Tafadhali mwombe msimamizi wako aziweke, kisha ujaribu tena.\n\n"

@@ -99,6 +99,12 @@ PEOPLE = {
 	"people", "persons", "children", "kids", "patients", "cases", "adults", "men", "women", "boys", "girls",
 	"students", "pupils", "babies", "watu", "watoto", "wagonjwa", "wanaume", "wanawake", "wanafunzi", "kesi",
 }  # fmt: skip
+ONE_PERSON = {"person", "child", "baby", "man", "woman", "boy", "girl", "mtu", "mtoto"}  # counted ("1 person"), not a category
+# A bite or scratch is a report even with no symptoms yet (rabies); the service also names the animal.
+BITES = {
+	"bitten", "bite", "bites", "scratched", "aliumwa", "ameumwa", "waliumwa", "wameumwa", "aling'atwa",
+	"ameng'atwa", "alikwaruzwa", "amekwaruzwa",
+}  # fmt: skip
 ANIMALS = {
 	"animals", "cows", "cattle", "goats", "sheep", "camels", "chickens", "donkeys", "livestock", "wanyama",
 	"ng'ombe", "ngombe", "mbuzi", "kondoo", "ngamia", "kuku", "punda", "mifugo",
@@ -141,7 +147,7 @@ def local_extract(value, catalog, sub_counties, today):
 	for i, w in enumerate(words):
 		n = int(w) if re.fullmatch(r"\d{1,5}", w) else NUMBER_WORDS.get(w)
 		near = [words[k] for k in (i - 1, i + 1) if 0 <= k < len(words)]
-		if n and any(x in PEOPLE or x in ANIMALS for x in near):
+		if n and any(x in PEOPLE or x in ONE_PERSON or x in ANIMALS for x in near):
 			fields["affected_count"] = {"value": n, "confidence": 0.9}
 			break
 	onset = next((w for w in words if w in ("today", "leo", "yesterday", "jana")), None)
@@ -155,11 +161,14 @@ def local_extract(value, catalog, sub_counties, today):
 	if people or animals:
 		category = "Human Disease" if people else "Animal Disease"   # the "All Disease" category was retired; animal contact is kept in animal_exposure
 		fields["category"] = {"value": category, "confidence": 0.8}
+	if any(w in BITES for w in words):
+		fields["animal_exposure"] = {"value": "Bite or scratch", "confidence": 0.8}
+		fields.setdefault("category", {"value": "Human Disease", "confidence": 0.8})
 	fields.update(_find_places(words, catalog["regions"], sub_counties))
 	return {
 		"extractor": "keywords-fallback",
 		"language": "sw" if sum(w in SW_MARKERS for w in words) >= 2 else "en",
-		"is_report": bool(fields.get("symptoms") or fields.get("affected_count")),
+		"is_report": bool(fields.get("symptoms") or fields.get("affected_count") or fields.get("animal_exposure")),
 		"fields": {
 			k: {**f, "autofill": f["confidence"] >= AUTOFILL, "evidence": []} for k, f in fields.items()
 		},

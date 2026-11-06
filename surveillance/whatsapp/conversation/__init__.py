@@ -32,6 +32,7 @@ This package does not import frappe: everything it needs comes in through `ctx`
 from surveillance.whatsapp import content as C
 from surveillance.whatsapp.conversation.ask import Ask, RNotReport
 from surveillance.whatsapp.conversation.core import (
+	MEDIA_TYPES,
 	MIN,
 	STATES,
 	AttrDict,
@@ -40,6 +41,7 @@ from surveillance.whatsapp.conversation.core import (
 	go,
 	home,
 	media_ack,
+	media_allowed,
 	nairobi_date,
 	new_session,
 	normalize,
@@ -71,11 +73,20 @@ from surveillance.whatsapp.conversation.fields import (
 	SelectStep,
 )
 from surveillance.whatsapp.conversation.portal import Help, Lang, Menu, NotStaff, Reports, Resume, Welcome
-from surveillance.whatsapp.conversation.report import RConsent, RDescribe, RDone, RDuplicate, REdit, RReview
+from surveillance.whatsapp.conversation.report import (
+	RConsent,
+	RDescribe,
+	RDone,
+	RDuplicate,
+	REdit,
+	RReview,
+	verify_staff,
+)
 from surveillance.whatsapp.conversation.steps import BACK_TO, step_back
 from surveillance.whatsapp.messages import text
 
 __all__ = [
+	"MEDIA_TYPES",
 	"AttrDict",
 	"format_phone",
 	"handle",
@@ -97,11 +108,29 @@ def handle(s, inp, ctx):
 		return [text(t(s)["errorGeneric"])]
 
 
+def staff_still_valid(s, ctx):
+	"""SRS R62: the account is checked on every message, not only when the staff menu opens. The session lasts
+	30 days, so a deactivated user or a number given to someone else must not keep the old roles."""
+	fresh = ctx.data.find_staff(s.phone)
+	if not fresh or fresh["user"] != s.staff.user:
+		return False
+	label = s.staff.region_label if s.staff.region == fresh.get("region") else None
+	s.staff = AttrDict.wrap(fresh)
+	if label:
+		s.staff.region_label = label
+	return True
+
+
 def dispatch(s, inp, ctx):
 	now = ctx.now()
 	first = not s.last_active
 	idle = not first and now - s.last_active > ctx.settings.idle_minutes * MIN
 	s.last_active = now
+
+	if s.staff and not staff_still_valid(s, ctx):
+		s.draft = None
+		s.resume_state = None
+		return run(s, verify_staff(s, ctx), ctx)
 
 	kw = normalize(inp.get("text")) if inp["type"] == "text" else None
 	drafting = bool(s.draft) and s.state != "resume"
@@ -127,6 +156,8 @@ def dispatch(s, inp, ctx):
 		return run(s, step_back(s, ctx), ctx)
 
 	st = STATES.get(s.state) or STATES["welcome"]
+	if inp["type"] == "media" and s.draft and not media_allowed(inp):
+		return [text(t(s)["mediaRefused"]), *st.prompt(s, ctx)]
 	choice = resolve_choice(st.options(s, ctx), inp, s.shown)
 	res = st.on(s, inp, choice, ctx)
 	if res:
