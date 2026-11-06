@@ -3,7 +3,8 @@
 GET   Meta's verification handshake: hub.challenge back as plain text if hub.verify_token matches.
 POST  Signed with X-Hub-Signature-256 (HMAC-SHA256 of the raw body, App Secret). Answered with 200 at once;
       each new message is queued for a background job (jobs.process_inbox). Meta retries deliveries,
-      so a message ID is processed only once (Redis key kept for 24 hours).
+      so a message ID is processed only once (Redis key kept for 24 hours). Delivery updates for messages
+      we sent are logged (jobs.record_statuses).
 When WhatsApp Settings is not Enabled, the handshake still works but messages are ignored.
 """
 
@@ -14,9 +15,9 @@ import frappe
 from frappe.utils import cint
 from werkzeug.wrappers import Response
 
-from surveillance.whatsapp.client import parse_webhook, verify_signature
+from surveillance.whatsapp.client import parse_statuses, parse_webhook, verify_signature
 from surveillance.whatsapp.data import settings
-from surveillance.whatsapp.jobs import DAY, queue_message
+from surveillance.whatsapp.jobs import DAY, queue_message, record_statuses
 
 SEEN = "whatsapp:seen:{}"
 
@@ -46,8 +47,10 @@ def webhook(**kwargs):
 		return _plain("Bad signature", 401)
 	if not cint(st.enabled):
 		return _plain("OK")
-	for ev in parse_webhook(json.loads(raw)):
+	body = json.loads(raw)
+	for ev in parse_webhook(body):
 		# SET NX: true only the first time this message ID is seen. make_key adds the site prefix.
 		if frappe.cache.set(frappe.cache.make_key(SEEN.format(ev["id"])), 1, nx=True, ex=DAY):  # nosemgrep
 			queue_message(ev)
+	record_statuses(parse_statuses(body))
 	return _plain("OK")

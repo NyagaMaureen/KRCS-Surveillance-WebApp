@@ -122,12 +122,13 @@ CONSENT_CHOICES = {
 
 
 def needs_consent(s):
-	"""Photos / voice notes in the draft that have no consent answer yet (Kenya Data Protection Act 2019)."""
-	return any(m.get("kind") in ("image", "audio") and not m.get("consent") for m in (s.draft.media or []))
+	"""Anything attached that has no consent answer yet (Kenya Data Protection Act 2019). Videos and files can
+	show a person as much as photos can."""
+	return any(not m.get("consent") for m in (s.draft.media or []))
 
 
 class RConsent(State):
-	"""Asked once before sending, when the report has photos or voice notes."""
+	"""Asked before sending, when the report has attachments without an answer."""
 
 	def options(self, s, ctx):
 		return [
@@ -158,13 +159,12 @@ class RConsent(State):
 
 	def on(self, s, inp, choice, ctx):
 		if choice == "remove":
-			s.draft.media = [m for m in s.draft.media if m.get("kind") not in ("image", "audio")]
+			s.draft.media = []
 			note = [text(t(s)["consentRemoved"])]
 		elif choice in CONSENT_CHOICES:
 			shown, consent = CONSENT_CHOICES[choice]
 			for m in s.draft.media:
-				if m.get("kind") in ("image", "audio"):
-					m["people_shown"], m["consent"] = shown, consent
+				m["people_shown"], m["consent"] = shown, consent
 			note = []
 		else:
 			return None
@@ -197,7 +197,8 @@ class RDuplicate(State):
 		if choice != "submit":
 			return None
 		s.draft.skip_duplicate_check = True
-		return submit(s, ctx)
+		# Something may have been attached while this question was showing.
+		return go("r_consent") if needs_consent(s) else submit(s, ctx)
 
 
 class REdit(State):
@@ -418,12 +419,24 @@ def next_steps(s, report, ctx):
 
 def seed_report(s, value, ctx):
 	"""A report typed outside the report flow (the welcome screen, a question the chatbot routes as a report)
-	starts a free-text report from it. A staff number keeps the staff portal."""
+	starts a free-text report from it. A staff number keeps the staff portal, unless it chose Community member."""
 	x = extract_report(value, ctx, nairobi_date(ctx.now()), s.lang)
-	if not x["is_report"] or ctx.data.find_staff(s.phone):
+	if not x["is_report"] or (s.mode != "community" and ctx.data.find_staff(s.phone)):
 		return None
+	return start_seeded(s, value, x, ctx)
+
+
+def report_from_question(s, value, ctx):
+	"""The report button under a message the chatbot took for a report: that message is the report, so it is not
+	asked for again. Staff in the portal keep the guided steps."""
+	if s.mode == "staff":
+		return begin_report(s, ctx)
+	return start_seeded(s, value, extract_report(value, ctx, nairobi_date(ctx.now()), s.lang), ctx)
+
+
+def start_seeded(s, value, extraction, ctx):
 	s.mode = "community"
 	s.staff = None
-	s.lang = s.lang or x["language"]
-	s.seed = {"text": value, "extraction": x}
+	s.lang = s.lang or extraction["language"]
+	s.seed = {"text": value, "extraction": extraction}
 	return start_report(s, ctx)

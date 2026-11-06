@@ -170,9 +170,12 @@ def step_no(s, sid, ctx):
 	if s.draft and s.draft.free:
 		# Numbered among the follow-up questions; a step the reporter chose to edit has no number.
 		q = s.draft.followups
-		if sid not in q and sid in missing_steps(s, ctx):
+		missing = missing_steps(s, ctx)
+		if sid not in q and sid in missing:
 			q.append(sid)
-		return (q.index(sid) + 1, len(q)) if sid in q else (None, None)
+		# The total counts what is still missing too, so it does not grow as each question is asked.
+		total = len(q) + sum(1 for m in missing if m not in q)
+		return (q.index(sid) + 1, total) if sid in q else (None, None)
 	steps = active_steps(s, ctx)
 	return (steps.index(sid) + 1, len(steps)) if sid in steps else (None, None)
 

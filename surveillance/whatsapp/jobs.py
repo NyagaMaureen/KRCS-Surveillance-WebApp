@@ -11,12 +11,13 @@ import time
 from types import SimpleNamespace
 
 import frappe
-from frappe.utils import cint
+from frappe.utils import cint, now_datetime
 
 from surveillance.whatsapp import data, sessions
 from surveillance.whatsapp.chatbot import ChatbotClient
-from surveillance.whatsapp.client import WhatsAppClient
-from surveillance.whatsapp.conversation import AttrDict, format_phone, handle
+from surveillance.whatsapp.client import MediaTooLarge, WhatsAppClient
+from surveillance.whatsapp.content import T
+from surveillance.whatsapp.conversation import MEDIA_TYPES, AttrDict, format_phone, handle
 from surveillance.whatsapp.extract import ExtractionClient
 from surveillance.whatsapp.messages import text, validate
 
@@ -26,15 +27,17 @@ LOCK_SECONDS = 120  # longer than one message can take (chatbot: 2 tries x timeo
 DAY = 24 * 3600
 
 ATTACHMENT_TYPES = {"image": "Photo", "audio": "Voice Note"}
-EXT = {
-	"image/jpeg": "jpg",
-	"image/png": "png",
-	"image/webp": "webp",
-	"audio/ogg": "ogg",
-	"audio/mpeg": "mp3",
-	"audio/mp4": "m4a",
-	"video/mp4": "mp4",
-	"application/pdf": "pdf",
+
+# Meta limits a template to 1024 characters once its values are filled in, so the question leaves room for the rest.
+TEMPLATE_QUESTION_CHARS = 650
+ESCALATION_REASONS = {
+	"not_a_report": "Message was not a health report",
+	"service_unavailable": "Assistant was unavailable",
+	"no_match": "No approved answer found",
+	"low_confidence": "No confident answer found",
+	"ambiguous": "Question could mean several things",
+	"missing_capability": "Asker lacks access to this answer",
+	"count_disease_unknown": "Disease in the question not recognised",
 }
 
 
@@ -159,13 +162,24 @@ def on_submit(report, session, media, extraction=None):
 		phone=session.phone,
 		reporter_role=(session.staff or {}).get("role"),
 		danger_signs=list((extraction or {}).get("danger_signs") or []),
+		lang=session.lang,
 	)
 
 
-def after_submit(report, media, phone, reporter_role=None, danger_signs=None):
-	if media:
-		attach_media(report, media)
+def after_submit(report, media, phone, reporter_role=None, danger_signs=None, lang=None):
+	failed = attach_media(report, media) if media else 0
+	if failed:
+		tell_reporter_media_failed(report, phone, failed, lang)
 	notify_desk(report, phone, reporter_role, danger_signs)
+
+
+def tell_reporter_media_failed(report, phone, failed, lang=None):
+	"""They were told the report was received, and they wrote moments ago, so a plain message reaches them."""
+	strings = T.get(lang) or T["en"]
+	try:
+		whatsapp_client().send(phone, text(strings["mediaNotSaved"](report, failed)))
+	except Exception:
+		frappe.log_error(title=f"WhatsApp reporter not told about media on {report}")
 
 
 def log_extraction(report, session, draft):
@@ -214,15 +228,19 @@ def log_report_stats(report, session, draft, seconds):
 
 
 def attach_media(report, media):
-	"""Photos, voice notes and documents become private Files on the report, plus an Attachments row each.
-	A file that fails is logged and skipped; the report stays."""
+	"""Photos, voice notes, videos and documents become private Files on the report, plus an Attachments row
+	each. A file that fails is skipped, logged and noted on the report; the report stays.
+	Returns how many failed."""
 	wa = whatsapp_client()
 	rows = []
+	failed = 0
 	for i, m in enumerate(media, 1):
 		try:
 			content, mime = wa.download_media(m["media_id"])
-			mime = (mime or m.get("mime_type") or "").split(";")[0]
-			ext = EXT.get(mime) or mime.split("/")[-1] or "bin"
+			mime = (mime or m.get("mime_type") or "").split(";")[0].strip().lower()
+			if mime not in MEDIA_TYPES:  # the conversation checked what WhatsApp declared; this is what arrived
+				raise ValueError(f"File type not accepted: {mime}")
+			ext = MEDIA_TYPES[mime]
 			f = frappe.get_doc(
 				{
 					"doctype": "File",
@@ -235,12 +253,23 @@ def attach_media(report, media):
 			).insert(ignore_permissions=True)
 			kind = ATTACHMENT_TYPES.get(m.get("kind"), "Attachment")
 			row = {"attachment_type": kind, "file": f.file_url, "text_content": m.get("caption")}
-			if kind in ("Photo", "Voice Note") and m.get("consent"):   # answered in the bot (RConsent)
+			if m.get("consent"):  # answered in the bot (RConsent)
 				row.update({"people_shown": m.get("people_shown") or 0, "consent": m["consent"],
 					"consent_recorded_on": frappe.utils.now_datetime()})
 			rows.append(row)
+		except MediaTooLarge as e:
+			failed += 1
+			logger().warning(f"media over the size limit on {report}: {e}")
 		except Exception:
+			failed += 1
 			frappe.log_error(title=f"WhatsApp media could not be attached to {report}")
+	if failed:
+		rows.append(
+			{
+				"attachment_type": "Text Note",
+				"text_content": f"{failed} of {len(media)} WhatsApp attachment(s) could not be saved.",
+			}
+		)
 	if rows:
 		doc = frappe.get_doc("Case Report", report)
 		for row in rows:
@@ -248,6 +277,7 @@ def attach_media(report, media):
 		doc.save(ignore_permissions=True)
 		# Keep the attachments even if the desk alert that follows fails.
 		frappe.db.commit()  # nosemgrep
+	return failed
 
 
 def notify_desk(report, phone, reporter_role=None, danger_signs=None):
@@ -282,6 +312,7 @@ def notify_desk(report, phone, reporter_role=None, danger_signs=None):
 		f"{where or '—'}{pin}",
 		str(r.affected_count or "—"),
 		who,
+		", ".join(danger_signs or [])[:200] or "None noted",
 	]
 	if st.notify_template:
 		msg = {
@@ -296,7 +327,7 @@ def notify_desk(report, phone, reporter_role=None, danger_signs=None):
 			f"• Affected: {params[3]}\n• Reporter: {params[4]}"
 			+ (f"\n• *Danger signs:* {', '.join(danger_signs)}" if danger_signs else "")
 		)
-	_send_all(to_numbers, msg, "WhatsApp desk alert failed")
+	_send_all(to_numbers, msg, "WhatsApp desk alert failed", purpose="desk_alert", ref=r.name)
 
 
 def log_chatbot(request, response, session):
@@ -356,26 +387,66 @@ def on_escalate(question, session, request, reason, error=None, response=None):
 		phone=session.phone,
 		region=staff.get("region_label") or staff.get("region"),
 		reason=reason,
+		asked_at=format_time(now_datetime()),
 	)
 
 
-def send_escalation(question, who, phone, region, reason):
-	"""Plain text, so it only reaches numbers that messaged the bot in the last 24 hours."""
+def format_time(when):
+	return when.strftime("%d %b %Y %H:%M")
+
+
+def reason_label(reason):
+	"""Unknown reasons still read as words: the chatbot service can add new ones."""
+	return ESCALATION_REASONS.get(reason) or (reason or "—").replace("_", " ")
+
+
+def send_escalation(question, who, phone, region, reason, asked_at=None):
+	"""With an approved template it reaches anyone (AI/ML §6.2). Without one it is plain text, which only
+	reaches numbers that messaged the bot in the last 24 hours.
+	asked_at is when the person asked, because a late delivery would otherwise look like a new question."""
 	st = data.settings()
 	to_numbers = numbers(st.escalation_numbers) or numbers(st.notify_numbers)
 	if not to_numbers:
 		return
-	body = (
-		f"*Question needs a reply*\n\n• From: {who} {format_phone(phone)}\n• Region: {region or '—'}\n"
-		f"• Why: {reason}\n\n{question[:1000]}"
-	)
-	_send_all(to_numbers, text(body), "WhatsApp escalation failed")
+	sender = f"{who} {format_phone(phone)}"
+	why = reason_label(reason)
+	asked_at = asked_at or format_time(now_datetime())
+	if st.escalation_template:
+		msg = {
+			"kind": "template",
+			"name": st.escalation_template,
+			"lang": st.notify_template_language or "en",
+			"params": [sender, region or "—", why, (question or "—")[:TEMPLATE_QUESTION_CHARS], asked_at],
+		}
+	else:
+		msg = text(
+			f"*Question needs a reply*\n\n• From: {sender}\n• Region: {region or '—'}\n"
+			f"• Why: {why}\n• Asked: {asked_at}\n\n{question[:1000]}"
+		)
+	_send_all(to_numbers, msg, "WhatsApp escalation failed", purpose="escalation")
 
 
-def _send_all(to_numbers, msg, error_title):
+def _send_all(to_numbers, msg, error_title, purpose=None, ref=None):
+	"""The [sent] line gives the message ID that record_statuses later reports on."""
 	wa = whatsapp_client()
 	for to in to_numbers:
 		try:
-			wa.send(to, msg)
+			sent = wa.send(to, msg) or {}
+			message_id = ((sent.get("messages") or [{}])[0]).get("id")
+			logger().info(
+				"[sent] " + json.dumps({"id": message_id, "to": to, "purpose": purpose, "ref": ref})
+			)
 		except Exception:
 			frappe.log_error(title=f"{error_title}: {to}")
+
+
+def record_statuses(statuses):
+	"""One line per delivery update in logs/whatsapp.log (SRS R71). A failed message also goes to the Error Log:
+	131047 means the number has not written in 24 hours and needs a template."""
+	for st in statuses:
+		logger().info("[delivery] " + json.dumps(st))
+		if st["status"] == "failed":
+			codes = ", ".join(str(e["code"]) for e in st["errors"]) or "no code"
+			frappe.log_error(
+				title=f"WhatsApp message not delivered ({codes})", message=json.dumps(st, indent=1)
+			)
