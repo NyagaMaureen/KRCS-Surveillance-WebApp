@@ -25,6 +25,7 @@ import { KB_CATEGORIES, KB_WORKSPACE_LIMIT_BYTES } from '../data/mockKnowledgeBa
 import {
   uploadFile, getKbDocuments, createKbDocument, reindexKbDocument, deleteKbDocument, updateKbDocument,
   setKbApproval, getRoles, getDiseaseOptions, getRegions, searchKnowledgeBase, getKbHealth, runKbReconcile, getSubCounties,
+  getTrustedSources, saveTrustedSource, deleteTrustedSource,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
@@ -840,6 +841,86 @@ function TestSearch() {
   )
 }
 
+const EMPTY_SOURCE = { name: null, sourceName: '', website: '', kind: 'Website', enabled: true, notes: '' }
+
+function TrustedSources({ onToast }) {
+  const [rows, setRows] = useState(null)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState(EMPTY_SOURCE)
+  const [saving, setSaving] = useState(false)
+
+  async function load() {
+    setError('')
+    try { setRows(await getTrustedSources()) } catch (e) { setError(e.message || 'Could not load trusted sources') }
+  }
+  useEffect(() => { load() }, [])
+
+  async function save(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await saveTrustedSource(form)
+      onToast(form.name ? 'Source updated' : 'Source added')
+      setForm(EMPTY_SOURCE)
+      await load()
+    } catch (err) { onToast(err.message || 'Could not save', true) }
+    setSaving(false)
+  }
+
+  async function toggle(r) {
+    try { await saveTrustedSource({ ...r, enabled: !r.enabled }); await load() } catch (err) { onToast(err.message || 'Could not save', true) }
+  }
+
+  async function remove(r) {
+    try { await deleteTrustedSource(r.name); onToast('Source removed'); if (form.name === r.name) setForm(EMPTY_SOURCE); await load() } catch (err) { onToast(err.message || 'Could not remove', true) }
+  }
+
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-6">
+      <p className="text-sm text-gray-500 mb-1">Websites the assistant may quote when approved KRCS documents do not answer a question.</p>
+      <p className="text-sm text-gray-500 mb-4">Every such answer names the website and says it is not KRCS-approved, and the question still goes to the supervisor. PubMed is searched now; other websites are searched once Claude is connected.</p>
+
+      <form onSubmit={save} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_160px_auto] gap-3 items-center">
+        <input value={form.sourceName} onChange={set('sourceName')} placeholder="Name, e.g. World Health Organization" className={INPUT} aria-label="Name" />
+        <input value={form.website} onChange={set('website')} placeholder="Website, e.g. who.int" className={INPUT} aria-label="Website" />
+        <select value={form.kind} onChange={set('kind')} className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white" aria-label="Type">
+          <option value="Website">Website</option>
+          <option value="PubMed">PubMed</option>
+        </select>
+        <div className="flex items-center gap-2">
+          <button type="submit" disabled={saving || !form.sourceName.trim() || !form.website.trim()} className="px-5 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-gray-200 text-white text-sm font-medium inline-flex items-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}{form.name ? 'Save' : 'Add'}
+          </button>
+          {form.name && <button type="button" onClick={() => setForm(EMPTY_SOURCE)} className="text-sm text-gray-500 hover:text-gray-900">Cancel</button>}
+        </div>
+      </form>
+
+      {error && <p className="mt-4 bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3">{error}</p>}
+      {rows && !rows.length && <p className="mt-6 text-sm text-gray-400 text-center">No trusted sources yet.</p>}
+      {!!rows?.length && (
+        <div className="mt-5 border border-gray-100 rounded-xl divide-y divide-gray-100">
+          {rows.map((r) => (
+            <div key={r.name} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className={`text-sm font-medium ${r.enabled ? 'text-gray-900' : 'text-gray-400'}`}>{r.sourceName}</div>
+                <div className="text-xs text-gray-500">{r.website} · {r.kind === 'PubMed' ? 'PubMed search' : 'Website'}</div>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-gray-600">
+                <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="accent-red-600" />
+                {r.enabled ? 'In use' : 'Off'}
+              </label>
+              <button type="button" onClick={() => setForm({ ...r })} className="text-xs font-medium text-gray-600 hover:text-gray-900 inline-flex items-center gap-1"><Pencil className="w-3.5 h-3.5" />Edit</button>
+              <button type="button" onClick={() => remove(r)} className="text-xs font-medium text-red-700 hover:underline inline-flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" />Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function HealthPanel() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -1122,7 +1203,7 @@ export default function KnowledgeBase() {
 
       {canManage && (
         <div className="flex gap-6 border-b border-gray-100 mb-5">
-          {[{ key: 'documents', label: 'Documents' }, { key: 'test', label: 'Test search' }, { key: 'health', label: 'Health' }].map((t) => (
+          {[{ key: 'documents', label: 'Documents' }, { key: 'test', label: 'Test search' }, { key: 'sources', label: 'Trusted sources' }, { key: 'health', label: 'Health' }].map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
@@ -1139,6 +1220,8 @@ export default function KnowledgeBase() {
         <HealthPanel />
       ) : tab === 'test' && canManage ? (
         <TestSearch />
+      ) : tab === 'sources' && canManage ? (
+        <TrustedSources onToast={showToast} />
       ) : (
         <>
           <div className="flex items-center gap-3 flex-wrap mb-4">
