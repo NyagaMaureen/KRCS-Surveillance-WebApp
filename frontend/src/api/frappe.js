@@ -459,6 +459,14 @@ export function exportCsv(filename, rows, columns) {
   URL.revokeObjectURL(url)
 }
 
+
+/*
+|--------------------------------------------------------------------------
+| AI Data Assistant
+|--------------------------------------------------------------------------
+|
+| Real data through the chatbot gateway: { answer, options, outcome, escalated, logId }.
+*/
 const AI_MOCK_RESPONSES = [
   {
     match: /cholera/i,
@@ -508,16 +516,7 @@ function buildMockAiAnswer(question) {
   return { answer: fallback }
 }
 
-/*
-|--------------------------------------------------------------------------
-| AI Data Assistant
-|--------------------------------------------------------------------------
-|
-| Backed by mock data for now. Once the backend AI/NL-to-query endpoint
-| exists, swap the body of queryAiAssistant() for a real API call that
-| resolves the same shape: { answer: string, table?: { columns, rows } }.
-| The page consuming this function only depends on that return shape.
-*/
+// "Data" mode stays a placeholder until the Response Support Chatbot gateway (surveillance.chatbot.api) is merged.
 export async function queryAiAssistant(question) {
   await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 500))
   return buildMockAiAnswer(question)
@@ -941,11 +940,11 @@ async function kbRequest(method, params = {}, httpMethod = 'GET') {
 
 export const getKbDocuments = () => kbRequest('list_documents')
 
-export const createKbDocument = ({ file_url, category, applied_to, diseases, version, language, regions, review_date, expiry_date }) =>
-  kbRequest('create_document', { file_url, category, applied_to, diseases, version, language, regions, review_date, expiry_date }, 'POST')
+export const createKbDocument = ({ file_url, category, applied_to, diseases, version, language, regions, review_date, expiry_date, effective_from, audience_class, sensitivity, supersedes, authority, conflicts_with, sub_counties }) =>
+  kbRequest('create_document', { file_url, category, applied_to, diseases, version, language, regions, review_date, expiry_date, effective_from, audience_class, sensitivity, supersedes, authority, conflicts_with, sub_counties }, 'POST')
 
-export const updateKbDocument = (name, { category, version, applied_to, diseases, language, regions, review_date, expiry_date }) =>
-  kbRequest('update_document', { name, category, version, applied_to, diseases, language, regions, review_date, expiry_date }, 'POST')
+export const updateKbDocument = (name, { category, version, applied_to, diseases, language, regions, review_date, expiry_date, effective_from, audience_class, sensitivity, authority, conflicts_with, sub_counties }) =>
+  kbRequest('update_document', { name, category, version, applied_to, diseases, language, regions, review_date, expiry_date, effective_from, audience_class, sensitivity, authority, conflicts_with, sub_counties }, 'POST')
 
 export const setKbApproval = (name, status) => kbRequest('set_approval', { name, status }, 'POST')
 
@@ -953,15 +952,34 @@ export const reindexKbDocument = (name) => kbRequest('reindex_document', { name 
 
 export const deleteKbDocument = (name) => kbRequest('delete_document', { name }, 'POST')
 
-export const searchKnowledgeBase = ({ query, limit = 5, disease, category, language, includeDrafts } = {}) =>
-  kbRequest('search', { query, limit, disease, category, language, include_drafts: includeDrafts ? 1 : undefined })
+export const searchKnowledgeBase = ({ query, limit = 5, disease, category, language, includeDrafts, preview, audience } = {}) =>
+  kbRequest('search', { query, limit, disease, category, language, audience, include_drafts: includeDrafts ? 1 : undefined, preview: preview ? 1 : undefined })
 
-export const askKnowledgeBase = ({ query, language, history = [], streamId } = {}) =>
-  kbRequest('ask', { query, language, history: JSON.stringify(history), stream_id: streamId }, 'POST')
+// history is kept on the server per conversation (conversationId); the client copy is only a fallback
+export const askKnowledgeBase = ({ query, language, history = [], streamId, conversationId, mode } = {}) =>
+  kbRequest('ask', { query, language, history: JSON.stringify(history), stream_id: streamId, conversation_id: conversationId, mode }, 'POST')
 
 export const getKbPassage = (id) => kbRequest('get_passage', { id })
 
+export const getKbHealth = () => callMethod('/api/method/surveillance.kb_ops.health')
+export const runKbReconcile = () => callMethodPost('/api/method/surveillance.kb_ops.run_reconcile', {})
+
 export const getDiseaseVocabulary = () => kbRequest('get_disease_vocabulary')
+
+// Chatbot Query Log (surveillance.chatbot_log)
+const qs = (params) => {
+  const u = new URLSearchParams()
+  Object.entries(params || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') u.set(k, v) })
+  const s = u.toString()
+  return s ? `?${s}` : ''
+}
+export const listChatbotLogs = (params) => callMethod(`/api/method/surveillance.chatbot_log.list_logs${qs(params)}`)
+export const getChatbotLog = (name) => callMethod(`/api/method/surveillance.chatbot_log.get_log${qs({ name })}`)
+export const getChatbotMetrics = (params) => callMethod(`/api/method/surveillance.chatbot_log.get_metrics${qs(params)}`)
+export const updateChatbotEscalation = (name, status, note) =>
+  callMethodPost('/api/method/surveillance.chatbot_log.update_escalation', { name, status, note })
+export const submitChatbotFeedback = (name, helpful, comment) =>
+  callMethodPost('/api/method/surveillance.chatbot_log.submit_feedback', { name, helpful: helpful ? 1 : 0, comment })
 
 export async function getReviewEvents(params = {}) {
   const qs = new URLSearchParams()

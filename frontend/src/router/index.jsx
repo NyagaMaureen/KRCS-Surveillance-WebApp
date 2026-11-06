@@ -14,6 +14,7 @@ import HelpCenter from '../pages/HelpCenter'
 import AuditLog from '../pages/AuditLog'
 import AiDataAssistant from '../pages/AiDataAssistant'
 import KnowledgeBase from '../pages/KnowledgeBase'
+import ChatbotQueryLog from '../pages/ChatbotQueryLog'
 import SurveillanceDashboard from '../pages/SurveillanceDashboard'
 import AiGovernanceDashboard from '../pages/AiGovernanceDashboard'
 import Investigations from '../pages/Investigations'
@@ -74,6 +75,7 @@ const rawRoutes = [
   { path: '/audit-log', name: 'audit-log', element: AuditLog },
   { path: '/ai-data-assistant', name: 'ai-data-assistant', element: AiDataAssistant },
   { path: '/knowledge-base', name: 'knowledge-base', element: KnowledgeBase },
+  { path: '/chatbot-query-log', name: 'chatbot-query-log', element: ChatbotQueryLog },
   { path: '/my-tasks', name: 'my-tasks', element: MyTasks },
   { path: '/data-quality', name: 'data-quality', element: DataQuality },
   { path: '/follow-ups', name: 'follow-ups', element: FollowUps },
@@ -88,7 +90,7 @@ const CAPABILITY_BY_PAGE = {}
 const OPEN_PAGES = new Set()
 Object.values(MENUS).flatMap((menu) => menu.flatMap((group) => group.items)).forEach((item) => {
   if (!item.requiresCapability) OPEN_PAGES.add(item.page)
-  else (CAPABILITY_BY_PAGE[item.page] = CAPABILITY_BY_PAGE[item.page] || new Set()).add(item.requiresCapability)
+  else [].concat(item.requiresCapability).forEach((c) => (CAPABILITY_BY_PAGE[item.page] = CAPABILITY_BY_PAGE[item.page] || new Set()).add(c))
 })
 CAPABILITY_BY_PAGE['report-detail'] = CAPABILITY_BY_PAGE.reports
 

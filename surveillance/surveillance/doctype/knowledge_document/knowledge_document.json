@@ -9,22 +9,35 @@
   "file",
   "extension",
   "version",
+  "document_family",
+  "supersedes",
+  "superseded_by",
   "approval_status",
   "approved_by",
   "approved_on",
   "diseases",
   "language",
   "regions",
+  "sub_counties",
   "review_date",
+  "effective_from",
   "expiry_date",
   "col1",
   "category",
   "applied_to",
+  "audience_class",
+  "sensitivity",
+  "authority",
+  "conflicts_with",
   "size_bytes",
   "index_section",
   "status",
   "chunks",
-  "error"
+  "error",
+  "governance_section",
+  "content_hash",
+  "approved_hash",
+  "governance_note"
  ],
  "fields": [
   {
@@ -52,6 +65,27 @@
    "label": "Version"
   },
   {
+   "fieldname": "document_family",
+   "fieldtype": "Data",
+   "label": "Document Family",
+   "read_only": 1,
+   "description": "All versions of the same document share a family. Approving one version retires the others."
+  },
+  {
+   "fieldname": "supersedes",
+   "fieldtype": "Link",
+   "options": "Knowledge Document",
+   "label": "Supersedes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "superseded_by",
+   "fieldtype": "Link",
+   "options": "Knowledge Document",
+   "label": "Superseded By",
+   "read_only": 1
+  },
+  {
    "fieldname": "col1",
    "fieldtype": "Column Break"
   },
@@ -66,6 +100,37 @@
    "fieldname": "applied_to",
    "fieldtype": "Small Text",
    "label": "Applied To"
+  },
+  {
+   "fieldname": "audience_class",
+   "fieldtype": "Select",
+   "label": "Audience Class",
+   "options": "Public\nCommunity Health Worker\nProfessional\nRestricted",
+   "default": "Community Health Worker",
+   "in_list_view": 1,
+   "description": "Who may read this. Public = community members (WhatsApp); only Public documents are ever served to them. Staff read documents up to their own class."
+  },
+  {
+   "fieldname": "sensitivity",
+   "fieldtype": "Select",
+   "label": "Sensitivity",
+   "options": "Standard\nSensitive",
+   "default": "Standard",
+   "description": "Sensitive documents are served only to users with View Sensitive Knowledge Base content. Public documents cannot be Sensitive."
+  },
+  {
+   "fieldname": "authority",
+   "fieldtype": "Select",
+   "label": "Authority",
+   "default": "KRCS protocol",
+   "options": "National guideline\nKRCS protocol\nPartner guidance\nOther",
+   "description": "When two documents disagree, the one with higher authority is shown. Equal authority is escalated to a person."
+  },
+  {
+   "fieldname": "conflicts_with",
+   "fieldtype": "Small Text",
+   "label": "Conflicts With",
+   "description": "Knowledge Document IDs (comma separated) that give different guidance on the same topic."
   },
   {
    "fieldname": "size_bytes",
@@ -139,18 +204,54 @@
    "label": "Regions"
   },
   {
+   "fieldname": "sub_counties",
+   "fieldtype": "Small Text",
+   "label": "Sub-counties / camps",
+   "description": "Optional: narrow the document to these sub-counties (comma-separated Sub County IDs) within its regions. Users in a region also see its sub-county documents; users in a sub-county also see regional and national ones."
+  },
+  {
    "fieldname": "review_date",
    "fieldtype": "Date",
    "label": "Review Date"
   },
   {
+   "fieldname": "effective_from",
+   "fieldtype": "Date",
+   "label": "Effective From",
+   "description": "Not served before this date (blank = from approval)"
+  },
+  {
    "fieldname": "expiry_date",
    "fieldtype": "Date",
    "label": "Expiry Date"
+  },
+  {
+   "fieldname": "governance_section",
+   "fieldtype": "Section Break",
+   "label": "Governance"
+  },
+  {
+   "fieldname": "content_hash",
+   "fieldtype": "Data",
+   "label": "Content Hash (SHA-256)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_hash",
+   "fieldtype": "Data",
+   "label": "Approved Hash (SHA-256)",
+   "read_only": 1,
+   "description": "The exact file that was approved. Re-indexing refuses a different file."
+  },
+  {
+   "fieldname": "governance_note",
+   "fieldtype": "Small Text",
+   "label": "Governance Note",
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-10-13 09:52:40.317020",
+ "modified": "2026-11-03 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Knowledge Document",

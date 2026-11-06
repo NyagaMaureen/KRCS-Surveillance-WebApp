@@ -18,12 +18,13 @@ import {
   MoreHorizontal,
   Loader2,
   AlertTriangle,
+  CopyPlus,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { KB_CATEGORIES, KB_WORKSPACE_LIMIT_BYTES } from '../data/mockKnowledgeBase'
 import {
   uploadFile, getKbDocuments, createKbDocument, reindexKbDocument, deleteKbDocument, updateKbDocument,
-  setKbApproval, getRoles, getDiseaseOptions, getRegions, searchKnowledgeBase,
+  setKbApproval, getRoles, getDiseaseOptions, getRegions, searchKnowledgeBase, getKbHealth, runKbReconcile, getSubCounties,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
@@ -36,6 +37,19 @@ const LANGUAGES = [
   { value: 'Kiswahili', label: 'Kiswahili', short: 'SW' },
 ]
 const DATE_HELP = 'Expired documents are removed from search automatically.'
+const AUDIENCE_CLASSES = [
+  { value: 'Public', label: 'Public', help: 'Community members (WhatsApp). Only Public documents are ever shown to them.' },
+  { value: 'Community Health Worker', label: 'Community Health Worker', help: 'CHPs and all other staff.' },
+  { value: 'Professional', label: 'Professional', help: 'Officers, clinicians and specialists. Not CHPs.' },
+  { value: 'Restricted', label: 'Restricted', help: 'Only users allowed to see restricted content.' },
+]
+const DEFAULT_AUDIENCE_CLASS = 'Community Health Worker'
+const VERSION_RE = /^v\d+(\.\d+){0,2}$/
+function nextVersion(v) {
+  const m = /^v(\d+)/.exec(v || '')
+  return m ? `v${Number(m[1]) + 1}.0` : 'v2.0'
+}
+const AUDIENCE_SHORT = { Public: 'Public', 'Community Health Worker': 'CHW', Professional: 'Professional', Restricted: 'Restricted' }
 const ACCEPTED = ['pdf', 'docx', 'txt', 'md']
 const MAX_BYTES = 25 * 1024 * 1024
 
@@ -223,6 +237,10 @@ function StatusBadge({ doc }) {
       {a === 'approved' && doc.approvedBy && doc.status === 'indexed' && !f.expired && (
         <span className="text-[11px] text-gray-400">by {doc.approvedBy}</span>
       )}
+      {doc.supersededBy && <span className="text-[11px] text-gray-500">Replaced by {doc.supersededBy}</span>}
+      {doc.governanceNote && a === 'draft' && (
+        <span className="text-[11px] text-amber-700 max-w-[200px] truncate" title={doc.governanceNote}>Needs approval again</span>
+      )}
       {doc.status === 'failed' && doc.error && (
         <span className="text-[11px] text-red-700 max-w-[180px] truncate" title={doc.error}>{doc.error}</span>
       )}
@@ -268,17 +286,41 @@ function RowMenu({ items }) {
   )
 }
 
+function optionsDateError({ effectiveFrom, reviewDate, expiryDate }) {
+  if (reviewDate && expiryDate && reviewDate > expiryDate) return 'Review date must not be after the expiry date.'
+  if (effectiveFrom && expiryDate && effectiveFrom > expiryDate) return 'Effective date must not be after the expiry date.'
+  return ''
+}
+
 // More options (diseases, language, regions, dates) shared by upload and edit
 function MoreOptions({ values, setValues, diseaseOptions, regionOptions, diseaseNames }) {
   const [open, setOpen] = useState(false)
-  const { diseases, language, regions, reviewDate, expiryDate } = values
-  const dateError = reviewDate && expiryDate && reviewDate > expiryDate ? 'Review date must not be after the expiry date.' : ''
+  const { diseases, language, regions, reviewDate, expiryDate, effectiveFrom } = values
+  const audienceClass = values.audienceClass || DEFAULT_AUDIENCE_CLASS
+  const subCounties = values.subCounties || []
+  const [subCountyList, setSubCountyList] = useState([])
+  const [regionRows, setRegionRows] = useState([])
+  useEffect(() => {
+    if (!open) return
+    getSubCounties('').then(setSubCountyList).catch(() => {})
+    getRegions().then(setRegionRows).catch(() => {})
+  }, [open])
+  // sub-counties belong to the region record; the form names regions by display name
+  const regionIds = new Set(regionRows.filter((r) => regions.includes(r.region_name || r.name) || regions.includes(r.name)).map((r) => r.name))
+  const subCountyOptions = regions.includes(ALL_REGIONS) ? [] : subCountyList
+    .filter((s) => regionIds.has(s.region))
+    .map((s) => ({ value: s.name, label: `${s.sub_county_name}${s.county ? ` (${s.county})` : ''}` }))
+  const sensitivity = values.sensitivity || 'Standard'
+  const dateError = optionsDateError(values)
   const summary = [
+    AUDIENCE_SHORT[audienceClass] || audienceClass,
+    sensitivity === 'Sensitive' ? 'Sensitive' : null,
     language || 'English',
     regions.includes(ALL_REGIONS) ? 'All regions' : regions.join(', '),
     diseases.length ? diseases.map((k) => diseaseNames[k] || k).join(', ') : 'No diseases',
+    effectiveFrom ? `From ${formatDate(effectiveFrom)}` : null,
     expiryDate ? `Expires ${formatDate(expiryDate)}` : 'No expiry',
-  ].join(' · ')
+  ].filter(Boolean).join(' · ')
 
   return (
     <div className="border border-gray-100 rounded-xl">
@@ -296,6 +338,33 @@ function MoreOptions({ values, setValues, diseaseOptions, regionOptions, disease
             <MultiSelectDropdown label="Select diseases" options={diseaseOptions} selected={diseases} onChange={(v) => setValues({ diseases: v })} />
           </div>
           <div>
+            <label className={LABEL}>Audience class</label>
+            <SelectField value={audienceClass} onChange={(v) => setValues(v === 'Public' ? { audienceClass: v, sensitivity: 'Standard' } : { audienceClass: v })}>
+              {AUDIENCE_CLASSES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+            </SelectField>
+            <p className="text-xs text-gray-400 mt-1">{AUDIENCE_CLASSES.find((a) => a.value === audienceClass)?.help}</p>
+          </div>
+          <div>
+            <label className={LABEL}>Authority</label>
+            <SelectField value={values.authority || 'KRCS protocol'} onChange={(v) => setValues({ authority: v })}>
+              {['National guideline', 'KRCS protocol', 'Partner guidance', 'Other'].map((a) => <option key={a} value={a}>{a}</option>)}
+            </SelectField>
+            <p className="text-xs text-gray-400 mt-1">When documents disagree, higher authority is shown.</p>
+          </div>
+          <div>
+            <label className={LABEL}>Conflicts with</label>
+            <input value={values.conflictsWith || ''} onChange={(e) => setValues({ conflictsWith: e.target.value })} placeholder="e.g. KB-00012" className={INPUT} />
+            <p className="text-xs text-gray-400 mt-1">Document IDs giving different guidance. Equal authority is passed to a person.</p>
+          </div>
+          <div>
+            <label className={LABEL}>Sensitivity</label>
+            <SelectField value={sensitivity} onChange={(v) => setValues({ sensitivity: v })}>
+              <option value="Standard">Standard</option>
+              {audienceClass !== 'Public' && <option value="Sensitive">Sensitive</option>}
+            </SelectField>
+            <p className="text-xs text-gray-400 mt-1">Sensitive documents are shown only to users allowed to see sensitive content.</p>
+          </div>
+          <div>
             <label className={LABEL}>Language</label>
             <SelectField value={language} onChange={(v) => setValues({ language: v })}>
               {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
@@ -303,7 +372,18 @@ function MoreOptions({ values, setValues, diseaseOptions, regionOptions, disease
           </div>
           <div>
             <label className={LABEL}>Regions</label>
-            <MultiSelectDropdown label="Select regions" options={regionOptions} selected={regions} onChange={(next) => setValues({ regions: normalizeRegions(regions, next) })} />
+            <MultiSelectDropdown label="Select regions" options={regionOptions} selected={regions} onChange={(next) => setValues({ regions: normalizeRegions(regions, next), subCounties: [] })} />
+          </div>
+          {subCountyOptions.length > 0 && (
+            <div className="sm:col-span-2">
+              <label className={LABEL}>Sub-counties / camps <span className="font-normal text-gray-400">(optional)</span></label>
+              <MultiSelectDropdown label="Whole region" options={subCountyOptions} selected={subCounties} onChange={(v) => setValues({ subCounties: v })} />
+              <p className="text-xs text-gray-400 mt-1">Narrow the document to these sub-counties. Regional staff still see it; staff in other sub-counties do not.</p>
+            </div>
+          )}
+          <div>
+            <label className={LABEL}>Effective from</label>
+            <input type="date" value={effectiveFrom || ''} onChange={(e) => setValues({ effectiveFrom: e.target.value })} className={INPUT} />
           </div>
           <div>
             <label className={LABEL}>Review date</label>
@@ -321,9 +401,9 @@ function MoreOptions({ values, setValues, diseaseOptions, regionOptions, disease
   )
 }
 
-const EMPTY_OPTIONS = { diseases: [], language: 'English', regions: [ALL_REGIONS], reviewDate: '', expiryDate: '' }
+const EMPTY_OPTIONS = { diseases: [], language: 'English', regions: [ALL_REGIONS], effectiveFrom: '', reviewDate: '', expiryDate: '', audienceClass: DEFAULT_AUDIENCE_CLASS, sensitivity: 'Standard' }
 
-function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOptions, diseaseNames, onUploaded }) {
+function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOptions, diseaseNames, onUploaded, supersedes = null }) {
   const [files, setFiles] = useState([])
   const [category, setCategory] = useState(KB_CATEGORIES[0])
   const [applyTo, setApplyTo] = useState([ALL_ROLES])
@@ -332,7 +412,26 @@ function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOption
   const [progress, setProgress] = useState(null)
   const [errors, setErrors] = useState([])
   const fileInputRef = useRef(null)
-  const dateError = opts.reviewDate && opts.expiryDate && opts.reviewDate > opts.expiryDate
+  const [version, setVersion] = useState('v1.0')
+  const versionError = version && !VERSION_RE.test(version.trim()) ? 'Version must look like v1, v1.2 or v1.2.3.' : ''
+  const dateError = optionsDateError(opts) || versionError
+
+  // a new version starts from the current version's details; it is a Draft until someone approves it
+  useEffect(() => {
+    if (!open) return
+    if (supersedes) {
+      setCategory(supersedes.category || KB_CATEGORIES[0])
+      setApplyTo(supersedes.appliedTo?.length ? supersedes.appliedTo : [ALL_ROLES])
+      setOpts({
+        ...EMPTY_OPTIONS, diseases: supersedes.diseases || [], language: supersedes.language || 'English',
+        regions: supersedes.regions?.length ? supersedes.regions : [ALL_REGIONS],
+        audienceClass: supersedes.audienceClass || DEFAULT_AUDIENCE_CLASS, sensitivity: supersedes.sensitivity || 'Standard',
+      })
+      setVersion(nextVersion(supersedes.version))
+    } else {
+      setVersion('v1.0')
+    }
+  }, [open, supersedes])
 
   useEffect(() => {
     if (!open) return
@@ -350,11 +449,11 @@ function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOption
   }
 
   function addFiles(fileList) {
-    const list = Array.from(fileList || [])
+    const list = Array.from(fileList || []).slice(0, supersedes ? 1 : undefined)
     const bad = list.filter((f) => !ACCEPTED.includes((f.name.split('.').pop() || '').toLowerCase()) || f.size > MAX_BYTES)
     setErrors(bad.map((f) => `${f.name}: only PDF, Word, TXT or Markdown up to 25 MB`))
     const ok = list.filter((f) => !bad.includes(f))
-    if (ok.length) setFiles((prev) => [...prev, ...ok])
+    if (ok.length) setFiles((prev) => (supersedes ? ok.slice(0, 1) : [...prev, ...ok]))
   }
 
   async function upload() {
@@ -373,6 +472,14 @@ function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOption
           diseases: opts.diseases,
           language: opts.language,
           regions: opts.regions,
+          effective_from: opts.effectiveFrom,
+          audience_class: opts.audienceClass,
+          sensitivity: opts.sensitivity,
+          version: version.trim(),
+          supersedes: supersedes?.id,
+          authority: opts.authority,
+          conflicts_with: opts.conflictsWith,
+          sub_counties: opts.subCounties,
           review_date: opts.reviewDate,
           expiry_date: opts.expiryDate,
         })
@@ -402,15 +509,24 @@ function UploadDrawer({ open, onClose, roleOptions, diseaseOptions, regionOption
       <div role="dialog" aria-modal="true" aria-label="Upload documents" className="relative w-full max-w-lg h-full bg-white shadow-xl flex flex-col">
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Upload documents</h2>
-            <p className="text-xs text-gray-400 mt-0.5">New documents start as drafts until approved.</p>
+            <h2 className="text-lg font-semibold text-gray-900">{supersedes ? 'Upload a new version' : 'Upload documents'}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {supersedes
+                ? `Replaces "${supersedes.name}" (${supersedes.version}) once the new version is approved.`
+                : 'New documents start as drafts until approved by someone other than the uploader.'}
+            </p>
           </div>
           <button onClick={() => !progress && onClose()} aria-label="Close" className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
           <section>
-            <h3 className="text-sm font-semibold text-gray-900 mb-2">1. Choose files</h3>
+            <label className={LABEL} htmlFor="kb-version">Version</label>
+            <input id="kb-version" value={version} onChange={(e) => setVersion(e.target.value)} className={INPUT} placeholder="v1.0" />
+            {versionError && <p className="text-xs text-red-700 mt-1">{versionError}</p>}
+          </section>
+          <section>
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">1. Choose {supersedes ? 'the new file' : 'files'}</h3>
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
               onDragLeave={() => setIsDragging(false)}
@@ -503,9 +619,15 @@ function EditDocumentModal({ doc, roleOptions, diseaseOptions, regionOptions, di
     regions: doc.regions?.length ? doc.regions : [ALL_REGIONS],
     reviewDate: doc.reviewDate ? String(doc.reviewDate).slice(0, 10) : '',
     expiryDate: doc.expiryDate ? String(doc.expiryDate).slice(0, 10) : '',
+    effectiveFrom: doc.effectiveFrom ? String(doc.effectiveFrom).slice(0, 10) : '',
+    audienceClass: doc.audienceClass || DEFAULT_AUDIENCE_CLASS,
+    sensitivity: doc.sensitivity || 'Standard',
+    authority: doc.authority || 'KRCS protocol',
+    conflictsWith: (doc.conflictsWith || []).join(', '),
+    subCounties: doc.subCounties || [],
   })
   const [saving, setSaving] = useState(false)
-  const dateError = opts.reviewDate && opts.expiryDate && opts.reviewDate > opts.expiryDate
+  const dateError = !!optionsDateError(opts)
 
   async function submit() {
     if (dateError) return
@@ -513,6 +635,8 @@ function EditDocumentModal({ doc, roleOptions, diseaseOptions, regionOptions, di
     await onSave({
       category, version, applied_to: appliedTo.length ? appliedTo : [ALL_ROLES], diseases: opts.diseases,
       language: opts.language, regions: opts.regions, review_date: opts.reviewDate, expiry_date: opts.expiryDate,
+      effective_from: opts.effectiveFrom, audience_class: opts.audienceClass, sensitivity: opts.sensitivity,
+      authority: opts.authority, conflicts_with: opts.conflictsWith, sub_counties: opts.subCounties,
     })
     setSaving(false)
   }
@@ -635,6 +759,7 @@ const EMPTY_FILTERS = { category: '', role: '', language: '', region: '', indexi
 function TestSearch() {
   const [query, setQuery] = useState('')
   const [drafts, setDrafts] = useState(true)
+  const [viewAs, setViewAs] = useState('all')
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -647,7 +772,7 @@ function TestSearch() {
     setError('')
     setExpanded({})
     try {
-      const res = await searchKnowledgeBase({ query: query.trim(), limit: 5, includeDrafts: drafts })
+      const res = await searchKnowledgeBase({ query: query.trim(), limit: 5, includeDrafts: drafts && viewAs !== 'me', preview: viewAs === 'all', audience: viewAs === 'public' ? 'Public' : undefined })
       setResults(Array.isArray(res) ? res : res?.results || [])
     } catch (err) {
       setError(err.message || 'Search failed')
@@ -667,6 +792,14 @@ function TestSearch() {
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" checked={drafts} onChange={(e) => setDrafts(e.target.checked)} className="accent-red-600" />
           Include drafts
+        </label>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          View as
+          <select value={viewAs} onChange={(e) => setViewAs(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white" aria-label="View as">
+            <option value="all">All audiences</option>
+            <option value="public">A community member (Public)</option>
+            <option value="me">Myself</option>
+          </select>
         </label>
         <button type="submit" disabled={loading || !query.trim()} className="px-5 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-gray-200 text-white text-sm font-medium inline-flex items-center gap-2">
           {loading && <Loader2 className="w-4 h-4 animate-spin" />}{loading ? 'Searching…' : 'Search'}
@@ -689,6 +822,8 @@ function TestSearch() {
                   {r.confidence && <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${CONFIDENCE_STYLES[r.confidence] || CONFIDENCE_STYLES.low}`}>{r.confidence} match</span>}
                   {typeof r.score === 'number' && <span className="text-[11px] text-gray-400" title="How closely this passage matches the question">{Math.round(r.score * 100)}%</span>}
                   {approval && approval !== 'approved' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 capitalize">{approval}</span>}
+                  {r.audience_class && <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{AUDIENCE_SHORT[r.audience_class] || r.audience_class}</span>}
+                  {r.sensitive && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Sensitive</span>}
                 </div>
                 <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{expanded[key] || !long ? text : `${text.slice(0, 300)}…`}</p>
                 {long && (
@@ -705,6 +840,70 @@ function TestSearch() {
   )
 }
 
+function HealthPanel() {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function load() {
+    setError('')
+    try { setData(await getKbHealth()) } catch (e) { setError(e.message || 'Could not load health') }
+  }
+  useEffect(() => { load() }, [])
+
+  async function reconcile() {
+    setBusy(true)
+    try { await runKbReconcile(); await load() } catch (e) { setError(e.message || 'Reconcile failed') }
+    setBusy(false)
+  }
+
+  if (error) return <p className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3">{error}</p>
+  if (!data) return <p className="text-sm text-gray-400">Loading…</p>
+  const q = data.qdrant || {}
+  const rec = data.last_reconcile
+  const row = (label, value, ok = true) => (
+    <div className="flex items-start justify-between gap-4 py-2 border-b border-gray-50 last:border-0">
+      <span className="text-sm text-gray-500">{label}</span>
+      <span className={`text-sm text-right ${ok ? 'text-gray-900' : 'text-red-700 font-medium'}`}>{value}</span>
+    </div>
+  )
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {!!data.warnings?.length && (
+        <div className="lg:col-span-2 bg-amber-50 border border-amber-100 rounded-2xl p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-800 mb-1"><AlertTriangle className="w-4 h-4" /> Needs attention</div>
+          <ul className="list-disc pl-5 text-sm text-amber-800 space-y-0.5">{data.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+        </div>
+      )}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">Search index</h3>
+        {row('Qdrant', q.reachable ? 'Reachable' : `Unreachable: ${q.error || ''}`, q.reachable)}
+        {row('Collection', `${q.collection || '-'} · ${q.points ?? 0} passages`)}
+        {row('API key / TLS', `${q.api_key ? 'Key set' : 'No key'} · ${q.tls ? 'TLS' : 'No TLS'}`, q.api_key)}
+        {row('Last reconciliation', rec ? `${rec.at?.slice(0, 16)} · ${rec.checked} checked, ${rec.missing?.length || 0} missing, ${rec.orphans?.length || 0} orphans` : 'Not run yet')}
+        <button type="button" onClick={reconcile} disabled={busy} className="mt-3 text-xs font-medium border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50">
+          {busy ? 'Checking…' : 'Check index now'}
+        </button>
+      </div>
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">Models and licences</h3>
+        {Object.entries(data.models || {}).map(([k, m]) => row(k, `${m.model} · ${m.licence}`, m.approved_for_use))}
+        {row('Answer model', data.llm?.reachable ? (data.llm.pulled ? 'Ready' : 'Not downloaded') : 'Unreachable', !!data.llm?.reachable)}
+        {row('Retrieval config', <code className="text-xs">{data.retrieval_config}</code>)}
+        {row('Access policy', data.access_policy)}
+      </div>
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">Documents</h3>
+        {Object.entries(data.documents || {}).map(([k, v]) => row(k, v, !(k === 'failed' && v > 0)))}
+      </div>
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">Chatbot service</h3>
+        {row('Last protocol reload', data.chatbot_last_reload ? `${data.chatbot_last_reload.at?.slice(0, 16)} · HTTP ${data.chatbot_last_reload.status ?? 'error'}` : 'None yet', !data.chatbot_last_reload || data.chatbot_last_reload.status === 200)}
+      </div>
+    </div>
+  )
+}
+
 // ---------- page ----------
 
 export default function KnowledgeBase() {
@@ -715,6 +914,7 @@ export default function KnowledgeBase() {
   const [diseaseOptions, setDiseaseOptions] = useState([])
   const [regionList, setRegionList] = useState([])
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [newVersionOf, setNewVersionOf] = useState(null)
   const [editingDoc, setEditingDoc] = useState(null)
   const [tab, setTab] = useState('documents')
   const [search, setSearch] = useState('')
@@ -829,8 +1029,10 @@ export default function KnowledgeBase() {
   async function changeApproval(doc, status, message) {
     try {
       const updated = await setKbApproval(doc.id, status)
-      setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated : d)))
-      showToast(message)
+      const retired = new Set(updated.retiredVersions || [])
+      setDocuments((prev) => prev.map((d) => (d.id === doc.id ? updated
+        : retired.has(d.id) ? { ...d, approvalStatus: 'retired', supersededBy: doc.id } : d)))
+      showToast(retired.size ? `${message}. The previous version was retired.` : message)
     } catch (e) {
       showToast(e.message || 'Could not update approval', true)
     }
@@ -838,21 +1040,32 @@ export default function KnowledgeBase() {
 
   async function saveEdit(values) {
     try {
+      const wasApproved = approvalKey(editingDoc) === 'approved'
       const updated = await updateKbDocument(editingDoc.id, values)
       setDocuments((prev) => prev.map((d) => (d.id === editingDoc.id ? updated : d)))
       setEditingDoc(null)
-      showToast('Document updated')
+      showToast(wasApproved && updated.approvalStatus === 'draft'
+        ? 'Document updated. It is back in draft and hidden from search until approved again.'
+        : 'Document updated')
     } catch (e) {
       showToast(e.message || 'Could not update document', true)
     }
   }
 
   async function deleteDocument(doc) {
-    if (!window.confirm(`Delete "${doc.name}"? It will be removed from the knowledge base and cannot be undone.`)) return
+    const kept = doc.approvedAt
+    if (!window.confirm(kept
+      ? `"${doc.name}" has been approved, so it is kept for audit. It will be retired and stop being used. Continue?`
+      : `Delete "${doc.name}"? It will be removed from the knowledge base and cannot be undone.`)) return
     try {
-      await deleteKbDocument(doc.id)
-      setDocuments((prev) => prev.filter((d) => d.id !== doc.id))
-      showToast('Document deleted')
+      const res = await deleteKbDocument(doc.id)
+      if (res?.retired) {
+        setDocuments((prev) => prev.map((d) => (d.id === doc.id ? res.document : d)))
+        showToast('Document retired. It was used for answers, so it is kept for audit.')
+      } else {
+        setDocuments((prev) => prev.filter((d) => d.id !== doc.id))
+        showToast('Document deleted')
+      }
     } catch (e) {
       showToast(e.message || 'Could not delete', true)
     }
@@ -867,6 +1080,7 @@ export default function KnowledgeBase() {
     const a = approvalKey(doc)
     const items = []
     if (canManage) items.push({ label: 'Edit', Icon: Pencil, onClick: () => setEditingDoc(doc) })
+    if (canManage && a !== 'retired') items.push({ label: 'Upload new version', Icon: CopyPlus, onClick: () => { setNewVersionOf(doc); setUploadOpen(true) } })
     if (canApprove && a === 'approved') items.push({ label: 'Retire', Icon: Ban, onClick: () => retireDocument(doc) })
     if (canApprove && a !== 'draft') items.push({ label: 'Back to draft', Icon: Undo2, onClick: () => changeApproval(doc, 'Draft', 'Moved back to draft') })
     if (canManage) items.push({ label: 'Re-index', Icon: RotateCcw, onClick: () => reindexDocument(doc.id), disabled: doc.status === 'processing' })
@@ -908,7 +1122,7 @@ export default function KnowledgeBase() {
 
       {canManage && (
         <div className="flex gap-6 border-b border-gray-100 mb-5">
-          {[{ key: 'documents', label: 'Documents' }, { key: 'test', label: 'Test search' }].map((t) => (
+          {[{ key: 'documents', label: 'Documents' }, { key: 'test', label: 'Test search' }, { key: 'health', label: 'Health' }].map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
@@ -921,7 +1135,9 @@ export default function KnowledgeBase() {
         </div>
       )}
 
-      {tab === 'test' && canManage ? (
+      {tab === 'health' && canManage ? (
+        <HealthPanel />
+      ) : tab === 'test' && canManage ? (
         <TestSearch />
       ) : (
         <>
@@ -1003,6 +1219,8 @@ export default function KnowledgeBase() {
                                 <div className="flex items-center gap-2">
                                   <span className="text-gray-900 font-medium truncate max-w-[300px]" title={doc.name}>{doc.name}</span>
                                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 shrink-0">{langShort(doc.language)}</span>
+                                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${doc.audienceClass === 'Public' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`} title="Audience class">{AUDIENCE_SHORT[doc.audienceClass] || 'CHW'}</span>
+                                  {doc.sensitivity === 'Sensitive' && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 shrink-0">Sensitive</span>}
                                 </div>
                                 <div className="text-xs text-gray-400 mt-0.5">
                                   {doc.category} · {doc.version} · {doc.extension} · {formatBytes(doc.sizeBytes)}
@@ -1024,8 +1242,8 @@ export default function KnowledgeBase() {
                               {showApprove && (
                                 <button
                                   onClick={() => changeApproval(doc, 'Approved', 'Document approved')}
-                                  disabled={doc.status !== 'indexed'}
-                                  title={doc.status !== 'indexed' ? 'Available once indexing completes' : 'Approve for search'}
+                                  disabled={doc.status !== 'indexed' || doc.selfApprovalBlocked}
+                                  title={doc.selfApprovalBlocked ? 'You uploaded this document, so someone else must approve it' : doc.status !== 'indexed' ? 'Available once indexing completes' : 'Approve for search'}
                                   className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 text-emerald-700 px-3 py-1.5 text-xs font-medium hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                   <Check className="w-3.5 h-3.5" /> Approve
@@ -1062,7 +1280,8 @@ export default function KnowledgeBase() {
 
       <UploadDrawer
         open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+        onClose={() => { setUploadOpen(false); setNewVersionOf(null) }}
+        supersedes={newVersionOf}
         roleOptions={roleOptions}
         diseaseOptions={diseaseSelectOptions}
         regionOptions={regionOptions}
