@@ -964,6 +964,22 @@ export const getKbPassage = (id) => kbRequest('get_passage', { id })
 export const getKbHealth = () => callMethod('/api/method/surveillance.kb_ops.health')
 export const runKbReconcile = () => callMethodPost('/api/method/surveillance.kb_ops.run_reconcile', {})
 
+// AI Data Assistant chats, stored on the server per user (surveillance.assistant_chats)
+export const listAssistantChats = (search = '') =>
+  callMethod(`/api/method/surveillance.assistant_chats.list_chats${search ? `?search=${encodeURIComponent(search)}` : ''}`)
+export const getAssistantChat = (id) => callMethod(`/api/method/surveillance.assistant_chats.get_chat?chat_id=${encodeURIComponent(id)}`)
+export const saveAssistantChat = ({ id, title, messages }) =>
+  callMethodPost('/api/method/surveillance.assistant_chats.save_chat', { chat_id: id, title, messages: JSON.stringify(messages) })
+export const deleteAssistantChat = (id) => callMethodPost('/api/method/surveillance.assistant_chats.delete_chat', { chat_id: id })
+
+// Trusted external sources (surveillance.kb_trusted): used only when approved KRCS documents do not answer
+export const getTrustedSources = () => callMethod('/api/method/surveillance.kb_trusted.list_sources')
+export const saveTrustedSource = (source) => callMethodPost('/api/method/surveillance.kb_trusted.save_source', {
+  name: source.name || null, source_name: source.sourceName, website: source.website, kind: source.kind,
+  enabled: source.enabled ? 1 : 0, notes: source.notes || '',
+})
+export const deleteTrustedSource = (name) => callMethodPost('/api/method/surveillance.kb_trusted.delete_source', { name })
+
 export const getDiseaseVocabulary = () => kbRequest('get_disease_vocabulary')
 
 // Chatbot Query Log (surveillance.chatbot_log)

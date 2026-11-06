@@ -1,6 +1,6 @@
 import { useState, Children, cloneElement, isValidElement } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Copy, Check, AlertTriangle, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { Copy, Check, AlertTriangle, ThumbsUp, ThumbsDown, ShieldCheck, BookOpen } from 'lucide-react'
 import { submitChatbotFeedback } from '../../api/frappe'
 
 const CITE = /\[(\d+)\]/g
@@ -9,9 +9,14 @@ function locationOf(s) {
   return s.section || (s.page ? `p. ${s.page}` : '')
 }
 
-function shortTitle(title) {
-  const t = String(title ?? '').replace(/\.[A-Za-z0-9]{1,5}$/, '')
-  return t.length > 30 ? `${t.slice(0, 30)}…` : t
+function shortTitle(title, max = 40) {
+  const t = String(title ?? '').replace(/\.(docx?|pdf|txt|md)$/i, '')
+  return t.length > max ? `${t.slice(0, max)}…` : t
+}
+
+// KRCS sources are named by their section ("10. Suspected Viral Haemorrhagic Fever"), articles by their title
+function chipLabel(s) {
+  return shortTitle(s.external ? s.title : s.section || s.title)
 }
 
 function CiteChip({ source, n, onJump }) {
@@ -51,10 +56,13 @@ export default function KbAnswer({ result, onFeedback }) {
   const unused = sources.filter((s) => !usedSet.has(s.n))
   const byN = new Map(sources.map((s) => [s.n, s]))
   const notFound = result?.mode === 'not_found' || result?.mode === 'conflict'
-  const MODE_NOTE = {
-    verbatim: 'Quoted from approved documents.',
-    summary: 'Summary checked against the approved documents. Open a source to read the original.',
-    public: 'Approved public guidance.',
+  const external = result?.mode === 'trusted_source'
+  const externalNames = [...new Set(sources.map((s) => String(s.section || '').split(' · ')[0]).filter(Boolean))]
+  const BADGE = {
+    verbatim: 'KRCS approved guidance',
+    summary: 'KRCS approved guidance · summary checked against the documents',
+    public: 'KRCS approved guidance',
+    trusted_source: `Published research · ${externalNames.join(', ') || 'trusted source'}`,
   }
 
   function jump(n) {
@@ -120,22 +128,28 @@ export default function KbAnswer({ result, onFeedback }) {
   }
 
   const footer = [
-    result?.detected_disease,
+    result?.detected_disease?.name || (typeof result?.detected_disease === "string" ? result.detected_disease : null),
     Number.isFinite(Number(result?.took_ms)) && result?.took_ms != null ? `Answered in ${(Number(result.took_ms) / 1000).toFixed(1)} s` : null,
   ].filter(Boolean)
 
   const visibleSources = notFound ? [] : showAll ? [...used, ...unused] : used
   const openSource = visibleSources.find((s) => s.n === openN)
   const detail = openSource
-    ? [openSource.section && `Section: ${openSource.section}`, openSource.page && `Page ${openSource.page}`, openSource.version && `Version ${openSource.version}`].filter(Boolean).join(' · ')
+    ? (openSource.external
+      ? [openSource.section].filter(Boolean)
+      : [shortTitle(openSource.title, 60), openSource.page && `Page ${openSource.page}`, openSource.version && `Version ${openSource.version}`].filter(Boolean)
+    ).join(' · ')
     : ''
 
   return (
-    <div className="min-w-0 max-w-2xl text-[15px] leading-7 text-gray-800">
-      {MODE_NOTE[result?.mode] && (
-        <div className="mb-2 text-xs text-gray-500">{MODE_NOTE[result.mode]}</div>
+    <div className="min-w-0 text-[15px] leading-7 text-gray-800">
+      {BADGE[result?.mode] && (
+        <div className={`mb-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${external ? 'bg-blue-50 text-blue-700' : 'bg-green-50 text-green-700'}`}>
+          {external ? <BookOpen className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+          {BADGE[result.mode]}
+        </div>
       )}
-      {result?.escalated && (
+      {result?.escalated && !external && (
         <div className="mb-2 flex items-center gap-1.5 text-xs text-amber-700">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           Passed to {result.escalated_to || 'a person'} for a reply.
@@ -160,10 +174,10 @@ export default function KbAnswer({ result, onFeedback }) {
               type="button"
               onClick={() => setOpenN((cur) => (cur === s.n ? null : s.n))}
               aria-expanded={openN === s.n}
-              title={s.title}
+              title={s.external ? s.title : [s.section, s.title].filter(Boolean).join(' · ')}
               className={`rounded-full border px-2.5 py-1 text-xs leading-4 text-gray-600 hover:bg-gray-50 ${openN === s.n ? 'border-gray-400 bg-gray-50' : 'border-gray-200'}`}
             >
-              {s.n} · {shortTitle(s.title)}
+              {s.n} · {chipLabel(s)}
             </button>
           ))}
           {!notFound && unused.length > 0 && (
@@ -182,6 +196,11 @@ export default function KbAnswer({ result, onFeedback }) {
         <div className="mt-2 rounded-lg bg-gray-50 p-3 text-sm leading-normal text-gray-600">
           {detail && <p className="mb-1.5 text-xs text-gray-500">{detail}</p>}
           <p className="whitespace-pre-wrap">{openSource.text}</p>
+          {openSource.url && (
+            <a href={openSource.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs font-medium text-red-700 hover:underline">
+              Open on {openSource.website || 'the website'}
+            </a>
+          )}
         </div>
       )}
 

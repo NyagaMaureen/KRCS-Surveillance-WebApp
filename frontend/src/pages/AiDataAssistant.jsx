@@ -1,51 +1,24 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { Plus, History, Trash2, Sparkles, Mic, ArrowUp } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { Plus, Trash2, Sparkles, Mic, ArrowUp, Search, PanelLeft, PanelLeftClose, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import KbAnswer from '../components/assistant/KbAnswer'
-import { queryAiAssistant, askKnowledgeBase, currentUserId } from '../api/frappe'
+import {
+  askKnowledgeBase, currentUserId,
+  listAssistantChats, getAssistantChat, saveAssistantChat, deleteAssistantChat,
+} from '../api/frappe'
 
-// Chats are kept per signed-in user, so the next person on a shared device does not see them (R82).
-const LEGACY_STORAGE_KEY = 'krcs_ai_assistant_chats'
-const storageKey = () => `${LEGACY_STORAGE_KEY}:${currentUserId() || 'Guest'}`
-const MAX_CHATS = 50
-
-// The Surveillance data source is not ready to offer yet; flip this when it is.
-const DATA_SOURCE_AVAILABLE = false
-
-const SUGGESTED_PROMPTS = {
-  documents: [
-    'What is the case definition for acute watery diarrhoea?',
-    'How do I report a suspected measles case?',
-    'Dalili za kipindupindu ni zipi?',
-  ],
-  data: [
-    'Show cholera cases by region',
-    'What are the active alerts this week?',
-    'Summarize recent case reports',
-  ],
-}
-
+// English only for now; the backend still supports Kiswahili when it is switched back on.
+const LANGUAGE = 'English'
 const GENERIC_ERROR = 'Sorry, something went wrong while processing that request.'
+const LEGACY_KEY = 'krcs_ai_assistant_chats'
 
-function defaultLanguage() {
-  const lang = typeof navigator !== 'undefined' ? navigator.language || '' : ''
-  return lang.toLowerCase().startsWith('sw') ? 'Kiswahili' : 'English'
-}
+const COLLAPSE_KEY = 'krcs_ai_chats_collapsed'
 
-function capChats(list) {
-  if (list.length <= MAX_CHATS) return list
-  return [...list].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_CHATS)
-}
-
-function loadChats() {
+function readCollapsed() {
   try {
-    // Older chats were stored with no owner, so nobody can safely be shown them.
-    localStorage.removeItem(LEGACY_STORAGE_KEY)
-    const raw = localStorage.getItem(storageKey())
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? capChats(parsed) : []
+    return localStorage.getItem(COLLAPSE_KEY) === '1'
   } catch {
-    return []
+    return false
   }
 }
 
@@ -61,97 +34,155 @@ function getRealtime() {
   return rt && typeof rt.on === 'function' ? rt : null
 }
 
-function buildErrorReply(e, question, source, language) {
+function buildErrorReply(e, question) {
   if (e?.status === 503) {
-    return { role: 'assistant', kind: 'error', content: 'The knowledge base is temporarily unavailable. Try again in a moment.', retryable: true, question, source, language }
+    return { role: 'assistant', kind: 'error', content: 'The knowledge base is temporarily unavailable. Try again in a moment.', retryable: true, question }
   }
   if (e?.status === 403) {
-    return { role: 'assistant', kind: 'error', content: 'You don\u2019t have access to the knowledge base. Ask an administrator.' }
+    return { role: 'assistant', kind: 'error', content: 'You don’t have access to the knowledge base. Ask an administrator.' }
   }
-  return { role: 'assistant', kind: 'error', content: GENERIC_ERROR }
+  return { role: 'assistant', kind: 'error', content: GENERIC_ERROR, retryable: true, question }
 }
 
-function PillToggle({ label, options, value, onChange }) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          disabled={o.disabled}
-          aria-pressed={value === o.value}
-          onClick={() => onChange(o.value)}
-          className={['flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
-            value === o.value ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-100',
-            o.disabled ? 'opacity-60 cursor-not-allowed hover:bg-transparent' : ''].join(' ')}
-        >
-          {o.label}
-          {o.badge && <span className="rounded-full bg-gray-200 text-gray-600 px-1.5 text-[10px] font-medium">{o.badge}</span>}
-        </button>
-      ))}
-    </div>
-  )
+// "2026-11-06 12:14:03.123" (server time) -> Date
+function toDate(v) {
+  if (typeof v === 'number') return new Date(v)
+  return new Date(String(v || '').replace(' ', 'T'))
 }
 
-function formatTime(ts) {
-  const d = new Date(ts)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' \u2022 ' +
-    d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+function groupChats(list) {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const day = 86400000
+  const groups = [['Today', []], ['Yesterday', []], ['Previous 7 days', []], ['Older', []]]
+  list.forEach((c) => {
+    const t = toDate(c.updatedAt).getTime()
+    const i = t >= start.getTime() ? 0 : t >= start.getTime() - day ? 1 : t >= start.getTime() - 7 * day ? 2 : 3
+    groups[i][1].push(c)
+  })
+  return groups.filter(([, items]) => items.length)
 }
 
 const voiceSupported = typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 
+function Composer({ value, onChange, onSend, disabled, isRecording, onVoice, textareaRef, autoFocus }) {
+  return (
+    <div className="flex items-end gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm focus-within:border-gray-300">
+      <textarea
+        ref={textareaRef}
+        value={value}
+        autoFocus={autoFocus}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            onSend()
+          }
+        }}
+        rows={1}
+        aria-label="Your question"
+        placeholder="Ask about protocols, case definitions or outbreak response…"
+        className="flex-1 max-h-40 resize-none bg-transparent py-1.5 text-[15px] text-gray-800 placeholder:text-gray-400 focus:outline-none"
+      />
+      {voiceSupported && (
+        <button
+          type="button"
+          onClick={onVoice}
+          title="Voice input"
+          aria-label="Voice input"
+          className={['flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors',
+            isRecording ? 'bg-red-100 text-red-700' : 'text-gray-500 hover:bg-gray-100'].join(' ')}
+        >
+          <Mic className="h-4 w-4" />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onSend}
+        aria-label="Send"
+        disabled={!value.trim() || disabled}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <ArrowUp className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+function Avatar() {
+  return (
+    <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600">
+      <Sparkles className="h-3.5 w-3.5 text-white" />
+    </div>
+  )
+}
+
 export default function AiDataAssistant() {
-  const [chats, setChats] = useState(loadChats)
-  const [currentChatId, setCurrentChatId] = useState(null)
+  const [chats, setChats] = useState([])
+  const [chatsLoaded, setChatsLoaded] = useState(false)
+  const [search, setSearch] = useState('')
+  const [current, setCurrent] = useState(null) // { id, title, messages }
   const [inputText, setInputText] = useState(() => new URLSearchParams(window.location.search).get('q') || '')
   const [isLoading, setIsLoading] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
-  const [draftSource, setDraftSource] = useState('documents')
-  const [draftLanguage, setDraftLanguage] = useState(defaultLanguage)
   const [live, setLive] = useState(null)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [saveError, setSaveError] = useState(false)
+  const [collapsed, setCollapsed] = useState(readCollapsed)
 
   const scrollAreaRef = useRef(null)
   const textareaRef = useRef(null)
-  const historyRef = useRef(null)
   const recognitionRef = useRef(null)
-  const chatsRef = useRef(chats)
-  chatsRef.current = chats
+  const currentRef = useRef(current)
+  currentRef.current = current
 
-  const currentChat = useMemo(() => chats.find((c) => c.id === currentChatId) || null, [chats, currentChatId])
-  const messages = currentChat?.messages || []
-  const sortedChats = useMemo(() => [...chats].sort((a, b) => b.updatedAt - a.updatedAt), [chats])
-  const storedSource = currentChat ? currentChat.source : draftSource
-  const source = DATA_SOURCE_AVAILABLE && storedSource === 'data' ? 'data' : 'documents'
-  const language = (currentChat ? currentChat.language : draftLanguage) || defaultLanguage()
+  const messages = current?.messages || []
+  const grouped = useMemo(() => groupChats(chats), [chats])
 
-  function persistChats(next) {
-    try {
-      localStorage.setItem(storageKey(), JSON.stringify(next))
-    } catch {
-      // storage unavailable or full; chats stay in memory only
-    }
-  }
-
-  function updateCurrentChat(patch) {
-    if (!currentChatId) return false
-    setChats((prev) => {
-      const next = prev.map((c) => (c.id === currentChatId ? { ...c, ...patch } : c))
-      persistChats(next)
-      return next
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      try { localStorage.setItem(COLLAPSE_KEY, v ? '0' : '1') } catch { /* per-device preference only */ }
+      return !v
     })
-    return true
   }
 
-  function changeSource(value) {
-    if (!updateCurrentChat({ source: value })) setDraftSource(value)
-  }
+  const refreshChats = useCallback(async (term = '') => {
+    try {
+      setChats(await listAssistantChats(term))
+    } catch {
+      // list stays as it was
+    }
+    setChatsLoaded(true)
+  }, [])
 
-  function changeLanguage(value) {
-    updateCurrentChat({ language: value })
-    setDraftLanguage(value) // the next New Query keeps this choice
-  }
+  // chats saved on this device before they moved to the server are uploaded once, then removed from the device
+  useEffect(() => {
+    async function migrate() {
+      const key = `${LEGACY_KEY}:${currentUserId() || 'Guest'}`
+      try {
+        const raw = localStorage.getItem(key)
+        const old = raw ? JSON.parse(raw) : []
+        for (const c of Array.isArray(old) ? old : []) {
+          if (c?.id && c.messages?.length) await saveAssistantChat({ id: c.id, title: c.title, messages: c.messages })
+        }
+        localStorage.removeItem(key)
+        localStorage.removeItem(LEGACY_KEY)
+      } catch {
+        // leave them on the device and try again next time
+      }
+      refreshChats()
+    }
+    migrate()
+  }, [refreshChats])
+
+  useEffect(() => {
+    if (!chatsLoaded) return undefined
+    const t = setTimeout(() => refreshChats(search.trim()), 250)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search])
+
+  useEffect(() => () => recognitionRef.current?.stop(), [])
 
   function scrollToBottom() {
     requestAnimationFrame(() => {
@@ -159,7 +190,7 @@ export default function AiDataAssistant() {
     })
   }
 
-  function autoGrowTextarea() {
+  function autoGrow() {
     requestAnimationFrame(() => {
       const el = textareaRef.current
       if (!el) return
@@ -168,395 +199,318 @@ export default function AiDataAssistant() {
     })
   }
 
-  function startNewQuery() {
-    setCurrentChatId(null)
-    setInputText('')
-    setShowHistory(false)
-  }
-
-  function selectChat(id) {
-    setCurrentChatId(id)
-    setShowHistory(false)
-    scrollToBottom()
-  }
-
-  function deleteChat(id) {
-    setChats((prev) => {
-      const next = prev.filter((c) => c.id !== id)
-      persistChats(next)
-      return next
-    })
-    if (currentChatId === id) setCurrentChatId(null)
-  }
-
-  function onKeydown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
+  async function persist(chat) {
+    try {
+      await saveAssistantChat(chat)
+      setSaveError(false)
+      refreshChats(search.trim())
+    } catch {
+      setSaveError(true)
     }
   }
 
-  async function runQuery(chatId, question, querySource, queryLanguage) {
+  function newChat() {
+    setCurrent(null)
+    setInputText('')
+    setPanelOpen(false)
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
+  async function openChat(id) {
+    setPanelOpen(false)
+    if (current?.id === id) return
+    try {
+      const chat = await getAssistantChat(id)
+      setCurrent({ id: chat.id, title: chat.title, messages: chat.messages || [] })
+      scrollToBottom()
+    } catch {
+      refreshChats(search.trim())
+    }
+  }
+
+  async function removeChat(id) {
+    try {
+      await deleteAssistantChat(id)
+    } catch {
+      // already gone
+    }
+    if (current?.id === id) setCurrent(null)
+    setChats((prev) => prev.filter((c) => c.id !== id))
+  }
+
+  async function runQuery(chat, question) {
     setIsLoading(true)
     scrollToBottom()
-
     let reply
     try {
-      if (querySource === 'data') {
-        const result = await queryAiAssistant(question)
-        reply = { role: 'assistant', content: result.answer, table: result.table }
-      } else {
-        const history = kbHistory(chatsRef.current.find((c) => c.id === chatId)?.messages.slice(0, -1) || [])
-        const streamId = crypto.randomUUID()
-        const rt = getRealtime()
-        const handler = (data) => {
-          if (!data || data.stream_id !== streamId) return
-          if (data.done) {
-            rt.off?.('kb_answer', handler)
-            return
-          }
-          if (data.status === 'checking') {
-            setLive({ streamId, text: 'Writing a summary and checking it against the approved documents…' })
-            return
-          }
-          if (data.delta) {
-            setLive((prev) => ({ streamId, text: (prev?.streamId === streamId && !prev.checking ? prev.text : '') + data.delta }))
-            scrollToBottom()
-          }
+      const history = kbHistory(chat.messages.slice(0, -1))
+      const streamId = crypto.randomUUID()
+      const rt = getRealtime()
+      const handler = (data) => {
+        if (!data || data.stream_id !== streamId || data.done) return
+        if (data.status === 'checking') {
+          setLive({ streamId, text: 'Writing a summary and checking it against the approved documents…' })
+          return
         }
-        if (rt) rt.on('kb_answer', handler)
-        let result
-        try {
-          result = await askKnowledgeBase({ query: question, language: queryLanguage, history, streamId, conversationId: chatId })
-        } finally {
-          rt?.off?.('kb_answer', handler)
-          setLive(null)
+        if (data.delta) {
+          setLive((prev) => ({ streamId, text: (prev?.streamId === streamId ? prev.text : '') + data.delta }))
+          scrollToBottom()
         }
-        reply = { role: 'assistant', kind: 'kb', result, content: result.answer }
       }
+      if (rt) rt.on('kb_answer', handler)
+      let result
+      try {
+        result = await askKnowledgeBase({ query: question, language: LANGUAGE, history, streamId, conversationId: chat.id })
+      } finally {
+        rt?.off?.('kb_answer', handler)
+        setLive(null)
+      }
+      reply = { role: 'assistant', kind: 'kb', result, content: result.answer }
     } catch (e) {
-      reply = buildErrorReply(e, question, querySource, queryLanguage)
+      reply = buildErrorReply(e, question)
     }
-
-    setChats((prev) => {
-      const next = capChats(
-        prev.map((c) => (c.id === chatId ? { ...c, messages: [...c.messages, reply], updatedAt: Date.now() } : c))
-      )
-      persistChats(next)
-      return next
-    })
+    const latest = currentRef.current?.id === chat.id ? currentRef.current : chat
+    const next = { ...latest, messages: [...latest.messages, reply] }
+    if (currentRef.current?.id === chat.id) setCurrent(next)
     setIsLoading(false)
     scrollToBottom()
+    persist(next)
   }
 
-  function send(preset) {
-    const question = (preset ?? inputText).trim()
+  function send() {
+    const question = inputText.trim()
     if (!question || isLoading) return
-
-    let chatId = currentChatId
-    let chats0 = chatsRef.current
-    if (!chatId) {
-      chatId = crypto.randomUUID()
-      const chat = { id: chatId, title: question.slice(0, 60), messages: [], updatedAt: Date.now(), source, language }
-      chats0 = [...chats0, chat]
-      setCurrentChatId(chatId)
-    }
-
-    chats0 = capChats(chats0.map((c) =>
-      c.id === chatId ? { ...c, messages: [...c.messages, { role: 'user', content: question }], updatedAt: Date.now() } : c
-    ))
-    chatsRef.current = chats0
-    setChats(chats0)
+    const base = current || { id: crypto.randomUUID(), title: question.slice(0, 80), messages: [] }
+    const chat = { ...base, messages: [...base.messages, { role: 'user', content: question }] }
+    setCurrent(chat)
     setInputText('')
-    autoGrowTextarea()
-    persistChats(chats0)
-    scrollToBottom()
-
-    runQuery(chatId, question, source, language)
-  }
-
-  function rememberFeedback(index, value) {
-    updateCurrentChat({
-      messages: currentChat.messages.map((m, i) => (i === index ? { ...m, result: { ...m.result, feedback: value } } : m)),
-    })
+    autoGrow()
+    if (!current) setChats((prev) => [{ id: chat.id, title: chat.title, updatedAt: Date.now(), count: 1 }, ...prev])
+    runQuery(chat, question)
   }
 
   function retry(index) {
-    if (isLoading || !currentChat) return
-    const msg = currentChat.messages[index]
+    if (isLoading || !current) return
+    const msg = current.messages[index]
     if (!msg?.retryable) return
-    const next = chatsRef.current.map((c) =>
-      c.id === currentChat.id ? { ...c, messages: c.messages.filter((_, i) => i !== index) } : c
-    )
-    chatsRef.current = next
-    setChats(next)
-    persistChats(next)
-    runQuery(currentChat.id, msg.question, msg.source, msg.language)
+    const chat = { ...current, messages: current.messages.filter((_, i) => i !== index) }
+    setCurrent(chat)
+    runQuery(chat, msg.question)
   }
 
-  function setupRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) return null
-    const rec = new SpeechRecognition()
-    rec.continuous = false
-    rec.interimResults = false
-    rec.onresult = (event) => {
-      const transcript = event.results[0][0].transcript
-      setInputText((prev) => (prev ? prev + ' ' : '') + transcript)
-      autoGrowTextarea()
-    }
-    rec.onend = () => setIsRecording(false)
-    rec.onerror = () => setIsRecording(false)
-    return rec
+  function rememberFeedback(index, value) {
+    if (!current) return
+    const next = { ...current, messages: current.messages.map((m, i) => (i === index ? { ...m, result: { ...m.result, feedback: value } } : m)) }
+    setCurrent(next)
+    persist(next)
   }
 
   function toggleVoice() {
-    if (!voiceSupported) return
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) return
     if (isRecording) {
       recognitionRef.current?.stop()
       setIsRecording(false)
       return
     }
-    recognitionRef.current = recognitionRef.current || setupRecognition()
-    if (!recognitionRef.current) return
-    recognitionRef.current.lang = language === 'Kiswahili' ? 'sw-KE' : 'en-US'
+    if (!recognitionRef.current) {
+      const rec = new SR()
+      rec.continuous = false
+      rec.interimResults = false
+      rec.onresult = (event) => {
+        const transcript = event.results[0][0].transcript
+        setInputText((prev) => (prev ? prev + ' ' : '') + transcript)
+        autoGrow()
+      }
+      rec.onend = () => setIsRecording(false)
+      rec.onerror = () => setIsRecording(false)
+      recognitionRef.current = rec
+    }
+    recognitionRef.current.lang = 'en-US'
     setIsRecording(true)
     recognitionRef.current.start()
   }
 
-  useEffect(() => {
-    function onClickOutside(e) {
-      if (showHistory && historyRef.current && !historyRef.current.contains(e.target)) {
-        setShowHistory(false)
-      }
-    }
-    document.addEventListener('click', onClickOutside)
-    return () => {
-      document.removeEventListener('click', onClickOutside)
-      recognitionRef.current?.stop()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHistory])
+  const composer = (
+    <Composer
+      value={inputText}
+      onChange={(v) => { setInputText(v); autoGrow() }}
+      onSend={send}
+      disabled={isLoading}
+      isRecording={isRecording}
+      onVoice={toggleVoice}
+      textareaRef={textareaRef}
+      autoFocus
+    />
+  )
 
   return (
     <AppShell>
-      <div className="flex flex-col h-[calc(100vh-140px)] bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-gray-100">
-          <button
-            onClick={startNewQuery}
-            aria-label="New Query"
-            className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">New Query</span>
-          </button>
-
-          <div className="relative shrink-0" ref={historyRef}>
-            <button
-              onClick={() => setShowHistory((v) => !v)}
-              aria-label="Your Chats"
-              className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-            >
-              <History className="w-4 h-4" />
-              <span className="hidden sm:inline">Your Chats</span>
-            </button>
-
-            {showHistory && (
-              <div className="absolute right-0 mt-2 w-72 max-h-96 overflow-y-auto bg-white border border-gray-100 rounded-xl shadow-lg z-30 py-2">
-                {!chats.length && <div className="px-4 py-6 text-sm text-gray-400 text-center">No chats yet</div>}
-                {sortedChats.map((chat) => (
-                  <div key={chat.id} className={['group flex items-start gap-2 pr-3 hover:bg-gray-50', chat.id === currentChatId ? 'bg-red-50' : ''].join(' ')}>
-                    <button type="button" onClick={() => selectChat(chat.id)} className="min-w-0 flex-1 text-left pl-4 py-2.5">
-                      <div className="text-sm font-medium text-gray-900 truncate">{chat.title}</div>
-                      <div className="text-xs text-gray-400">{formatTime(chat.updatedAt)}</div>
+      <div className="relative -m-4 flex h-[calc(100vh-80px)] overflow-hidden bg-white lg:-m-8">
+        {/* chat list */}
+        {panelOpen && <button type="button" aria-label="Close chats" onClick={() => setPanelOpen(false)} className="absolute inset-0 z-20 bg-black/20 md:hidden" />}
+        <aside
+          className={[
+            'z-30 w-72 shrink-0 flex-col border-r border-gray-100 bg-gray-50',
+            panelOpen ? 'absolute inset-y-0 left-0 flex shadow-xl' : 'hidden',
+            'md:static md:flex md:shadow-none',
+            collapsed ? 'md:hidden' : '',
+          ].join(' ')}
+        >
+          <div className="space-y-3 p-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={newChat}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-red-700"
+              >
+                <Plus className="h-4 w-4" /> New chat
+              </button>
+              <button type="button" onClick={() => setPanelOpen(false)} aria-label="Close chats" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 md:hidden">
+                <X className="h-4 w-4" />
+              </button>
+              <button type="button" onClick={toggleCollapsed} aria-label="Hide chats" title="Hide chats" className="hidden rounded-lg p-2 text-gray-500 hover:bg-gray-100 md:block">
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search chats"
+                aria-label="Search chats"
+                className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-100"
+              />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-2 pb-4">
+            <div className="px-2 pb-1 pt-2 text-xs font-medium text-gray-400">Recent chats</div>
+            {chatsLoaded && !chats.length && (
+              <p className="px-2 py-4 text-sm text-gray-400">{search.trim() ? 'No chats match your search.' : 'Your chats will appear here.'}</p>
+            )}
+            {grouped.map(([label, items]) => (
+              <div key={label} className="mb-2">
+                <div className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</div>
+                {items.map((c) => (
+                  <div
+                    key={c.id}
+                    className={['group flex items-center rounded-lg', c.id === current?.id ? 'bg-white shadow-sm ring-1 ring-gray-100' : 'hover:bg-gray-100'].join(' ')}
+                  >
+                    <button type="button" onClick={() => openChat(c.id)} className="min-w-0 flex-1 truncate px-2.5 py-2 text-left text-sm text-gray-700" title={c.title}>
+                      {c.title}
                     </button>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); deleteChat(chat.id) }}
-                      aria-label={`Delete chat: ${chat.title}`}
-                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-300 hover:text-red-700 shrink-0 mt-3"
+                      onClick={() => removeChat(c.id)}
+                      aria-label={`Delete chat: ${c.title}`}
+                      className="mr-1 shrink-0 rounded p-1.5 text-gray-300 opacity-0 hover:text-red-700 focus:opacity-100 group-hover:opacity-100"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 ))}
               </div>
-            )}
+            ))}
           </div>
-        </div>
+        </aside>
 
-        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-4 pt-6 sm:px-6">
+        {collapsed && (
+          <div className="hidden w-14 shrink-0 flex-col items-center gap-2 border-r border-gray-100 bg-gray-50 py-3 md:flex">
+            <button type="button" onClick={toggleCollapsed} aria-label="Show chats" title="Show chats" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
+              <PanelLeft className="h-4 w-4" />
+            </button>
+            <button type="button" onClick={newChat} aria-label="New chat" title="New chat" className="rounded-lg bg-red-600 p-2 text-white hover:bg-red-700">
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* conversation */}
+        <section className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 md:hidden">
+            <button type="button" onClick={() => setPanelOpen(true)} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100">
+              <PanelLeft className="h-4 w-4" /> Chats
+            </button>
+            <button type="button" onClick={newChat} className="ml-auto flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">
+              <Plus className="h-4 w-4" /> New chat
+            </button>
+          </div>
+
           {!messages.length ? (
-            <div className="h-full flex flex-col items-center justify-center text-center px-4 py-10">
-              <img src="/assets/surveillance/images/logo.png" alt="KRCS" className="w-20 h-18 object-contain mb-5" />
-              <h2 className="text-2xl sm:text-3xl font-medium text-brand-navy mb-3">Welcome to KRCS AI DataAssistant</h2>
-              <p className="text-gray-500 text-base sm:text-lg max-w-2xl mb-8">
-                {source === 'documents'
-                  ? 'Ask about KRCS protocols, case definitions and guidelines. Answers are written from approved KRCS documents, with their sources.'
-                  : 'Ask me about community health data, disease trends, alerts, or reports. I\'ll query the database and show you results.'}
-              </p>
-              <div className="flex flex-wrap justify-center gap-2 max-w-2xl">
-                {SUGGESTED_PROMPTS[source].map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => send(prompt)}
-                    className="text-sm text-gray-600 border border-gray-200 rounded-full px-4 py-2 hover:bg-gray-50 hover:border-gray-300"
-                  >
-                    {prompt}
-                  </button>
-                ))}
+            <div className="flex flex-1 flex-col items-center justify-center px-4 pb-16">
+              <div className="w-full max-w-2xl">
+                <h1 className="mb-6 text-center text-3xl font-medium text-gray-900">What can I help you with today?</h1>
+                {composer}
+                <p className="mt-3 text-center text-xs text-gray-400">Answers come from approved KRCS documents and trusted sources, with a link to each source.</p>
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto pb-6 space-y-6">
-              {messages.map((m, i) => (
-                <div key={i} className={['flex', m.role === 'user' ? 'justify-end' : 'justify-start'].join(' ')}>
-                  {m.role === 'assistant' ? (
-                    <div className="flex gap-3 min-w-0">
-                      <div className="w-7 h-7 mt-1 rounded-full bg-red-600 flex items-center justify-center shrink-0">
-                        <Sparkles className="w-3.5 h-3.5 text-white" />
-                      </div>
-                      <div className="space-y-3 min-w-0">
-                        {m.kind === 'kb' ? (
-                          <KbAnswer result={m.result} onFeedback={(value) => rememberFeedback(i, value)} />
-                        ) : (
-                        <div className="max-w-2xl text-[15px] leading-7 text-gray-800">
+            <>
+              <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-4 pt-8">
+                <div className="mx-auto max-w-3xl space-y-8 pb-6">
+                  {messages.map((m, i) => (
+                    <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex gap-3'}>
+                      {m.role === 'user' ? (
+                        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-gray-100 px-4 py-2.5 text-[15px] leading-6 text-gray-900">
                           {m.content}
-                          {m.retryable && i === messages.length - 1 && (
-                            <div className="mt-2">
-                              <button
-                                type="button"
-                                onClick={() => retry(i)}
-                                disabled={isLoading}
-                                className="text-xs font-medium border border-gray-200 bg-white rounded-lg px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                              >
-                                Retry
-                              </button>
-                            </div>
-                          )}
                         </div>
-                        )}
-                        {m.table && (
-                          <div className="border border-gray-100 rounded-xl overflow-hidden">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-gray-50 text-left text-gray-500 text-xs">
-                                  {m.table.columns.map((col) => (
-                                    <th key={col} className="px-4 py-2 font-medium">{col}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {m.table.rows.map((row, ri) => (
-                                  <tr key={ri} className="border-t border-gray-50">
-                                    {row.map((cell, ci) => (
-                                      <td key={ci} className="px-4 py-2 text-gray-700">{cell}</td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                      ) : (
+                        <>
+                          <Avatar />
+                          <div className="min-w-0 flex-1">
+                            {m.kind === 'kb' ? (
+                              <KbAnswer result={m.result} onFeedback={(value) => rememberFeedback(i, value)} />
+                            ) : (
+                              <div className="text-[15px] leading-7 text-gray-800">
+                                {m.content}
+                                {m.retryable && i === messages.length - 1 && (
+                                  <div className="mt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => retry(i)}
+                                      disabled={isLoading}
+                                      className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                      Try again
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <div className="max-w-[75%] bg-red-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-6 break-words whitespace-pre-wrap">
-                      {m.content}
+                  ))}
+
+                  {isLoading && (
+                    <div className="flex gap-3">
+                      <Avatar />
+                      {live?.text ? (
+                        <div className="whitespace-pre-wrap text-[15px] leading-7 text-gray-800">{live.text}</div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 py-3">
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: '0ms' }} />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: '150ms' }} />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              ))}
-
-              {isLoading && live?.text && (
-                <div className="flex gap-3">
-                  <div className="w-7 h-7 mt-1 rounded-full bg-red-600 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-3.5 h-3.5 text-white" />
-                  </div>
-                  <div className="max-w-2xl text-[15px] leading-7 text-gray-800 whitespace-pre-wrap">{live.text}</div>
+              </div>
+              <div className="px-4 pb-5 pt-2">
+                <div className="mx-auto max-w-3xl">
+                  {composer}
+                  <p className="mt-2 text-center text-xs text-gray-400">
+                    {saveError ? 'This chat could not be saved. It will be saved with your next message.' : 'Answers come from approved KRCS documents and trusted sources.'}
+                  </p>
                 </div>
-              )}
-
-              {isLoading && !live?.text && (
-                <div className="flex gap-3">
-                  <div className="w-7 h-7 mt-1 rounded-full bg-red-600 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-3.5 h-3.5 text-white" />
-                  </div>
-                  <div className="py-3 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                  </div>
-                </div>
-              )}
-            </div>
+              </div>
+            </>
           )}
-        </div>
-
-        <div className="px-4 sm:px-6 pb-5 pt-3">
-          <div className="max-w-3xl mx-auto">
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <PillToggle
-                label="Answer source"
-                value={source}
-                onChange={changeSource}
-                options={[
-                  { value: 'documents', label: 'Documents' },
-                  { value: 'data', label: 'Surveillance data', disabled: !DATA_SOURCE_AVAILABLE, badge: DATA_SOURCE_AVAILABLE ? null : 'Coming soon' },
-                ]}
-              />
-              <PillToggle
-                label="Language"
-                value={language}
-                onChange={changeLanguage}
-                options={[
-                  { value: 'English', label: 'English' },
-                  { value: 'Kiswahili', label: 'Kiswahili' },
-                ]}
-              />
-            </div>
-
-            <div className="flex items-end gap-2 border border-gray-200 bg-gray-50 rounded-3xl px-4 sm:px-5 py-2.5">
-              <textarea
-                ref={textareaRef}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={onKeydown}
-                rows={1}
-                aria-label="Your question"
-                placeholder={source === 'documents' ? 'Ask about KRCS protocols and guidelines...' : "Ask about health data... (e.g. 'Show cholera cases by region')"}
-                className="flex-1 bg-transparent resize-none focus:outline-none text-sm sm:text-base text-gray-800 placeholder:text-gray-400 py-1.5 max-h-40"
-              ></textarea>
-
-              <button
-                onClick={toggleVoice}
-                disabled={!voiceSupported}
-                title={voiceSupported ? 'Voice input' : 'Voice input not supported in this browser'}
-                aria-label="Voice input"
-                className={['rounded-full w-10 h-10 flex items-center justify-center shrink-0 border transition-colors',
-                  isRecording ? 'bg-red-100 border-red-200 text-red-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100',
-                  !voiceSupported ? 'opacity-40 cursor-not-allowed' : ''].join(' ')}
-              >
-                <Mic className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={() => send()}
-                aria-label="Send"
-                disabled={!inputText.trim() || isLoading}
-                className="rounded-full w-10 h-10 flex items-center justify-center shrink-0 bg-red-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-red-700 transition-colors"
-              >
-                <ArrowUp className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-center text-xs text-gray-400 mt-3">
-              {source === 'documents'
-                ? 'Answers come from approved KRCS documents uploaded on the Knowledge Base page.'
-                : 'AI translates your questions into database queries. Results are based on current surveillance data.'}
-            </p>
-          </div>
-        </div>
+        </section>
       </div>
     </AppShell>
   )
