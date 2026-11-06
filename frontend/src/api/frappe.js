@@ -804,6 +804,14 @@ export async function classifyPreview({ symptoms, age_group, animal_exposure }) 
   return (await callMethod(`/api/method/surveillance.case_definitions.classify_preview?${params}`)) || []
 }
 
+// Review step: case definitions met ("matches") and priority diseases to check ("possible").
+export async function previewDiseases({ symptoms, age_group, animal_exposure }) {
+  const params = new URLSearchParams({ symptoms: JSON.stringify(symptoms || []) })
+  if (age_group) params.set('age_group', age_group)
+  if (animal_exposure) params.set('animal_exposure', animal_exposure)
+  return (await callMethod(`/api/method/surveillance.case_definitions.preview?${params}`)) || { matches: [], possible: [] }
+}
+
 export async function getDiseaseOptions() {
   return (await callMethod('/api/method/surveillance.case_definitions.get_disease_options')) || []
 }

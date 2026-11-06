@@ -35,6 +35,8 @@ QUEUE_DISEASES = [
 	# priority diseases with a case definition
 	"afp-polio", "vhf", "mpox", "yellow-fever", "meningococcal-meningitis", "awd-cholera", "measles",
 	"anthrax", "rift-valley-fever", "covid-sari", "rabies",
+	# provisional definitions (Nov 2026): these reports used to arrive as unclassified, so they stay in the queue
+	"dysentery", "acute-jaundice",
 	# highest priority, no case definition yet
 	"bvd",
 	# unusual events, and field reports where no case definition matched
@@ -112,12 +114,17 @@ def upsert_signal(data, regroup=True):
 	if frappe.db.exists("Surveillance Signal", name):
 		doc = frappe.get_doc("Surveillance Signal", name)
 		moved = any(str(doc.get(k) or "") != str(values[k] or "") for k in ("disease", "sub_county", "area"))
+		place_moved = any(str(doc.get(k) or "") != str(values[k] or "") for k in ("sub_county", "area"))
 		old_event = doc.event
+		# officer changed the disease of the event's only report: the same event continues as the new disease
+		relabel = moved and not place_moved and old_event and _can_relabel(old_event, name)
 		doc.update(values)
-		if moved and old_event:
+		if moved and old_event and not relabel:
 			doc.event = None
 		doc.save(ignore_permissions=True)
-		if moved and old_event:
+		if relabel:
+			_relabel_event(old_event, values["disease"], doc)
+		elif moved and old_event:
 			recompute_event(old_event)
 	else:
 		doc = frappe.get_doc({"doctype": "Surveillance Signal", **values}).insert(ignore_permissions=True)
@@ -129,7 +136,9 @@ def upsert_signal(data, regroup=True):
 	return doc.name
 
 
-def remove_signal(source, ref):
+def remove_signal(source, ref, note=None):
+	"""note: why the report left (e.g. reclassified as malaria). An open event left with no reports is then
+	closed with that note instead of staying empty in the queue."""
 	name = f"{source}-{ref}"
 	if not frappe.db.exists("Surveillance Signal", name):
 		return
@@ -137,6 +146,62 @@ def remove_signal(source, ref):
 	frappe.delete_doc("Surveillance Signal", name, ignore_permissions=True, force=True)
 	if event:
 		recompute_event(event)
+		if note and frappe.db.exists("Surveillance Event", event):
+			_close_if_empty(event, note)
+
+
+def _can_relabel(event, signal_name):
+	"""The event can simply change disease: it is open, built from reports (not an Epi Trends alert), and this
+	report is its only one. With other reports on it, the changed report moves to its own event instead."""
+	ev = frappe.db.get_value("Surveillance Event", event, ["status", "from_alert"], as_dict=True)
+	if not ev or ev.status not in OPEN or ev.get("from_alert"):
+		return False
+	return not frappe.db.count("Surveillance Signal", {"event": event, "name": ["!=", signal_name]})
+
+
+def _relabel_event(event, disease, sig):
+	"""Same event, new disease: name, priority and severity follow the new disease, and the verification
+	questions and protocol steps are rebuilt from its protocol, keeping answers and outcomes to identical
+	questions and steps. Logged on the timeline; officers are notified as for a new event of that disease."""
+	from surveillance.investigation import ensure_investigation
+	doc = frappe.get_doc("Surveillance Event", event)
+	meta = frappe.db.get_value("Alert Threshold Config", disease, ["disease_name", "priority"], as_dict=True) or {}
+	old_name = doc.disease_name or doc.disease
+	new_name = meta.get("disease_name") or disease
+	answers = {r.question: r for r in (doc.verification or [])}
+	outcomes = {r.step: r for r in (doc.checklist or [])}
+	doc.disease, doc.disease_name, doc.priority = disease, new_name, meta.get("priority") or ""
+	doc.severity = PRIORITY_SEVERITY.get((meta.get("priority") or "").lower(), "standard")   # officer decision: may go down
+	doc.group_key = f"{_group_key(sig)}|{sig.name}"
+	if answers or outcomes:
+		doc.set("verification", [])
+		doc.set("checklist", [])
+		doc.protocol = None
+		ensure_investigation(doc)
+		for r in doc.verification:
+			old = answers.get(r.question)
+			if old and old.answer:
+				r.answer, r.answered_by, r.answered_on = old.answer, old.answered_by, old.answered_on
+		for r in doc.checklist:
+			old = outcomes.get(r.step)
+			if old and (old.outcome or old.done):
+				r.outcome, r.reason, r.done, r.done_by, r.done_on = old.outcome, old.reason, old.done, old.done_by, old.done_on
+	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Disease changed",
+		"note": f"{old_name} \u2192 {new_name}. Questions and steps now follow the {new_name} protocol; "
+			"answers to the same questions were kept."})
+	doc.save(ignore_permissions=True)
+	recompute_event(event)
+	from surveillance import notifications
+	notifications.on_new_event(event, _received_at(sig))
+
+
+def _close_if_empty(event, note):
+	doc = frappe.get_doc("Surveillance Event", event)
+	if doc.status not in OPEN or doc.get("from_alert") or frappe.db.count("Surveillance Signal", {"event": event}):
+		return
+	doc.status = "Discarded" if doc.status in ("New", "Verifying") else "Closed"
+	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": doc.status, "note": note})
+	doc.save(ignore_permissions=True)
 
 
 def _group_key(sig):
@@ -274,8 +339,13 @@ def recompute_event(event):
 		warnings.append("Location missing: no sub-county on the report. Shown to all regions until corrected.")
 	warning = " ".join(warnings)
 
+	label = meta.get("disease_name") or doc.disease
+	if doc.disease == UNCLASSIFIED:   # name the priority disease to check, so officers see it in the queue
+		hint = next((h for h in (_possible_hint(x.reason) for x in reversed(sigs)) if h), None)
+		if hint:
+			label = f"Unclassified illness – possible {hint}"
 	doc.update({
-		"title": f"{meta.get('disease_name') or doc.disease} · {place or 'location unknown'}",
+		"title": f"{label} · {place or 'location unknown'}",
 		"disease_name": meta.get("disease_name") or doc.disease_name,
 		"priority": meta.get("priority") or doc.priority,
 		"area": areas[0] if len(areas) == 1 else ("" if not areas else f"{len(areas)} areas"),
@@ -295,6 +365,14 @@ def _event_point(sigs):
 	if not pts:
 		return {"latitude": None, "longitude": None}
 	return {"latitude": sum(p[0] for p in pts) / len(pts), "longitude": sum(p[1] for p in pts) / len(pts)}
+
+
+def _possible_hint(reason):
+	"""'... Possible: Suspected Viral Haemorrhagic Fever (Ebola/...) (reported ...); ...' -> 'Suspected Viral Haemorrhagic Fever'"""
+	if not reason or " Possible: " not in reason:
+		return None
+	first = reason.split(" Possible: ", 1)[1].split(" (", 1)[0].strip()
+	return first or None
 
 
 def _reason(sigs):
@@ -336,7 +414,9 @@ def on_case_report(doc, method=None):
 		county, sub = frappe.db.get_value("Sub County", doc.sub_county, ["county", "sub_county_name"]) or (None, None)
 	disease = doc.suspected_disease or UNCLASSIFIED
 	if not in_scope(disease, sub, "Field"):
-		remove_signal("Field", doc.name)  # e.g. disease changed to one outside the queue
+		name = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
+		remove_signal("Field", doc.name, note=f"Report {doc.name} set to {name}: not a Review Queue disease, "
+			"so it is followed in Epi Trends.")  # e.g. disease changed to one outside the queue
 		return
 	exposure = doc.get("animal_exposure")
 	upsert_signal({

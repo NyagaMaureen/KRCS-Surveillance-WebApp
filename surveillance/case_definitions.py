@@ -30,6 +30,15 @@ OUTBREAK_AGES = {"awd-cholera": ["1-4 years"]}   # extra age groups accepted whi
 
 # Symptom names are matched case-insensitively; alternatives cover renames.
 FEVER = ["Fever (hot body)", "High Fever", "Fever"]
+PROVISIONAL = "Provisional (to confirm)"
+
+# Signs too common to point to one disease on their own: they never make a disease "possible" by themselves.
+GENERIC_SIGNS = {"fever (hot body)", "high fever", "fever", "cough", "headache", "fatigue", "vomiting", "runny nose"}
+EXPOSURE_QUESTION = {
+	"Handled sick or dead animal": "contact with a sick or dead animal",
+	"Bite or scratch": "an animal bite or scratch",
+	"Any animal exposure": "contact with animals",
+}
 
 DEFAULT_DEFINITIONS = [
 	{
@@ -104,6 +113,18 @@ DEFAULT_DEFINITIONS = [
 		"disease": "rabies", "match_order": 11,
 		"lay_definition": "Any bite or scratch from a dog or other animal.",
 		"exposure": "Bite or scratch",
+	},
+	# Nov 2026: diseases the alert engine already tracks (MOH 505) but no definition covered, so these reports
+	# were left unclassified. Provisional wording until the Public Health Specialist confirms it.
+	{
+		"disease": "dysentery", "match_order": 12, "source": PROVISIONAL,
+		"lay_definition": "PROVISIONAL - to confirm. Any person with diarrhoea and visible blood in the stool.",
+		"required": [["Diarrhea", "Diarrhoea"], ["Bloody Stool"]],
+	},
+	{
+		"disease": "acute-jaundice", "match_order": 13, "source": PROVISIONAL,
+		"lay_definition": "PROVISIONAL - to confirm. Any person with sudden yellowing of the eyes or skin.",
+		"required": [["Yellow Eyes or Skin"]],
 	},
 ]
 
@@ -212,6 +233,66 @@ def classify(symptoms, age_group=None, animal_exposure=None, definitions=None):
 	return [d["disease"] for d in classify_detailed(symptoms, age_group, animal_exposure, definitions)]
 
 
+def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions=None, labels=None):
+	"""Priority diseases worth checking although their definition is NOT met: the report has one of the
+	definition's specific warning signs (e.g. unexplained bleeding for VHF), its age group is allowed and no
+	sign rules it out. Never used to classify; only shown to officers and reporters as "Possible ... ask about".
+
+	Warning signs = required signs that are not common (fever, cough... see GENERIC_SIGNS); for definitions
+	whose only required sign is common (meningitis: fever), the "at least one of" signs when one is needed.
+	Returns [{"defn", "found": [names], "ask": [names or questions]}] in Match Order (KRCS precedence)."""
+	symptoms = set(symptoms or [])
+	defs = definitions if definitions is not None else get_definitions()
+	labels = labels or _labels()
+	name = lambda i: labels["symptom"].get(i, i)
+	specific = lambda ids: {i for i in ids if _norm(name(i)) not in GENERIC_SIGNS}
+	met = [d for d in defs if matches(d, symptoms, age_group, animal_exposure)]
+	out = []
+	for d in defs:
+		if d in met:
+			continue
+		if d["excluded_symptoms"] & symptoms:
+			continue
+		if d["ages"] and age_group and _norm(age_group) not in d["ages"]:
+			continue
+		triggers = specific(d["required_symptoms"])
+		if not triggers and (d.get("min_any_of") or 0) > 0:
+			triggers = specific(d["any_of_symptoms"])
+		found = triggers & symptoms
+		# a sign already explained by a definition that is met and ranks higher is not a new warning
+		# (plain diarrhoea met as cholera does not also make dysentery "possible"; yellow eyes met as jaundice
+		# still makes yellow fever possible, because yellow fever ranks higher)
+		explained = set()
+		for m in met:
+			if (m.get("match_order") or 0) <= (d.get("match_order") or 0):
+				explained |= m["required_symptoms"] | m["any_of_symptoms"]
+		found -= explained
+		if not found:
+			continue
+		ask = sorted(name(i) for i in d["required_symptoms"] - symptoms)
+		need = (d.get("min_any_of") or 0) - len(d["any_of_symptoms"] & symptoms)
+		if need > 0:
+			ask += sorted(name(i) for i in d["any_of_symptoms"] - symptoms)[:3]
+		exposure = d.get("required_exposure")
+		if exposure and not matches(dict(d, required_symptoms=set(), any_of_symptoms=set(), min_any_of=0, ages=set(),
+				excluded_symptoms=set()), set(), None, animal_exposure):
+			ask.append(EXPOSURE_QUESTION.get(exposure, exposure.lower()))
+		out.append({"defn": d, "found": sorted(name(i) for i in found), "ask": ask})
+	return out
+
+
+def possible_text(possible, labels):
+	"""One line for the report's reason, e.g. 'Possible: Suspected VHF (reported Unexplained Bleeding; check Fever).'"""
+	if not possible:
+		return ""
+	parts = []
+	for p in possible[:3]:
+		nm = labels["disease"].get(p["defn"]["disease"], p["defn"]["disease"])
+		bits = [f"reported {', '.join(p['found'])}"] + ([f"check {', '.join(p['ask'])}"] if p["ask"] else [])
+		parts.append(f"{nm} ({'; '.join(bits)})")
+	return " Possible: " + "; ".join(parts) + "."
+
+
 def _labels():
 	return {
 		"disease": dict(frappe.get_all("Alert Threshold Config", fields=["name", "disease_name"], as_list=True)),
@@ -259,7 +340,8 @@ def apply_to_case_report(doc):
 	defs, widened = with_outbreak_ages(get_definitions(), doc.get("sub_county"))
 	found = classify_detailed(symptoms, age, exposure, defs)
 	labels = _labels()
-	rules_view = explain(found[0], symptoms, age, exposure, labels) if found else "No case definition matched the reported signs."
+	rules_view = explain(found[0], symptoms, age, exposure, labels) if found else (
+		"No case definition matched the reported signs." + possible_text(possible_matches(symptoms, age, exposure, defs, labels), labels))
 	if found and found[0]["disease"] in widened and age and _norm(age) in {_norm(a) for a in OUTBREAK_AGES[found[0]["disease"]]}:
 		rules_view += " (outbreak definition: 2 years or older, because of an active outbreak in this area)"
 
@@ -295,6 +377,21 @@ def classify_preview(symptoms=None, age_group=None, animal_exposure=None):
 
 
 @frappe.whitelist()
+def preview(symptoms=None, age_group=None, animal_exposure=None):
+	"""Report form, review step: definitions met (as classify_preview) and priority diseases to check ("possible")."""
+	symptoms = frappe.parse_json(symptoms) if isinstance(symptoms, str) else (symptoms or [])
+	labels = _labels()
+	defs = get_definitions()
+	return {
+		"matches": [{"key": d["disease"], "name": labels["disease"].get(d["disease"], d["disease"]),
+			"reason": explain(d, symptoms, age_group, animal_exposure, labels)}
+			for d in classify_detailed(symptoms, age_group, animal_exposure, defs)],
+		"possible": [{"key": p["defn"]["disease"], "name": labels["disease"].get(p["defn"]["disease"], p["defn"]["disease"]),
+			"found": p["found"], "ask": p["ask"]} for p in possible_matches(symptoms, age_group, animal_exposure, defs, labels)],
+	}
+
+
+@frappe.whitelist()
 def get_disease_options():
 	"""Active priority diseases for the officer's 'Change suspected disease' dropdown."""
 	rows = frappe.get_all("Alert Threshold Config", filters={"is_active": 1},
@@ -311,7 +408,9 @@ def set_suspected_disease(report, disease=None):
 		frappe.throw(f"Unknown disease: {disease}")
 	doc.suspected_disease = disease or None
 	doc.save(ignore_permissions=True)  # the capability is the permission; officers may not hold edit_reports
+	event = frappe.db.get_value("Surveillance Signal", {"source": "Field", "ref": doc.name}, "event")
 	return {
+		"event": event or None,   # the Review Queue event the report is now on (None: not a queue disease)
 		"suspected_disease": doc.suspected_disease,
 		"suspected_disease_name": _labels()["disease"].get(doc.suspected_disease) if doc.suspected_disease else None,
 		"classified_by": doc.classified_by,
@@ -338,7 +437,8 @@ def backfill():
 		doc.db_set({
 			"suspected_disease": found[0]["disease"] if found else None,
 			"classified_by": "Rules" if found else "",
-			"classification_reason": explain(found[0], symptoms, age, exposure, labels) if found else "No case definition matched the reported signs.",
+			"classification_reason": explain(found[0], symptoms, age, exposure, labels) if found else (
+				"No case definition matched the reported signs." + possible_text(possible_matches(symptoms, age, exposure, defs, labels), labels)),
 			"also_consistent_with": ", ".join(labels["disease"].get(d["disease"], d["disease"]) for d in found[1:]),
 		}, update_modified=False)
 		count += 1

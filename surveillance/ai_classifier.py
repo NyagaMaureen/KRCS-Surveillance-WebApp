@@ -201,7 +201,7 @@ def _model_why(t, known=None):
 	"""The model's reasons for one suggestion, as the pages show them (empty lists if the AI server is older).
 	known: the app's current symptom names; a sign not on the list (renamed or removed) is left out."""
 	w = t.get("why") or {}
-	keep = lambda s: known is None or s.startswith("age ") or s in known
+	keep = lambda s: s.startswith("age ") or known is None or s in known   # age lines are shown on their own line
 	names = lambda key: [x["sign"] for x in (w.get(key) or []) if keep(x["sign"])]
 	return {"for": names("for"), "against": names("against"), "ask": names("ask"), "rulesOut": [],
 		"record": t.get("record")}
@@ -230,13 +230,18 @@ MODEL_TO_DISEASE = {
 }
 UNDER_FIVE = {"Under 1", "1-4 years"}
 MIN_MODEL_SHARE = 0.10   # a model suggestion below 10% is not worth an officer's time
+SHOW_CANDIDATES = 3      # cards shown; the rest are listed by name
 
 
 @frappe.whitelist()
 def get_report_candidates(report):
-	"""Up to two suspected diseases for one report: case-definition matches first, then the model's best
-	priority disease. The officer picks one (human in the loop). Also returns the model's plain-illness view."""
-	from surveillance.case_definitions import VERIFY_CAPABILITY, _labels, classify_detailed
+	"""Suspected diseases for one report, in the order officers should consider them (human in the loop):
+	  1. case definitions met (Match Order = KRCS precedence: VHF, AFP, meningitis, cholera ... first)
+	  2. "possible" priority diseases: a warning sign is there but the definition is not met (ask about the rest)
+	  3. the model's suggestions (malaria, pneumonia ...)
+	Up to SHOW_CANDIDATES are shown; the rest are listed by name. Also returns the model's plain-illness view and
+	the Review Queue event the report is on, so the Reports page can send officers there to decide."""
+	from surveillance.case_definitions import VERIFY_CAPABILITY, _labels, classify_detailed, get_definitions, possible_matches
 	require_capability(VERIFY_CAPABILITY)
 	cr = frappe.get_doc("Case Report", report)
 	labels = _labels()
@@ -244,11 +249,17 @@ def get_report_candidates(report):
 	symptoms = [r.symptom for r in cr.symptoms if r.symptom]
 	age = cr.get("age_group")
 
+	exposure = cr.get("animal_exposure")
+	defs = get_definitions()
 	cands = []
-	for d in classify_detailed(symptoms, age, cr.get("animal_exposure")):
+	for d in classify_detailed(symptoms, age, exposure, defs):
 		cands.append({"key": d["disease"], "name": labels["disease"].get(d["disease"], d["disease"]),
 			"source": "Case definition", "probability": None,
-			"why": _definition_why(d, symptoms, age, cr.get("animal_exposure"), labels)})
+			"why": _definition_why(d, symptoms, age, exposure, labels)})
+	for p in possible_matches(symptoms, age, exposure, defs, labels):
+		key = p["defn"]["disease"]
+		cands.append({"key": key, "name": labels["disease"].get(key, key), "source": "Possible", "probability": None,
+			"why": {"for": p["found"], "against": [], "ask": p["ask"], "rulesOut": [], "record": None}})
 
 	answers, error = _answers([cr], [case])
 	tops = _tops(answers[0], 6)
@@ -268,8 +279,11 @@ def get_report_candidates(report):
 						c["probability"] = t["probability"]
 		elif not key and t["probability"] >= MIN_MODEL_SHARE:
 			others.append({"disease": t["disease"], "probability": t["probability"], "why": _model_why(t, known)})
+	sig = frappe.db.get_value("Surveillance Signal", {"source": "Field", "ref": cr.name}, ["event"], as_dict=True)
+	ev = frappe.db.get_value("Surveillance Event", sig.event, ["name", "status", "title"], as_dict=True) if sig and sig.event else None
 	return {
-		"candidates": cands[:2], "moreCandidates": [c["name"] for c in cands[2:]],
+		"candidates": cands[:SHOW_CANDIDATES], "moreCandidates": [c["name"] for c in cands[SHOW_CANDIDATES:]],
+		"event": {"id": ev.name, "status": ev.status, "title": ev.title} if ev else None,
 		"current": cr.suspected_disease or None, "decidedBy": cr.classified_by or None,
 		"modelOther": others[:2], "modelNote": None if tops else _why_not(error),
 	}

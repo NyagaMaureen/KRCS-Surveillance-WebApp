@@ -58,7 +58,7 @@ export default function RiskWeights() {
       <h3 className="text-base font-semibold text-gray-900">Risk score weights</h3>
       <p className="text-sm text-gray-500 mt-1 mb-5">
         Maximum points for each factor in an event's risk score (0–100). The score is rescaled when a factor has no data, so
-        the total doesn't need to be exactly 100. Agreed with KRCS; adjust after testing.
+        the total doesn't need to be exactly 100.
       </p>
       <ul className="flex flex-col divide-y divide-gray-100">
         {ORDER.map((k) => (

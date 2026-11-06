@@ -11,11 +11,12 @@ import AppShell from '../components/layout/AppShell'
 import ContextPanel from '../components/context/ContextPanel'
 import { RiskAssessment } from '../components/risk/RiskScore'
 import DiseaseInsight from '../components/risk/DiseaseInsight'
-import ReportTriage from '../components/risk/ReportTriage'
+import DiseaseChoices from '../components/risk/DiseaseChoices'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
   getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
   setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext, mergeEvents, getCbsContact, getTrendCbsReports,
+  getReportCandidates, getDiseaseOptions, setSuspectedDisease,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import ConsentQuestion, { consentOk, consentFields } from '../components/report/ConsentQuestion'
@@ -326,10 +327,74 @@ function DiscardBox({ busy, initial = '', onDiscard, onCancel }) {
   )
 }
 
+// One field report's disease decision, inside the event (Review Queue). Same panel as the Reports page.
+function ReportDiseaseChoice({ reportId, onDecided, onError }) {
+  const [cands, setCands] = useState(null)
+  const [options, setOptions] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let live = true
+    getReportCandidates(reportId).then((c) => live && setCands(c)).catch(() => live && setFailed(true))
+    getDiseaseOptions().then((o) => live && setOptions(o || [])).catch(() => {})
+    return () => { live = false }
+  }, [reportId])
+  async function choose(key) {
+    setSaving(true)
+    try {
+      onDecided(await setSuspectedDisease(reportId, key))
+    } catch (e) {
+      onError(e.message || 'Could not save the disease')
+    } finally {
+      setSaving(false)
+    }
+  }
+  if (failed) return <p className="text-sm text-gray-500">Suggestions could not be loaded just now.</p>
+  if (!cands) return <p className="text-sm text-gray-400">Loading suggestions...</p>
+  return (
+    <DiseaseChoices
+      cands={cands}
+      current={cands.decidedBy === 'Officer' ? cands.current : null}
+      saving={saving}
+      onChoose={choose}
+      options={options}
+      hasCurrent={!!cands.current}
+      title={false}
+      oneColumn
+    />
+  )
+}
+
+// AI triage step: "Which disease is it?" for the event's field reports (replaces the read-only disease check).
+function EventDiseaseDecision({ reports, onDecided, onError }) {
+  const [open, setOpen] = useState(reports[0] || null)
+  return (
+    <section aria-label="Which disease is it" className="rounded-xl border border-gray-200 p-4 sm:p-5">
+      <h3 className="text-sm font-semibold text-gray-900">Which disease is it?</h3>
+      <p className="text-xs text-gray-500 mt-0.5 mb-4">Case definitions come first, then priority diseases to check, then the AI model's suggestions. Your choice is saved on the report.</p>
+      {reports.length === 1 ? (
+        <ReportDiseaseChoice reportId={reports[0]} onDecided={(r) => onDecided(r, reports[0])} onError={onError} />
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {reports.map((ref) => (
+            <div key={ref} className="py-3 first:pt-0">
+              <button type="button" aria-expanded={open === ref} onClick={() => setOpen(open === ref ? null : ref)}
+                className={`flex w-full items-center justify-between text-left text-sm font-medium text-gray-900 rounded ${FOCUS}`}>
+                <span>Report <span className="font-mono">{ref}</span></span>
+                <span className="text-xs font-medium text-red-700">{open === ref ? 'Hide' : 'Choose disease'}</span>
+              </button>
+              {open === ref && <div className="mt-3"><ReportDiseaseChoice reportId={ref} onDecided={(r) => onDecided(r, ref)} onError={onError} /></div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, onDiscard }) {
   const [showAll, setShowAll] = useState(false)
   const [discarding, setDiscarding] = useState(false)
-  const [openRef, setOpenRef] = useState(null)
   const rows = showAll ? signals : signals.slice(0, 8)
   return (
     <div className={card}>
@@ -366,16 +431,8 @@ function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, on
                     </td>
                     <td className="px-3 py-3 text-sm min-w-[150px]">
                       <ReporterContact signal={s} canAct={canAct} />
-                      {event.disease === 'unclassified-illness' && s.source === 'Field' && s.ref && (
-                        <button type="button" aria-expanded={openRef === s.ref} onClick={() => setOpenRef(openRef === s.ref ? null : s.ref)} className={`mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
-                          <Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> {openRef === s.ref ? 'Hide triage' : 'View triage'}
-                        </button>
-                      )}
                     </td>
                   </tr>
-                  {openRef === s.ref && s.ref && (
-                    <tr className="bg-gray-50"><td colSpan={3} className="px-4 py-4"><ReportTriage eventId={event.id} reportId={s.ref} /></td></tr>
-                  )}
                   </Fragment>
                 ))}
               </tbody>
@@ -1625,6 +1682,26 @@ export default function EventDetail() {
       .catch(() => {})
   }, [id])
 
+  // An officer chose a report's disease here: it stays (same disease), moves to that disease's event,
+  // or leaves the Review Queue (diseases followed in Epi Trends, e.g. malaria).
+  const handleDiseaseDecided = useCallback((r, ref) => {
+    const name = r.suspected_disease_name || 'the case definition'
+    if (r.event && r.event !== id) {
+      showToast(`${ref}: ${name}. Moved to ${r.event}.`, false, 5000)
+      navigate(`/alerts-signals/${encodeURIComponent(r.event)}`)
+    } else if (!r.event) {
+      showToast(`${ref}: ${name}. Not a Review Queue disease, so it left this event and is followed in Epi Trends.`, false, 7000)
+      if ((event?.signals || []).length <= 1) navigate('/alerts-signals')
+      else refreshEvent()
+    } else if (r.suspected_disease && event && r.suspected_disease !== event.disease) {
+      showToast(`${ref}: ${name}. This event now continues as ${name}; questions that differ were reset.`, false, 6000)
+      refreshEvent()
+    } else {
+      showToast(`${ref}: ${name} confirmed.`)
+      refreshEvent()
+    }
+  }, [id, event, navigate, refreshEvent, showToast])
+
   const stepInfo = useMemo(() => (event && inv ? computeSteps(event, inv) : null), [event, inv])
   const currentStep = stepInfo?.current
 
@@ -1664,6 +1741,11 @@ export default function EventDetail() {
   const signals = useMemo(
     () => [...(event?.signals || [])].sort((a, b) => (parseDate(b.date)?.getTime() || 0) - (parseDate(a.date)?.getTime() || 0)),
     [event]
+  )
+  // field reports on this event, oldest first, for "Which disease is it?" (CBS reports carry no symptoms here)
+  const fieldReports = useMemo(
+    () => [...new Set([...signals].reverse().filter((s) => s.source === 'Field' && s.ref).map((s) => s.ref))],
+    [signals]
   )
   const timeline = useMemo(
     () => [...(event?.timeline || [])].sort((a, b) => (parseDate(b.at)?.getTime() || 0) - (parseDate(a.at)?.getTime() || 0)),
@@ -1825,7 +1907,11 @@ export default function EventDetail() {
         return (
           <div className={card}>
             <PanelHeader title="AI analysis & risk assessment" sub="A quick check of how urgent this looks" />
-            <RiskAssessment risk={event.risk} disease={<DiseaseInsight eventId={event.id} diseaseName={event.disease === 'unclassified-illness' ? '' : event.diseaseName} eventReason={event.disease === 'unclassified-illness' ? '' : event.reason} onOpenCapture={() => selectStep(1)} />}>
+            <RiskAssessment risk={event.risk} disease={fieldReports.length > 0 && has('verify_suspected_disease') ? (
+              <EventDiseaseDecision key={event.id} reports={fieldReports} onDecided={handleDiseaseDecided} onError={(m) => showToast(m, true)} />
+            ) : (
+              <DiseaseInsight eventId={event.id} diseaseName={event.disease === 'unclassified-illness' ? '' : event.diseaseName} eventReason={event.disease === 'unclassified-illness' ? '' : event.reason} onOpenCapture={() => selectStep(1)} />
+            )}>
               <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} />
             </RiskAssessment>
             <div className="mt-6 flex justify-end">
