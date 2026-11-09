@@ -376,6 +376,30 @@ export default function ReportDetail() {
                     )}
                   </div>
 
+                  <div className="pt-6 border-t border-gray-100 mb-8">
+                    <div className="text-xs font-medium text-gray-400 mb-2">Symptoms</div>
+                    {symptomTags(report.symptom_tags).length ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {symptomTags(report.symptom_tags).map((s) => (
+                          <span key={s} className="bg-gray-100 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full">{s}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">
+                        {report.animal_exposure && report.animal_exposure !== 'None' ? 'No symptoms recorded' : '—'}
+                      </span>
+                    )}
+                    {report.absent_symptom_tags && (
+                      <p className="mt-2 text-xs text-gray-500">Checked, not present: {report.absent_symptom_tags}</p>
+                    )}
+                    {report.animal_exposure && report.animal_exposure !== 'None' && (
+                      <div className="flex justify-between border-t border-gray-100 mt-4 pt-3 text-sm">
+                        <span className="text-gray-400">Animal exposure</span>
+                        <span className="font-medium text-gray-900">{report.animal_exposure}</span>
+                      </div>
+                    )}
+                  </div>
+
                   {attachments.length > 0 && (
                   <div className="pt-6 border-t border-gray-100 mb-8">
                     <div className="text-xs font-medium text-gray-400 mb-2">Voice notes and photos</div>
@@ -416,27 +440,6 @@ export default function ReportDetail() {
                     ) : null}
                   </div>
                   )}
-
-                  <div className="pt-6 border-t border-gray-100 mb-8">
-                    <div className="text-xs font-medium text-gray-400 mb-2">Symptoms</div>
-                    {symptomTags(report.symptom_tags).length ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {symptomTags(report.symptom_tags).map((s) => (
-                          <span key={s} className="bg-gray-100 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full">{s}</span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400">
-                        {report.animal_exposure && report.animal_exposure !== 'None' ? 'No symptoms recorded' : '—'}
-                      </span>
-                    )}
-                    {report.animal_exposure && report.animal_exposure !== 'None' && (
-                      <div className="flex justify-between border-t border-gray-100 mt-4 pt-3 text-sm">
-                        <span className="text-gray-400">Animal exposure</span>
-                        <span className="font-medium text-gray-900">{report.animal_exposure}</span>
-                      </div>
-                    )}
-                  </div>
 
                   <div className="pt-6 border-t border-gray-100 mb-8">
                     <div className="flex items-center justify-between mb-3">

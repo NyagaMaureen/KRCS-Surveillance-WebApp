@@ -7,6 +7,8 @@ Case Reports from their symptoms, age group and animal exposure.
 Source: MOH "Standard Case Definitions for Priority Diseases in Kenya" (IDSR),
 lay/community definitions for CHPs. Mpox is provisional (WHO) until KRCS confirms.
 """
+import json
+
 import frappe
 from frappe.utils import format_date, get_fullname, today
 from surveillance.capabilities import has_capability, require_capability
@@ -233,7 +235,20 @@ def classify(symptoms, age_group=None, animal_exposure=None, definitions=None):
 	return [d["disease"] for d in classify_detailed(symptoms, age_group, animal_exposure, definitions)]
 
 
-def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions=None, labels=None):
+def absent_of(doc_or_value):
+	"""The signs a reporter answered No to: a Case Report (absent_symptoms) or the raw JSON / list -> set of IDs."""
+	value = doc_or_value.get("absent_symptoms") if hasattr(doc_or_value, "get") and not isinstance(doc_or_value, (list, set)) else doc_or_value
+	if not value:
+		return set()
+	if isinstance(value, str):
+		try:
+			value = json.loads(value)
+		except ValueError:
+			return set()
+	return {str(x) for x in value if x}
+
+
+def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions=None, labels=None, absent=None):
 	"""Priority diseases worth checking although their definition is NOT met: the report has one of the
 	definition's specific warning signs (e.g. unexplained bleeding for VHF), its age group is allowed and no
 	sign rules it out. Never used to classify; only shown to officers and reporters as "Possible ... ask about".
@@ -242,6 +257,7 @@ def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions
 	whose only required sign is common (meningitis: fever), the "at least one of" signs when one is needed.
 	Returns [{"defn", "found": [names], "ask": [names or questions]}] in Match Order (KRCS precedence)."""
 	symptoms = set(symptoms or [])
+	absent = set(absent or []) - symptoms   # signs the reporter checked and answered No
 	defs = definitions if definitions is not None else get_definitions()
 	labels = labels or _labels()
 	name = lambda i: labels["symptom"].get(i, i)
@@ -252,6 +268,11 @@ def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions
 		if d in met:
 			continue
 		if d["excluded_symptoms"] & symptoms:
+			continue
+		if d["required_symptoms"] & absent:
+			continue   # a sign this definition needs was checked and is not there (e.g. no fever: not VHF)
+		need_any = d.get("min_any_of") or 0
+		if need_any and len(d["any_of_symptoms"] - absent) < need_any:
 			continue
 		if d["ages"] and age_group and _norm(age_group) not in d["ages"]:
 			continue
@@ -269,10 +290,10 @@ def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions
 		found -= explained
 		if not found:
 			continue
-		ask = sorted(name(i) for i in d["required_symptoms"] - symptoms)
+		ask = sorted(name(i) for i in d["required_symptoms"] - symptoms - absent)
 		need = (d.get("min_any_of") or 0) - len(d["any_of_symptoms"] & symptoms)
 		if need > 0:
-			ask += sorted(name(i) for i in d["any_of_symptoms"] - symptoms)[:3]
+			ask += sorted(name(i) for i in d["any_of_symptoms"] - symptoms - absent)[:3]
 		exposure = d.get("required_exposure")
 		if exposure and not matches(dict(d, required_symptoms=set(), any_of_symptoms=set(), min_any_of=0, ages=set(),
 				excluded_symptoms=set()), set(), None, animal_exposure):
@@ -340,8 +361,13 @@ def apply_to_case_report(doc):
 	defs, widened = with_outbreak_ages(get_definitions(), doc.get("sub_county"))
 	found = classify_detailed(symptoms, age, exposure, defs)
 	labels = _labels()
+	# signs checked and answered No: kept as names too, for officers ("Checked, not present: Fever")
+	absent = sorted(absent_of(doc) - set(symptoms))
+	doc.absent_symptoms = json.dumps(absent) if absent else None
+	doc.absent_symptom_tags = ", ".join(labels["symptom"].get(i, i) for i in absent) or None
 	rules_view = explain(found[0], symptoms, age, exposure, labels) if found else (
-		"No case definition matched the reported signs." + possible_text(possible_matches(symptoms, age, exposure, defs, labels), labels))
+		"No case definition matched the reported signs." + possible_text(possible_matches(symptoms, age, exposure, defs, labels,
+			absent_of(doc)), labels))
 	if found and found[0]["disease"] in widened and age and _norm(age) in {_norm(a) for a in OUTBREAK_AGES[found[0]["disease"]]}:
 		rules_view += " (outbreak definition: 2 years or older, because of an active outbreak in this area)"
 
@@ -377,9 +403,11 @@ def classify_preview(symptoms=None, age_group=None, animal_exposure=None):
 
 
 @frappe.whitelist()
-def preview(symptoms=None, age_group=None, animal_exposure=None):
-	"""Report form, review step: definitions met (as classify_preview) and priority diseases to check ("possible")."""
+def preview(symptoms=None, age_group=None, animal_exposure=None, absent=None):
+	"""Report form, review step: definitions met (as classify_preview) and priority diseases to check ("possible").
+	absent: signs the reporter answered No to; they rule out the definitions that need them."""
 	symptoms = frappe.parse_json(symptoms) if isinstance(symptoms, str) else (symptoms or [])
+	absent = absent_of(absent)
 	labels = _labels()
 	defs = get_definitions()
 	return {
@@ -387,7 +415,7 @@ def preview(symptoms=None, age_group=None, animal_exposure=None):
 			"reason": explain(d, symptoms, age_group, animal_exposure, labels)}
 			for d in classify_detailed(symptoms, age_group, animal_exposure, defs)],
 		"possible": [{"key": p["defn"]["disease"], "name": labels["disease"].get(p["defn"]["disease"], p["defn"]["disease"]),
-			"found": p["found"], "ask": p["ask"]} for p in possible_matches(symptoms, age_group, animal_exposure, defs, labels)],
+			"found": p["found"], "ask": p["ask"]} for p in possible_matches(symptoms, age_group, animal_exposure, defs, labels, absent)],
 	}
 
 
@@ -438,7 +466,8 @@ def backfill():
 			"suspected_disease": found[0]["disease"] if found else None,
 			"classified_by": "Rules" if found else "",
 			"classification_reason": explain(found[0], symptoms, age, exposure, labels) if found else (
-				"No case definition matched the reported signs." + possible_text(possible_matches(symptoms, age, exposure, defs, labels), labels)),
+				"No case definition matched the reported signs." + possible_text(possible_matches(symptoms, age, exposure, defs, labels,
+					absent_of(doc)), labels)),
 			"also_consistent_with": ", ".join(labels["disease"].get(d["disease"], d["disease"]) for d in found[1:]),
 		}, update_modified=False)
 		count += 1

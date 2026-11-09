@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import * as icons from 'lucide-react'
-import { MENUS } from '../../data/sidebarMenu'
+import { menuFor } from '../../data/sidebarMenu'
 import { useCapabilities } from '../../context/CapabilitiesContext'
 import { getReviewEvents } from '../../api/frappe'
 
@@ -16,13 +16,7 @@ export default function Sidebar({ open = false, onClose }) {
   const { capabilities, workspace, has } = useCapabilities()
   const canSeeQueue = capabilities.includes('view_review_queue')
 
-  const visibleMenu = useMemo(() =>
-    (MENUS[workspace] || MENUS.full).map(group => ({
-      ...group,
-      items: group.items.filter(item => !item.requiresCapability || has(item.requiresCapability)),
-    })).filter(group => group.items.length > 0),
-    [has, workspace]
-  )
+  const visibleMenu = useMemo(() => menuFor(workspace, has), [has, workspace])
 
   const [newCount, setNewCount] = useState(0)
   useEffect(() => {

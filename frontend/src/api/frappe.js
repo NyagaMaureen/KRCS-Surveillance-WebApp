@@ -804,8 +804,9 @@ export async function classifyPreview({ symptoms, age_group, animal_exposure }) 
 }
 
 // Review step: case definitions met ("matches") and priority diseases to check ("possible").
-export async function previewDiseases({ symptoms, age_group, animal_exposure }) {
+export async function previewDiseases({ symptoms, age_group, animal_exposure, absent }) {
   const params = new URLSearchParams({ symptoms: JSON.stringify(symptoms || []) })
+  if (absent && absent.length) params.set('absent', JSON.stringify(absent))   // signs answered No
   if (age_group) params.set('age_group', age_group)
   if (animal_exposure) params.set('animal_exposure', animal_exposure)
   return (await callMethod(`/api/method/surveillance.case_definitions.preview?${params}`)) || { matches: [], possible: [] }

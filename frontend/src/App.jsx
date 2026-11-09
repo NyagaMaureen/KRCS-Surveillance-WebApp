@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from '
 import { routes } from './router'
 import { CapabilitiesProvider, useCapabilities } from './context/CapabilitiesContext'
 import RequireCapability from './components/RequireCapability'
-import { WORKSPACE_PAGES } from './data/sidebarMenu'
+import { pagesFor } from './data/sidebarMenu'
 
 function ReviewRedirect() {
   const { id } = useParams()
@@ -12,13 +12,13 @@ function ReviewRedirect() {
 
 /** Keeps users in their workspace: a CHP opening an officer page is sent to their dashboard. */
 function WorkspaceGuard({ name, children }) {
-  const { workspace, loading } = useCapabilities()
+  const { workspace, loading, has } = useCapabilities()
   const { search } = useLocation()
   if (loading) return children
-  const allowed = WORKSPACE_PAGES[workspace]
+  const allowed = pagesFor(workspace, has)   // the workspace's pages plus those its permissions add
   if (!allowed) return children
   if (workspace === 'chp' && name === 'my-tasks') return <Navigate to={{ pathname: '/follow-ups', search }} replace />
-  if (!allowed.includes(name)) return <Navigate to="/dashboard" replace />
+  if (!allowed.has(name)) return <Navigate to="/dashboard" replace />
   return children
 }
 

@@ -63,6 +63,9 @@ export const OFFICER_MENU = [
   { section: 'OVERVIEW', items: [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
   ]},
+  { section: 'FIELD ACTIVITIES', items: [
+    { label: 'Reports', icon: 'FileText', page: 'reports', requiresCapability: ['create_reports', 'view_reports', 'view_own_reports'] },
+  ]},
   { section: 'LIVE MONITORING', items: [
     { label: 'Review Queue', icon: 'BellRing', page: 'alerts-signals', requiresCapability: 'view_review_queue' },
     { label: 'Epi Trends', icon: 'TrendingUp', page: 'epi-trends', requiresCapability: 'view_alerts' },
@@ -98,4 +101,49 @@ export const WORKSPACE_PAGES = {
   officer: ['login', 'dashboard', 'alerts-signals', 'alerts-signals-detail', 'epi-trends', 'alert-detail', 'surveillance-map',
     'response', 'event-lifecycle', 'data-quality', 'analytics', 'ai-data-assistant', 'feedback', 'help-center', 'settings',
     'reports', 'report-detail', 'response-protocols', 'my-tasks', 'chatbot-query-log'],
+}
+
+// ---------- menus follow permissions ----------
+// A workspace (CHP, officer) has its own short menu. When an admin gives a user an extra permission in Roles &
+// Permissions (e.g. Knowledge Base for an officer), the page it opens is added to their menu under "MORE" and the
+// page becomes reachable, so the menu always matches what the user is allowed to do.
+
+// pages that open from a menu page (details, forms)
+const LINKED_PAGES = {
+  reports: ['report-detail'],
+  'alerts-signals': ['alerts-signals-detail'],
+  'epi-trends': ['alert-detail'],
+}
+// pages a permission opens on its own
+const CAPABILITY_PAGES = {
+  create_reports: ['reports', 'report-detail', 'record-health-signal'],
+}
+
+// pages a workspace covers in its own way (CHPs see their tasks as Follow-ups and Referrals)
+const NOT_ADDED = { chp: ['my-tasks'], officer: ['data-explorer'] }   // officers have Data Explorer as Trends
+
+const visibleItems = (items, has) => items.filter((item) => !item.requiresCapability || has(item.requiresCapability))
+
+/** The menu this user sees: their workspace menu plus any page their permissions add. */
+export function menuFor(workspace, has) {
+  const base = MENUS[workspace] || SIDEBAR_MENU
+  const menu = base.map((g) => ({ ...g, items: visibleItems(g.items, has) })).filter((g) => g.items.length > 0)
+  if (base === SIDEBAR_MENU) return menu
+  const inMenu = new Set(base.flatMap((g) => g.items.map((i) => i.page)))
+  const extra = SIDEBAR_MENU.flatMap((g) => g.items)
+    .filter((i) => i.requiresCapability && !inMenu.has(i.page) && !(NOT_ADDED[workspace] || []).includes(i.page) && has(i.requiresCapability))
+  return extra.length ? [...menu, { section: 'MORE', items: extra }] : menu
+}
+
+/** Pages this user may open, or null for no restriction (full menu). */
+export function pagesFor(workspace, has) {
+  const fixed = WORKSPACE_PAGES[workspace]
+  if (!fixed) return null
+  const pages = new Set(fixed)
+  menuFor(workspace, has).forEach((g) => g.items.forEach((i) => {
+    pages.add(i.page)
+    ;(LINKED_PAGES[i.page] || []).forEach((p) => pages.add(p))
+  }))
+  Object.entries(CAPABILITY_PAGES).forEach(([cap, list]) => { if (has(cap)) list.forEach((p) => pages.add(p)) })
+  return pages
 }

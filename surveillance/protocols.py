@@ -562,7 +562,7 @@ def assignable_for(disease, step_text):
 
 
 def mark_assignable(overwrite=0):
-	"""One-off: tick 'Field worker can do this' on protocol steps.
+	"""One-off: tick 'Can be assigned to CHP/field workers' on protocol steps.
 	Seeded steps use the reviewed list above; other steps use their wording. By default only protocols
 	where no step is ticked yet are changed, so KRCS's own choices are kept. Prints the result for review.
 	bench --site <site> execute surveillance.protocols.mark_assignable"""

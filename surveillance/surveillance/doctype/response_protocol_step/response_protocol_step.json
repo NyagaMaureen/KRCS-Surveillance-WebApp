@@ -51,7 +51,7 @@
   {
    "fieldname": "assignable",
    "fieldtype": "Check",
-   "label": "Field worker can do this",
+   "label": "Can be assigned to CHP/field worker",
    "default": "0",
    "description": "Ticked steps can be assigned as a task to a CHP, CHA or other field worker from the event page."
   },

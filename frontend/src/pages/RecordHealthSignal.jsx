@@ -10,6 +10,17 @@ import { getList, createReport, getMyProfile, getLoggedInUserPhone, getSubCounti
 import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS } from '../data/formOptions'
 import { formatDuration, photoExtension } from '../utils/media'
 
+// case_definitions.EXPOSURE_QUESTION, read back: the question shown -> the Animal exposure answer it sets
+const EXPOSURE_BY_QUESTION = {
+  'contact with a sick or dead animal': 'Handled sick or dead animal',
+  'an animal bite or scratch': 'Bite or scratch',
+  'contact with animals': 'Handled sick or dead animal',
+}
+const EXPOSURE_LABEL = {
+  'Handled sick or dead animal': 'Contact with a sick or dead animal',
+  'Bite or scratch': 'An animal bite or scratch',
+}
+
 const steps = ['Reporter Info', 'Symptoms', 'Details', 'Review Report']
 
 const ATTACHMENT_TYPES = [
@@ -132,6 +143,9 @@ export default function RecordHealthSignal() {
   })
 
   const [classifyResults, setClassifyResults] = useState([])
+  // Nobody is shown disease names while reporting: they answer a few more sign questions on the Review step instead,
+  // and see the suspected disease with the protocol's simple steps after sending (KRCS, Option B).
+  const [answeredNo, setAnsweredNo] = useState([])
   const [sent, setSent] = useState(null)   // after submit: { name, diseaseName, advice }
   const classifyTimerRef = useRef(null)
 
@@ -160,17 +174,54 @@ export default function RecordHealthSignal() {
       return
     }
     classifyTimerRef.current = setTimeout(() => {
-      previewDiseases({ symptoms: form.symptoms, age_group: form.age_group, animal_exposure: form.animal_exposure })
+      previewDiseases({ symptoms: form.symptoms, age_group: form.age_group, animal_exposure: form.animal_exposure, absent: answeredNo })
         .then((r) => { setClassifyResults(r.matches || []); setPossible(r.possible || []) })
         .catch(() => { setClassifyResults([]); setPossible([]) })
     }, 400)
     return () => clearTimeout(classifyTimerRef.current)
-  }, [form.symptoms, form.age_group, form.animal_exposure])
+  }, [form.symptoms, form.age_group, form.animal_exposure, answeredNo])
 
   const [possible, setPossible] = useState([])
   const [modelHint, setModelHint] = useState([])
+  // Extra yes/no questions on the Review step, with no disease named (KRCS chose this for everyone who reports):
+  //   1. warning signs that would confirm a possible PRIORITY disease (case definitions), and animal contact when a
+  //      definition needs it and the reporter has not answered the animal question yet;
+  //   2. then the signs the AI model says would change its estimate for the common illnesses it suggests.
+  // Priority signs always come first, so an outbreak sign is never pushed out by a common-illness one.
+  const followUps = useMemo(() => {
+    const key = (x) => String(x || '').toLowerCase().replace(/[^a-z]/g, '')   // "Red eyes" = "red-eyes" = "RED EYES"
+    const byName = new Map(symptoms.map((s) => [key(s.symptom_name || s.name), s.name]))
+    const out = []
+    const addSign = (label) => {
+      const id = byName.get(key(label))
+      if (id && !form.symptoms.includes(id) && !answeredNo.includes(id) && !out.some((o) => o.id === id)) out.push({ id, label })
+    }
+    possible.forEach((p) => (p.ask || []).forEach((label) => {
+      const exposure = EXPOSURE_BY_QUESTION[String(label).toLowerCase()]
+      if (exposure) {
+        if (!form.animal_exposure && !answeredNo.includes(exposure) && !out.some((o) => o.exposure)) {
+          out.push({ id: exposure, exposure, label: EXPOSURE_LABEL[exposure] })
+        }
+        return
+      }
+      addSign(label)
+    }))
+    modelHint.forEach((m) => ((m.why && m.why.ask) || []).forEach(addSign))
+    return out.slice(0, 6)
+  }, [possible, modelHint, symptoms, form.symptoms, form.animal_exposure, answeredNo])
+
+  function answerYes(q) {
+    if (q.exposure) updateForm({ animal_exposure: q.exposure })
+    else toggleSymptom(q.id)
+  }
+
+  // a No is kept and sent: it rules out the case definitions that need that sign (no fever: not VHF)
+  function answerNo(q) {
+    if (q.exposure) updateForm({ animal_exposure: 'None' })
+    else setAnsweredNo((prev) => [...prev, q.id])
+  }
   useEffect(() => {
-    if (currentStep !== 4 || !form.symptoms.length) { setModelHint([]); return }
+    if (currentStep < 3 || !form.symptoms.length) { setModelHint([]); return }
     let live = true
     getModelHint({ symptoms: form.symptoms, age_group: form.age_group })
       .then((r) => live && setModelHint((r.suggestions || []).filter((m) => !(m.key && [...classifyResults, ...possible].some((c) => c.key === m.key)))))
@@ -364,9 +415,13 @@ export default function RecordHealthSignal() {
         onset_date: form.onset_date, report_date: form.report_date, attachments: [...form.attachments, ...uploaded],
         additional_notes: form.additional_notes, channel: 'Web', status: 'Submitted', client_ref: clientRef.current,
         age_group: form.age_group, animal_exposure: form.animal_exposure, deaths_count: Number(form.deaths_count),
+        absent_symptoms: JSON.stringify(answeredNo.filter((id) => !form.symptoms.includes(id))),
       })
-      const advice = await getReporterAdvice(saved?.suspected_disease).catch(() => null)
-      setSent({ name: saved?.name, diseaseName: advice?.diseaseName || (saved?.suspected_disease ? classifyResults[0]?.name : null), advice })
+      // advice from the suspected disease's protocol; if none was matched but a priority disease is possible, from that one
+      const adviceFor = saved?.suspected_disease || possible[0]?.key
+      const advice = await getReporterAdvice(adviceFor).catch(() => null)
+      const confirmed = saved?.suspected_disease ? (advice?.diseaseName || classifyResults[0]?.name) : null
+      setSent({ name: saved?.name, diseaseName: confirmed, possibleName: !confirmed && possible[0] ? possible[0].name : null, advice })
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
       if (/already received/i.test(e.message || '')) { navigate('/reports'); return }   // first press got through
@@ -466,7 +521,7 @@ export default function RecordHealthSignal() {
             </div>
             <div className="rounded-xl border border-red-100 bg-red-50/60 p-4 mb-6">
               <p className="text-xs text-gray-500">Suspected disease</p>
-              <p className="text-base font-semibold text-gray-900">{sent.diseaseName || (modelHint.length ? `Possible: ${modelHint.map((m) => m.name).join(', ')} (AI model, to be confirmed by an officer)` : 'No disease matched: treated as an unusual event')}</p>
+              <p className="text-base font-semibold text-gray-900">{sent.diseaseName || (sent.possibleName ? `Possible ${sent.possibleName}` : (modelHint.length ? `Possible: ${modelHint.map((m) => m.name).join(', ')} (AI estimate, to be confirmed by an officer)` : 'No disease matched: treated as an unusual event'))}</p>
               {classifyResults.filter((r) => r.name !== sent.diseaseName).length > 0 && sent.diseaseName && (
                 <p className="text-sm text-gray-700 mt-1">Also matches: {classifyResults.filter((r) => r.name !== sent.diseaseName).map((r) => r.name).join(', ')}</p>
               )}
@@ -673,6 +728,7 @@ export default function RecordHealthSignal() {
               <SymptomPicker symptoms={symptoms} selected={form.symptoms} onToggle={(id) => { toggleSymptom(id); touch('symptoms') }} invalid={!!shown('symptoms')} onBlur={() => touch('symptoms')} />
               {shown('symptoms') && <p className="text-xs text-red-700 mt-1">{shown('symptoms')}</p>}
 
+
               <div className="pt-6 mt-6 border-t border-gray-100">
                 <h3 className="text-sm font-bold text-gray-900 mb-4">About the affected person(s)</h3>
 
@@ -831,65 +887,44 @@ export default function RecordHealthSignal() {
           {currentStep === 4 && (
             <div>
               <h3 className="font-bold text-center text-gray-900 mb-6">Review your report</h3>
-              {(() => {
-                const sentence = (xs) => {
-                  const w = xs.map((x) => x.charAt(0).toLowerCase() + x.slice(1))
-                  return w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w[w.length - 1]}` : w[0]
-                }
-                const nothing = !classifyResults.length && !possible.length && !modelHint.length
-                const row = 'rounded-lg bg-white border border-gray-100 px-3 py-2'
-                return (
-                  <div className="mb-6 rounded-xl border border-red-100 bg-red-50/60 p-4">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-2">
-                        <Stethoscope className="w-5 h-5 text-red-700 shrink-0" aria-hidden="true" />
-                        <p className="text-sm font-semibold text-gray-900">What the signs suggest</p>
-                      </div>
-                      <button type="button" onClick={() => setCurrentStep(2)} className="text-xs font-medium text-red-700 hover:underline">Edit signs</button>
-                    </div>
-                    {nothing ? (
-                      <p className="text-sm text-gray-700">No disease matched. It will be reviewed as an unusual event.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {classifyResults.map((r) => (
-                          <div key={r.key} className={row}>
-                            <div className="flex items-baseline justify-between gap-3">
-                              <p className="text-sm font-semibold text-gray-900">{r.name}</p>
-                              <span className="shrink-0 text-xs text-gray-500">Meets the case definition</span>
-                            </div>
-                          </div>
-                        ))}
-                        {possible.map((p) => (
-                          <div key={p.key} className={row}>
-                            <div className="flex items-baseline justify-between gap-3">
-                              <p className="text-sm font-semibold text-gray-900">{p.name}</p>
-                              <span className="shrink-0 text-xs font-medium text-amber-700">Check signs</span>
-                            </div>
-                            {p.ask.length > 0 && <p className="text-xs text-gray-600 mt-0.5">Ask about {sentence(p.ask)}.</p>}
-                          </div>
-                        ))}
-                        {modelHint.map((m) => {
-                          const signs = ((m.why && m.why.for) || []).filter((x) => !x.startsWith('age '))
-                          return (
-                            <div key={m.name} className={row}>
-                              <div className="flex items-baseline justify-between gap-3">
-                                <p className="text-sm font-semibold text-gray-900">{m.name}</p>
-                                <span className="shrink-0 text-xs text-gray-500">AI estimate {Math.round(m.probability * 100)}%</span>
-                              </div>
-                              {signs.length > 0 && <p className="text-xs text-gray-600 mt-0.5">Signs: {signs.join(', ')}</p>}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                    {!nothing && (
-                      <p className="text-xs text-gray-500 mt-3">
-                        {possible.length && !classifyResults.length ? 'If the patient has these signs, tap Edit signs and add them. ' : ''}An officer will confirm the disease.
-                      </p>
-                    )}
+              <div className="mb-6 rounded-xl border border-red-100 bg-red-50/60 p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Stethoscope className="w-5 h-5 text-red-700 shrink-0" aria-hidden="true" />
+                    <p className="text-sm font-semibold text-gray-900">Signs you reported</p>
                   </div>
-                )
-              })()}
+                  <button type="button" onClick={() => setCurrentStep(2)} className="text-xs font-medium text-red-700 hover:underline">Edit signs</button>
+                </div>
+                <div className="rounded-lg bg-white border border-gray-100 px-3 py-2">
+                  {symptomLabels.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {symptomLabels.map((label) => (
+                        <span key={label} className="bg-gray-100 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full">{label}</span>
+                      ))}
+                    </div>
+                  ) : <p className="text-sm text-gray-500">No symptoms</p>}
+                  {form.animal_exposure && form.animal_exposure !== 'None' && (
+                    <p className="text-xs text-gray-600 mt-2">Animal exposure: {(ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === form.animal_exposure) || {}).label}</p>
+                  )}
+                </div>
+                {followUps.length > 0 && (
+                  <>
+                    <p className="text-sm font-semibold text-gray-900 mt-4">Please check these signs too</p>
+                    <p className="text-xs text-gray-600 mb-2">Ask the person or their family. Your answers help decide what the illness is.</p>
+                    <div className="space-y-2">
+                      {followUps.map((q) => (
+                        <div key={q.id} className="flex items-center justify-between gap-3 rounded-lg bg-white border border-gray-100 px-3 py-2">
+                          <span className="text-sm font-semibold text-gray-900">{q.label.charAt(0).toUpperCase() + q.label.slice(1)}?</span>
+                          <div className="flex shrink-0 gap-2">
+                            <button type="button" onClick={() => answerYes(q)} className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-red-50 hover:border-red-200 hover:text-red-700">Yes</button>
+                            <button type="button" onClick={() => answerNo(q)} className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100">No</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
               {(() => {
                 const Item = ({ label, children, wide }) => (
                   <div className={wide ? 'sm:col-span-2' : ''}>
@@ -920,12 +955,6 @@ export default function RecordHealthSignal() {
                       <Item label="People affected">{form.affected_count}</Item>
                       <Item label="Deaths">{form.deaths_count === '' ? '' : String(form.deaths_count)}</Item>
                       <Item label="Age group">{form.age_group}</Item>
-                      <Item label="Animal exposure">{form.animal_exposure && form.animal_exposure !== 'None' ? (ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === form.animal_exposure) || {}).label : 'None'}</Item>
-                      <Item label="Symptoms" wide>
-                        {symptomLabels.length ? symptomLabels.map((s) => (
-                          <span key={s} className="inline-block bg-gray-100 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full mr-1 mb-1">{s}</span>
-                        )) : null}
-                      </Item>
                     </Group>
                     <Group title="Dates" step={3}>
                       <Item label="Onset date">{formatReadableDate(form.onset_date)}</Item>

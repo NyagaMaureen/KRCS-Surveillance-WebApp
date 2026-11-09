@@ -171,7 +171,7 @@ function StepView({ s, num }) {
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-gray-500">
           {s.timeframe && <span><span className="text-gray-400">When:</span> {s.timeframe}</span>}
           {s.responsible && <span><span className="text-gray-400">Who:</span> {s.responsible}</span>}
-          {s.assignable && <span className="text-emerald-700">Can be assigned to a field worker</span>}
+          {s.assignable && <span className="text-emerald-700">Can be assigned as a task to a CHP/field worker</span>}
           {s.show_to_reporters && <span className="text-sky-700">Shown to reporters as advice</span>}
         </div>
       </div>
@@ -500,7 +500,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
             onChange={(e) => setStep(i, { responsible: e.target.value })} />
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer whitespace-nowrap">
             <input type="checkbox" checked={!!st.assignable} onChange={(e) => setStep(i, { assignable: e.target.checked })} className="w-4 h-4 accent-red-600" />
-            Field worker can do this
+            Can be assigned to CHP/field worker
           </label>
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer whitespace-nowrap" title="Sent to the CHP or WhatsApp reporter as advice right after they report this disease">
             <input type="checkbox" checked={!!st.show_to_reporters} onChange={(e) => setStep(i, { show_to_reporters: e.target.checked })} className="w-4 h-4 accent-red-600" />
@@ -631,7 +631,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
         </button>
       </section>}
 
-      {show('Investigation') && phaseSection('Investigation', 'Field investigation steps', 'Done during the field investigation, including first treatment and isolation. Tick "Field worker can do this" for steps a CHP, CHA or health worker carries out and reports back on.')}
+      {show('Investigation') && phaseSection('Investigation', 'Field investigation steps', 'Done during the field investigation, including first treatment and isolation. Tick "Can be assigned to CHP/field worker" for steps a CHP, CHA or health worker carries out and reports back on.Tick "Show to CHP/Community reporters" for immediate actions/advise shown to CHP, CHA or health worker when reporting.')}
       {show('Response') && phaseSection('Response', 'Response steps', 'Open after the event is confirmed or escalated.')}
 
       <div className={only ? '' : 'fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-gray-100'}>

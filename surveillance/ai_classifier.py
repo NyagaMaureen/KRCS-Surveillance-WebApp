@@ -256,7 +256,8 @@ def get_report_candidates(report):
 		cands.append({"key": d["disease"], "name": labels["disease"].get(d["disease"], d["disease"]),
 			"source": "Case definition", "probability": None,
 			"why": _definition_why(d, symptoms, age, exposure, labels)})
-	for p in possible_matches(symptoms, age, exposure, defs, labels):
+	from surveillance.case_definitions import absent_of
+	for p in possible_matches(symptoms, age, exposure, defs, labels, absent_of(cr)):
 		key = p["defn"]["disease"]
 		cands.append({"key": key, "name": labels["disease"].get(key, key), "source": "Possible", "probability": None,
 			"why": {"for": p["found"], "against": [], "ask": p["ask"], "rulesOut": [], "record": None}})

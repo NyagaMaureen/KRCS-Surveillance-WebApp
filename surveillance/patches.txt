@@ -13,3 +13,6 @@ surveillance.patches.kb_governance_backfill
 surveillance.patches.kb_sync_authority
 surveillance.patches.kb_sync_scope_tokens
 surveillance.patches.kb_trusted_sources_seed
+surveillance.patches.roles_cleanup_2026_11_v2
+surveillance.patches.roles_rename_cdsc
+surveillance.patches.restore_service_roles

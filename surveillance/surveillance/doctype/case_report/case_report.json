@@ -16,6 +16,8 @@
   "affected_count",
   "symptoms",
   "symptom_tags",
+  "absent_symptoms",
+  "absent_symptom_tags",
   "severity",
   "additional_notes",
   "attachments",
@@ -109,6 +111,18 @@
    "fieldname": "symptom_tags",
    "fieldtype": "Small Text",
    "label": "Symptom Tags",
+   "read_only": 1
+  },
+  {
+   "fieldname": "absent_symptoms",
+   "fieldtype": "Small Text",
+   "label": "Signs checked and not present",
+   "description": "Signs the reporter was asked about and answered No (symptom IDs, JSON list). They rule out case definitions that need them."
+  },
+  {
+   "fieldname": "absent_symptom_tags",
+   "fieldtype": "Small Text",
+   "label": "Checked, not present",
    "read_only": 1
   },
   {
@@ -292,7 +306,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-04 11:00:00.000000",
+ "modified": "2026-11-09 16:30:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",
