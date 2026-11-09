@@ -180,6 +180,7 @@ export default function RecordHealthSignal() {
 
   useEffect(() => () => {
     photosRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl))
+    if (voiceRef.current) URL.revokeObjectURL(voiceRef.current.previewUrl)
   }, [])
 
   const subCountyLabel = useMemo(() => (subCounties.find((s) => s.name === form.sub_county) || {}).sub_county_name || '', [subCounties, form.sub_county])

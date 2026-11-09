@@ -62,7 +62,15 @@ function SupportingInfoItem({ item, onOpenImage, onRemove }) {
         </button>
       )}
       {item.attachment_type === 'Voice Note' && (
-        <audio controls preload="metadata" src={item.file} className="w-full max-w-full" />
+        <>
+          <audio controls preload="metadata" src={item.file} className="w-full max-w-full" />
+          {item.transcript_status === 'Done' && item.transcript && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-sm font-medium text-red-700 hover:underline">View transcript</summary>
+              <p className="mt-1 text-sm leading-6 text-gray-700 whitespace-pre-wrap">{item.transcript}</p>
+            </details>
+          )}
+        </>
       )}
       {item.attachment_type === 'Text Note' && (
         <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.text_content}</p>
@@ -368,6 +376,47 @@ export default function ReportDetail() {
                     )}
                   </div>
 
+                  {attachments.length > 0 && (
+                  <div className="pt-6 border-t border-gray-100 mb-8">
+                    <div className="text-xs font-medium text-gray-400 mb-2">Voice notes and photos</div>
+                    {attachments.length ? (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        
+                        {attachments.some((a) => a.attachment_type === 'Voice Note') && (
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1.5">Voice notes</div>
+                            <div className="flex flex-col gap-2 max-w-md">
+                              {attachments.filter((a) => a.attachment_type === 'Voice Note').map((item, i) => (
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {attachments.some((a) => a.attachment_type === 'Photo') && (
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1.5">Photos</div>
+                            <div className="flex flex-wrap gap-3">
+                              {attachments.filter((a) => a.attachment_type === 'Photo').map((item, i) => (
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {attachments.some((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note') && (
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1.5">Other</div>
+                            <div className="flex flex-wrap gap-3">
+                              {attachments.filter((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note').map((item, i) => (
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                  )}
+
                   <div className="pt-6 border-t border-gray-100 mb-8">
                     <div className="text-xs font-medium text-gray-400 mb-2">Symptoms</div>
                     {symptomTags(report.symptom_tags).length ? (
@@ -476,45 +525,6 @@ export default function ReportDetail() {
                     <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-4 leading-relaxed">{report.additional_notes || 'No additional notes provided.'}</p>
                   </div>
 
-                  <div className="pt-6 border-t border-gray-100">
-                    <div className="text-xs font-medium text-gray-400 mb-2">Attachments</div>
-                    {attachments.length ? (
-                      <div className="space-y-4">
-                        {attachments.some((a) => a.attachment_type === 'Photo') && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1.5">Photos</div>
-                            <div className="flex flex-wrap gap-3">
-                              {attachments.filter((a) => a.attachment_type === 'Photo').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {attachments.some((a) => a.attachment_type === 'Voice Note') && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1.5">Voice notes</div>
-                            <div className="flex flex-col gap-2 max-w-md">
-                              {attachments.filter((a) => a.attachment_type === 'Voice Note').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {attachments.some((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note') && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1.5">Other</div>
-                            <div className="flex flex-wrap gap-3">
-                              {attachments.filter((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400">No attachments.</span>
-                    )}
-                  </div>
                 </>
               ) : (
                 <>

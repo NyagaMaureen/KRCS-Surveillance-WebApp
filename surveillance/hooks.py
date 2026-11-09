@@ -182,7 +182,7 @@ doc_events = {
 	},
 	"Case Report": {
 		"validate": "surveillance.case_report_rules.validate_complete",
-		"on_update": "surveillance.events.on_case_report",
+		"on_update": ["surveillance.events.on_case_report", "surveillance.transcription.on_case_report"],
 		"on_trash": "surveillance.events.on_case_report_trash",
 	},
 	# WhatsApp: staff are matched by User.mobile_no; lists come from these DocTypes
@@ -213,7 +213,8 @@ scheduler_events = {
 	"daily": ["surveillance.knowledge_base.retire_expired", "surveillance.knowledge_base.notify_upcoming_reviews", "surveillance.chatbot_log.purge_old_logs",
 		"surveillance.kb_ops.daily_reconcile", "surveillance.context.import_weather",
 		"surveillance.event_tasks.daily_reminders"],
-	"hourly_long": ["surveillance.cbs_feed.hourly", "surveillance.risk.refresh_open", "surveillance.push.check_receipts"],
+	"hourly_long": ["surveillance.cbs_feed.hourly", "surveillance.risk.refresh_open", "surveillance.push.check_receipts",
+		"surveillance.transcription.retry_failed"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }
 # scheduler_events = {

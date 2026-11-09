@@ -64,6 +64,9 @@ def add_report_update(report, note, attachments=None, client_ref=None, channel=N
 	_insert_child("Case Report Update", cr.name, "updates", {"at": now_datetime(), "user": frappe.session.user,
 		"note": (note or f"{len(rows)} attachment(s) added")[:2000], "channel": (channel or "")[:40] or None, "client_ref": ref})
 	_on_event(cr.name, note, len(rows))
+	if any(r["attachment_type"] == "Voice Note" for r in rows):
+		from surveillance.transcription import queue_report
+		queue_report(cr.name)   # voice notes added in an update are transcribed in the background too
 	return {"name": cr.name, "updates": _updates(cr.name), "duplicate": False}
 
 

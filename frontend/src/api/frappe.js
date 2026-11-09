@@ -1005,6 +1005,9 @@ export async function getReviewEvents(params = {}) {
   return callMethod(`/api/method/surveillance.events.get_events?${qs}`)
 }
 
+// Voice-note text: ask the AI server again for one voice note (surveillance.transcription)
+export const retryTranscription = (name) => callMethodPost('/api/method/surveillance.transcription.retry', { name })
+
 export async function getReviewEvent(id) {
   return callMethod('/api/method/surveillance.events.get_event?event=' + encodeURIComponent(id))
 }

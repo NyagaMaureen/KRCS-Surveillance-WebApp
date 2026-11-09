@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye, Camera, Mic } from 'lucide-react'
+import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye, Camera } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties } from '../api/frappe'
@@ -44,6 +44,9 @@ export default function Reports() {
   const [reporterText, setReporterText] = useState('')
   const [reporterFilter, setReporterFilter] = useState('')
   const [subCounties, setSubCounties] = useState([])
+  // "Turkana West · Kalobeyei" on the first line, the block / village the reporter typed below it
+  const subCountyName = (id) => (subCounties.find((sc) => sc.name === id) || {}).sub_county_name || String(id || '').replace(/^[^-]+-/, '')
+  const placeLine = (r) => [subCountyName(r.sub_county), regions[r.region] || ''].filter(Boolean).join(' · ')
   const [totalCount, setTotalCount] = useState(0)
   const [reports, setReports] = useState([])
   const [counts, setCounts] = useState({ total: 0, submitted: 0, reviewed: 0, linked: 0 })
@@ -99,7 +102,7 @@ export default function Reports() {
     getCount('Case Report', filters).then(setTotalCount)
     const list = await getList(
       'Case Report',
-      ['name', 'reporter_name', 'symptom_tags', 'location_name', 'sub_county', 'channel', 'status', 'report_date', 'creation', 'age_group', 'animal_exposure', 'deaths_count', 'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with'],
+      ['name', 'reporter_name', 'symptom_tags', 'location_name', 'sub_county', 'region', 'channel', 'status', 'report_date', 'creation', 'age_group', 'animal_exposure', 'deaths_count', 'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with'],
       { limit: pageSize, start: p * pageSize, orderBy: 'creation desc', filters }
     )
     setReports(list)
@@ -226,12 +229,11 @@ export default function Reports() {
                 <span className="text-sm font-semibold text-gray-900 inline-flex items-center gap-1.5">
                   <span className="text-gray-400 font-normal tabular-nums">{page * pageSize + i + 1}.</span> {r.name}
                   {mediaByReport[r.name]?.photo && <Camera className="w-3.5 h-3.5 text-gray-400" aria-label="Has photo" />}
-                  {mediaByReport[r.name]?.voice && <Mic className="w-3.5 h-3.5 text-gray-400" aria-label="Has voice note" />}
                 </span>
                 <span className={['text-xs font-medium px-2 py-1 rounded-full shrink-0', statusColor(r.status)].join(' ')}>{r.status}</span>
               </div>
               <div className="mt-1 text-sm text-gray-700">{diseaseName(r.suspected_disease)}</div>
-              <div className="mt-0.5 text-xs text-gray-500">{[r.location_name, r.sub_county].filter(Boolean).join(', ') || '—'}</div>
+              <div className="mt-0.5 text-xs text-gray-500">{[placeLine(r), r.location_name].filter(Boolean).join(' · ') || '—'}</div>
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <span className={['text-xs font-medium px-2 py-0.5 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span>
                 {!isChp && r.reporter_name && <span className="text-xs text-gray-500">{r.reporter_name}</span>}
@@ -265,7 +267,6 @@ export default function Reports() {
                     <span className="inline-flex items-center gap-1.5">
                       {r.name}
                       {mediaByReport[r.name]?.photo && <Camera className="w-3.5 h-3.5 text-gray-400" aria-label="Has photo" />}
-                      {mediaByReport[r.name]?.voice && <Mic className="w-3.5 h-3.5 text-gray-400" aria-label="Has voice note" />}
                     </span>
                   </td>
                   {!isChp && <td className="px-5 py-3 text-gray-700">{r.reporter_name}</td>}
@@ -278,8 +279,8 @@ export default function Reports() {
                     )}
                   </td>
                   <td className="px-5 py-3 text-gray-700">
-                    {r.location_name || r.sub_county || '—'}
-                    {r.location_name && r.sub_county && <span className="block text-xs text-gray-400">{r.sub_county}</span>}
+                    <span className="block">{placeLine(r) || r.location_name || '—'}</span>
+                    {placeLine(r) && r.location_name && <span className="block text-xs text-gray-400">{r.location_name}</span>}
                   </td>
                   <td className="px-5 py-3 text-gray-700">{diseaseName(r.suspected_disease)}</td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span></td>

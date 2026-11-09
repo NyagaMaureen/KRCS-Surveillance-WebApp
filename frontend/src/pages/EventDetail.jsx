@@ -16,7 +16,7 @@ import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
   getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
   setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext, mergeEvents, getCbsContact, getTrendCbsReports,
-  getReportCandidates, getDiseaseOptions, setSuspectedDisease,
+  getReportCandidates, getDiseaseOptions, setSuspectedDisease, retryTranscription,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import ConsentQuestion, { consentOk, consentFields } from '../components/report/ConsentQuestion'
@@ -392,6 +392,107 @@ function EventDiseaseDecision({ reports, onDecided, onError }) {
   )
 }
 
+// Photos and voice notes sent with a field report. Voice notes are transcribed on the AI server in the background as
+// soon as the report arrives; if the page opens before that finishes, it checks again every 20 seconds (up to 5 minutes).
+const LANG = { en: 'English', sw: 'Kiswahili' }
+
+function VoiceTranscript({ m, canAct, retrying, onRetry }) {
+  const [open, setOpen] = useState(false)
+  if (m.transcriptStatus === 'Done' && m.transcript) {
+    return (
+      <div className="mt-2">
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className={`text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+          {open ? 'Hide transcript' : 'View transcript'}
+        </button>
+        {open && (
+          <div className="mt-2 rounded-lg bg-white px-3 py-2 text-sm leading-6 text-gray-800">
+            <p className="whitespace-pre-wrap">{m.transcript}</p>
+            <p className="mt-1 text-xs text-gray-400">Transcribed automatically{LANG[m.language] ? ` from ${LANG[m.language]}` : ''}. Check names and numbers against the recording.</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+  if (m.transcriptStatus === 'No speech') return <p className="mt-2 text-xs text-gray-500">No speech was heard in this recording.</p>
+  if (m.transcriptStatus === 'Failed') {
+    return (
+      <p className="mt-2 text-xs text-gray-500">
+        Transcript unavailable.
+        {canAct && (
+          <button type="button" disabled={retrying} onClick={onRetry} className={`ml-2 font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+            {retrying ? 'Trying…' : 'Try again'}
+          </button>
+        )}
+      </p>
+    )
+  }
+  return null   // still being transcribed: the link appears by itself when the text is ready
+}
+
+function SignalMedia({ eventId, signalId, media, canAct }) {
+  const [items, setItems] = useState(media || [])
+  const [viewing, setViewing] = useState(null)
+  const [retrying, setRetrying] = useState('')
+  useEffect(() => { setItems(media || []) }, [media])
+  const waiting = items.some((m) => m.type === 'Voice Note' && m.transcriptStatus === 'Queued')
+  useEffect(() => {
+    if (!waiting) return undefined
+    let tries = 0
+    const t = setInterval(async () => {
+      tries += 1
+      try {
+        const ev = await getReviewEvent(eventId)
+        const sig = (ev.signals || []).find((x) => x.id === signalId)
+        if (sig?.media) setItems(sig.media)
+      } catch { /* try again next time */ }
+      if (tries >= 15) clearInterval(t)
+    }, 20000)
+    return () => clearInterval(t)
+  }, [waiting, eventId, signalId])
+
+  async function retry(m) {
+    setRetrying(m.id)
+    try {
+      await retryTranscription(m.id)
+      setItems((prev) => prev.map((x) => (x.id === m.id ? { ...x, transcriptStatus: 'Queued' } : x)))
+    } catch { /* the button stays */ }
+    setRetrying('')
+  }
+
+  const photos = items.filter((m) => m.type === 'Photo')
+  const voices = items.filter((m) => m.type === 'Voice Note')
+  if (!photos.length && !voices.length) return null
+  return (
+    <div className="space-y-3">
+      {voices.map((m, i) => (
+        <div key={m.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+          <div className="mb-2 text-xs font-medium text-gray-500">Voice note{voices.length > 1 ? ` ${i + 1}` : ''}</div>
+          <audio controls preload="metadata" src={m.url} className="w-full max-w-md" aria-label="Voice note" />
+          <VoiceTranscript m={m} canAct={canAct} retrying={retrying === m.id} onRetry={() => retry(m)} />
+        </div>
+      ))}
+      {photos.length > 0 && (
+        <div>
+          <div className="mb-2 text-xs font-medium text-gray-500">{photos.length === 1 ? 'Photo' : `${photos.length} photos`}</div>
+          <div className="flex flex-wrap gap-2">
+            {photos.map((m) => (
+              <button key={m.id} type="button" onClick={() => setViewing(m)} className={`overflow-hidden rounded-lg border border-gray-100 ${FOCUS}`} aria-label="Open photo">
+                <img src={m.url} alt="Photo sent with the report" loading="lazy" className="h-24 w-24 object-cover sm:h-28 sm:w-28" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {viewing && (
+        <div role="dialog" aria-modal="true" aria-label="Photo" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setViewing(null)}>
+          <img src={viewing.url} alt="Photo sent with the report" className="max-h-[85vh] max-w-full rounded-lg bg-white object-contain" />
+          <button type="button" onClick={() => setViewing(null)} className={`absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-gray-800 ${FOCUS}`}>Close</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, onDiscard }) {
   const [showAll, setShowAll] = useState(false)
   const [discarding, setDiscarding] = useState(false)
@@ -433,6 +534,13 @@ function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, on
                       <ReporterContact signal={s} canAct={canAct} />
                     </td>
                   </tr>
+                  {(s.media || []).length > 0 && (
+                    <tr className="align-top">
+                      <td colSpan={3} className="px-3 pb-4">
+                        <SignalMedia eventId={event.id} signalId={s.id} media={s.media} canAct={canAct} />
+                      </td>
+                    </tr>
+                  )}
                   </Fragment>
                 ))}
               </tbody>

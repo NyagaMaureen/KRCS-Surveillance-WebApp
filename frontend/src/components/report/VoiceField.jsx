@@ -25,7 +25,7 @@ export default function VoiceField({ voice, setVoice, onRetry }) {
       recorderRef.current.stop()
     }
     streamRef.current && streamRef.current.getTracks().forEach((t) => t.stop())
-    if (voiceRef.current) URL.revokeObjectURL(voiceRef.current.previewUrl)
+    // the recording stays playable on the Review step: the report form releases it when it closes
   }, [])
 
   function replaceVoice(next) {

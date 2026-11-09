@@ -551,12 +551,25 @@ def _signal_shape(s, can_act):
 			"by": frappe.utils.get_fullname(s.checked_by) if s.checked_by else None,
 			"on": str(s.checked_on) if s.checked_on else None},
 		"reporter": None}
+	if s.source == "Field" and s.ref:
+		out["media"] = _report_media(s.ref)
 	if s.source == "Field" and can_act and frappe.db.exists("Case Report", s.ref):
 		cr = frappe.db.get_value("Case Report", s.ref, ["reporter_name", "phone_number", "reported_by"], as_dict=True)
 		phone = cr.phone_number or (frappe.db.get_value("User", cr.reported_by, "mobile_no") if cr.reported_by else None)
 		out["reporter"] = {"name": cr.reporter_name or (frappe.utils.get_fullname(cr.reported_by) if cr.reported_by else None),
 			"phone": phone or None}
 	return out
+
+
+def _report_media(report):
+	"""Photos and voice notes on a field report (and its updates), with the voice-note text, for the Signal step."""
+	rows = frappe.get_all("Case Report Attachment", filters={"parent": report, "parenttype": "Case Report",
+		"attachment_type": ["in", ["Photo", "Voice Note"]], "file": ["is", "set"]},
+		fields=["name", "attachment_type", "file", "transcript", "transcript_status", "transcript_language", "creation"],
+		order_by="idx asc")
+	return [{"id": r.name, "type": r.attachment_type, "url": r.file, "transcript": r.transcript,
+		"transcriptStatus": r.transcript_status or None, "language": r.transcript_language, "added": str(r.creation)}
+		for r in rows]
 
 
 FIELDS = ["name", "title", "disease", "disease_name", "priority", "severity", "status", "county", "sub_county",
