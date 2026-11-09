@@ -62,7 +62,7 @@ export default function KbAnswer({ result, onFeedback }) {
     verbatim: 'KRCS approved guidance',
     summary: 'KRCS approved guidance · summary checked against the documents',
     public: 'KRCS approved guidance',
-    trusted_source: `Published research · ${externalNames.join(', ') || 'trusted source'}`,
+    trusted_source: `${externalNames.length && externalNames.every((n) => n === 'PubMed') ? 'Published research' : 'Trusted source'} · ${externalNames.join(', ') || 'external'}`,
   }
 
   function jump(n) {

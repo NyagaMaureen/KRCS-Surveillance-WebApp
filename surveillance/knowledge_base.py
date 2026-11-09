@@ -52,7 +52,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, getdate, now_datetime, today
 
-from surveillance import kb_access, kb_grounding, kb_ops, kb_safety, kb_trusted
+from surveillance import kb_access, kb_claude, kb_grounding, kb_ops, kb_safety, kb_trusted
 from surveillance.capabilities import has_capability, require_capability
 from surveillance.kb_access import KBAccessDenied  # noqa: F401  (re-exported for callers and tests)
 
@@ -1373,9 +1373,11 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 			"escalated": bool(escalate), "escalated_to": contact, "reason": reason or reply_mode,
 			"log_id": audit.name, "correlation_id": audit.correlation_id}
 
+	level = kb_grounding.level_of(query, frappe.get_roles())
+
 	def no_match(trace, reason):
 		# approved KRCS documents did not answer: try the trusted external sources (kb_trusted), clearly labelled
-		ext = kb_trusted.lookup(query, language, detected)
+		ext = kb_trusted.lookup(query, language, detected, level)
 		if ext:
 			return finish(ext["answer"], "trusted_source", ext["sources"], [s["n"] for s in ext["sources"]], trace,
 				reason=f"{reason}|trusted:{','.join(ext['names'])}", outcome="Escalated", escalate=True)
@@ -1406,7 +1408,6 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 		return finish(answer, "conflict", [], [], trace, reason=f"conflict:{unresolved[0]}|{unresolved[1]}",
 			outcome="Conflict", escalate=True)
 	sources = [_source(i, rs, d, p, t) for i, ((rs, p), d) in enumerate(scored, 1)]
-	level = kb_grounding.level_of(query, frappe.get_roles())
 	if level:
 		# "as a CHP ..." or a community health user: the community-level steps, not the county ones
 		for src in sources:
@@ -1426,24 +1427,36 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 		answer, used = kb_grounding.verbatim(sources, language)
 		return finish(answer, "verbatim", sources, used, trace, reason=reason or extra.get("reason"), **log)
 
-	if mode == "verbatim" or not summary_allowed(ctx) or not cint(_conf("kb_generation_enabled", 1)):
+	# who writes answers: Claude when an API key is set, otherwise the local model when switched on, otherwise nobody
+	# (the approved text is quoted as it is)
+	use_claude = kb_claude.enabled()
+	if mode == "verbatim" or not summary_allowed(ctx) or not (use_claude or cint(_conf("kb_generation_enabled", 1))):
 		return give_verbatim()
 
 	# summary: generated, then checked against the passages before anyone sees it
-	llm_sources = [s for s, p in zip(sources, [x[0][1] for x in scored]) if not p.payload.get("injection_suspect")]
-	if not llm_sources:
+	pairs = [(src, x[0][1]) for src, x in zip(sources, scored) if not x[0][1].payload.get("injection_suspect")]
+	if not pairs:
 		return give_verbatim("injection_suspect_only")
-	llm_points = [x[0][1] for x in scored if not x[0][1].payload.get("injection_suspect")]
+	llm_sources = [src for src, _ in pairs]
+	# the model sees exactly the text the user would see (already narrowed to the asker's level)
+	llm_points = [SimpleNamespace(id=pt.id, payload={**pt.payload, "text": src["text"]}) for src, pt in pairs]
 	renumber = {i: s["n"] for i, s in enumerate(llm_sources, 1)}
-	messages = [{"role": "system", "content": SYSTEM_PROMPT.format(language=language)}, *hist,
-		{"role": "user", "content": f"{kb_grounding.wrap_sources(llm_points)}\n\nQuestion: {query}"}]
+	who = {"community": "\nThe person asking works at community level (community health promoter/volunteer).",
+		"facility": "\nThe person asking works at facility, sub-county or county level."}.get(level, "")
+	system = SYSTEM_PROMPT.format(language=language)
+	messages = [{"role": "system", "content": system}, *hist,
+		{"role": "user", "content": f"{kb_grounding.wrap_sources(llm_points)}\n\nQuestion: {query}{who}"}]
 	push({"status": "checking"})
 	try:
-		# streamed from Ollama (the read timeout then applies per token, not to the whole answer) but collected
-		# here: nothing reaches the user until the check below passes
-		raw = _llm_chat(messages, on_token=lambda tok: None).strip()
+		if use_claude:
+			raw = kb_claude.write_answer(system, messages[1:]).strip()
+		else:
+			# streamed from Ollama (the read timeout then applies per token, not to the whole answer) but collected
+			# here: nothing reaches the user until the check below passes
+			raw = _llm_chat(messages, on_token=lambda tok: None).strip()
 	except Exception as e:
-		frappe.log_error(title="Knowledge Base: LLM unavailable, returned passages only")
+		frappe.log_error(title="Knowledge Base: answer model unavailable, returned passages only",
+			message=f"{'Claude' if use_claude else 'local model'}: {e}"[:300])
 		return give_verbatim("llm_unavailable", error=f"LLM: {e}"[:300])
 	if "NOT_IN_SOURCES" in raw:
 		return no_match(trace, "model_not_in_sources")

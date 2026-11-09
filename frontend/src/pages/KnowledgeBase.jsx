@@ -969,7 +969,9 @@ function HealthPanel() {
       <div className="bg-white rounded-2xl border border-gray-100 p-5">
         <h3 className="text-sm font-semibold text-gray-900 mb-2">Models and licences</h3>
         {Object.entries(data.models || {}).map(([k, m]) => row(k, `${m.model} · ${m.licence}`, m.approved_for_use))}
-        {row('Answer model', data.llm?.reachable ? (data.llm.pulled ? 'Ready' : 'Not downloaded') : 'Unreachable', !!data.llm?.reachable)}
+        {data.claude?.enabled
+          ? row('Answer model', `Claude · ${data.claude.model} (also searches trusted sources)`)
+          : row('Answer model', data.llm?.reachable ? (data.llm.pulled ? 'Ready' : 'Not downloaded') : 'Off · answers quote the approved text', !!data.llm?.reachable)}
         {row('Retrieval config', <code className="text-xs">{data.retrieval_config}</code>)}
         {row('Access policy', data.access_policy)}
       </div>

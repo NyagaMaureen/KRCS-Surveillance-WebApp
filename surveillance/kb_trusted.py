@@ -169,10 +169,21 @@ def _pubmed(source, query, detected):
 	return out[:MAX_RESULTS]
 
 
-def lookup(query, language="English", detected=None):
-	"""Answer from enabled trusted sources, or None. Never raises: on any error the caller falls back to no-match."""
+def lookup(query, language="English", detected=None, level=None):
+	"""Answer from enabled trusted sources, or None. Never raises: on any error the caller falls back to no-match.
+	With a Claude API key: Claude searches all enabled websites (WHO, PubMed, ...). Without one, or if that finds
+	nothing: PubMed's own search for sources of type PubMed."""
 	if not cint(frappe.conf.get("kb_trusted_lookup", 1)) or not frappe.db.exists("DocType", DOCTYPE):
 		return None
+	from surveillance import kb_claude
+	if kb_claude.enabled():
+		trusted = frappe.get_all(DOCTYPE, filters={"enabled": 1}, fields=["source_name", "website"])
+		try:
+			found = kb_claude.web_answer(query, trusted, language, level)
+			if found:
+				return found
+		except Exception as e:
+			frappe.log_error(title="Knowledge Base: Claude web search failed, using PubMed search", message=str(e)[:300])
 	found = []
 	for s in frappe.get_all(DOCTYPE, filters={"enabled": 1, "kind": "PubMed"}, fields=["source_name", "website"]):
 		try:

@@ -203,6 +203,10 @@ def health():
 		"llm": kb._conf("kb_llm_model", kb.DEFAULT_LLM),
 	}
 	out["models"] = {k: _licence(v) for k, v in models.items()}
+	from surveillance import kb_claude
+	out["claude"] = {"enabled": kb_claude.enabled(), "model": kb_claude.model() if kb_claude.enabled() else None}
+	if kb_claude.enabled():
+		out["models"]["llm"] = {"model": kb_claude.model(), "licence": "Anthropic API (paid service)", "approved_for_use": True}
 	out["search_service"] = kb.search_service_status()
 	try:
 		out["llm"] = kb.llm_status()
