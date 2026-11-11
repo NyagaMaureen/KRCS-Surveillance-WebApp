@@ -21,7 +21,7 @@ import Investigations from '../pages/Investigations'
 import Response from '../pages/Response'
 import ResponseProtocols from '../pages/ResponseProtocols'
 import EventLifecycle from '../pages/EventLifecycle'
-import AlertsSignals from '../pages/AlertsSignals'
+import EpiTrends from '../pages/EpiTrends'
 import AlertDetail from '../pages/AlertDetail'
 import AlertsSignalsQueue from '../pages/AlertsSignalsQueue'
 import EventDetail from '../pages/EventDetail'
@@ -56,7 +56,7 @@ const rawRoutes = [
   { path: '/response', name: 'response', element: Response },
   { path: '/response-protocols', name: 'response-protocols', element: ResponseProtocols },
   { path: '/event-lifecycle', name: 'event-lifecycle', element: EventLifecycle },
-  { path: '/epi-trends', name: 'epi-trends', element: AlertsSignals },
+  { path: '/epi-trends', name: 'epi-trends', element: EpiTrends },
   { path: '/epi-trends/:id', name: 'alert-detail', element: AlertDetail },
   { path: '/alerts-signals', name: 'alerts-signals', element: AlertsSignalsQueue },
   { path: '/alerts-signals/:id', name: 'alerts-signals-detail', element: EventDetail },

@@ -627,6 +627,16 @@ export async function getSignalTrend() {
 export async function getPriorityAlertQueue() {
   return MOCK_PRIORITY_ALERT_QUEUE
 }
+// Epi Trends page: weekly cases per disease by source, usual level and flagged rises (surveillance/epi_trends.py)
+export async function getEpiTrends({ period = '12w', subCounty = '', disease = '', start = '', end = '' } = {}) {
+  const q = new URLSearchParams({ period })
+  if (subCounty) q.set('sub_county', subCounty)
+  if (disease) q.set('disease', disease)
+  if (start) q.set('start', start)
+  if (end) q.set('end', end)
+  return callMethod(`/api/method/surveillance.epi_trends.get_trends?${q}`)
+}
+
 export async function getAlertsSignals(opts = {}) {
   return (await callMethod(`/api/method/surveillance.alerts.get_alerts?limit=${opts.limit || 500}`)) || []
 }

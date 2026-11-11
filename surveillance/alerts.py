@@ -30,7 +30,7 @@ import frappe
 import pandas as pd
 import json
 from frappe import _
-from frappe.utils import add_days, get_fullname, getdate, now_datetime, today
+from frappe.utils import add_days, cint, get_fullname, getdate, now_datetime, today
 
 from surveillance.anomaly.engine import detect
 from surveillance.capabilities import has_capability, require_capability
@@ -204,15 +204,19 @@ def rebuild_case_report_counts():
 	"""Turn Case Reports into weekly counts (source = Case Report).
 	Reports with a suspected disease count under that disease. Reports without one count as
 	"unclassified-illness" (unless an officer marked them "Not a disease of concern"), so a
-	cluster of unexplained illness still raises an alert."""
+	cluster of unexplained illness still raises an alert. Reports discarded as a false alarm are left out."""
 	from surveillance.review import is_unclassified
 	subs = {s.name: s for s in frappe.get_all("Sub County", fields=["name", "county", "sub_county_name"])}
+	# reports discarded as a false alarm in the Review Queue are not counted
+	discarded_events = set(frappe.get_all("Surveillance Event", filters={"status": "Discarded"}, pluck="name"))
+	false_alarms = {s.ref for s in frappe.get_all("Surveillance Signal", filters={"source": "Field",
+		"event": ["in", list(discarded_events) or [""]]}, fields=["ref"], limit_page_length=0)}
 	rows = []
 	for r in frappe.get_all("Case Report", filters={"sub_county": ["is", "set"]},
-			fields=["suspected_disease", "review_outcome", "sub_county", "onset_date", "report_date", "creation",
+			fields=["name", "suspected_disease", "review_outcome", "sub_county", "onset_date", "report_date", "creation",
 				"affected_count", "deaths_count"]):
 		sc = subs.get(r.sub_county)
-		if not sc:
+		if not sc or r.name in false_alarms:
 			continue
 		if r.suspected_disease:
 			disease = r.suspected_disease
@@ -525,6 +529,84 @@ def get_alert_regions():
 	return sorted({c for c in frappe.get_all(DOCTYPE, pluck="county") if c})
 
 
+SOURCE_WORDS = {"Case Report": "field reports (Mobile, WhatsApp, Web)", "CBS": "community (CBS) signals",
+	"IDSR": "health facility reports (MOH 505)", "EMR": "health facility records (EMR)"}
+
+
+CHANNEL_WORDS = {"Mobile": "the Mobile app", "WhatsApp": "WhatsApp", "Web": "the Web app", "SMS": "SMS", "USSD": "USSD"}
+
+
+def _field_channels(d, wk):
+	"""The channels the field reports behind this rise came in on, e.g. 'the Web app' or 'the Mobile app and WhatsApp'."""
+	subs = frappe.get_all("Sub County", filters={"sub_county_name": d.sub_county}, pluck="name")
+	if not subs:
+		return "field reports"
+	found = set()
+	for r in frappe.get_all("Case Report", filters={"suspected_disease": d.disease, "sub_county": ["in", subs],
+			"creation": [">=", add_days(wk, -90)]}, fields=["channel", "onset_date", "report_date", "creation"]):
+		if week_start(r.onset_date or r.report_date or r.creation) == getdate(wk):
+			found.add(CHANNEL_WORDS.get(r.channel or "", r.channel or "the Web app"))
+	if not found:
+		return "field reports"
+	names = sorted(found)
+	return " and ".join(names) if len(names) <= 2 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _reasons(d):
+	"""Why the engine flagged this rise, each reason with its numbers, in plain words (rise page).
+	Built from the engine's own record of the latest flagged week, per source:
+	'<source>: N case(s) in week of YYYY-MM-DD; usual U/week; at/above alert threshold (T); R.Rx the usual level ...'"""
+	import re
+	thr = cint(frappe.db.get_value("Alert Threshold Config", d.disease, "threshold") or 1)
+	mult = _multiplier()
+	rules = {r for r in (d.rules or "").split(",") if r}
+	out = []
+	for part in [p.strip() for p in (d.explanation or "").split("|") if p.strip()]:
+		src, _, text = part.partition(":")
+		src = src.strip()
+		unit = "report" if src in COMMUNITY_SOURCES else "case"
+		m = re.search(r"(\d+) case\(s\) in week of (\d{4}-\d{2}-\d{2})", text)
+		if not m:
+			continue
+		n, wk = int(m.group(1)), getdate(m.group(2))
+		where = _field_channels(d, wk) if src == "Case Report" else SOURCE_WORDS.get(src, src)
+		units = unit if n == 1 else unit + "s"
+		u = re.search(r"usual ([\d.]+)/week", text)
+		usual = float(u.group(1)) if u else None
+		when = epi_label(wk)
+		if "at/above alert threshold" in text:
+			t = re.search(r"threshold \((\d+)\)", text)
+			t = int(t.group(1)) if t else thr
+			out.append({"title": f"Reached the alert threshold of {t} a week",
+				"text": f"{n} {units} of {d.disease_name} in {when} from {where} in {d.sub_county}. KRCS set the alert "
+					f"threshold for {d.disease_name} at {t} a week, so any week with {t} or more is flagged."})
+		r = re.search(r"([\d.]+)x the usual level", text)
+		if r:
+			ratio = float(r.group(1))
+			base = usual if usual is not None else 0
+			out.append({"title": f"{ratio:.1f} times the usual level (flagged from {mult:g} times)",
+				"text": f"{n} {units} from {where} in {when}, when the usual for {d.sub_county} is {base:.1f} a week "
+					f"(the average of the 8 weeks before). A week of {mult:g} times the usual level or more, "
+					f"with at least 2 {unit}s, is flagged."})
+		if "statistically unusual rise" in text:
+			out.append({"title": "A sudden jump compared with recent weeks",
+				"text": f"{n} {units} from {where} in {when} is higher than the normal week-to-week ups and downs of the weeks just before "
+					"(the EARS early-warning check used by the US CDC). It only counts when the week is above the usual level."})
+		if "POSSIBLE REPORTING SURGE" in text:
+			out.append({"title": "Check reporting: several diseases rose together",
+				"text": f"Reports for several diseases rose at the same time in {d.sub_county}. That can mean more reporting "
+					"(e.g. a new CHP or a campaign) rather than more illness. Verify before acting."})
+		if "POSSIBLE DATA ENTRY ERROR" in text:
+			out.append({"title": "Check the number: possible data entry error",
+				"text": f"{n} is far above the usual level for this place. Confirm the number with the facility before acting."})
+	if not out:   # older rises without the engine's text: fall back to the rule names
+		names = {"threshold": f"Reached the alert threshold of {thr} a week",
+			"baseline": f"At least {mult:g} times the usual weekly level for this place",
+			"ears_c2": "A sudden jump compared with recent weeks", "ears_c3": "A sudden jump compared with recent weeks"}
+		out = [{"title": t, "text": ""} for t in dict.fromkeys(names[r] for r in rules if r in names)]
+	return out
+
+
 @frappe.whitelist()
 def get_alert(name):
 	require_capability("view_alerts")
@@ -541,7 +623,7 @@ def get_alert(name):
 	events = _related_events(doc)
 	shaped.update({"events": events, "openEvent": next((e["id"] for e in events if e["status"] in EVENT_OPEN), None),
 		"canInvestigate": has_capability("act_on_events"), "canReview": has_capability("investigate_alerts")})
-	shaped.update({"trend": _trend(doc), "timeline": _timeline(doc),
+	shaped.update({"reasons": _reasons(doc), "trend": _trend(doc), "timeline": _timeline(doc),
 		"firstDetected": str(doc.first_detected or ""), "lastDetected": str(doc.last_detected or "")})
 	return shaped
 
