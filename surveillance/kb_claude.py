@@ -127,7 +127,7 @@ def web_answer(question, trusted, language="English", level=None):
 		return None
 	tool = {"type": "web_search_20250305", "name": "web_search", "allowed_domains": domains,
 		"max_uses": max(1, cint(_conf("kb_web_max_searches", 3))),
-		"user_location": {"type": "approximate", "country": "KE", "timezone": "Africa/Nairobi"}}
+		}
 	system = WEB_SYSTEM.format(language=language, level=LEVEL_NOTE.get(level, LEVEL_NOTE[None]))
 	resp = _call(system, [{"role": "user", "content": question}], tools=[tool], max_tokens=1500)
 

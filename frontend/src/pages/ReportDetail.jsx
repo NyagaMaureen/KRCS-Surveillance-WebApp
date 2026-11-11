@@ -2,9 +2,10 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Trash2, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getReportCandidates, getReporterRole, getSubCounties, getRegions } from '../api/frappe'
+import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getReportCandidates, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
 import { parseReason } from '../components/risk/reasonParts'
 import DiseaseChoices from '../components/risk/DiseaseChoices'
+import VoicePicked from '../components/report/VoicePicked'
 import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
@@ -44,7 +45,7 @@ function fileNameFromUrl(url) {
   return (url || '').split('/').pop() || 'File'
 }
 
-function SupportingInfoItem({ item, onOpenImage, onRemove }) {
+function SupportingInfoItem({ item, onOpenImage, onRemove, picked }) {
   return (
     <div className="relative bg-gray-50 rounded-lg p-3">
       {onRemove && (
@@ -70,6 +71,7 @@ function SupportingInfoItem({ item, onOpenImage, onRemove }) {
               <p className="mt-1 text-sm leading-6 text-gray-700 whitespace-pre-wrap">{item.transcript}</p>
             </details>
           )}
+          {picked && <VoicePicked picked={picked} />}
         </>
       )}
       {item.attachment_type === 'Text Note' && (
@@ -285,6 +287,13 @@ export default function ReportDetail() {
     return () => { cancelled = true }
   }, [id])
 
+  // what was picked out of the voice notes (after they are transcribed)
+  const [voicePicked, setVoicePicked] = useState({})
+  useEffect(() => {
+    if (!report?.name || !(report.attachments || []).some((a) => a.attachment_type === 'Voice Note' && a.transcript_status === 'Done')) return
+    getVoicePicked(report.name).then(setVoicePicked).catch(() => setVoicePicked({}))
+  }, [report?.name, report?.attachments])
+
   useEffect(() => {
     getReferenceLabels().then((labels) => setRegionMap(labels.regions || {}))
     getDiseaseOptions().then(setDiseaseOptions)
@@ -361,7 +370,31 @@ export default function ReportDetail() {
                       <span className={['inline-block text-xs font-semibold px-2.5 py-1 rounded-full', channelColor(report.channel)].join(' ')}>{(report.channel || '—').toUpperCase()}</span>
                     </div>
                   </div>
-                                    <div className="mb-8 -mt-4 text-sm">
+                  <div className="mb-6 rounded-xl border border-red-100 bg-red-50/60 p-4">
+                    <div className="text-sm font-semibold text-gray-900 mb-2">Symptoms</div>
+                    {symptomTags(report.symptom_tags).length ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {symptomTags(report.symptom_tags).map((s) => (
+                          <span key={s} className="bg-white border border-red-200 text-red-800 text-sm font-semibold px-3 py-1 rounded-full">{s}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">
+                        {report.animal_exposure && report.animal_exposure !== 'None' ? 'No symptoms recorded' : '—'}
+                      </span>
+                    )}
+                    {report.absent_symptom_tags && (
+                      <p className="mt-2 text-sm text-gray-700"><span className="text-gray-500">Checked, not present:</span> {report.absent_symptom_tags}</p>
+                    )}
+                    {report.animal_exposure && report.animal_exposure !== 'None' && (
+                      <div className="flex justify-between border-t border-gray-100 mt-4 pt-3 text-sm">
+                        <span className="text-gray-400">Animal exposure</span>
+                        <span className="font-medium text-gray-900">{report.animal_exposure}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mb-8 text-sm">
                     {report.latitude != null && report.longitude != null && (Number(report.latitude) || Number(report.longitude)) ? (
                       <a
                         href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`}
@@ -376,30 +409,6 @@ export default function ReportDetail() {
                     )}
                   </div>
 
-                  <div className="pt-6 border-t border-gray-100 mb-8">
-                    <div className="text-xs font-medium text-gray-400 mb-2">Symptoms</div>
-                    {symptomTags(report.symptom_tags).length ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {symptomTags(report.symptom_tags).map((s) => (
-                          <span key={s} className="bg-gray-100 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full">{s}</span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400">
-                        {report.animal_exposure && report.animal_exposure !== 'None' ? 'No symptoms recorded' : '—'}
-                      </span>
-                    )}
-                    {report.absent_symptom_tags && (
-                      <p className="mt-2 text-xs text-gray-500">Checked, not present: {report.absent_symptom_tags}</p>
-                    )}
-                    {report.animal_exposure && report.animal_exposure !== 'None' && (
-                      <div className="flex justify-between border-t border-gray-100 mt-4 pt-3 text-sm">
-                        <span className="text-gray-400">Animal exposure</span>
-                        <span className="font-medium text-gray-900">{report.animal_exposure}</span>
-                      </div>
-                    )}
-                  </div>
-
                   {attachments.length > 0 && (
                   <div className="pt-6 border-t border-gray-100 mb-8">
                     <div className="text-xs font-medium text-gray-400 mb-2">Voice notes and photos</div>
@@ -411,7 +420,7 @@ export default function ReportDetail() {
                             <div className="text-xs text-gray-500 mb-1.5">Voice notes</div>
                             <div className="flex flex-col gap-2 max-w-md">
                               {attachments.filter((a) => a.attachment_type === 'Voice Note').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} />
                               ))}
                             </div>
                           </div>
@@ -421,7 +430,7 @@ export default function ReportDetail() {
                             <div className="text-xs text-gray-500 mb-1.5">Photos</div>
                             <div className="flex flex-wrap gap-3">
                               {attachments.filter((a) => a.attachment_type === 'Photo').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} />
                               ))}
                             </div>
                           </div>
@@ -431,7 +440,7 @@ export default function ReportDetail() {
                             <div className="text-xs text-gray-500 mb-1.5">Other</div>
                             <div className="flex flex-wrap gap-3">
                               {attachments.filter((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} />
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} />
                               ))}
                             </div>
                           </div>

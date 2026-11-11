@@ -2,16 +2,17 @@ import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from 'rea
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, AlertTriangle, Check, Link2, ShieldAlert, Sparkles, X, ExternalLink,
-  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Users, Building2, ChevronDown } from 'lucide-react'
+  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Users, Building2, ChevronDown, CheckCircle2, Info } from 'lucide-react'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { EventTasksProvider, EventTasksPanel, StepTaskLink, useStepTask, OpenTasksNotice } from '../components/tasks/EventTasks'
+import { EventTasksProvider, EventTasksPanel, StepTaskLink, useStepTask, OpenTasksNotice, useEventTasks } from '../components/tasks/EventTasks'
 import AppShell from '../components/layout/AppShell'
 import ContextPanel from '../components/context/ContextPanel'
 import { RiskAssessment } from '../components/risk/RiskScore'
 import DiseaseInsight from '../components/risk/DiseaseInsight'
 import DiseaseChoices from '../components/risk/DiseaseChoices'
+import VoicePicked from '../components/report/VoicePicked'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
   getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
@@ -410,6 +411,7 @@ function VoiceTranscript({ m, canAct, retrying, onRetry }) {
             <p className="mt-1 text-xs text-gray-400">Transcribed automatically{LANG[m.language] ? ` from ${LANG[m.language]}` : ''}. Check names and numbers against the recording.</p>
           </div>
         )}
+        <VoicePicked picked={m.picked} />
       </div>
     )
   }
@@ -1712,6 +1714,51 @@ function ReporterContact({ signal: s, canAct }) {
   )
 }
 
+// The result of an officer's disease decision, kept on the page until closed (a toast disappears too quickly to read).
+// When the report leaves the Review Queue it is resolved without an investigation, so the officer is offered a
+// follow-up task (e.g. a CHP checks on the patient) right here.
+const NOTICE_TONE = {
+  resolved: 'border-green-200 bg-green-50 text-green-900',
+  info: 'border-blue-200 bg-blue-50 text-blue-900',
+}
+
+function DecisionNotice({ notice, onClose }) {
+  const tasks = useEventTasks()
+  const ref = useRef(null)
+  useEffect(() => { ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [notice])
+  if (!notice) return null
+  const Icon = notice.tone === 'resolved' ? CheckCircle2 : Info
+  return (
+    <div ref={ref} role="status" className={`mb-4 rounded-xl border px-4 py-3 ${NOTICE_TONE[notice.tone] || NOTICE_TONE.info}`}>
+      <div className="flex items-start gap-3">
+        <Icon className="w-5 h-5 mt-0.5 shrink-0" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">{notice.title}</p>
+          {notice.body && <p className="mt-0.5 text-sm opacity-90">{notice.body}</p>}
+          {notice.tone === 'resolved' && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {tasks?.canAssign && (
+                <button
+                  type="button"
+                  onClick={() => tasks.openAssign({ type: 'Follow-up', title: `Follow up ${notice.ref}: ${notice.name}` })}
+                  className={`${BTN} ${PRIMARY} ${FOCUS} !px-4 !py-2`}
+                >
+                  Assign a follow-up task
+                </button>
+              )}
+              <Link to="/epi-trends" className={`text-sm font-semibold underline-offset-2 hover:underline rounded ${FOCUS}`}>Open Epi Trends</Link>
+              <Link to="/alerts-signals" className={`text-sm font-semibold underline-offset-2 hover:underline rounded ${FOCUS}`}>Back to the Review Queue</Link>
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={onClose} aria-label="Close" className={`shrink-0 rounded p-1 opacity-70 hover:opacity-100 ${FOCUS}`}>
+          <X className="w-4 h-4" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function EventDetail() {
   const { id } = useParams()
   const location = useLocation()
@@ -1733,6 +1780,7 @@ export default function EventDetail() {
   const [note, setNote] = useState('')
   const [savingNote, setSavingNote] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '', error: false })
+  const [notice, setNotice] = useState(null)
   const toastTimer = useRef(null)
   const panelRef = useRef(null)
   const scrollNext = useRef(false)
@@ -1744,7 +1792,7 @@ export default function EventDetail() {
   const [reasonOpen, setReasonOpen] = useState(false)
   const [contextSummary, setContextSummary] = useState(null)
 
-  const showToast = useCallback((message, isError = false, ms = 3000) => {
+  const showToast = useCallback((message, isError = false, ms = isError ? 10000 : 6000) => {
     setToast({ show: true, message, error: isError })
     clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), ms)
@@ -1779,6 +1827,7 @@ export default function EventDetail() {
   useEffect(() => {
     setEvent(null)
     setInv(null)
+    setNotice(null)
     setOpenStep(Number(new URLSearchParams(window.location.search).get('step')) || null)
     return load()
   }, [load])
@@ -1795,19 +1844,20 @@ export default function EventDetail() {
   const handleDiseaseDecided = useCallback((r, ref) => {
     const name = r.suspected_disease_name || 'the case definition'
     if (r.event && r.event !== id) {
-      showToast(`${ref}: ${name}. Moved to ${r.event}.`, false, 5000)
+      showToast(`${ref}: ${name}. Moved to ${r.event}.`, false, 8000)
       navigate(`/alerts-signals/${encodeURIComponent(r.event)}`)
-    } else if (!r.event) {
-      showToast(`${ref}: ${name}. Not a Review Queue disease, so it left this event and is followed in Epi Trends.`, false, 7000)
-      if ((event?.signals || []).length <= 1) navigate('/alerts-signals')
-      else refreshEvent()
-    } else if (r.suspected_disease && event && r.suspected_disease !== event.disease) {
-      showToast(`${ref}: ${name}. This event now continues as ${name}; questions that differ were reset.`, false, 6000)
-      refreshEvent()
-    } else {
-      showToast(`${ref}: ${name} confirmed.`)
-      refreshEvent()
+      return
     }
+    if (!r.event) {
+      const last = (event?.signals || []).length <= 1
+      setNotice({ tone: 'resolved', ref, name, title: `Resolved: ${ref} is ${name}`,
+        body: `${name} is not investigated case by case, so ${last ? 'this event is closed' : 'this report left the event'} without verification or investigation. It is followed in Epi Trends, where a rise in cases raises an alert. The sub-county team was emailed. If someone should check on the patient, assign a follow-up task.` })
+    } else if (r.suspected_disease && event && r.suspected_disease !== event.disease) {
+      setNotice({ tone: 'info', title: `${ref}: ${name}`, body: `This event now continues as ${name}. The risk score was updated, and questions that differ were reset.` })
+    } else {
+      setNotice({ tone: 'info', title: `${ref}: ${name} confirmed`, body: 'The risk score was updated.' })
+    }
+    refreshEvent()
   }, [id, event, navigate, refreshEvent, showToast])
 
   const stepInfo = useMemo(() => (event && inv ? computeSteps(event, inv) : null), [event, inv])
@@ -2227,6 +2277,8 @@ export default function EventDetail() {
           <EventTasksProvider eventId={event.id} eventStatus={event.status} onChanged={refreshEvent} onToast={showToast}>
             <Tracker event={event} states={stepInfo.states} openStep={shown} onSelect={selectStep} />
 
+            <DecisionNotice notice={notice} onClose={() => setNotice(null)} />
+
             <div ref={panelRef} className="scroll-mt-4">{renderPanel()}</div>
 
             <EventTasksPanel />
@@ -2304,10 +2356,16 @@ export default function EventDetail() {
 
       {toast.show && (
         <div
-          role="status"
-          className={`fixed bottom-6 right-6 z-[70] rounded-xl px-5 py-3 text-sm text-white shadow-lg ${toast.error ? 'bg-red-600' : 'bg-gray-900'}`}
+          role={toast.error ? 'alert' : 'status'}
+          className={`fixed bottom-6 right-6 z-[70] max-w-sm flex items-start gap-3 rounded-xl border border-l-4 bg-white px-4 py-3 text-sm text-gray-800 shadow-lg ${toast.error ? 'border-red-200 border-l-red-600' : 'border-gray-200 border-l-green-600'}`}
         >
-          {toast.message}
+          {toast.error
+            ? <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-600" aria-hidden="true" />
+            : <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-green-600" aria-hidden="true" />}
+          <span className="flex-1">{toast.message}</span>
+          <button type="button" onClick={() => setToast((t) => ({ ...t, show: false }))} aria-label="Close" className={`shrink-0 rounded text-gray-400 hover:text-gray-700 ${FOCUS}`}>
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
         </div>
       )}
     </AppShell>

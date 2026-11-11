@@ -59,7 +59,7 @@ export default function Reports() {
   const [mediaByReport, setMediaByReport] = useState({})
 
   const diseaseMap = useMemo(() => Object.fromEntries(diseaseOptions.map((d) => [d.key, d.name])), [diseaseOptions])
-  const diseaseName = (key) => diseaseMap[key] || '—'
+  const diseaseName = (key) => (key ? diseaseMap[key] || key : 'Unclassified illness')   // same wording as alerts and the reporter's screen
 
   const visibleReports = useMemo(() => {
     const q = search.trim().toLowerCase()

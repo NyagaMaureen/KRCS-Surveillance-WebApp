@@ -230,7 +230,7 @@ MODEL_TO_DISEASE = {
 }
 UNDER_FIVE = {"Under 1", "1-4 years"}
 MIN_MODEL_SHARE = 0.10   # a model suggestion below 10% is not worth an officer's time
-SHOW_CANDIDATES = 3      # cards shown; the rest are listed by name
+SHOW_CANDIDATES = 6   # cards shown (everything the reporter was asked about); the rest are listed by name
 
 
 @frappe.whitelist()
@@ -257,10 +257,17 @@ def get_report_candidates(report):
 			"source": "Case definition", "probability": None,
 			"why": _definition_why(d, symptoms, age, exposure, labels)})
 	from surveillance.case_definitions import absent_of
-	for p in possible_matches(symptoms, age, exposure, defs, labels, absent_of(cr)):
+	unlikely = []
+	for p in possible_matches(symptoms, age, exposure, defs, labels, absent_of(cr), include_ruled_out=True):
 		key = p["defn"]["disease"]
-		cands.append({"key": key, "name": labels["disease"].get(key, key), "source": "Possible", "probability": None,
-			"why": {"for": p["found"], "against": [], "ask": p["ask"], "rulesOut": [], "record": None}})
+		c = {"key": key, "name": labels["disease"].get(key, key), "source": "Possible", "probability": None,
+			"why": {"for": p["found"], "against": [f"reporter said no to {x.lower()}" for x in p["ruled_out"]],
+				"ask": [] if p["ruled_out"] else p["ask"], "rulesOut": [], "record": None}}
+		if p["ruled_out"]:
+			c["unlikely"] = True   # a sign it needs was checked and is not there: listed last, still choosable
+			unlikely.append(c)
+		else:
+			cands.append(c)
 
 	answers, error = _answers([cr], [case])
 	tops = _tops(answers[0], 6)
@@ -280,20 +287,50 @@ def get_report_candidates(report):
 						c["probability"] = t["probability"]
 		elif not key and t["probability"] >= MIN_MODEL_SHARE:
 			others.append({"disease": t["disease"], "probability": t["probability"], "why": _model_why(t, known)})
+	# signs the reporter already answered No to: not asked again; where the model wanted them, they count against
+	checked_no = sorted(labels["symptom"].get(i, i) for i in absent_of(cr))
+	if checked_no:
+		for c in cands + others:
+			why = c.get("why") or {}
+			said_no = [a for a in (why.get("ask") or []) if a in checked_no]
+			why["ask"] = [a for a in (why.get("ask") or []) if a not in checked_no]
+			if said_no:
+				why["against"] = list(why.get("against") or []) + [f"reporter said no to {a.lower()}" for a in said_no]
+	# definitions first, possible, the model's priority diseases, then the ruled-out possibles (always shown, so the
+	# officer sees every disease the reporter was asked about and why it is less likely)
+	more = [c["name"] for c in cands[SHOW_CANDIDATES:]]
+	cands = cands[:SHOW_CANDIDATES] + unlikely
 	sig = frappe.db.get_value("Surveillance Signal", {"source": "Field", "ref": cr.name}, ["event"], as_dict=True)
 	ev = frappe.db.get_value("Surveillance Event", sig.event, ["name", "status", "title"], as_dict=True) if sig and sig.event else None
 	return {
-		"candidates": cands[:SHOW_CANDIDATES], "moreCandidates": [c["name"] for c in cands[SHOW_CANDIDATES:]],
+		"checkedNo": checked_no,
+		"candidates": cands, "moreCandidates": more,
 		"event": {"id": ev.name, "status": ev.status, "title": ev.title} if ev else None,
 		"current": cr.suspected_disease or None, "decidedBy": cr.classified_by or None,
-		"modelOther": others[:2], "modelNote": None if tops else _why_not(error),
+		"modelOther": others[:4], "modelNote": None if tops else _why_not(error),
 	}
+
+
+def model_priority_guess(cr, queue, labels):
+	"""events.review_doubt: the model's top guess for a report, when it is a Review Queue disease other than the one
+	the case definitions matched. Same de-identified case as AI triage (symptom names and age group only)."""
+	_item, case = _shape_report(cr, labels)
+	if not case["symptoms"]:
+		return None
+	answers, _err = _answers([cr], [case])
+	for t in _tops(answers[0], 1):
+		key = MODEL_TO_DISEASE.get(t["disease"])
+		if t["disease"] == "Diarrhoea (incl. dysentery)" and case["age_group"] in UNDER_FIVE:
+			key = "diarrhoea-dehydration-u5"
+		if key and key in queue and key != cr.suspected_disease and t["probability"] >= MIN_MODEL_SHARE:
+			return f"the AI model's top guess is {labels['disease'].get(key, key)} ({round(t['probability'] * 100)}%)"
+	return None
 
 
 @frappe.whitelist()
 def get_model_hint(symptoms=None, age_group=None):
-	"""Shown to the reporter on the review step: what else the model thinks it may be. Wording only; the
-	case definition still classifies the report and an officer confirms. Sends symptom names and age group only."""
+	"""Review step: the illnesses the model thinks it may be, so the reporter is asked the same signs the officer
+	sees in AI triage. No disease is named to the reporter; the case definition classifies and an officer confirms. Sends symptom names and age group only."""
 	from surveillance.case_definitions import _labels
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Please log in."), frappe.PermissionError)
@@ -315,4 +352,4 @@ def get_model_hint(symptoms=None, age_group=None):
 		w = _model_why(t, known)
 		out.append({"key": key if key in labels["disease"] else None, "name": name, "probability": t["probability"],
 			"priority": bool(key and key in labels["disease"]), "why": {"for": w["for"], "ask": w["ask"]}})
-	return {"suggestions": out[:2], "error": _err}
+	return {"suggestions": out, "error": _err}   # the same diseases AI triage shows the officer

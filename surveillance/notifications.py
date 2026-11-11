@@ -82,6 +82,74 @@ def _fmt(dt):
 	return get_datetime(dt).strftime("%d %b %Y %H:%M") if dt else ""
 
 
+# ---------- 1b. disease changed / left the Review Queue ----------
+# The CHA and SCDSC who got the "New signal" alert also hear when the officer changes the disease, so their bell and
+# inbox never point to a disease that is no longer true.
+
+def on_disease_changed(event, old_name, new_name):
+	"""The event continues under another priority disease (questions and steps now follow its protocol)."""
+	frappe.enqueue("surveillance.notifications.send_disease_changed", event_name=event, old_name=old_name,
+		new_name=new_name, queue="short", enqueue_after_commit=True)
+
+
+def send_disease_changed(event_name, old_name, new_name):
+	try:
+		if not frappe.db.exists("Surveillance Event", event_name):
+			return
+		doc = frappe.get_doc("Surveillance Event", event_name)
+		users = sub_county_users(doc.sub_county)
+		if not users:
+			return
+		subject = f"{event_name} is now {new_name} (was {old_name}), {doc.sub_county or 'location missing'}"
+		html = (f'<p style="font-size:15px">The officer reviewing {escape_html(event_name)} changed the suspected disease. '
+			f'Verification questions and steps now follow the {escape_html(new_name)} protocol.</p>'
+			+ _rows([("Was", escape_html(old_name)), ("Now", escape_html(new_name)),
+				("Severity", escape_html((doc.severity or "standard").title())),
+				("Location", escape_html(", ".join(x for x in [doc.area, doc.sub_county, doc.county] if x))),
+				("Changed by", escape_html(get_fullname(frappe.session.user)))])
+			+ _button(_link(event_name), "Open the event"))
+		_send([u.email for u in users], subject, html, event_name)
+		_in_app([u.name for u in users], subject, event_name)
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(title=f"Disease change alert failed ({event_name})", message=frappe.get_traceback())
+
+
+def on_left_queue(event, old_name, new_name, report):
+	"""The only report on the event was changed to a disease that is not followed in the Review Queue (e.g. malaria):
+	the event is closed and the disease is followed through Epi Trends."""
+	frappe.enqueue("surveillance.notifications.send_left_queue", event_name=event, old_name=old_name,
+		new_name=new_name, report=report, queue="short", enqueue_after_commit=True)
+
+
+def send_left_queue(event_name, old_name, new_name, report):
+	try:
+		doc = frappe.db.get_value("Surveillance Event", event_name, ["sub_county", "county"], as_dict=True)
+		users = sub_county_users(doc.sub_county) if doc else []
+		if not users:
+			return
+		subject = f"Resolved: {event_name} ({report}) is {new_name}, followed in Epi Trends"
+		base = (frappe.conf.get("frontend_url") or get_url()).rstrip("/")
+		same = (old_name or "") == (new_name or "")   # the officer confirmed the disease it was held for a check on
+		decided = (f'confirmed it is {escape_html(new_name)}, with no priority disease in play' if same
+			else f'decided it is {escape_html(new_name)}, not {escape_html(old_name)}')
+		html = (f'<p style="font-size:15px"><b>Resolved.</b> The officer reviewed {escape_html(report)} and {decided}. '
+			f'{escape_html(new_name)} is not investigated case by case, '
+			f'so {escape_html(event_name)} is closed without a field investigation. {escape_html(new_name)} is tracked in '
+			f'Epi Trends, where a rise in cases raises an alert. Any follow-up task the officer assigns will reach the '
+			f'person it is assigned to.</p>'
+			+ _rows([("Outcome", "Resolved, no investigation needed")]
+				+ ([] if same else [("Was", escape_html(old_name))]) + [("Disease", escape_html(new_name)),
+				("Location", escape_html(", ".join(x for x in [doc.sub_county, doc.county] if x))),
+				("Decided by", escape_html(get_fullname(frappe.session.user)))])
+			+ _button(f"{base}/epi-trends", "Open Epi Trends"))
+		_send([u.email for u in users], subject, html, event_name)
+		_in_app([u.name for u in users], subject, event_name)
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(title=f"Left-queue alert failed ({event_name})", message=frappe.get_traceback())
+
+
 # ---------- 1. new event ----------
 
 def on_new_event(event, signal_date=None):

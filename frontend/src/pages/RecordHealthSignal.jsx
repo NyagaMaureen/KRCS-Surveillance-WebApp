@@ -181,13 +181,25 @@ export default function RecordHealthSignal() {
     return () => clearTimeout(classifyTimerRef.current)
   }, [form.symptoms, form.age_group, form.animal_exposure, answeredNo])
 
-  const [possible, setPossible] = useState([])
+  // the AI model's view, used only to pick extra questions (never shown as a disease to the reporter); it needs
+  // the symptoms only, so it is not asked again when an answer is No
   const [modelHint, setModelHint] = useState([])
+  useEffect(() => {
+    if (!form.symptoms.length) { setModelHint([]); return undefined }
+    const t = setTimeout(() => {
+      getModelHint({ symptoms: form.symptoms, age_group: form.age_group })
+        .then((r) => setModelHint(r.suggestions || []))
+        .catch(() => setModelHint([]))
+    }, 500)
+    return () => clearTimeout(t)
+  }, [form.symptoms, form.age_group])
+
+  const [possible, setPossible] = useState([])
   // Extra yes/no questions on the Review step, with no disease named (KRCS chose this for everyone who reports):
-  //   1. warning signs that would confirm a possible PRIORITY disease (case definitions), and animal contact when a
-  //      definition needs it and the reporter has not answered the animal question yet;
-  //   2. then the signs the AI model says would change its estimate for the common illnesses it suggests.
-  // Priority signs always come first, so an outbreak sign is never pushed out by a common-illness one.
+  // first the other signs of the disease the case definitions matched, then the warning signs that would confirm a
+  // possible PRIORITY disease, with animal contact when a definition needs it, then the signs the AI model needs
+  // to tell its likely illnesses apart. These are the
+  // same diseases the officer sees in AI triage, so every one the officer sees was asked about.
   const followUps = useMemo(() => {
     const key = (x) => String(x || '').toLowerCase().replace(/[^a-z]/g, '')   // "Red eyes" = "red-eyes" = "RED EYES"
     const byName = new Map(symptoms.map((s) => [key(s.symptom_name || s.name), s.name]))
@@ -196,6 +208,7 @@ export default function RecordHealthSignal() {
       const id = byName.get(key(label))
       if (id && !form.symptoms.includes(id) && !answeredNo.includes(id) && !out.some((o) => o.id === id)) out.push({ id, label })
     }
+    classifyResults.forEach((m) => (m.ask || []).forEach(addSign))   // the matched disease's own signs first
     possible.forEach((p) => (p.ask || []).forEach((label) => {
       const exposure = EXPOSURE_BY_QUESTION[String(label).toLowerCase()]
       if (exposure) {
@@ -206,9 +219,10 @@ export default function RecordHealthSignal() {
       }
       addSign(label)
     }))
-    modelHint.forEach((m) => ((m.why && m.why.ask) || []).forEach(addSign))
-    return out.slice(0, 6)
-  }, [possible, modelHint, symptoms, form.symptoms, form.animal_exposure, answeredNo])
+    const matched = new Set([...classifyResults.map((c) => c.key), ...possible.map((p) => p.key)])
+    modelHint.filter((m) => !m.key || !matched.has(m.key)).forEach((m) => ((m.why && m.why.ask) || []).forEach(addSign))
+    return out.slice(0, 10)
+  }, [possible, modelHint, classifyResults, symptoms, form.symptoms, form.animal_exposure, answeredNo])
 
   function answerYes(q) {
     if (q.exposure) updateForm({ animal_exposure: q.exposure })
@@ -220,14 +234,6 @@ export default function RecordHealthSignal() {
     if (q.exposure) updateForm({ animal_exposure: 'None' })
     else setAnsweredNo((prev) => [...prev, q.id])
   }
-  useEffect(() => {
-    if (currentStep < 3 || !form.symptoms.length) { setModelHint([]); return }
-    let live = true
-    getModelHint({ symptoms: form.symptoms, age_group: form.age_group })
-      .then((r) => live && setModelHint((r.suggestions || []).filter((m) => !(m.key && [...classifyResults, ...possible].some((c) => c.key === m.key)))))
-      .catch(() => live && setModelHint([]))
-    return () => { live = false }
-  }, [currentStep, form.symptoms, form.age_group, classifyResults, possible])
 
   useEffect(() => () => {
     photosRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl))
@@ -521,7 +527,7 @@ export default function RecordHealthSignal() {
             </div>
             <div className="rounded-xl border border-red-100 bg-red-50/60 p-4 mb-6">
               <p className="text-xs text-gray-500">Suspected disease</p>
-              <p className="text-base font-semibold text-gray-900">{sent.diseaseName || (sent.possibleName ? `Possible ${sent.possibleName}` : (modelHint.length ? `Possible: ${modelHint.map((m) => m.name).join(', ')} (AI estimate, to be confirmed by an officer)` : 'No disease matched: treated as an unusual event'))}</p>
+              <p className="text-base font-semibold text-gray-900">{sent.diseaseName || (sent.possibleName ? `Possible ${sent.possibleName}` : 'Unclassified illness: no priority disease matched the signs')}</p>
               {classifyResults.filter((r) => r.name !== sent.diseaseName).length > 0 && sent.diseaseName && (
                 <p className="text-sm text-gray-700 mt-1">Also matches: {classifyResults.filter((r) => r.name !== sent.diseaseName).map((r) => r.name).join(', ')}</p>
               )}

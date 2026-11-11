@@ -4,6 +4,7 @@ import { Check, HelpCircle } from 'lucide-react'
 // "Which disease?" panel, used on the Review Queue event page and on the Reports page.
 // Data: ai_classifier.get_report_candidates. Candidates arrive in the order officers should consider them:
 //   'Case definition' (definition met)  >  'Possible' (warning sign, definition not met)  >  'Model' (AI suggestion)
+//   > less likely (a possible disease whose needed sign the reporter answered No; still choosable)
 const pct = (p) => `${Math.round(p * 100)}%`
 
 // Per-disease precision in the app (ml/evaluate.py, precision_shown): of past clinic visits where the app
@@ -59,6 +60,7 @@ function Reasons({ why, kind }) {
 const KIND = { 'Case definition': 'definition', Possible: 'possible', Model: 'model' }
 
 function subtitle(c) {
+  if (c.unlikely) return 'Less likely · the reporter said no to a sign it needs'
   if (c.source === 'Possible') return `Possible · definition not fully met${c.probability ? ` · AI model ${pct(c.probability)}` : ''}`
   if (c.source === 'Model') return `AI model suggestion · estimate ${pct(c.probability)}`
   return `Matches the case definition${c.probability ? ` · AI model also ${pct(c.probability)}` : ''}`
@@ -103,6 +105,9 @@ export default function DiseaseChoices({ cands, current, saving, onChoose, optio
   return (
     <div className="mb-4">
       {title && list.length > 0 && <div className="text-xs font-medium text-gray-400 mb-2">Which is it? Choose the disease to investigate</div>}
+      {(cands?.checkedNo || []).length > 0 && (
+        <p className="mb-2 text-xs text-gray-600"><span className="text-gray-500">Reporter was asked and said no to:</span> {cands.checkedNo.join(', ')}</p>
+      )}
       {lean && (
         <p className="mb-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           The AI model finds a common illness ({others[0].disease}, {pct(others[0].probability)}) more likely than {best.name} ({pct(best.probability)}). Use the questions below before choosing.
@@ -114,13 +119,14 @@ export default function DiseaseChoices({ cands, current, saving, onChoose, optio
             const on = current === c.key
             const kind = KIND[c.source] || 'model'
             const record = pastRecord(c.why, c.name)
-            const frame = on ? 'border-red-300 bg-red-50/60' : kind === 'possible' ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200'
+            const frame = on ? 'border-red-300 bg-red-50/60' : c.unlikely ? 'border-gray-200 bg-gray-50' : kind === 'possible' ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200'
+            const tone = c.unlikely ? 'text-gray-500' : kind === 'possible' ? 'text-amber-700' : 'text-gray-500'
             return (
               <div key={c.key} className={['rounded-xl border p-3', frame].join(' ')}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-gray-900">{c.name}</div>
-                    <div className={['text-xs', kind === 'possible' ? 'text-amber-700' : 'text-gray-500'].join(' ')}>{subtitle(c)}</div>
+                    <div className={['text-sm font-semibold', c.unlikely && !on ? 'text-gray-600' : 'text-gray-900'].join(' ')}>{c.name}</div>
+                    <div className={['text-xs', tone].join(' ')}>{subtitle(c)}</div>
                   </div>
                   {canChoose && (
                     <button

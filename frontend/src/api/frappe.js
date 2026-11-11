@@ -1329,6 +1329,11 @@ export async function getTriageInsight(event) {
   return callMethod(`/api/method/surveillance.ai_classifier.get_triage_insight?event=${encodeURIComponent(event)}`)
 }
 
+// symptoms, age, people, deaths, animal contact picked out of the report's voice-note transcripts: {attachment row: picked}
+export async function getVoicePicked(report) {
+  return (await callMethod(`/api/method/surveillance.voice_extract.for_report?report=${encodeURIComponent(report)}`)) || {}
+}
+
 export async function getReportCandidates(report) {
   return callMethod(`/api/method/surveillance.ai_classifier.get_report_candidates?report=${encodeURIComponent(report)}`)
 }

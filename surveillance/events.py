@@ -136,9 +136,9 @@ def upsert_signal(data, regroup=True):
 	return doc.name
 
 
-def remove_signal(source, ref, note=None):
+def remove_signal(source, ref, note=None, new_disease_name=None):
 	"""note: why the report left (e.g. reclassified as malaria). An open event left with no reports is then
-	closed with that note instead of staying empty in the queue."""
+	closed with that note instead of staying empty in the queue, and the sub-county team is told (new_disease_name)."""
 	name = f"{source}-{ref}"
 	if not frappe.db.exists("Surveillance Signal", name):
 		return
@@ -147,7 +147,10 @@ def remove_signal(source, ref, note=None):
 	if event:
 		recompute_event(event)
 		if note and frappe.db.exists("Surveillance Event", event):
-			_close_if_empty(event, note)
+			old_name = frappe.db.get_value("Surveillance Event", event, "disease_name")
+			if _close_if_empty(event, note) and new_disease_name:
+				from surveillance import notifications
+				notifications.on_left_queue(event, old_name, new_disease_name, ref)
 
 
 def _can_relabel(event, signal_name):
@@ -192,16 +195,18 @@ def _relabel_event(event, disease, sig):
 	doc.save(ignore_permissions=True)
 	recompute_event(event)
 	from surveillance import notifications
-	notifications.on_new_event(event, _received_at(sig))
+	notifications.on_disease_changed(event, old_name, new_name)
 
 
 def _close_if_empty(event, note):
+	"""Returns True when the event was closed."""
 	doc = frappe.get_doc("Surveillance Event", event)
 	if doc.status not in OPEN or doc.get("from_alert") or frappe.db.count("Surveillance Signal", {"event": event}):
-		return
+		return False
 	doc.status = "Discarded" if doc.status in ("New", "Verifying") else "Closed"
 	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": doc.status, "note": note})
 	doc.save(ignore_permissions=True)
+	return True
 
 
 def _group_key(sig):
@@ -413,11 +418,16 @@ def on_case_report(doc, method=None):
 	if doc.sub_county:
 		county, sub = frappe.db.get_value("Sub County", doc.sub_county, ["county", "sub_county_name"]) or (None, None)
 	disease = doc.suspected_disease or UNCLASSIFIED
+	doubt = None
 	if not in_scope(disease, sub, "Field"):
-		name = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
-		remove_signal("Field", doc.name, note=f"Report {doc.name} set to {name}: not a Review Queue disease, "
-			"so it is followed in Epi Trends.")  # e.g. disease changed to one outside the queue
-		return
+		# a disease outside the queue goes straight to Epi Trends only when it is clear-cut, or an officer decided
+		if doc.classified_by != "Officer" and in_scope(UNCLASSIFIED, sub, "Field"):
+			doubt = review_doubt(doc)
+		if not doubt:
+			name = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
+			remove_signal("Field", doc.name, note=f"Report {doc.name} set to {name}: not a Review Queue disease, "
+				"so it is followed in Epi Trends.", new_disease_name=name)  # e.g. disease changed to one outside the queue
+			return
 	exposure = doc.get("animal_exposure")
 	upsert_signal({
 		"source": "Field", "ref": doc.name, "disease": disease,
@@ -426,7 +436,8 @@ def on_case_report(doc, method=None):
 		"signal_date": _field_report_time(doc),
 		"county": county, "sub_county": sub, "area": doc.location_name,
 		"people": doc.affected_count, "deaths": doc.deaths_count,
-		"reason": doc.classification_reason or (f"Field report: {doc.signal_type}" if doc.signal_type else ""),
+		"reason": (f"Needs an officer's check: {doubt}. " if doubt else "")
+			+ (doc.classification_reason or (f"Field report: {doc.signal_type}" if doc.signal_type else "")),
 		"latitude": doc.get("latitude"), "longitude": doc.get("longitude"),
 	})
 	try:
@@ -434,6 +445,37 @@ def on_case_report(doc, method=None):
 		detect_soon(disease)
 	except Exception:
 		frappe.log_error(title="Queue alert detection failed", message=frappe.get_traceback())
+
+
+def review_doubt(doc):
+	"""Why a report the case definitions matched to a disease outside the Review Queue (e.g. malaria) should still
+	be seen by an officer, or None when it is clear-cut. Agreed Nov 2026: only clear-cut common illnesses go
+	straight to Epi Trends; if a priority disease is in play, an officer decides first."""
+	from surveillance.case_definitions import (_labels, absent_of, classify_detailed, get_definitions, possible_matches,
+		with_outbreak_ages)
+	queue = _scope()[1]
+	labels = _labels()
+	nm = lambda k: labels["disease"].get(k, k)
+	symptoms = [r.symptom for r in doc.symptoms if r.symptom]
+	age, exposure = doc.get("age_group"), doc.get("animal_exposure")
+	defs, _widened = with_outbreak_ages(get_definitions(), doc.get("sub_county"))
+	for d in classify_detailed(symptoms, age, exposure, defs):
+		if d["disease"] in queue:
+			return f"it also meets the {nm(d['disease'])} case definition"
+	for p in possible_matches(symptoms, age, exposure, defs, labels, absent_of(doc), include_ruled_out=True):
+		key = p["defn"]["disease"]
+		if key not in queue:
+			continue
+		if p["ruled_out"]:
+			return f"{nm(key)} is less likely, as the reporter said no to {', '.join(x.lower() for x in p['ruled_out'])}"
+		asks = ", ".join(str(a).lower() for a in p["ask"][:3])
+		return f"{nm(key)} is still possible" + (f" (ask about {asks})" if asks else "")
+	try:
+		from surveillance.ai_classifier import model_priority_guess
+		return model_priority_guess(doc, queue, labels)
+	except Exception:
+		frappe.log_error(title="Review check: AI model guess failed", message=frappe.get_traceback())
+		return None
 
 
 def on_case_report_trash(doc, method=None):
@@ -478,6 +520,10 @@ def purge_out_of_scope():
 	for s in frappe.get_all("Surveillance Signal", fields=["source", "ref", "disease", "sub_county", "event"]):
 		if in_scope(s.disease, s.sub_county, s.source):
 			continue
+		if s.source == "Field" and frappe.db.exists("Case Report", s.ref):
+			cr = frappe.get_doc("Case Report", s.ref)
+			if cr.classified_by != "Officer" and review_doubt(cr):
+				continue   # a priority disease is in play: kept for an officer
 		if s.event and frappe.db.get_value("Surveillance Event", s.event, "status") != "New":
 			continue
 		remove_signal(s.source, s.ref)
@@ -567,8 +613,12 @@ def _report_media(report):
 		"attachment_type": ["in", ["Photo", "Voice Note"]], "file": ["is", "set"]},
 		fields=["name", "attachment_type", "file", "transcript", "transcript_status", "transcript_language", "creation"],
 		order_by="idx asc")
+	from surveillance.voice_extract import picked, reported_symptoms
+	have = reported_symptoms(report) if any(r.transcript for r in rows) else []
 	return [{"id": r.name, "type": r.attachment_type, "url": r.file, "transcript": r.transcript,
-		"transcriptStatus": r.transcript_status or None, "language": r.transcript_language, "added": str(r.creation)}
+		"transcriptStatus": r.transcript_status or None, "language": r.transcript_language, "added": str(r.creation),
+		# symptoms, age, people, deaths and animal contact picked out of the transcript: a suggestion to check
+		"picked": picked(r.transcript, r.transcript_language, have) if r.transcript else None}
 		for r in rows]
 
 

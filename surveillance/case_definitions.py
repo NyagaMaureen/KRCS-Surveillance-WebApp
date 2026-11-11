@@ -248,14 +248,18 @@ def absent_of(doc_or_value):
 	return {str(x) for x in value if x}
 
 
-def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions=None, labels=None, absent=None):
+def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions=None, labels=None, absent=None,
+		include_ruled_out=False):
 	"""Priority diseases worth checking although their definition is NOT met: the report has one of the
 	definition's specific warning signs (e.g. unexplained bleeding for VHF), its age group is allowed and no
 	sign rules it out. Never used to classify; only shown to officers and reporters as "Possible ... ask about".
 
 	Warning signs = required signs that are not common (fever, cough... see GENERIC_SIGNS); for definitions
 	whose only required sign is common (meningitis: fever), the "at least one of" signs when one is needed.
-	Returns [{"defn", "found": [names], "ask": [names or questions]}] in Match Order (KRCS precedence)."""
+	Returns [{"defn", "found": [names], "ask": [names or questions], "ruled_out": [names]}] in Match Order (KRCS
+	precedence). absent = signs the reporter answered No to. A definition that needs one of them is left out for
+	reporters; with include_ruled_out (officers) it stays in the list, with "ruled_out" naming the signs, so the officer
+	sees why it is less likely and can still choose it."""
 	symptoms = set(symptoms or [])
 	absent = set(absent or []) - symptoms   # signs the reporter checked and answered No
 	defs = definitions if definitions is not None else get_definitions()
@@ -269,10 +273,11 @@ def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions
 			continue
 		if d["excluded_symptoms"] & symptoms:
 			continue
-		if d["required_symptoms"] & absent:
-			continue   # a sign this definition needs was checked and is not there (e.g. no fever: not VHF)
+		ruled_out = sorted(name(i) for i in d["required_symptoms"] & absent)   # e.g. no fever: not VHF
 		need_any = d.get("min_any_of") or 0
 		if need_any and len(d["any_of_symptoms"] - absent) < need_any:
+			ruled_out += sorted(name(i) for i in d["any_of_symptoms"] & absent)
+		if ruled_out and not include_ruled_out:
 			continue
 		if d["ages"] and age_group and _norm(age_group) not in d["ages"]:
 			continue
@@ -298,7 +303,7 @@ def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions
 		if exposure and not matches(dict(d, required_symptoms=set(), any_of_symptoms=set(), min_any_of=0, ages=set(),
 				excluded_symptoms=set()), set(), None, animal_exposure):
 			ask.append(EXPOSURE_QUESTION.get(exposure, exposure.lower()))
-		out.append({"defn": d, "found": sorted(name(i) for i in found), "ask": ask})
+		out.append({"defn": d, "found": sorted(name(i) for i in found), "ask": ask, "ruled_out": ruled_out})
 	return out
 
 
@@ -411,8 +416,10 @@ def preview(symptoms=None, age_group=None, animal_exposure=None, absent=None):
 	labels = _labels()
 	defs = get_definitions()
 	return {
+		# ask: the definition's other supporting signs, the same ones AI triage tells the officer to ask about
 		"matches": [{"key": d["disease"], "name": labels["disease"].get(d["disease"], d["disease"]),
-			"reason": explain(d, symptoms, age_group, animal_exposure, labels)}
+			"reason": explain(d, symptoms, age_group, animal_exposure, labels),
+			"ask": sorted(labels["symptom"].get(i, i) for i in d["any_of_symptoms"] - set(symptoms) - absent)[:3]}
 			for d in classify_detailed(symptoms, age_group, animal_exposure, defs)],
 		"possible": [{"key": p["defn"]["disease"], "name": labels["disease"].get(p["defn"]["disease"], p["defn"]["disease"]),
 			"found": p["found"], "ask": p["ask"]} for p in possible_matches(symptoms, age_group, animal_exposure, defs, labels, absent)],
@@ -434,6 +441,12 @@ def set_suspected_disease(report, disease=None):
 	doc = frappe.get_doc("Case Report", report)
 	if disease and not frappe.db.exists("Alert Threshold Config", disease):
 		frappe.throw(f"Unknown disease: {disease}")
+	if disease and disease == doc.suspected_disease and doc.classified_by != "Officer":
+		# the officer confirms what the rules matched: now an officer's decision, so a report kept in the queue
+		# for a check (events.review_doubt) can leave it
+		doc.classified_by = "Officer"
+		name = _labels()["disease"].get(disease, disease)
+		doc.classification_reason = f"Confirmed as {name} by {get_fullname(frappe.session.user)} on {format_date(today())}."
 	doc.suspected_disease = disease or None
 	doc.save(ignore_permissions=True)  # the capability is the permission; officers may not hold edit_reports
 	event = frappe.db.get_value("Surveillance Signal", {"source": "Field", "ref": doc.name}, "event")
