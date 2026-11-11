@@ -8,6 +8,10 @@ Officers read it, and can listen to the original, on the event's Signal captured
 Site config (set with read -rs, never in chat):
     stt_url      e.g. http://10.249.99.50:3100   (no stt_url: nothing is sent, voice notes stay audio only)
     stt_token    the token in ~/stt_token.txt on the AI server
+    stt_mixed_language   language sent for voice notes marked "Both" (English and Kiswahili mixed): auto (default),
+                         en or sw. Auto was best on Allan's 10 mixed notes (11 Nov 2026: WER 11.9%, en 13.0%, sw 18.8%).
+The reporter says which language the voice note is in (English / Kiswahili / Both); it is sent with the audio so
+speech-to-text never has to guess. Voice notes with no language (older ones, other channels) use the service default.
 Statuses: Queued -> Done | No speech | Failed (retried hourly, up to MAX_TRIES).
 Only the audio file is sent; nothing else about the report or the reporter.
 """
@@ -49,7 +53,7 @@ def on_case_report(doc, method=None):
 def transcribe(name):
 	"""Background job: one voice note."""
 	import requests
-	row = frappe.db.get_value(CHILD, name, ["file", "transcript_tries"], as_dict=True)
+	row = frappe.db.get_value(CHILD, name, ["file", "transcript_tries", "spoken_language"], as_dict=True)
 	if not row or not row.file:
 		return
 	frappe.db.set_value(CHILD, name, "transcript_tries", cint(row.transcript_tries) + 1, update_modified=False)
@@ -62,8 +66,9 @@ def transcribe(name):
 		if isinstance(content, str):
 			content = content.encode()
 		base = frappe.conf.get("stt_url").rstrip("/")
+		lang = {"English": "en", "Kiswahili": "sw", "Both": frappe.conf.get("stt_mixed_language") or "auto"}.get(row.spoken_language)
 		r = requests.post(f"{base}/transcribe", files={"file": (row.file.rsplit("/", 1)[-1], content)},
-			headers={"Authorization": f"Bearer {frappe.conf.get('stt_token')}"}, timeout=TIMEOUT)
+			data={"language": lang} if lang else None, headers={"Authorization": f"Bearer {frappe.conf.get('stt_token')}"}, timeout=TIMEOUT)
 		if r.status_code != 200:
 			raise RuntimeError(f"speech-to-text returned {r.status_code}")
 		out = r.json()

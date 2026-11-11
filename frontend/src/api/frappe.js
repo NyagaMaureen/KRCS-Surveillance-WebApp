@@ -1334,6 +1334,11 @@ export async function getVoicePicked(report) {
   return (await callMethod(`/api/method/surveillance.voice_extract.for_report?report=${encodeURIComponent(report)}`)) || {}
 }
 
+// officer: add signs (and age group / animal contact when missing) picked from a voice note to the report
+export const addVoicePicked = (report, { symptoms = [], ageGroup = null, animalExposure = null, people = null } = {}) =>
+  callMethodPost('/api/method/surveillance.voice_extract.add_to_report',
+    { report, symptoms, age_group: ageGroup, animal_exposure: animalExposure, affected_count: people })
+
 export async function getReportCandidates(report) {
   return callMethod(`/api/method/surveillance.ai_classifier.get_report_candidates?report=${encodeURIComponent(report)}`)
 }

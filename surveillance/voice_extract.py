@@ -8,6 +8,7 @@ ones the disease model uses (symptom_rules.py). Runs on the app server; nothing 
 import re
 
 import frappe
+from frappe.utils import cint
 
 from surveillance import symptom_rules as sx
 
@@ -15,9 +16,9 @@ AGE_GROUPS = sx.BAND_NAMES   # Under 1, 1-4 years, 5-14 years, 15+ years
 
 # ---------- Kiswahili: patterns are matched on the text with spaces and punctuation removed ----------
 SW_RULES = [   # (keys, pattern) in order; a hit is blanked so later rules do not reuse it
-	(("bloody_stool", "diarrhea"), r"(?:endesha|harisha|hara)(?:na)?damu|kinyesi(?:cha|chenye)damu|choocha?damu"),
+	(("bloody_stool", "diarrhea"), r"(?:endesha|indesha|harisha|hara)(?:na)?damu|kinyesi(?:cha|chenye)damu|choocha?damu"),
 	(("black_skin_sore",), r"(?:vidonda|kidonda|viduanda|vidwanda|mchipuko|michipuko|chipuka|vipele)\w{0,40}?(?:weusi|nyeusi)"),
-	(("diarrhea",), r"harisha|kuhara|anahara|endesha"),
+	(("diarrhea",), r"harisha|kuhara|anahara|endesha|indesha"),
 	(("vomiting",), r"tapika|kutapika|kichefuchefu"),
 	(("headache",), r"m[ao]u?mivuyakichwa|kichwakinauma|kuumwakichwa"),
 	(("severe_body_pain",), r"m[ao]u?mivuyamwili|misuli|mwiliunauma"),
@@ -42,6 +43,11 @@ SW_RULES = [   # (keys, pattern) in order; a hit is blanked so later rules do no
 	(("fatigue",), r"mnyong|wanyong|mnionge|unyonge|uchovu|amechoka|dhaifu"),
 ]
 SW_RULES = [(k, re.compile(p)) for k, p in SW_RULES]
+EN_EXTRA = [(k, re.compile(p)) for k, p in [   # phrasings the shared English rules miss (from Allan's notes)
+	(("yellow_eyes_skin",), r"\beyes?\b[^.]{0,40}\byellow|\byellow\w*\s+(?:eyes|skin)"),
+	(("bloody_stool", "diarrhea"), r"\bstools?\b[^.]{0,30}\bblood|\bblood\w*\s+(?:in\s+(?:the\s+)?)?stools?|\bbloody\s+(?:stool|diarrh)"),
+	(("fever",), r"\bhigh\s+temperatures?|\btemperature\s+(?:is\s+)?(?:very\s+)?high"),
+]]
 SW_NEG = re.compile(r"\b(?:hana|hakuna|hawana|bila|sio|si)\s+(?:na\s+)?\w+")
 
 SW_NUM = {"moja": 1, "mmoja": 1, "mbili": 2, "miwili": 2, "wawili": 2, "tatu": 3, "mitatu": 3, "watatu": 3, "nne": 4,
@@ -108,6 +114,10 @@ def extract(text, lang=None):
 	found, why = set(), {}
 	if lang == "en":
 		found = set(sx.extract(re.sub(r"\bnone\b[^,.;]*", " ", raw)))   # "none of them has blood in the stool"
+		said = re.sub(r"\b(?:no|not|none|without|never)\b[^,.;]*", " ", raw)   # "none of them has blood in the stool"
+		for key, rx in EN_EXTRA:
+			if rx.search(said):
+				found.update(key)
 		if re.search(r"\b(?:could\s*not|cannot|can't|unable\s+to|not\s+able\s+to)\s+(?:move|walk|stand)", raw):
 			found.add("sudden_weakness")
 		if re.search(r"\bswollen\b(?!\s+(?:lymph|glands?|nodes?))", raw):
@@ -151,17 +161,75 @@ def _norm(name):
 	return re.sub(r"\W+", "", str(name or "").lower())
 
 
-def picked(transcript, language=None, reported=None):
-	"""For one voice note. reported: the symptom names already on the report (to mark what the note adds)."""
+# ---------- places (shown only; the report's own location and GPS stay the record) ----------
+
+CAMPS = ["Ifo 2", "Ifo", "Dagahaley", "Hagadera", "Kambioos", "Dadaab", "Kalobeyei", "Kakuma", "Lokichogio",
+	"Liboi", "Fafi", "Garissa", "Turkana", "Kainuk", "Loyangalani", "Lodwar", "Lokitaung"]
+SW_ORDINAL = {"kwanza": 1, "moja": 1, "pili": 2, "mbili": 2, "tatu": 3, "nne": 4, "tano": 5, "sita": 6, "saba": 7,
+	"nane": 8, "tisa": 9, "kumi": 10}
+EN_ORDINAL = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+
+
+def places(text):
+	"""Camp, sub-county, block and village names said in the note, e.g. ['Kalobeyei', 'Village 3', 'Block D']."""
+	raw = (text or "").lower()
+	flat = re.sub(r"[^a-z0-9]", "", raw)
+	names = list(CAMPS)
+	try:
+		names += [n for n in frappe.get_all("Sub County", filters={"is_active": 1}, pluck="sub_county_name") if n]
+	except Exception:
+		pass
+	out = []
+	for n in sorted(set(names), key=len, reverse=True):
+		key = re.sub(r"[^a-z0-9]", "", n.lower())
+		if len(key) >= 4 and key in flat and not any(key in re.sub(r"[^a-z0-9]", "", o.lower()) for o in out):
+			out.append(n)
+	for m in re.finditer(r"\b(?:block|bloc|bloki|blok)\s+(?:ya\s+)?([a-z]|\d{1,2})\b", raw):
+		out.append(f"Block {m.group(1).upper()}")
+	for m in re.finditer(r"\b(?:village|kijiji\s+cha|kijiji)\s+(?:no\.?\s*)?(\d{1,2}|[a-z]+)\b", raw):
+		n = m.group(1)
+		n = int(n) if n.isdigit() else SW_ORDINAL.get(n) or EN_ORDINAL.get(n)
+		if n:
+			out.append(f"Village {n}")
+	seen, unique = set(), []
+	for o in out:
+		if o.lower() not in seen:
+			seen.add(o.lower())
+			unique.append(o)
+	return unique[:5]
+
+
+def picked(transcript, language=None, reported=None, spoken=None, report_fields=None):
+	"""For one voice note. reported: the symptom names already on the report (to mark what the note adds).
+	report_fields: the report's age_group, animal_exposure and affected_count, so only real changes are offered.
+	spoken: what the reporter said the note is in (English | Kiswahili | Both); Both uses the rules for both."""
 	if not (transcript or "").strip():
 		return None
-	r = extract(transcript, "sw" if language == "sw" else "en" if language == "en" else None)
+	if spoken == "Both":
+		runs = [extract(transcript, "en"), extract(transcript, "sw")]
+	else:
+		lang = "sw" if spoken == "Kiswahili" or language == "sw" else "en" if spoken == "English" or language == "en" else None
+		runs = [extract(transcript, lang)]
+	r = runs[0]
+	names = sorted({n for x in runs for n in x["symptoms"]})
+	age = next((x["age_years"] for x in runs if x["age_years"] is not None), None)
+	group = next((x["age_group"] for x in runs if x["age_group"]), None)
+	people = max((x["people"] or 0 for x in runs), default=0) or None
+	death = any(x["death_mentioned"] for x in runs)
+	animal = next((x["animal_exposure"] for x in runs if x["animal_exposure"]), None)
+	where = places(transcript)
 	have = {_norm(n) for n in (reported or [])}
-	symptoms = [{"name": n, "onReport": _norm(n) in have} for n in r["symptoms"]]
-	if not (symptoms or r["age_group"] or r["people"] or r["death_mentioned"] or r["animal_exposure"]):
+	symptoms = [{"name": n, "onReport": _norm(n) in have} for n in names]
+	if not (symptoms or group or people or death or animal or where):
 		return {"empty": True}
-	return {"symptoms": symptoms, "ageYears": r["age_years"], "ageGroup": r["age_group"], "people": r["people"],
-		"death": r["death_mentioned"], "animal": r["animal_exposure"]}
+	rf = report_fields or {}
+	animal_now = rf.get("animal_exposure") if rf.get("animal_exposure") not in (None, "", "None") else None
+	return {"symptoms": symptoms, "ageYears": age, "ageGroup": group, "people": people, "death": death,
+		"animal": animal, "places": where,
+		# the report as it is now, for the side-by-side check (what matches, what is missing, what differs)
+		"report": {"ageGroup": rf.get("age_group") or None, "animal": animal_now,
+			"people": cint(rf.get("affected_count")) or None, "deaths": cint(rf.get("deaths_count")) or 0,
+			"location": ", ".join(x for x in [rf.get("location_name"), rf.get("sub_county_name")] if x) or None}}
 
 
 def reported_symptoms(report):
@@ -172,12 +240,64 @@ def reported_symptoms(report):
 		fields=["name", "symptom_name"])]
 
 
+def for_rows(report, rows):
+	"""{attachment row: picked} plus what the report already has, for the event page and the report page."""
+	if not any(r.get("transcript") for r in rows):
+		return {}
+	have = reported_symptoms(report)
+	fields = frappe.db.get_value("Case Report", report, ["age_group", "animal_exposure", "affected_count", "deaths_count",
+		"location_name", "sub_county"], as_dict=True) or {}
+	if fields.get("sub_county"):
+		fields["sub_county_name"] = frappe.db.get_value("Sub County", fields["sub_county"], "sub_county_name") or fields["sub_county"]
+	return {r["name"]: picked(r.get("transcript"), r.get("transcript_language"), have, r.get("spoken_language"), fields)
+		for r in rows if r.get("transcript")}
+
+
 @frappe.whitelist()
 def for_report(report):
 	"""Report page: {attachment row: picked} for the report's transcribed voice notes."""
 	if not frappe.has_permission("Case Report", "read", doc=report):
 		frappe.throw("Not permitted", frappe.PermissionError)
 	rows = frappe.get_all("Case Report Attachment", filters={"parent": report, "parenttype": "Case Report",
-		"attachment_type": "Voice Note", "transcript_status": "Done"}, fields=["name", "transcript", "transcript_language"])
-	have = reported_symptoms(report) if rows else []
-	return {r.name: picked(r.transcript, r.transcript_language, have) for r in rows}
+		"attachment_type": "Voice Note", "transcript_status": "Done"},
+		fields=["name", "transcript", "transcript_language", "spoken_language"])
+	return for_rows(report, rows)
+
+
+@frappe.whitelist(methods=["POST"])
+def add_to_report(report, symptoms=None, age_group=None, animal_exposure=None, affected_count=None):
+	"""Officer: add what was picked from a voice note to the report, after checking it against the recording.
+	The officer ticks each item in the side-by-side check: symptoms not yet on the report, and the age group,
+	animal contact or number of people sick when the report has none or differs. Every change is noted on the report.
+	Saving the report re-runs the case definitions, the Review Queue routing, AI triage and the risk score."""
+	from frappe.utils import get_fullname
+	from surveillance.capabilities import require_capability
+	require_capability("act_on_events")
+	doc = frappe.get_doc("Case Report", report)
+	names = frappe.parse_json(symptoms) if isinstance(symptoms, str) else (symptoms or [])
+	by_name = {_norm(s.symptom_name or s.name): s.name for s in frappe.get_all("Symptom", fields=["name", "symptom_name"])}
+	have = {r.symptom for r in doc.symptoms}
+	added = []
+	for n in names:
+		sid = by_name.get(_norm(n))
+		if sid and sid not in have:
+			doc.append("symptoms", {"symptom": sid})
+			have.add(sid)
+			added.append(n)
+	changes = []
+	if age_group in ("Under 1", "1-4 years", "5-14 years", "15+ years") and age_group != doc.age_group:
+		changes.append(f"age group {doc.age_group or '-'} to {age_group}")
+		doc.age_group = age_group
+	if animal_exposure in ("Bite or scratch", "Handled sick or dead animal") and animal_exposure != doc.animal_exposure:
+		changes.append(f"animal contact {(doc.animal_exposure or 'none').lower()} to {animal_exposure.lower()}")
+		doc.animal_exposure = animal_exposure
+	n = cint(affected_count)
+	if 1 <= n < 1000 and n != cint(doc.affected_count):
+		changes.append(f"people sick {cint(doc.affected_count) or '-'} to {n}")
+		doc.affected_count = n
+	if not (added or changes):
+		return {"added": [], "changes": [], "report": doc.name}
+	doc.save(ignore_permissions=True)   # the capability is the permission (as for the officer's disease choice)
+	what = ", ".join(added + changes)
+	doc.add_comment("Comment", f"Added from the voice note by {get_fullname(frappe.session.user)}: {what}.")
+	return {"added": added, "changes": changes, "report": doc.name, "suspected_disease": doc.suspected_disease}

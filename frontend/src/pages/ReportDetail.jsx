@@ -45,7 +45,7 @@ function fileNameFromUrl(url) {
   return (url || '').split('/').pop() || 'File'
 }
 
-function SupportingInfoItem({ item, onOpenImage, onRemove, picked }) {
+function SupportingInfoItem({ item, onOpenImage, onRemove, picked, report, canAdd, onAdded }) {
   return (
     <div className="relative bg-gray-50 rounded-lg p-3">
       {onRemove && (
@@ -71,7 +71,7 @@ function SupportingInfoItem({ item, onOpenImage, onRemove, picked }) {
               <p className="mt-1 text-sm leading-6 text-gray-700 whitespace-pre-wrap">{item.transcript}</p>
             </details>
           )}
-          {picked && <VoicePicked picked={picked} />}
+          {picked && <VoicePicked picked={picked} report={report} canAdd={canAdd} onAdded={onAdded} />}
         </>
       )}
       {item.attachment_type === 'Text Note' && (
@@ -287,8 +287,12 @@ export default function ReportDetail() {
     return () => { cancelled = true }
   }, [id])
 
-  // what was picked out of the voice notes (after they are transcribed)
+  // what was picked out of the voice notes (after they are transcribed); officers can add it to the report
+  const canAddVoice = has('act_on_events')
   const [voicePicked, setVoicePicked] = useState({})
+  function reloadReport() {
+    getReport(id).then(setReport).catch(() => {})
+  }
   useEffect(() => {
     if (!report?.name || !(report.attachments || []).some((a) => a.attachment_type === 'Voice Note' && a.transcript_status === 'Done')) return
     getVoicePicked(report.name).then(setVoicePicked).catch(() => setVoicePicked({}))
@@ -420,7 +424,7 @@ export default function ReportDetail() {
                             <div className="text-xs text-gray-500 mb-1.5">Voice notes</div>
                             <div className="flex flex-col gap-2 max-w-md">
                               {attachments.filter((a) => a.attachment_type === 'Voice Note').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} />
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} report={report?.name} canAdd={canAddVoice} onAdded={reloadReport} />
                               ))}
                             </div>
                           </div>
@@ -430,7 +434,7 @@ export default function ReportDetail() {
                             <div className="text-xs text-gray-500 mb-1.5">Photos</div>
                             <div className="flex flex-wrap gap-3">
                               {attachments.filter((a) => a.attachment_type === 'Photo').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} />
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} report={report?.name} canAdd={canAddVoice} onAdded={reloadReport} />
                               ))}
                             </div>
                           </div>
@@ -440,7 +444,7 @@ export default function ReportDetail() {
                             <div className="text-xs text-gray-500 mb-1.5">Other</div>
                             <div className="flex flex-wrap gap-3">
                               {attachments.filter((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} />
+                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} report={report?.name} canAdd={canAddVoice} onAdded={reloadReport} />
                               ))}
                             </div>
                           </div>

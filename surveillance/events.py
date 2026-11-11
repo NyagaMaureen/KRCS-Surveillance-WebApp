@@ -611,14 +611,13 @@ def _report_media(report):
 	"""Photos and voice notes on a field report (and its updates), with the voice-note text, for the Signal step."""
 	rows = frappe.get_all("Case Report Attachment", filters={"parent": report, "parenttype": "Case Report",
 		"attachment_type": ["in", ["Photo", "Voice Note"]], "file": ["is", "set"]},
-		fields=["name", "attachment_type", "file", "transcript", "transcript_status", "transcript_language", "creation"],
+		fields=["name", "attachment_type", "file", "transcript", "transcript_status", "transcript_language", "spoken_language", "creation"],
 		order_by="idx asc")
-	from surveillance.voice_extract import picked, reported_symptoms
-	have = reported_symptoms(report) if any(r.transcript for r in rows) else []
+	from surveillance.voice_extract import for_rows
+	picked = for_rows(report, rows)   # symptoms, age, people, deaths, animal contact, places: a suggestion to check
 	return [{"id": r.name, "type": r.attachment_type, "url": r.file, "transcript": r.transcript,
-		"transcriptStatus": r.transcript_status or None, "language": r.transcript_language, "added": str(r.creation),
-		# symptoms, age, people, deaths and animal contact picked out of the transcript: a suggestion to check
-		"picked": picked(r.transcript, r.transcript_language, have) if r.transcript else None}
+		"transcriptStatus": r.transcript_status or None, "language": r.transcript_language,
+		"spokenLanguage": r.get("spoken_language"), "added": str(r.creation), "picked": picked.get(r.name)}
 		for r in rows]
 
 

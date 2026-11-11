@@ -397,7 +397,7 @@ function EventDiseaseDecision({ reports, onDecided, onError }) {
 // soon as the report arrives; if the page opens before that finishes, it checks again every 20 seconds (up to 5 minutes).
 const LANG = { en: 'English', sw: 'Kiswahili' }
 
-function VoiceTranscript({ m, canAct, retrying, onRetry }) {
+function VoiceTranscript({ m, canAct, retrying, onRetry, report, onAdded }) {
   const [open, setOpen] = useState(false)
   if (m.transcriptStatus === 'Done' && m.transcript) {
     return (
@@ -411,7 +411,7 @@ function VoiceTranscript({ m, canAct, retrying, onRetry }) {
             <p className="mt-1 text-xs text-gray-400">Transcribed automatically{LANG[m.language] ? ` from ${LANG[m.language]}` : ''}. Check names and numbers against the recording.</p>
           </div>
         )}
-        <VoicePicked picked={m.picked} />
+        <VoicePicked picked={m.picked} report={report} canAdd={canAct} onAdded={onAdded} />
       </div>
     )
   }
@@ -431,7 +431,7 @@ function VoiceTranscript({ m, canAct, retrying, onRetry }) {
   return null   // still being transcribed: the link appears by itself when the text is ready
 }
 
-function SignalMedia({ eventId, signalId, media, canAct }) {
+function SignalMedia({ eventId, signalId, media, canAct, report, onChanged }) {
   const [items, setItems] = useState(media || [])
   const [viewing, setViewing] = useState(null)
   const [retrying, setRetrying] = useState('')
@@ -470,7 +470,7 @@ function SignalMedia({ eventId, signalId, media, canAct }) {
         <div key={m.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
           <div className="mb-2 text-xs font-medium text-gray-500">Voice note{voices.length > 1 ? ` ${i + 1}` : ''}</div>
           <audio controls preload="metadata" src={m.url} className="w-full max-w-md" aria-label="Voice note" />
-          <VoiceTranscript m={m} canAct={canAct} retrying={retrying === m.id} onRetry={() => retry(m)} />
+          <VoiceTranscript m={m} canAct={canAct} retrying={retrying === m.id} onRetry={() => retry(m)} report={report} onAdded={onChanged} />
         </div>
       ))}
       {photos.length > 0 && (
@@ -495,7 +495,7 @@ function SignalMedia({ eventId, signalId, media, canAct }) {
   )
 }
 
-function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, onDiscard }) {
+function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, onDiscard, onChanged }) {
   const [showAll, setShowAll] = useState(false)
   const [discarding, setDiscarding] = useState(false)
   const rows = showAll ? signals : signals.slice(0, 8)
@@ -539,7 +539,8 @@ function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, on
                   {(s.media || []).length > 0 && (
                     <tr className="align-top">
                       <td colSpan={3} className="px-3 pb-4">
-                        <SignalMedia eventId={event.id} signalId={s.id} media={s.media} canAct={canAct} />
+                        <SignalMedia eventId={event.id} signalId={s.id} media={s.media} canAct={canAct}
+                          report={s.source === 'Field' ? s.ref : null} onChanged={onChanged} />
                       </td>
                     </tr>
                   )}
@@ -1833,6 +1834,8 @@ export default function EventDetail() {
   }, [load])
 
   // quiet refresh after a task change, so the audit timeline shows it without reloading the page
+  // bumped when the report itself changes on this page (signs added from a voice note), so AI triage reloads
+  const [reportVersion, setReportVersion] = useState(0)
   const refreshEvent = useCallback(() => {
     Promise.all([getReviewEvent(id), getInvestigation(id)])
       .then(([ev, iv]) => { setEvent(ev); setInv(iv) })
@@ -2052,6 +2055,7 @@ export default function EventDetail() {
       case 1:
         return (
           <SignalCapturePanel
+            onChanged={() => { setReportVersion((v) => v + 1); refreshEvent() }}
             event={event}
             signals={signals}
             canAct={canAct}
@@ -2066,7 +2070,7 @@ export default function EventDetail() {
           <div className={card}>
             <PanelHeader title="AI analysis & risk assessment" sub="A quick check of how urgent this looks" />
             <RiskAssessment risk={event.risk} disease={fieldReports.length > 0 && has('verify_suspected_disease') ? (
-              <EventDiseaseDecision key={event.id} reports={fieldReports} onDecided={handleDiseaseDecided} onError={(m) => showToast(m, true)} />
+              <EventDiseaseDecision key={`${event.id}-${reportVersion}`} reports={fieldReports} onDecided={handleDiseaseDecided} onError={(m) => showToast(m, true)} />
             ) : (
               <DiseaseInsight eventId={event.id} diseaseName={event.disease === 'unclassified-illness' ? '' : event.diseaseName} eventReason={event.disease === 'unclassified-illness' ? '' : event.reason} onOpenCapture={() => selectStep(1)} />
             )}>

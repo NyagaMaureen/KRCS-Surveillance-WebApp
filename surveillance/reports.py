@@ -35,7 +35,8 @@ def _insert_child(doctype, parent, parentfield, values):
 def add_report_update(report, note, attachments=None, client_ref=None, channel=None):
 	"""Append a follow-up to a report ('one more child is sick') and optional photos / voice notes / files.
 	Only the reporter, or users with edit_reports. A retry with the same client_ref adds nothing.
-	attachments: [{"attachment_type", "file", "text_content", "people_shown", "consent", "consent_recorded_on"}]
+	attachments: [{"attachment_type", "file", "text_content", "people_shown", "consent", "consent_recorded_on",
+		"spoken_language" (voice notes: English | Kiswahili | Both)}]
 	Returns {"name", "updates": [...]}."""
 	cr = _report(report)
 	if not _can_update(cr):
@@ -58,7 +59,8 @@ def add_report_update(report, note, attachments=None, client_ref=None, channel=N
 		if a.get("consent_recorded_on") and kind in ("Photo", "Voice Note"):
 			recorded = get_datetime(a["consent_recorded_on"])
 		rows.append({"attachment_type": kind, "file": a.get("file"), "text_content": (a.get("text_content") or "")[:2000] or None,
-			"people_shown": shown, "consent": consent, "consent_recorded_on": recorded})
+			"people_shown": shown, "consent": consent, "consent_recorded_on": recorded,
+			"spoken_language": a.get("spoken_language") if a.get("spoken_language") in ("English", "Kiswahili", "Both") else None})
 	for r in rows:
 		_insert_child("Case Report Attachment", cr.name, "attachments", r)
 	_insert_child("Case Report Update", cr.name, "updates", {"at": now_datetime(), "user": frappe.session.user,

@@ -122,6 +122,7 @@ export default function RecordHealthSignal() {
   const [textNoteValue, setTextNoteValue] = useState('')
   const [photos, setPhotos] = useState([])
   const [voice, setVoice] = useState(null)
+  const [voiceLang, setVoiceLang] = useState('')   // English | Kiswahili | Both: tells speech-to-text what to expect
   const [mediaConsent, setMediaConsent] = useState({ peopleShown: false, consent: '' })   // default: no person shown
   // one reference per report: if Submit is pressed twice (or the network retries), the server keeps one report
   const clientRef = useRef(globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `web-${Date.now()}-${Math.random().toString(36).slice(2)}`)
@@ -391,6 +392,10 @@ export default function RecordHealthSignal() {
       return
     }
 
+    if (voiceRef.current && !voiceLang) {
+      setSubmitError('Choose the language spoken in the voice note (step 3).')
+      return
+    }
     const hasMedia = photosRef.current.length > 0 || !!voiceRef.current
     if (hasMedia && !consentOk(mediaConsent)) {
       setSubmitError('Answer the consent question under the photo and voice note (step 3), or remove them.')
@@ -405,7 +410,7 @@ export default function RecordHealthSignal() {
         try { uploaded.push({ attachment_type: 'Photo', file: await uploadPhoto(p.id), text_content: '', ...consentFields(mediaConsent) }) } catch { failed++ }
       }
       if (voiceRef.current) {
-        try { uploaded.push({ attachment_type: 'Voice Note', file: await uploadVoice(), text_content: '', ...consentFields(mediaConsent) }) } catch { failed++ }
+        try { uploaded.push({ attachment_type: 'Voice Note', file: await uploadVoice(), text_content: '', spoken_language: voiceLang, ...consentFields(mediaConsent) }) } catch { failed++ }
       }
       if (failed) {
         setSubmitError(`${failed} file${failed > 1 ? 's' : ''} could not be uploaded. Your answers are kept. Retry the upload, or press Submit report again.`)
@@ -477,8 +482,15 @@ export default function RecordHealthSignal() {
   // Moving forward checks each step on the way; the first step with a problem stops there and shows it.
   // Going back is always allowed.
   const consentMissing = (photos.length > 0 || !!voice) && !consentOk(mediaConsent)
+  const voiceLangMissing = !!voice && !voiceLang
   function goToStep(n) {
     for (let s = currentStep; s < n; s++) {
+      if (s === 3 && voiceLangMissing) {
+        setStepTried((prev) => ({ ...prev, voiceLang: true }))
+        if (s !== currentStep) setCurrentStep(s)
+        setTimeout(() => document.getElementById('field-voice-language')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+        return
+      }
       if (s === 3 && consentMissing) {
         setStepTried((prev) => ({ ...prev, consent: true }))
         if (s !== currentStep) setCurrentStep(s)
@@ -809,6 +821,21 @@ export default function RecordHealthSignal() {
               <div className="mb-6">
                 <h3 className="text-sm font-bold text-gray-900 mb-2">Record voice note {optionalHint}</h3>
                 <VoiceField voice={voice} setVoice={setVoice} onRetry={() => uploadVoice().catch(() => {})} />
+                {voice && (
+                  <fieldset id="field-voice-language" className={`mt-3 rounded-xl border p-3 ${stepTried.voiceLang && voiceLangMissing ? 'border-red-300 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
+                    <legend className="sr-only">Language spoken in the voice note</legend>
+                    <p className="text-sm font-semibold text-gray-900 mb-2">Language spoken in the voice note</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[['English', 'English'], ['Kiswahili', 'Kiswahili'], ['Both', 'Both (mixed)']].map(([value, label]) => (
+                        <label key={value} className={`cursor-pointer rounded-lg border px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-red-300 ${voiceLang === value ? 'border-red-300 bg-white font-semibold text-gray-900' : 'border-gray-200 bg-white text-gray-700'}`}>
+                          <input type="radio" name="voice-language" value={value} checked={voiceLang === value} onChange={() => setVoiceLang(value)} className="sr-only" />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    {stepTried.voiceLang && voiceLangMissing && <p className="text-xs text-red-700 mt-1.5">Choose the language so the voice note can be written out correctly.</p>}
+                  </fieldset>
+                )}
               </div>
 
               {(photos.length > 0 || voice) && (
@@ -993,6 +1020,7 @@ export default function RecordHealthSignal() {
                     <div>
                       <audio controls src={voice.previewUrl} className="w-full max-w-sm" />
                       {voice.duration ? <span className="text-xs text-gray-500">Duration {formatDuration(voice.duration)}</span> : null}
+                      {voiceLang ? <span className="text-xs text-gray-500">{voice.duration ? ' · ' : ''}{voiceLang === 'Both' ? 'English and Kiswahili' : voiceLang}</span> : null}
                       <UploadStatus item={voice} onRetry={() => uploadVoice().catch(() => {})} />
                     </div>
                   ) : (
