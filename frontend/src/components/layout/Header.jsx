@@ -237,7 +237,7 @@ export default function Header({ onOpenNav }) {
           </div>
 
           <button
-            aria-label="Open AI assistant"
+            aria-label="Open KRCS Data Assistant" title="KRCS Data Assistant"
             className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer"
             onClick={goToAiAssistant}
           >

@@ -288,6 +288,8 @@ def add_to_report(report, symptoms=None, age_group=None, animal_exposure=None, a
 	if age_group in ("Under 1", "1-4 years", "5-14 years", "15+ years") and age_group != doc.age_group:
 		changes.append(f"age group {doc.age_group or '-'} to {age_group}")
 		doc.age_group = age_group
+		if doc.get("age_groups") and age_group not in doc.age_groups:   # keep the ticked groups and add this one
+			doc.age_groups = f"{doc.age_groups}, {age_group}"
 	if animal_exposure in ("Bite or scratch", "Handled sick or dead animal") and animal_exposure != doc.animal_exposure:
 		changes.append(f"animal contact {(doc.animal_exposure or 'none').lower()} to {animal_exposure.lower()}")
 		doc.animal_exposure = animal_exposure

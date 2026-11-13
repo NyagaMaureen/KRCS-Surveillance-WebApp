@@ -124,7 +124,7 @@ export default function HelpCenter() {
           <div>
             <p className="text-gray-900">Email Support</p>
             <p className="text-xs text-gray-500 mt-2">support@krcs.org</p>
-            <p className="text-xs text-gray-500 mt-1">Or use the AI Assistant for instant answers.</p>
+            <p className="text-xs text-gray-500 mt-1">Or ask the KRCS Data Assistant for instant answers.</p>
           </div>
           <div>
             <p className="text-gray-900">Phone Support</p>

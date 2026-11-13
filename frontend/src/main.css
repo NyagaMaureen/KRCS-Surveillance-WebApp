@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+/* KRCS review (12 Nov 2026): less grey. Text greys are darkened app-wide so labels, menus and tables read black.
+   The light greys used for borders and backgrounds (50-300) are unchanged. */
+@theme {
+  --color-gray-400: #4b5563;
+  --color-gray-500: #1f2937;
+  --color-gray-600: #111827;
+  --color-gray-700: #111827;
+}
+
 html, body, #app { background: #ffffff; }
 body { font-family: 'Inter', sans-serif; }
 

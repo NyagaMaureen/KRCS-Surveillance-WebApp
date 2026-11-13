@@ -93,6 +93,7 @@ LABELS = {
 		},
 		"status": {
 			"Submitted": "Submitted",
+			"Recorded": "Received",
 			"Reviewed": "Reviewed",
 			"Linked": "Linked to an alert",
 			"Investigating": "Under investigation",
@@ -127,6 +128,7 @@ LABELS = {
 		},
 		"status": {
 			"Submitted": "Imepokelewa",
+			"Recorded": "Imepokelewa",
 			"Reviewed": "Imekaguliwa",
 			"Linked": "Imeunganishwa na tahadhari",
 			"Investigating": "Inachunguzwa",

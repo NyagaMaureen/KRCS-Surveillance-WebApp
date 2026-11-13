@@ -91,7 +91,7 @@ export const PRIORITY = {
 }
 
 export const REFERRAL_TONE = { Pending: 'amber', 'On the way': 'blue', 'Reached facility': 'green', 'Not reached': 'red' }
-export const REPORT_TONE = { Submitted: 'softAmber', Reviewed: 'softGreen', Linked: 'softGreen', Investigating: 'softAmber', Closed: 'gray' }
+export const REPORT_TONE = { Submitted: 'softAmber', Recorded: 'gray', Reviewed: 'softGreen', Linked: 'softGreen', Investigating: 'softAmber', Closed: 'gray' }
 
 export function EmptyNote({ children }) {
   return <p className="text-sm text-gray-400 py-6 text-center">{children}</p>

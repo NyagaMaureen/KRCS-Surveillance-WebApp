@@ -1,325 +1,200 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
-import { Search, Check, Lock } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, Lock } from 'lucide-react'
 import { getRoleCapabilities, setRoleCapability } from '../../api/frappe'
 
+// Roles & Permissions as a table: one permission group at a time, a row per role, a column per permission.
+// Ticking a box saves straight away. System roles (full access) are shown ticked and locked.
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-gray-400'
+
+// short column heading: "Settings: Notifications" -> "Notifications"
+const shortName = (name) => String(name || '').replace(/^[^:]{2,20}:\s*/, '')
+
+// roles grouped by level, field to national, so similar roles sit together; anything else goes under Other
+const LEVELS = [
+  ['Field', ['CHP', 'Facility Health Worker']],
+  ['Facility', ['Public Health Officer', 'HIS Officer']],
+  ['Sub-county and county', ['Surveillance Officer', 'SCDSC', 'CDSC']],
+  ['National', ['Public Health HQ', 'MOH DDSR']],
+  ['System', ['Data & AI Administrator', 'HQ Admin']],
+]
+
 export default function RolesPermissions({ roles = [], users = [], initialRole = '', onRoleChange }) {
-  const [search, setSearch] = useState('')
-  const [selectedRole, setSelectedRole] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [rawCapabilities, setRawCapabilities] = useState([])
-  const [capState, setCapState] = useState({})
-  const [locked, setLocked] = useState(false)
-  const [capFilter, setCapFilter] = useState('')
-  const [bulkBusy, setBulkBusy] = useState(false)
-
-  const categories = useMemo(() => {
-    const byCategory = new Map()
-    for (const cap of rawCapabilities) {
-      if (!byCategory.has(cap.category)) byCategory.set(cap.category, new Map())
-      const byDoctype = byCategory.get(cap.category)
-      const groupKey = cap.target_doctype || 'all'
-      if (!byDoctype.has(groupKey)) byDoctype.set(groupKey, [])
-      byDoctype.get(groupKey).push(cap)
-    }
-    return Array.from(byCategory.entries())
-      .map(([category, byDoctype]) => ({
-        key: category,
-        label: category,
-        groups: Array.from(byDoctype.entries()).map(([recordType, capabilities]) => ({ recordType, capabilities })),
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label))
-  }, [rawCapabilities])
-
-  const roleUserCounts = useMemo(() => {
-    const counts = {}
-    users.forEach((u) => {
-      if (u.primary_role) counts[u.primary_role] = (counts[u.primary_role] || 0) + 1
-    })
-    return counts
-  }, [users])
-
-  const roleCards = useMemo(() =>
-    roles.map((r) => {
-      const count = roleUserCounts[r.role] || 0
-      return { name: r.name, role: r.role, countLabel: count === 1 ? '1 user' : `${count} users` }
-    }),
-    [roles, roleUserCounts]
-  )
-
-  const filteredRoles = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return roleCards
-    return roleCards.filter((r) => r.role.toLowerCase().includes(q))
-  }, [search, roleCards])
-
-  const enabledTotal = rawCapabilities.filter((c) => capState[c.key]).length
-
-  const visibleCategories = useMemo(() => {
-    const q = capFilter.trim().toLowerCase()
-    return categories
-      .map((cat) => ({
-        ...cat,
-        groups: cat.groups
-          .map((g) => ({
-            ...g,
-            capabilities: q
-              ? g.capabilities.filter((c) => `${c.name} ${c.description || ''}`.toLowerCase().includes(q))
-              : g.capabilities,
-          }))
-          .filter((g) => g.capabilities.length),
-      }))
-      .filter((cat) => cat.groups.length)
-  }, [categories, capFilter])
-
+  const [caps, setCaps] = useState([])               // every permission (key, name, category, description)
+  const [enabled, setEnabled] = useState({})         // role -> { key: true }
+  const [locked, setLocked] = useState({})           // role -> true for system roles
+  const [loading, setLoading] = useState(true)
+  const [group, setGroup] = useState('')
+  const [query, setQuery] = useState('')            // find a permission across every group
+  const [hoverCol, setHoverCol] = useState(null)
+  const [busy, setBusy] = useState({})               // "role|key" being saved
   const [toast, setToast] = useState({ show: false, message: '', error: false })
   const toastTimer = useRef(null)
+
   function showToast(message, error = false) {
     setToast({ show: true, message, error })
     clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 2000)
   }
 
-  function selectRole(r) {
-    setSelectedRole(r)
-  }
-
-  function pickRole(r) {
-    selectRole(r)
-    onRoleChange?.(r.role)
-  }
-
-  async function loadCapabilities(role) {
+  // load every role's permissions once (one request per role)
+  useEffect(() => {
+    if (!roles.length) return undefined
+    let live = true
     setLoading(true)
-    try {
-      const res = await getRoleCapabilities(role)
-      const caps = res?.capabilities || []
-      setRawCapabilities(caps)
-      setLocked(!!res?.locked)
-      setCapState(Object.fromEntries(caps.map((c) => [c.key, !!c.enabled])))
-    } catch (err) {
-      setRawCapabilities([])
-      showToast(err.message || 'Failed to load capabilities', true)
-    } finally {
-      setLoading(false)
-    }
-  }
+    Promise.all(roles.map((r) => getRoleCapabilities(r.role).then((res) => [r.role, res]).catch(() => [r.role, null])))
+      .then((rows) => {
+        if (!live) return
+        const first = rows.find(([, res]) => res?.capabilities?.length)
+        setCaps(first ? first[1].capabilities.map(({ key, name, category, description }) => ({ key, name, category, description })) : [])
+        setEnabled(Object.fromEntries(rows.map(([role, res]) => [role, Object.fromEntries((res?.capabilities || []).filter((c) => c.enabled).map((c) => [c.key, true]))])))
+        setLocked(Object.fromEntries(rows.map(([role, res]) => [role, !!res?.locked])))
+      })
+      .finally(() => live && setLoading(false))
+    return () => { live = false }
+  }, [roles])
 
-  async function toggleCapability(cap, event) {
-    const enabled = event.target.checked
-    setCapState((prev) => ({ ...prev, [cap.key]: enabled }))
+  const groups = useMemo(() => {
+    const m = new Map()
+    caps.forEach((c) => { if (!m.has(c.category)) m.set(c.category, []); m.get(c.category).push(c) })
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, list]) => ({ name, caps: list }))
+  }, [caps])
+  const q = query.trim().toLowerCase()
+  const current = q
+    ? { name: 'Search results', caps: caps.filter((c) => `${c.name} ${c.description || ''} ${c.category}`.toLowerCase().includes(q)) }
+    : groups.find((g) => g.name === group) || groups[0]
+
+  const levels = useMemo(() => {
+    const placed = new Set()
+    const out = LEVELS.map(([label, names]) => {
+      const rs = names.map((n) => roles.find((r) => r.role === n)).filter(Boolean)
+      rs.forEach((r) => placed.add(r.role))
+      return { label, roles: rs }
+    })
+    out.push({ label: 'Other', roles: roles.filter((r) => !placed.has(r.role)) })
+    return out.filter((l) => l.roles.length)
+  }, [roles])
+
+  const userCounts = useMemo(() => {
+    const n = {}
+    users.forEach((u) => { if (u.primary_role) n[u.primary_role] = (n[u.primary_role] || 0) + 1 })
+    return n
+  }, [users])
+
+  async function toggle(role, cap) {
+    const id = `${role}|${cap.key}`
+    const next = !enabled[role]?.[cap.key]
+    setEnabled((e) => ({ ...e, [role]: { ...e[role], [cap.key]: next } }))
+    setBusy((b) => ({ ...b, [id]: true }))
     try {
-      const res = await setRoleCapability(selectedRole.role, cap.key, enabled ? 1 : 0)
-      if (res?.capabilities) {
-        setCapState(Object.fromEntries(res.capabilities.map((c) => [c.key, !!c.enabled])))
+      const res = await setRoleCapability(role, cap.key, next ? 1 : 0)
+      if (res?.capabilities) {   // the server may switch on related permissions too
+        setEnabled((e) => ({ ...e, [role]: Object.fromEntries(res.capabilities.filter((c) => c.enabled).map((c) => [c.key, true])) }))
       }
-      showToast('Permissions saved')
+      showToast(`${role}: ${shortName(cap.name)} ${next ? 'on' : 'off'}`)
     } catch (err) {
-      setCapState((prev) => ({ ...prev, [cap.key]: !enabled }))
-      showToast(err.message || 'Failed to update capability', true)
-    }
-  }
-
-  function categoryCaps(cat) {
-    return cat.groups.flatMap((g) => g.capabilities)
-  }
-
-  async function bulkToggle(cat) {
-    const caps = categoryCaps(cat)
-    const target = !caps.every((c) => capState[c.key])
-    setBulkBusy(true)
-    try {
-      for (const cap of caps) {
-        if (!!capState[cap.key] !== target) {
-          await toggleCapability(cap, { target: { checked: target } })
-        }
-      }
+      setEnabled((e) => ({ ...e, [role]: { ...e[role], [cap.key]: !next } }))
+      showToast(err.message || 'Could not save', true)
     } finally {
-      setBulkBusy(false)
+      setBusy((b) => { const c = { ...b }; delete c[id]; return c })
     }
   }
 
-  function bulkLabel(cat) {
-    return categoryCaps(cat).every((c) => capState[c.key]) ? 'Disable all' : 'Enable all'
-  }
-
-  useEffect(() => {
-    if (selectedRole) loadCapabilities(selectedRole.role)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRole])
-
-  useEffect(() => {
-    if (!roles.length) return
-    const match = initialRole && roles.find((r) => r.role === initialRole || r.name === initialRole)
-    if (match) {
-      setSelectedRole((cur) => (cur && cur.name === match.name ? cur : { name: match.name, role: match.role }))
-    } else if (!selectedRole) {
-      selectRole({ name: roles[0].name, role: roles[0].role })
+  // tick or untick every permission of the open group for one role
+  async function toggleRow(role) {
+    const all = current.caps.every((c) => enabled[role]?.[c.key])
+    for (const c of current.caps) {
+      if (!!enabled[role]?.[c.key] === all) await toggle(role, c)   // eslint-disable-line no-await-in-loop
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roles, initialRole])
-
-  const isSelected = (r) => selectedRole && selectedRole.name === r.name
-
-  function renderTile(cap) {
-    const on = !!capState[cap.key]
-    return (
-      <button
-        key={cap.key}
-        type="button"
-        role="switch"
-        aria-checked={on}
-        disabled={locked}
-        onClick={() => toggleCapability(cap, { target: { checked: !capState[cap.key] } })}
-        className={[
-          'flex items-start justify-between gap-3 text-left border rounded-lg p-3 transition-colors',
-          on ? 'border-red-200 bg-red-50/30' : 'border-gray-100 hover:border-gray-200',
-          locked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
-        ].join(' ')}
-      >
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-gray-900">{cap.name}</div>
-          <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{cap.description}</div>
-        </div>
-        <span className={['w-10 h-5 rounded-full relative transition-colors shrink-0 mt-0.5', on ? 'bg-red-600' : 'bg-gray-200'].join(' ')}>
-          <span className={['absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform', on ? 'translate-x-5' : ''].join(' ')}></span>
-        </span>
-      </button>
-    )
   }
-
-  function renderGroups(cat) {
-    return cat.groups.map((group) => (
-      <div key={group.recordType} className="contents">
-        {cat.groups.length > 1 && (
-          <div className="col-span-full pt-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{group.recordType}</div>
-        )}
-        {group.capabilities.map(renderTile)}
-      </div>
-    ))
-  }
-
-  const bulkButton = (cat) => !locked && (
-    <button
-      type="button"
-      onClick={() => bulkToggle(cat)}
-      disabled={bulkBusy}
-      className="text-xs font-semibold text-red-700 hover:text-red-800 disabled:opacity-50"
-    >
-      {bulkLabel(cat)}
-    </button>
-  )
 
   return (
-    <div className="flex flex-col lg:flex-row gap-5 h-[calc(100vh-220px)] min-h-[520px]">
-      <div className="hidden lg:flex bg-white rounded-xl border border-gray-100 w-64 shrink-0 flex-col min-h-0">
-        <div className="p-4 border-b border-gray-100 shrink-0">
-          <h3 className="font-bold text-gray-900 mb-3">Roles</h3>
-          <div className="relative">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              type="text"
-              placeholder="Search roles"
-              className="w-full bg-gray-50 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none"
-            />
-          </div>
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
-          {filteredRoles.map((r) => (
-            <button
-              key={r.name}
-              onClick={() => pickRole(r)}
-              className={[
-                'w-full text-left rounded-lg px-3 py-2.5 border transition-colors flex items-center justify-between gap-2',
-                isSelected(r) ? 'border-red-600 bg-red-50' : 'border-transparent hover:bg-gray-50',
-              ].join(' ')}
-            >
-              <span className={['text-sm font-semibold truncate', isSelected(r) ? 'text-red-700' : 'text-gray-900'].join(' ')}>{r.role}</span>
-              <span className="text-[11px] text-gray-500 bg-gray-100 rounded-full px-2 py-0.5 shrink-0">{r.countLabel}</span>
+    <div className="rounded-xl border border-gray-200 bg-white">
+      {/* permission groups */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 p-4">
+        {groups.map((g) => {
+          const on = !q && current && g.name === current.name
+          return (
+            <button key={g.name} type="button" onClick={() => { setGroup(g.name); setQuery('') }} aria-pressed={on}
+              className={['rounded-full border px-3 py-1.5 text-sm', on ? 'border-red-600 bg-red-600 font-semibold text-white' : 'border-gray-200 bg-white text-gray-900 hover:border-red-200', FOCUS].join(' ')}>
+              {g.name} <span className={on ? 'text-white' : 'text-gray-500'}>{g.caps.length}</span>
             </button>
-          ))}
-          {!filteredRoles.length && (
-            <div className="text-center text-sm text-gray-400 py-8">No roles found</div>
-          )}
-        </div>
+          )
+        })}
+        <input value={query} onChange={(e) => setQuery(e.target.value)} type="search" placeholder="Find a permission" aria-label="Find a permission"
+          className={`ml-auto h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm sm:w-56 ${FOCUS}`} />
       </div>
 
-      <div className="lg:hidden flex gap-2 overflow-x-auto shrink-0 pb-1">
-        {roleCards.map((r) => (
-          <button
-            key={r.name}
-            onClick={() => pickRole(r)}
-            className={[
-              'whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium border',
-              isSelected(r) ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-700',
-            ].join(' ')}
-          >
-            {r.role} <span className="text-xs text-gray-400">{r.countLabel}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 min-w-0 min-h-0 bg-white rounded-xl border border-gray-100 flex flex-col overflow-hidden">
-        {selectedRole ? (
-          <>
-            <div className="px-5 pt-4 pb-3 border-b border-gray-100 shrink-0">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-lg font-bold text-gray-900">{selectedRole.role}</h2>
-                    {locked && (
-                      <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full px-2.5 py-1">
-                        <Lock className="w-3 h-3" /> System role · full access
-                      </span>
+      <p className="border-b border-gray-200 px-4 py-2 text-xs text-gray-600">Tick a box to give a role that permission; it saves straight away. Hover a heading to see what it allows.</p>
+      {loading ? (
+        <p className="p-10 text-center text-sm text-gray-500">Loading permissions…</p>
+      ) : !current || !current.caps.length ? (
+        <p className="p-10 text-center text-sm text-gray-500">{q ? 'No permission matches your search.' : 'No permissions found.'}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm" onMouseLeave={() => setHoverCol(null)}>
+            <thead className="sticky top-0 z-20 bg-white">
+              <tr className="border-b-2 border-red-600">
+                <th scope="col" className="sticky left-0 z-10 min-w-[200px] bg-white px-4 py-3 text-left text-sm font-bold text-gray-900">{current.name}</th>
+                {current.caps.map((c) => (
+                  <th key={c.key} scope="col" title={c.description} onMouseEnter={() => setHoverCol(c.key)}
+                    className={['w-28 min-w-[7rem] px-2 py-3 text-center align-bottom text-xs font-bold leading-tight text-gray-900', hoverCol === c.key ? 'bg-red-50' : ''].join(' ')}>
+                    {q && <span className="mb-0.5 block font-normal text-gray-500">{c.category}</span>}
+                    {shortName(c.name)}
+                  </th>
+                ))}
+                {!q && <th scope="col" className="w-20 px-2 py-3 text-center align-bottom text-xs font-bold text-gray-900">All</th>}
+              </tr>
+            </thead>
+            {levels.map((lvl) => (
+            <tbody key={lvl.label}>
+              <tr className="bg-gray-50">
+                <th scope="colgroup" colSpan={current.caps.length + 2} className="sticky left-0 px-4 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-red-700">{lvl.label}</th>
+              </tr>
+              {lvl.roles.map((r) => {
+                const isLocked = !!locked[r.role]
+                const selected = initialRole && (initialRole === r.role || initialRole === r.name)
+                return (
+                  <tr key={r.name} className={['border-b border-gray-200 hover:bg-red-50/40', selected ? 'bg-red-50/40' : ''].join(' ')}>
+                    <th scope="row" className="sticky left-0 z-10 bg-white px-4 py-3 text-left font-normal">
+                      <button type="button" onClick={() => onRoleChange?.(r.role)} className={`rounded text-left ${FOCUS}`}>
+                        <span className="block text-sm font-medium text-gray-900">{r.role}</span>
+                        <span className="flex items-center gap-1 text-xs text-gray-500">
+                          {userCounts[r.role] || 0} user{userCounts[r.role] === 1 ? '' : 's'}
+                          {isLocked && <><span aria-hidden="true">·</span><Lock className="h-3 w-3" aria-hidden="true" /> full access</>}
+                        </span>
+                      </button>
+                    </th>
+                    {current.caps.map((c) => {
+                      const on = isLocked || !!enabled[r.role]?.[c.key]
+                      return (
+                        <td key={c.key} onMouseEnter={() => setHoverCol(c.key)} className={['px-2 py-3 text-center', hoverCol === c.key ? 'bg-red-50/60' : ''].join(' ')}>
+                          <input type="checkbox" checked={on} disabled={isLocked || !!busy[`${r.role}|${c.key}`]} onChange={() => toggle(r.role, c)}
+                            aria-label={`${r.role}: ${c.name}`} title={c.description}
+                            className={`h-4 w-4 cursor-pointer accent-red-600 disabled:cursor-not-allowed ${FOCUS}`} />
+                        </td>
+                      )
+                    })}
+                    {!q && (
+                      <td className="px-2 py-3 text-center">
+                        {!isLocked && (
+                          <button type="button" onClick={() => toggleRow(r.role)} className={`rounded text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>
+                            {current.caps.every((c) => enabled[r.role]?.[c.key]) ? 'None' : 'All'}
+                          </button>
+                        )}
+                      </td>
                     )}
-                  </div>
-                  <p className="text-sm text-gray-500">{enabledTotal} of {rawCapabilities.length} permissions enabled</p>
-                </div>
-                <div className="relative w-48 shrink-0">
-                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    value={capFilter}
-                    onChange={(e) => setCapFilter(e.target.value)}
-                    type="text"
-                    placeholder="Filter permissions"
-                    className="w-full bg-gray-50 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none"
-                  />
-                </div>
-              </div>
-
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto p-5">
-              {loading ? (
-                <div className="h-full flex items-center justify-center text-sm text-gray-400">Loading permissions…</div>
-              ) : !categories.length ? (
-                <div className="h-full flex items-center justify-center text-sm text-gray-400">No capabilities found for this role.</div>
-              ) : !visibleCategories.length ? (
-                <div className="h-full flex items-center justify-center text-sm text-gray-400">No permissions match your filter.</div>
-              ) : (
-                <div className="space-y-6">
-                  {visibleCategories.map((cat) => (
-                    <div key={cat.key}>
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{cat.label}</h4>
-                        {bulkButton(cat)}
-                      </div>
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{renderGroups(cat)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Select a role to view its permissions</div>
-        )}
-      </div>
+                  </tr>
+                )
+              })}
+            </tbody>
+            ))}
+          </table>
+        </div>
+      )}
 
       {toast.show && (
-        <div className="fixed bottom-6 right-6 bg-gray-900 text-white text-sm rounded-lg px-4 py-2.5 flex items-center gap-2 shadow-lg z-50 transition-opacity duration-200">
-          {!toast.error && <Check className="w-4 h-4 text-green-400" />}
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm text-white shadow-lg">
+          {!toast.error && <Check className="h-4 w-4 text-green-400" aria-hidden="true" />}
           <span>{toast.message}</span>
         </div>
       )}

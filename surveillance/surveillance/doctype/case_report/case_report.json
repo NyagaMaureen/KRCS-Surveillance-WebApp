@@ -28,6 +28,7 @@
   "reported_by",
   "onset_date",
   "age_group",
+  "age_groups",
   "animal_exposure",
   "deaths_count",
   "suspected_disease",
@@ -153,7 +154,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Submitted\nReviewed\nLinked\nInvestigating\nClosed"
+   "options": "Submitted\nReviewed\nLinked\nInvestigating\nClosed\nRecorded"
   },
   {
    "default": "Today",
@@ -187,6 +188,12 @@
    "fieldtype": "Select",
    "label": "Age Group",
    "options": "Under 1\n1-4 years\n5-14 years\n15+ years"
+  },
+  {
+   "fieldname": "age_groups",
+   "fieldtype": "Small Text",
+   "label": "Age Groups",
+   "description": "Every age group among the people affected. Age Group holds the youngest."
   },
   {
    "fieldname": "animal_exposure",
@@ -305,7 +312,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-12 10:40:00.000000",
+ "modified": "2026-11-13 13:30:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",

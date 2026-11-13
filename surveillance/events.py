@@ -413,6 +413,7 @@ def on_case_report(doc, method=None):
 		event = frappe.db.get_value("Surveillance Signal", f"Field-{doc.name}", "event")
 		if not (event and frappe.db.get_value("Surveillance Event", event, "status") in CLOSED):
 			remove_signal("Field", doc.name)  # keep it on an event that was already discarded or closed
+		_set_report_status(doc, "Closed")   # officer: not a disease of concern
 		return
 	county = sub = None
 	if doc.sub_county:
@@ -427,7 +428,10 @@ def on_case_report(doc, method=None):
 			name = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
 			remove_signal("Field", doc.name, note=f"Report {doc.name} set to {name}: not a Review Queue disease, "
 				"so it is followed in Epi Trends.", new_disease_name=name)  # e.g. disease changed to one outside the queue
+			# a common illness counted in Epi Trends, whether the rules or an officer decided
+			_set_report_status(doc, "Recorded")
 			return
+	_set_report_status(doc, "Submitted", only_from=("Recorded", "Not for review", "Reviewed"))   # back in the queue
 	exposure = doc.get("animal_exposure")
 	upsert_signal({
 		"source": "Field", "ref": doc.name, "disease": disease,
@@ -457,7 +461,7 @@ def review_doubt(doc):
 	labels = _labels()
 	nm = lambda k: labels["disease"].get(k, k)
 	symptoms = [r.symptom for r in doc.symptoms if r.symptom]
-	age, exposure = doc.get("age_group"), doc.get("animal_exposure")
+	age, exposure = doc.get("age_groups") or doc.get("age_group"), doc.get("animal_exposure")
 	defs, _widened = with_outbreak_ages(get_definitions(), doc.get("sub_county"))
 	for d in classify_detailed(symptoms, age, exposure, defs):
 		if d["disease"] in queue:
@@ -868,3 +872,11 @@ def add_note(event, note, client_ref=None):
 		"client_ref": ref})
 	doc.save(ignore_permissions=True)
 	return _shape(doc, detail=True)
+
+
+def _set_report_status(doc, status, only_from=("Submitted",)):
+	"""Report status for the Signals Captured page, so 'Awaiting review' counts only reports waiting in the Review Queue.
+	Investigating / Closed after an investigation are set from the event (investigation.sync_reports)."""
+	if doc.status in only_from and doc.status != status:
+		frappe.db.set_value("Case Report", doc.name, "status", status, update_modified=False)
+		doc.status = status

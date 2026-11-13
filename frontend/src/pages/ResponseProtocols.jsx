@@ -183,7 +183,7 @@ const DETAIL_TABS = [
   { key: 'about', label: 'Overview' },
   { key: 'questions', label: 'Verification questions' },
   { key: 'Investigation', label: 'Field investigation steps' },
-  { key: 'Response', label: 'Response steps' },
+  { key: 'Response', label: 'RCCE steps' },
 ]
 
 function ProtocolDetail({ protocol: p, canManage, busy, diseases, onBack, onSaved, onStatus, onDelete }) {
@@ -511,7 +511,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
       <div className="flex flex-col gap-0.5">
         <button type="button" aria-label="Move step up" disabled={i === 0} onClick={() => move(i, -1)} className={iconBtn}><ArrowUp className="w-4 h-4" /></button>
         <button type="button" aria-label="Move step down" disabled={i === form.steps.length - 1} onClick={() => move(i, 1)} className={iconBtn}><ArrowDown className="w-4 h-4" /></button>
-        <button type="button" aria-label={st.phase === 'Response' ? 'Move to investigation steps' : 'Move to response steps'} title={st.phase === 'Response' ? 'Move to investigation steps' : 'Move to response steps'}
+        <button type="button" aria-label={st.phase === 'Response' ? 'Move to investigation steps' : 'Move to RCCE steps'} title={st.phase === 'Response' ? 'Move to investigation steps' : 'Move to RCCE steps'}
           onClick={() => setStep(i, { phase: st.phase === 'Response' ? 'Investigation' : 'Response' })} className={`${iconBtn} text-[10px] font-semibold`}>{st.phase === 'Response' ? 'INV' : 'RSP'}</button>
         <button type="button" aria-label="Remove step" disabled={form.steps.length === 1}
           onClick={() => set({ steps: form.steps.filter((_, idx) => idx !== i) })} className={`${iconBtn} hover:text-red-700`}><X className="w-4 h-4" /></button>
@@ -632,7 +632,7 @@ function ProtocolModal({ protocol, initialDisease, diseases, onClose, onSaved, o
       </section>}
 
       {show('Investigation') && phaseSection('Investigation', 'Field investigation steps', 'Done during the field investigation, including first treatment and isolation. Tick "Can be assigned to CHP/field worker" for steps a CHP, CHA or health worker carries out and reports back on.Tick "Show to CHP/Community reporters" for immediate actions/advise shown to CHP, CHA or health worker when reporting.')}
-      {show('Response') && phaseSection('Response', 'Response steps', 'Open after the event is confirmed or escalated.')}
+      {show('Response') && phaseSection('Response', 'RCCE steps', 'Open after the event is confirmed or escalated.')}
 
       <div className={only ? '' : 'fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-gray-100'}>
         <div className={only ? 'flex items-center justify-end gap-3' : 'max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-end gap-3'}>

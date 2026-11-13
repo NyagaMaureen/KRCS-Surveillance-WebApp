@@ -3,7 +3,7 @@
  "autoname": "TSK-.#####",
  "naming_rule": "Expression",
  "creation": "2026-10-28 12:00:00.000000",
- "modified": "2026-10-30 16:00:00.000000",
+ "modified": "2026-11-13 16:40:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "doctype": "DocType",
@@ -29,6 +29,7 @@
   "team",
   "sb_ref",
   "facility",
+  "people_referred",
   "urgency",
   "sb_ctx",
   "disease_name",
@@ -139,6 +140,11 @@
    "fieldname": "facility",
    "fieldtype": "Data",
    "label": "Refer to facility"
+  },
+  {
+   "fieldname": "people_referred",
+   "fieldtype": "Int",
+   "label": "People Referred"
   },
   {
    "fieldname": "urgency",

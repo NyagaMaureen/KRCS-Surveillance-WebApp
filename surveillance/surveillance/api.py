@@ -1,7 +1,7 @@
 import frappe
 import json
 
-from surveillance.capabilities import require_capability
+from surveillance.capabilities import has_capability, require_capability
 
 
 @frappe.whitelist()
@@ -235,7 +235,8 @@ def get_my_profile():
 @frappe.whitelist()
 def get_channel_stats(days=30):
     """Reports per channel: last `days` days, today, last 7 days, and last report time."""
-    require_capability("view_reports")
+    if not has_capability("view_reporting_channels"):   # the Reporting Channels page permission
+        require_capability("view_reports")
     days = int(days)
     rows = frappe.db.sql("""
         select ifnull(channel, '') as channel,
@@ -266,7 +267,8 @@ def get_channel_stats(days=30):
 def get_source_stats(days=30):
     """Weekly Count sources that are loaded in batches (CBS, IDSR), for the Reporting Channels page.
     Counts weeks starting within the last `days` days; split into pilot sub-counties vs all areas."""
-    require_capability("view_reports")
+    if not has_capability("view_reporting_channels"):
+        require_capability("view_reports")
     from frappe.utils import add_days, getdate, nowdate
     days = int(days)
     since = add_days(getdate(nowdate()), -days)

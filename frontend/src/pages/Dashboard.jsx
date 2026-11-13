@@ -53,7 +53,7 @@ const QUICK_ACTIONS = [
   { label: 'View All Alerts', icon: Radio, to: '/epi-trends', color: '#3E85C5', bg: 'rgba(62, 133, 197, 0.05)' },
   { label: 'Analytics', icon: TrendingUp, to: '/analytics', color: '#28A745', bg: 'rgba(40, 167, 69, 0.05)' },
   { label: 'Surveillance Map', icon: Map, to: '/surveillance-map', color: '#9810FA', bg: 'rgba(152, 16, 250, 0.05)' },
-  { label: 'KRCS AI Data Assistant', icon: Sparkles, to: '/ai-data-assistant', color: '#FFC107', bg: 'rgba(255, 193, 7, 0.05)' },
+  { label: 'KRCS Data Assistant', icon: Sparkles, to: '/ai-data-assistant', color: '#FFC107', bg: 'rgba(255, 193, 7, 0.05)' },
   { label: 'Data Explorer', icon: FileSearch, to: '/data-explorer', color: '#DC3545', bg: 'rgba(220, 53, 69, 0.05)' },
   { label: 'Reports', icon: FileText, to: '/reports', color: '#243542', bg: 'rgba(36, 53, 66, 0.05)' },
 ]

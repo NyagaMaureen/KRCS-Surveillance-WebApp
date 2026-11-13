@@ -135,6 +135,9 @@ export function TrendChart({ panel, keys, labels, weeks, showUnconfirmed, withUn
   const totals = weeks.map((_, i) => used.reduce((n, k) => n + (panel.bySource[k][i] || 0), 0) + (unc[i] || 0))
   const usual = usualFor(panel, withUnconfirmed && showUnconfirmed)
   const max = Math.max(1, ...totals, ...usual.filter((u) => u != null))
+  // a rise covers several weeks; mark only the weeks that had reports (confirmed or not), not the empty ones in between
+  const reportedAll = weeks.map((_, i) => used.reduce((n, k) => n + (panel.bySource[k][i] || 0), 0) + ((panel.unconfirmed || [])[i] || 0))
+  const flags = panel.flags.map((f, i) => (reportedAll[i] ? f : []))
   const font = pageFont()
   const data = {
     labels: weeks.map(weekLabel),
@@ -152,7 +155,7 @@ export function TrendChart({ panel, keys, labels, weeks, showUnconfirmed, withUn
         pointRadius: 0, pointHoverRadius: 0, tension: 0, spanGaps: false, stack: 'usual', order: 2,
       },
       {
-        type: 'line', label: 'Unusual rise', data: panel.flags.map((f, i) => (f.length ? totals[i] + max * (totals[i] && totals[i] / max <= 0.04 ? 0.2 : 0.08) : null)),
+        type: 'line', label: 'Unusual rise', data: flags.map((f, i) => (f.length ? totals[i] + max * (totals[i] && totals[i] / max <= 0.04 ? 0.2 : 0.08) : null)),
         showLine: false, pointStyle: 'triangle', pointRadius: 6, pointHoverRadius: 8, pointBackgroundColor: RISE,
         pointBorderColor: RISE, stack: 'flags', order: 1,
       },
@@ -164,11 +167,11 @@ export function TrendChart({ panel, keys, labels, weeks, showUnconfirmed, withUn
     interaction: { mode: 'index', intersect: false },
     onHover: (e, els) => {
       const i = els[0]?.index
-      e.native.target.style.cursor = onOpenRise && i != null && panel.flags[i]?.length ? 'pointer' : 'default'
+      e.native.target.style.cursor = onOpenRise && i != null && flags[i]?.length ? 'pointer' : 'default'
     },
     onClick: (_e, els) => {
       const i = els[0]?.index
-      if (onOpenRise && i != null && panel.flags[i]?.length) onOpenRise(panel.flags[i][0].alert)
+      if (onOpenRise && i != null && flags[i]?.length) onOpenRise(flags[i][0].alert)
     },
     scales: {
       x: { stacked: true, grid: { display: false }, border: { color: '#c3c2b7' },
@@ -189,17 +192,30 @@ export function TrendChart({ panel, keys, labels, weeks, showUnconfirmed, withUn
         itemSort: (a, b) => (a.dataset.label === 'Usual level') - (b.dataset.label === 'Usual level') || a.datasetIndex - b.datasetIndex,
         callbacks: {
           title: (ctx) => { const w = weeks[ctx[0].dataIndex]; return `${weekLabel(w)} · ${weekRange(w)}` },
-          label: (ctx) => ` ${ctx.dataset.label}: ${fmtNum(ctx.raw)}`,
+          // the usual level is a number of cases a week (the average of the 8 weeks before), not a multiplier
+          label: (ctx) => (ctx.dataset.label === 'Usual level'
+            ? ` Usual: about ${fmtNum(ctx.raw >= 1 ? Math.round(ctx.raw) : Math.round(ctx.raw * 10) / 10)} case${ctx.raw >= 0.5 && ctx.raw < 1.5 ? '' : 's'} a week`
+            : ` ${ctx.dataset.label}: ${fmtNum(ctx.raw)}`),
           labelColor: (ctx) => ({ borderColor: 'transparent', backgroundColor: ctx.dataset.label === 'Usual level' ? USUAL : ctx.dataset.backgroundColor, borderRadius: 2 }),
           afterBody: (ctx) => {
             const i = ctx[0].dataIndex
-            const lines = [`Total: ${fmtNum(totals[i])} case${totals[i] === 1 ? '' : 's'}`]
+            const u = usual[i]
+            const times = u > 0 && totals[i] > u ? Math.round(totals[i] / u) : 0
+            const lines = [`Total: ${fmtNum(totals[i])} case${totals[i] === 1 ? '' : 's'}`
+              + (times >= 2 ? `, about ${times}× the usual level` : u === 0 && totals[i] ? ', when usually there are none' : '')]
+            // where the cases came from (sub-county), so nobody has to look it up in Data Explorer
+            const where = (panel.places?.[i] || []).map((p) => ({ ...p, n: p.confirmed + (unc.length ? p.unconfirmed : 0) })).filter((p) => p.n)
+            if (where.length) {
+              lines.push('', 'Where:')
+              where.slice(0, 6).forEach((p) => lines.push(`  ${p.name}: ${fmtNum(p.n)}${unc.length && p.unconfirmed ? ` (${fmtNum(p.unconfirmed)} unconfirmed)` : ''}`))
+              if (where.length > 6) lines.push(`  and ${where.length - 6} more`)
+            }
             if (panel.facilityMissing?.[i]) lines.push('No health facility report received for this week')
             if (panel.reported && !panel.reported[i]) return ['No facility report received for this week']
             return lines
           },
           footer: (ctx) => {
-            const f = panel.flags[ctx[0].dataIndex] || []
+            const f = flags[ctx[0].dataIndex] || []
             return f.length ? [`▲ Unusual rise in ${[...new Set(f.map((x) => x.subCounty))].join(', ')}`, onOpenRise ? 'Click to see why and investigate' : ''].filter(Boolean) : []
           },
         },
@@ -265,7 +281,6 @@ export function DiseasePanels({ item, weeks, labels, showUnconfirmed, onOpenRise
           </div>
           <TrendChart panel={c} keys={COMMUNITY} labels={labels} weeks={weeks} showUnconfirmed={showUnconfirmed} withUnconfirmed
             height="h-60" onOpenRise={onOpenRise} band={band} ariaLabel={`${item.name}: community and field reports per week`} />
-          <NumbersTable panel={c} keys={COMMUNITY} labels={labels} weeks={weeks} showUnconfirmed={showUnconfirmed} withUnconfirmed />
         </div>
       ),
     },
@@ -284,7 +299,6 @@ export function DiseasePanels({ item, weeks, labels, showUnconfirmed, onOpenRise
           </div>
           <TrendChart panel={f} keys={FACILITY} labels={labels} weeks={weeks} showUnconfirmed={false}
             height="h-52" onOpenRise={onOpenRise} band={band} ariaLabel={`${item.name}: health facility cases per week`} />
-          <NumbersTable panel={f} keys={FACILITY} labels={labels} weeks={weeks} showUnconfirmed={false} />
         </div>
       ),
     },
@@ -313,6 +327,7 @@ export function combine(item) {
     usualAll: add(c.usualAll),
     flags: item.flags || Array.from({ length: n }, (_, i) => [...c.flags[i], ...f.flags[i]]),
     facilityMissing: anyFacility ? f.reported.map((r) => !r) : null,
+    places: item.places || null,   // per week: which sub-counties the cases came from
   }
 }
 
@@ -331,7 +346,6 @@ export function DiseaseChart({ item, weeks, labels, showUnconfirmed, onOpenRise,
       </div>
       <TrendChart panel={panel} keys={keys} labels={labels} weeks={weeks} showUnconfirmed={showUnconfirmed} withUnconfirmed
         height="h-80" onOpenRise={onOpenRise} band={band} ariaLabel={`${item.name}: cases per week by source`} />
-      <NumbersTable panel={panel} keys={keys} labels={labels} weeks={weeks} showUnconfirmed={showUnconfirmed} withUnconfirmed />
     </div>
   )
 }

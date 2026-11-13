@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { FileText, Clock, CheckCircle, Link as LinkIcon, Search, Upload, Plus, Eye, Camera } from 'lucide-react'
+import { FileText, Clock, Search as SearchIcon, CheckCircle, Search, Upload, Plus, Eye, Camera } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties } from '../api/frappe'
@@ -8,7 +8,9 @@ import { STATUSES, CHANNELS } from '../data/formOptions'
 
 const PAGE_SIZES = [10, 25, 50]
 
-const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-700', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500' }
+const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-700', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500', Recorded: 'bg-gray-100 text-gray-700' }
+const STATUS_LABEL = { Submitted: 'Awaiting review', Reviewed: 'Recorded', 'Not for review': 'Recorded', Linked: 'Awaiting review' }
+const statusLabel = (s) => STATUS_LABEL[s] || s   // stored values stay as they are; this is what people see
 const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-700', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
 const channelColor = (c) => CHANNEL_COLORS[c] || 'bg-gray-100 text-gray-600'
@@ -49,7 +51,7 @@ export default function Reports() {
   const placeLine = (r) => [subCountyName(r.sub_county), regions[r.region] || ''].filter(Boolean).join(' · ')
   const [totalCount, setTotalCount] = useState(0)
   const [reports, setReports] = useState([])
-  const [counts, setCounts] = useState({ total: 0, submitted: 0, reviewed: 0, linked: 0 })
+  const [counts, setCounts] = useState({ total: 0, pending: 0, investigating: 0, closed: 0 })
   const [statusFilter, setStatusFilter] = useState('')
   const [regionFilter, setRegionFilter] = useState('')
   const [diseaseFilter, setDiseaseFilter] = useState('')
@@ -69,14 +71,14 @@ export default function Reports() {
   }, [reports, search, diseaseMap])
 
   const statCards = useMemo(() => [
-    { label: 'Total Reports', value: counts.total, icon: FileText },
-    { label: 'Pending Approval', value: counts.submitted, icon: Clock },
-    { label: 'Reviewed', value: counts.reviewed, icon: CheckCircle },
-    { label: 'Linked', value: counts.linked, icon: LinkIcon },
+    { label: 'Total Signals Captured', value: counts.total, icon: FileText },
+    { label: 'Awaiting Review', value: counts.pending, icon: Clock },
+    { label: 'Investigating', value: counts.investigating, icon: SearchIcon },
+    { label: 'Closed', value: counts.closed, icon: CheckCircle },
   ], [counts])
 
   const lastPage = Math.max(0, Math.ceil(totalCount / pageSize) - 1)
-  const paginationLabel = totalCount === 0 ? 'No reports' : `Showing ${page * pageSize + 1} to ${Math.min((page + 1) * pageSize, totalCount)} of ${totalCount}`
+  const paginationLabel = totalCount === 0 ? 'No signals' : `Showing ${page * pageSize + 1} to ${Math.min((page + 1) * pageSize, totalCount)} of ${totalCount}`
   const pageNumbers = (() => {
     const from = Math.max(0, Math.min(page - 2, lastPage - 4))
     const to = Math.min(lastPage, from + 4)
@@ -84,11 +86,12 @@ export default function Reports() {
   })()
 
   async function loadCounts() {
-    const [total, submitted, reviewed, linked] = await Promise.all([
+    // report status follows its event: Submitted until an officer starts verifying, Investigating, then Closed
+    const [total, pending, investigating, closed] = await Promise.all([
       getCount('Case Report'), getCount('Case Report', { status: 'Submitted' }),
-      getCount('Case Report', { status: 'Reviewed' }), getCount('Case Report', { status: 'Linked' }),
+      getCount('Case Report', { status: 'Investigating' }), getCount('Case Report', { status: 'Closed' }),
     ])
-    setCounts({ total, submitted, reviewed, linked })
+    setCounts({ total, pending, investigating, closed })
   }
 
   async function loadReports(p = page) {
@@ -161,30 +164,29 @@ export default function Reports() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div className="min-w-0">
-          <h2 className="text-xl font-bold text-brand-navy">{isChp ? 'My Reports' : 'Reports Management'}</h2>
-          <p className="text-sm text-gray-400">{isChp ? 'Everything you have reported. Tell us what you see in your community; you can finish a report even without network.' : 'Generate, import, export, and manage surveillance reports'}</p>
+          <h2 className="text-xl font-bold text-brand-navy">{isChp ? 'My Signals Captured' : 'Signals Captured'}</h2>
+          <p className="text-sm text-gray-400">{isChp ? 'Everything you have reported. Tell us what you see in your community; you can finish a report even without network.' : 'Every signal captured from the field: review, filter and export'}</p>
         </div>
         <div className="flex gap-3 flex-wrap">
           {canExport && (
             <button onClick={handleExport} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 flex items-center gap-2 hover:bg-gray-50">
-              <Upload className="w-4 h-4" /> Export Report
+              <Upload className="w-4 h-4" /> Export
             </button>
           )}
           <Link to="/record-health-signal" className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2">
-            <Plus className="w-4 h-4" /> {isChp ? 'Report an Event' : 'Create Report'}
+            <Plus className="w-4 h-4" /> Create Report
           </Link>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {statCards.map((c) => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between">
+          <div key={c.label} className="bg-red-600 rounded-xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-gray-400">{c.label}</div>
-              
-              <div className="text-2xl font-bold text-gray-900">{c.value}</div>
+              <div className="text-xs font-semibold text-white">{c.label}</div>
+              <div className="text-2xl font-bold text-white">{c.value}</div>
             </div>
-            <div className="bg-gray-100 rounded-full p-2"><c.icon className="w-4 h-4 text-gray-500" /></div>
+            <div className="bg-white/20 rounded-full p-2"><c.icon className="w-4 h-4 text-white" /></div>
           </div>
         ))}
       </div>
@@ -196,7 +198,7 @@ export default function Reports() {
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Status</option>
-          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+          {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
         </select>
         <select value={diseaseFilter} onChange={(e) => setDiseaseFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Suspected Diseases</option>
@@ -221,7 +223,7 @@ export default function Reports() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 font-semibold text-gray-900 text-sm">{isChp ? 'My Reports List' : 'Reports List'}</div>
+        <div className="px-5 py-4 font-semibold text-gray-900 text-sm">{isChp ? 'My Signals' : 'Signals List'}</div>
         <div className="lg:hidden divide-y divide-gray-100 border-t border-gray-100">
           {reports.map((r, i) => (
             <button key={r.name} onClick={() => openView(r)} className="w-full text-left px-4 py-3 hover:bg-gray-50">
@@ -230,7 +232,7 @@ export default function Reports() {
                   <span className="text-gray-400 font-normal tabular-nums">{page * pageSize + i + 1}.</span> {r.name}
                   {mediaByReport[r.name]?.photo && <Camera className="w-3.5 h-3.5 text-gray-400" aria-label="Has photo" />}
                 </span>
-                <span className={['text-xs font-medium px-2 py-1 rounded-full shrink-0', statusColor(r.status)].join(' ')}>{r.status}</span>
+                <span className={['text-xs font-medium px-2 py-1 rounded-full shrink-0', statusColor(r.status)].join(' ')}>{statusLabel(r.status)}</span>
               </div>
               <div className="mt-1 text-sm text-gray-700">{diseaseName(r.suspected_disease)}</div>
               <div className="mt-0.5 text-xs text-gray-500">{[placeLine(r), r.location_name].filter(Boolean).join(' · ') || '—'}</div>
@@ -241,12 +243,12 @@ export default function Reports() {
               </div>
             </button>
           ))}
-          {!reports.length && <p className="px-5 py-10 text-center text-sm text-gray-400">No reports found</p>}
+          {!reports.length && <p className="px-5 py-10 text-center text-sm text-gray-400">No signals found</p>}
         </div>
         <div className="hidden lg:block overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm border-collapse [&_th]:border [&_td]:border [&_th]:border-gray-200 [&_td]:border-gray-200">
             <thead>
-              <tr className="text-left text-gray-400 text-xs border-t border-b border-gray-100">
+              <tr className="text-left text-gray-900 text-xs [&_th]:font-bold [&_th]:border-b-2 [&_th]:border-b-red-600">
                 <th className="px-5 py-3 font-medium w-10">#</th>
                 <th className="px-5 py-3 font-medium">Report ID</th>
                 {!isChp && <th className="px-5 py-3 font-medium">Reporter</th>}
@@ -261,7 +263,7 @@ export default function Reports() {
             </thead>
             <tbody>
               {reports.map((r, i) => (
-                <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50">
+                <tr key={r.name} className="hover:bg-red-50/40">
                   <td className="px-5 py-3 text-gray-400 tabular-nums">{page * pageSize + i + 1}</td>
                   <td className="px-5 py-3 font-medium text-gray-900">
                     <span className="inline-flex items-center gap-1.5">
@@ -284,7 +286,7 @@ export default function Reports() {
                   </td>
                   <td className="px-5 py-3 text-gray-700">{diseaseName(r.suspected_disease)}</td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span></td>
-                  <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', statusColor(r.status)].join(' ')}>{r.status}</span></td>
+                  <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', statusColor(r.status)].join(' ')}>{statusLabel(r.status)}</span></td>
                   <td className="px-5 py-3 text-gray-500 whitespace-nowrap">
                     {dateText(r.creation) || '—'}
                     {timeText(r.creation) && <span className="block text-xs text-gray-400">{timeText(r.creation)}</span>}
@@ -304,7 +306,7 @@ export default function Reports() {
               ))}
               {!reports.length && (
                 <tr>
-                  <td colSpan={10} className="px-5 py-10 text-center text-gray-400">No reports found</td>
+                  <td colSpan={10} className="px-5 py-10 text-center text-gray-400">No signals found</td>
                 </tr>
               )}
             </tbody>

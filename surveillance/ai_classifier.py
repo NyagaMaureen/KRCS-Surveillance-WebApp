@@ -247,7 +247,7 @@ def get_report_candidates(report):
 	labels = _labels()
 	item, case = _shape_report(cr, labels)
 	symptoms = [r.symptom for r in cr.symptoms if r.symptom]
-	age = cr.get("age_group")
+	age = cr.get("age_groups") or cr.get("age_group")   # case definitions check every ticked age group
 
 	exposure = cr.get("animal_exposure")
 	defs = get_definitions()

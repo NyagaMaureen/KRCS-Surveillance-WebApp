@@ -262,6 +262,7 @@ export async function createUser(userData) {
 
     assigned_region: userData.assigned_region || '',
     assigned_sub_county: userData.assigned_sub_county || '',
+    assigned_facility: userData.assigned_facility || '',
     mobile_no: (userData.mobile_no || '').trim(),
     account_status: userData.account_status || 'Active',
 
@@ -332,6 +333,7 @@ export async function updateUser(name, userData) {
     roles,
     assigned_region: userData.assigned_region || '',
     assigned_sub_county: userData.assigned_sub_county || '',
+    assigned_facility: userData.assigned_facility || '',
     mobile_no: (userData.mobile_no || '').trim(),
     account_status: userData.account_status || 'Active',
 
@@ -383,6 +385,7 @@ export async function getUsers(opts = {}) {
       'primary_role',
       'assigned_region',
       'assigned_sub_county',
+      'assigned_facility',
       'mobile_no',
       'account_status',
       'last_login',
@@ -1270,7 +1273,7 @@ export async function getMyTasks(scope = 'mine', status = 'open', kind = '') {
 
 export async function createReferral(r) {
   return callMethodPost(`${TASKS}create_referral`, {
-    facility: r.facility, reason: r.reason, case_report: r.caseReport || '',
+    facility: r.facility, reason: r.reason, case_report: r.caseReport || '', people: r.people || '',
     age_group: r.ageGroup || '', sex: r.sex || '', urgency: r.urgency || '',
   })
 }
@@ -1372,4 +1375,23 @@ export async function getRedFlags() {
 
 export async function saveRedFlags(symptoms) {
   return callMethodPost('/api/method/surveillance.risk.save_red_flags', { symptoms: JSON.stringify(symptoms) })
+}
+
+// Facility Health Worker workspace (surveillance.fhw)
+const FHW = '/api/method/surveillance.fhw.'
+export async function getReferralFacilities() {
+  return (await callMethod(`${FHW}referral_facilities`)) || []
+}
+export async function getFhwDashboard() {
+  return callMethod(`${FHW}get_dashboard`)
+}
+export async function getFacilityReferrals() {
+  return callMethod(`${FHW}facility_referrals`)
+}
+export async function confirmReferral(task, arrived, note) {
+  return callMethodPost(`${FHW}confirm_referral`, { task, arrived: arrived ? 1 : 0, note: note || '' })
+}
+
+export async function getReferralReport(task) {
+  return callMethod(`${FHW}referral_report?task=${encodeURIComponent(task)}`)
 }

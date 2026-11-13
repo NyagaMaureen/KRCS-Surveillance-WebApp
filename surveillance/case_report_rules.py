@@ -30,6 +30,7 @@ def _attachment_urls(doc):
 
 
 def validate_complete(doc, method=None):
+	_age_groups(doc)
 	if not doc.is_new():
 		return
 	ref = (doc.get("client_ref") or "").strip()
@@ -104,3 +105,16 @@ def _check_media_consent(doc):
 		if row.attachment_type in MEDIA:
 			row.people_shown, row.consent, recorded = check_consent(row.attachment_type, row.get("people_shown"), row.get("consent"))
 			row.consent_recorded_on = row.get("consent_recorded_on") or recorded
+
+
+AGE_ORDER = ["Under 1", "1-4 years", "5-14 years", "15+ years"]
+
+
+def _age_groups(doc):
+	"""Several age groups can be ticked (the people affected may be of different ages). Keep them in order and set
+	Age Group to the youngest, so everything that reads one age (mobile app, WhatsApp, analytics) keeps working."""
+	ticked = {x.strip() for x in (doc.get("age_groups") or "").replace("\n", ",").split(",") if x.strip()}
+	picked = [a for a in AGE_ORDER if a in ticked]
+	if picked:
+		doc.age_groups = ", ".join(picked)
+		doc.age_group = picked[0]

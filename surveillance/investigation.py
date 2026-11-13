@@ -450,7 +450,7 @@ def set_step_outcome(event, step_no, outcome=None, reason=None, expected=None):
 	if (row.phase or "Investigation") == "Investigation" and doc.status not in ("Investigating", "Confirmed", "Escalated"):
 		frappe.throw(_("Start the field investigation first."))
 	if (row.phase or "Investigation") == "Response" and doc.status not in ("Confirmed", "Escalated"):
-		frappe.throw(_("Response steps open after the decision (confirm or escalate)."))
+		frappe.throw(_("RCCE steps open after the decision (confirm or escalate)."))
 	row.outcome, row.reason = outcome, (reason if outcome in ("Not done", "Not applicable") else None)
 	row.done = 1 if outcome == "Done" else 0
 	row.done_by = frappe.session.user if outcome else None

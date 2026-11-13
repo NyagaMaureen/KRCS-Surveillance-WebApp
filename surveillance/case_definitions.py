@@ -201,6 +201,16 @@ def get_definitions():
 	return defs
 
 
+def _ages(age_group):
+	"""One age group or several ('Under 1, 15+ years'): a report can cover people of different ages."""
+	return {_norm(a) for a in str(age_group or "").replace("\n", ",").split(",") if a.strip()}
+
+
+def report_ages(doc):
+	"""All age groups on a report (Age Groups), or the single Age Group from older reports, the mobile app and WhatsApp."""
+	return doc.get("age_groups") or doc.get("age_group")
+
+
 def matches(defn, symptoms, age_group=None, animal_exposure=None):
 	"""True if a report meets one definition. Unknown age never excludes (sensitivity first)."""
 	if not (defn["required_symptoms"] or defn["any_of_symptoms"] or defn.get("required_exposure")):
@@ -211,7 +221,7 @@ def matches(defn, symptoms, age_group=None, animal_exposure=None):
 		return False
 	if (defn.get("min_any_of") or 0) > len(defn["any_of_symptoms"] & symptoms):
 		return False
-	if defn["ages"] and age_group and _norm(age_group) not in defn["ages"]:
+	if defn["ages"] and age_group and not (_ages(age_group) & defn["ages"]):   # any of the ticked groups counts
 		return False
 	exposure = defn.get("required_exposure")
 	if exposure:
@@ -279,7 +289,7 @@ def possible_matches(symptoms, age_group=None, animal_exposure=None, definitions
 			ruled_out += sorted(name(i) for i in d["any_of_symptoms"] & absent)
 		if ruled_out and not include_ruled_out:
 			continue
-		if d["ages"] and age_group and _norm(age_group) not in d["ages"]:
+		if d["ages"] and age_group and not (_ages(age_group) & d["ages"]):
 			continue
 		triggers = specific(d["required_symptoms"])
 		if not triggers and (d.get("min_any_of") or 0) > 0:
@@ -362,7 +372,7 @@ def apply_to_case_report(doc):
 		doc.classified_by = "Officer" if doc.suspected_disease else ""
 
 	symptoms = [r.symptom for r in doc.symptoms if r.symptom]
-	age, exposure = doc.get("age_group"), doc.get("animal_exposure")
+	age, exposure = report_ages(doc), doc.get("animal_exposure")
 	defs, widened = with_outbreak_ages(get_definitions(), doc.get("sub_county"))
 	found = classify_detailed(symptoms, age, exposure, defs)
 	labels = _labels()
@@ -373,7 +383,7 @@ def apply_to_case_report(doc):
 	rules_view = explain(found[0], symptoms, age, exposure, labels) if found else (
 		"No case definition matched the reported signs." + possible_text(possible_matches(symptoms, age, exposure, defs, labels,
 			absent_of(doc)), labels))
-	if found and found[0]["disease"] in widened and age and _norm(age) in {_norm(a) for a in OUTBREAK_AGES[found[0]["disease"]]}:
+	if found and found[0]["disease"] in widened and age and (_ages(age) & {_norm(a) for a in OUTBREAK_AGES[found[0]["disease"]]}):
 		rules_view += " (outbreak definition: 2 years or older, because of an active outbreak in this area)"
 
 	if doc.classified_by in ("Officer", "Model"):
@@ -475,7 +485,7 @@ def backfill():
 		if doc.classified_by in ("Officer", "Model"):
 			continue
 		symptoms = [r.symptom for r in doc.symptoms if r.symptom]
-		age, exposure = doc.get("age_group"), doc.get("animal_exposure")
+		age, exposure = report_ages(doc), doc.get("animal_exposure")
 		found = classify_detailed(symptoms, age, exposure, defs)
 		doc.db_set({
 			"suspected_disease": found[0]["disease"] if found else None,

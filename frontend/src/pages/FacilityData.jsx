@@ -14,8 +14,8 @@ import {
 const TABS = [
   { key: 'coverage', label: 'Coverage', icon: Grid3x3 },
   { key: 'facilities', label: 'Facilities', icon: Building2 },
-  { key: 'upload', label: 'Upload files', icon: Upload },
   { key: 'history', label: 'Upload history', icon: History },
+  { key: 'upload', label: 'Upload files', icon: Upload },
 ]
 
 const STATUS_STYLES = {
@@ -56,7 +56,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 export default function FacilityData() {
   const [params, setParams] = useSearchParams()
-  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'upload'
+  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'coverage'   // opens on Coverage
   const setTab = (key) => setParams({ tab: key })
 
   const [facilityModal, setFacilityModal] = useState(null) // null | {} (new) | facility (edit) | {prefill}
@@ -70,7 +70,7 @@ export default function FacilityData() {
     <AppShell>
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-brand-navy">Facility Data</h2>
+          <h2 className="text-xl font-bold text-brand-navy">MOH 505 Facility Reports</h2>
           <p className="text-sm text-gray-400">Upload weekly MOH 505 (IDSR) exports from KHIS. They feed straight into outbreak detection.</p>
         </div>
       </div>

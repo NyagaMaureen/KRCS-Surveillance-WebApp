@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ArrowRightLeft, Building2, CalendarDays, Plus, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getMyTasks, createReferral, getMyReferableReports, updateEventTask } from '../api/frappe'
+import { getMyTasks, createReferral, getMyReferableReports, updateEventTask, getReferralFacilities } from '../api/frappe'
 import { isOpen } from '../components/tasks/taskUi'
 import {
   FOCUS, CARD, INPUT, TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, BTN_SMALL, PageTitle, IconBubble, Badge, Skeleton, Toast,
@@ -57,14 +57,14 @@ export default function Referrals() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{patientLabel(t)}</p>
-                      <p className="text-xs text-gray-400">{t.id}{t.selfMade ? '' : ` · asked by ${t.assignedBy}`}</p>
+                      <p className="text-sm font-medium text-gray-900">{t.people ? `${t.people} ${t.people === 1 ? 'person' : 'people'} referred` : patientLabel(t)}</p>
+                      <p className="text-xs text-gray-400">{[t.ref, t.selfMade ? '' : `asked by ${t.assignedBy}`].filter(Boolean).join(' · ')}</p>
                     </div>
                     <Badge tone={REFERRAL_TONE[t.statusLabel]}>{t.statusLabel}</Badge>
                   </div>
                   {(t.reason || t.instructions) && <p className="text-sm text-gray-600 mt-2">{t.reason || t.instructions}</p>}
                   <p className="text-xs text-gray-500 mt-2 flex flex-wrap gap-x-5 gap-y-1">
-                    <span className="inline-flex items-center gap-1"><Building2 className="w-3.5 h-3.5" aria-hidden="true" />{t.facility || '—'}{t.urgency && t.urgency !== 'Routine' ? ` · ${t.urgency}` : ''}</span>
+                    <span className="inline-flex items-center gap-1"><Building2 className="w-3.5 h-3.5" aria-hidden="true" />{t.facility || '—'}</span>
                     <span className="inline-flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />{shortWhen(t.createdOn)}</span>
                   </p>
                   {t.outcome && <p className="text-sm text-gray-700 mt-2"><span className="text-gray-400">Note: </span>{t.outcome}</p>}
@@ -136,7 +136,7 @@ function ReferralUpdate({ task, onCancel, onSaved, onError }) {
 
 function NewReferral({ onClose, onSaved, onError }) {
   const [reports, setReports] = useState(null)
-  const [form, setForm] = useState({ caseReport: '', ageGroup: '', sex: '', facility: '', reason: '', urgency: 'Routine' })
+  const [form, setForm] = useState({ caseReport: '', facility: '', people: '1', reason: '' })   // no names, ages or sex (KRCS review)
   const [saving, setSaving] = useState(false)
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
   useEffect(() => { getMyReferableReports().then(setReports).catch(() => setReports([])) }, [])
@@ -157,7 +157,7 @@ function NewReferral({ onClose, onSaved, onError }) {
       setSaving(false)
     }
   }
-  const ready = form.facility.trim() && form.reason.trim()
+  const ready = form.facility.trim() && form.reason.trim() && /^\d+$/.test(String(form.people).trim()) && Number(form.people) >= 1
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/30 p-0 sm:p-4" onClick={onClose}>
@@ -168,7 +168,7 @@ function NewReferral({ onClose, onSaved, onError }) {
           <button type="button" onClick={onClose} aria-label="Close" className={`text-gray-400 hover:text-gray-700 rounded ${FOCUS}`}><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 flex flex-col gap-4">
-          <p className="text-sm text-gray-500">Record a patient you sent to a health facility. Don't write the patient's name.</p>
+          <p className="text-sm text-gray-500">Record people you sent to a health facility. Don't write names.</p>
           <label className="block">
             <span className="block text-sm font-medium text-gray-800 mb-1">Which report is this about? <span className="font-normal text-gray-400">(optional)</span></span>
             <select value={form.caseReport} onChange={(e) => set({ caseReport: e.target.value })} className={INPUT}>
@@ -176,31 +176,14 @@ function NewReferral({ onClose, onSaved, onError }) {
               {(reports || []).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="block text-sm font-medium text-gray-800 mb-1">Age group</span>
-              <select value={form.ageGroup} onChange={(e) => set({ ageGroup: e.target.value })} className={INPUT}>
-                <option value="">Not given</option>
-                {AGE_GROUPS.map((a) => <option key={a}>{a}</option>)}
-              </select>
-            </label>
-            <label className="block">
-              <span className="block text-sm font-medium text-gray-800 mb-1">Sex</span>
-              <select value={form.sex} onChange={(e) => set({ sex: e.target.value })} className={INPUT}>
-                <option value="">Not given</option><option>Female</option><option>Male</option>
-              </select>
-            </label>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_160px] gap-3">
             <label className="block">
               <span className="block text-sm font-medium text-gray-800 mb-1">Health facility</span>
-              <input value={form.facility} onChange={(e) => set({ facility: e.target.value })} placeholder="e.g. Kalobeyei Clinic 2" className={INPUT} />
+              <FacilityPick value={form.facility} onChange={(v) => set({ facility: v })} />
             </label>
             <label className="block">
-              <span className="block text-sm font-medium text-gray-800 mb-1">Urgency</span>
-              <select value={form.urgency} onChange={(e) => set({ urgency: e.target.value })} className={INPUT}>
-                <option>Routine</option><option>Urgent</option><option>Emergency</option>
-              </select>
+              <span className="block text-sm font-medium text-gray-800 mb-1">Number of people referred</span>
+              <input type="number" min="1" step="1" inputMode="numeric" value={form.people} onChange={(e) => set({ people: e.target.value })} className={INPUT} />
             </label>
           </div>
           <label className="block">
@@ -215,5 +198,24 @@ function NewReferral({ onClose, onSaved, onError }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// the facility list (so the facility's FHW sees the referral), with 'Other' for a facility not on it
+function FacilityPick({ value, onChange }) {
+  const [list, setList] = useState(null)
+  const [other, setOther] = useState(false)
+  useEffect(() => { getReferralFacilities().then(setList).catch(() => setList([])) }, [])
+  const known = (list || []).some((f) => f.name === value)
+  return (
+    <>
+      <select value={other ? '__other__' : known ? value : ''} className={INPUT}
+        onChange={(e) => { const v = e.target.value; if (v === '__other__') { setOther(true); onChange('') } else { setOther(false); onChange(v) } }}>
+        <option value="">{list === null ? 'Loading…' : 'Select a facility'}</option>
+        {(list || []).map((f) => <option key={f.name} value={f.name}>{f.name}{f.subCounty ? ` · ${f.subCounty}` : ''}</option>)}
+        <option value="__other__">Other (type the name)</option>
+      </select>
+      {other && <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Facility name" className={`${INPUT} mt-2`} />}
+    </>
   )
 }

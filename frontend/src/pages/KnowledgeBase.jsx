@@ -1184,7 +1184,7 @@ export default function KnowledgeBase() {
       <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div>
           <h1 className="text-xl font-semibold text-brand-navy">Knowledge Base</h1>
-          <p className="text-sm text-gray-400 mt-1">Approved KRCS documents that the AI assistant and chatbot quote from.</p>
+          <p className="text-sm text-gray-400 mt-1">Approved KRCS documents that the KRCS Data Assistant and chatbot quote from.</p>
         </div>
         {canManage && (
           <button

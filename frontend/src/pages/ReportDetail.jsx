@@ -26,6 +26,8 @@ function withCurrentValue(list, value) {
 const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-700', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500' }
 const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-700', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
+const STATUS_LABEL = { Submitted: 'Awaiting review', Reviewed: 'Recorded', 'Not for review': 'Recorded', Linked: 'Awaiting review' }
+const statusLabel = (s) => STATUS_LABEL[s] || s   // stored values stay as they are; this is what people see
 const channelColor = (c) => CHANNEL_COLORS[c] || 'bg-gray-100 text-gray-600'
 const symptomTags = (s) => (s || '').split(',').map((t) => t.trim()).filter(Boolean)
 
@@ -148,7 +150,7 @@ export default function ReportDetail() {
       { label: 'Onset Date', value: formatReadableDate(report.onset_date) },
       { label: 'Affected Persons', value: report.affected_count },
       { label: 'Created at', value: formatDateTime(report.creation) },
-      { label: 'Age Group', value: (AGE_GROUPS.find((g) => g.value === report.age_group) || {}).label, empty: 'Not recorded' },
+      { label: 'Age Groups', value: report.age_groups || (AGE_GROUPS.find((g) => g.value === report.age_group) || {}).label, empty: 'Not recorded' },
       { label: 'Animal Exposure', value: (ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === report.animal_exposure) || {}).label, empty: 'Not recorded' },
       { label: 'Number of Deaths', value: report.deaths_count === null || report.deaths_count === undefined ? '' : String(report.deaths_count), empty: 'Not recorded' },
     ]
@@ -334,7 +336,7 @@ export default function ReportDetail() {
               <div>
                 <div className="flex items-center gap-3 mb-1">
                   <h2 className="text-xl font-bold text-brand-navy">{report.name}</h2>
-                  <span className={['text-xs font-semibold px-2.5 py-1 rounded-full', statusColor(report.status)].join(' ')}>{report.status}</span>
+                  <span className={['text-xs font-semibold px-2.5 py-1 rounded-full', statusColor(report.status)].join(' ')}>{statusLabel(report.status)}</span>
                 </div>
                 <p className="text-sm text-gray-400">Submitted {formatDateTime(report.creation)} via {(report.channel || '—').toUpperCase()}</p>
               </div>
@@ -589,7 +591,7 @@ export default function ReportDetail() {
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-1">Status</label>
-                      <input type="text" value={editForm.status} disabled readOnly className="w-full bg-gray-100 text-gray-500 rounded-lg px-4 py-2.5 text-sm cursor-not-allowed" />
+                      <input type="text" value={statusLabel(editForm.status)} disabled readOnly className="w-full bg-gray-100 text-gray-500 rounded-lg px-4 py-2.5 text-sm cursor-not-allowed" />
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-1">Category</label>

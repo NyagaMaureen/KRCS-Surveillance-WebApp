@@ -10,12 +10,13 @@ import { listFeedback } from '../api/frappe'
 
 const TABS = [
   { key: 'profile', label: 'Profile', icon: UserCircle },
-  { key: 'notifications', label: 'Notifications', icon: Bell },
-  { key: 'system', label: 'System', icon: SlidersHorizontal },
-  { key: 'alert-thresholds', label: 'Alert Thresholds', icon: Clock },
-  { key: 'ai-config', label: 'AI Config', icon: Wand2 },
-  { key: 'data', label: 'Data', icon: Database },
-  { key: 'security', label: 'Security', icon: Shield },
+  // each tab except Profile is a permission, set per role in Roles & Permissions (KRCS review, Nov 2026)
+  { key: 'notifications', label: 'Notifications', icon: Bell, requires: 'settings_notifications' },
+  { key: 'system', label: 'System', icon: SlidersHorizontal, requires: 'settings_system' },
+  { key: 'alert-thresholds', label: 'Alert Thresholds', icon: Clock, requires: 'settings_alert_thresholds' },
+  { key: 'ai-config', label: 'AI Config', icon: Wand2, requires: 'settings_ai_config' },
+  { key: 'data', label: 'Data', icon: Database, requires: 'settings_data' },
+  { key: 'security', label: 'Security', icon: Shield, requires: 'settings_security' },
   { key: 'feedback', label: 'Feedback', icon: MessageSquare, requires: 'view_feedback' },
 ]
 
@@ -121,6 +122,7 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get('tab') || 'profile')
   const [newFeedback, setNewFeedback] = useState(0)
   const visibleTabs = TABS.filter((t) => !t.requires || has(t.requires))
+  const tabOpen = (key) => activeTab === key && visibleTabs.some((t) => t.key === key)   // a tab opened by link still needs the permission
   useEffect(() => {
     if (has('view_feedback')) listFeedback('New').then((r) => setNewFeedback(r?.counts?.new || 0)).catch(() => {})
   }, [has])
@@ -528,7 +530,7 @@ export default function Settings() {
 
       {activeTab === 'feedback' && has('view_feedback') && <FeedbackList onCounts={(c) => setNewFeedback(c.new || 0)} />}
 
-      {activeTab === 'profile' && (
+      {(activeTab === 'profile' || !visibleTabs.some((t) => t.key === activeTab)) && (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <div className="flex items-center justify-between mb-6">
@@ -668,7 +670,7 @@ export default function Settings() {
         </div>
       )}
 
-      {activeTab === 'notifications' && (
+      {tabOpen('notifications') && (
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
           <div className="flex items-center gap-3 mb-2">
             <Bell className="w-7 h-7 text-gray-900" />
@@ -689,7 +691,7 @@ export default function Settings() {
         </div>
       )}
 
-      {activeTab === 'system' && (
+      {tabOpen('system') && (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <div className="flex items-center gap-3 mb-2">
@@ -757,7 +759,7 @@ export default function Settings() {
         </div>
       )}
 
-      {activeTab === 'alert-thresholds' && (
+      {tabOpen('alert-thresholds') && (
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
             <div>
@@ -1045,7 +1047,7 @@ export default function Settings() {
         </div>
       )}
 
-      {activeTab === 'ai-config' && (
+      {tabOpen('ai-config') && (
         <div className="space-y-6">
         {has('manage_alert_thresholds') && <RiskWeights />}
         {has('manage_alert_thresholds') && <RedFlagSymptoms />}
@@ -1069,7 +1071,7 @@ export default function Settings() {
         </div>        </div>
       )}
 
-      {activeTab === 'data' && (
+      {tabOpen('data') && (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <div className="flex items-center gap-3 mb-6">
@@ -1131,7 +1133,7 @@ export default function Settings() {
         </div>
       )}
 
-      {activeTab === 'security' && (
+      {tabOpen('security') && (
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
           <div className="flex items-center gap-3 mb-2">
             <Shield className="w-7 h-7 text-gray-900" />

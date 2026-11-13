@@ -34,6 +34,9 @@ CAPABILITIES = [
 	 "description": "Export case reports to file", "grants": {"Case Report": ["read", "export"]}},
 	{"key": "verify_suspected_disease", "name": "Verify Suspected Disease", "category": "Case Reports",
 	 "description": "Confirm or change the suspected disease on a case report", "grants": {"Case Report": ["read"]}},
+	{"key": "see_suspected_disease", "name": "See Suspected Disease After Reporting", "category": "Case Reports",
+	 "description": "See the suspected disease on the screen after sending a report (the advice is shown to everyone)",
+	 "grants": {}},
 
 	# Alerts & Risk
 	{"key": "view_alerts", "name": "View Alerts", "category": "Alerts & Risk",
@@ -101,6 +104,11 @@ CAPABILITIES = [
 	 "grants": {"Region": ["read", "write", "create"], "Symptom": ["read", "write", "create"],
 	            "Sub County": ["read", "write", "create"]}},
 
+	{"key": "view_context_data", "name": "View Context Data", "category": "Reference Data",
+	 "description": "Open the Context Data page (weather, population, WASH). Context next to events and Epi Trends is shown anyway",
+	 "grants": {}},
+	{"key": "view_reporting_channels", "name": "View Reporting Channels", "category": "Reference Data",
+	 "description": "Open the Reporting Channels page (reports per channel, CBS and MOH 505 loads)", "grants": {}},
 	{"key": "manage_context_data", "name": "Manage Context Data", "category": "Reference Data",
 	 "description": "Record WASH assessments and population figures, and refresh weather",
 	 "grants": {"Camp WASH Assessment": ["read"], "Population Bulletin Import": ["read"], "Weather Snapshot": ["read"]}},
@@ -131,6 +139,12 @@ CAPABILITIES += [
 	{"key": "chp_workspace", "name": "CHP Workspace", "category": "Workspaces",
 	 "description": "Simple CHP dashboard and menu: report, follow-ups, referrals, AI assistant, feedback",
 	 "grants": {}},
+	{"key": "fhw_workspace", "name": "Facility Health Worker Workspace", "category": "Workspaces",
+	 "description": "Facility dashboard and menu: report when the EMR is down, referrals to my facility, alerts nearby",
+	 "grants": {}},
+	{"key": "receive_referrals", "name": "Confirm Referrals to My Facility", "category": "Review Queue",
+	 "description": "See referrals CHPs make to the user's assigned facility and mark whether the people arrived",
+	 "grants": {}},
 	{"key": "officer_workspace", "name": "Surveillance Officer Workspace", "category": "Workspaces",
 	 "description": "Officer dashboard and menu: Review Queue, Epi Trends, map, response, event lifecycle, data quality",
 	 "grants": {}},
@@ -138,17 +152,31 @@ CAPABILITIES += [
 	 "description": "See and check data quality issues (missing places, late or duplicate reports, facility completeness)",
 	 "grants": {}},
 	# Feedback
-	{"key": "view_feedback", "name": "View Feedback", "category": "Users & Roles",
-	 "description": "Read and resolve feedback sent by users", "grants": {}},
+	{"key": "view_feedback", "name": "Settings: Feedback", "category": "Settings",
+	 "description": "See the Feedback tab: read and resolve feedback from users (and be told when new feedback comes in)",
+	 "grants": {}},
+	# Settings tabs (KRCS review, Nov 2026): Profile is for everyone; each other tab is given per role
+	{"key": "settings_notifications", "name": "Settings: Notifications", "category": "Settings",
+	 "description": "See the Notifications tab in Settings", "grants": {}},
+	{"key": "settings_system", "name": "Settings: System", "category": "Settings",
+	 "description": "See the System tab in Settings", "grants": {}},
+	{"key": "settings_alert_thresholds", "name": "Settings: Alert Thresholds", "category": "Settings",
+	 "description": "See the Alert Thresholds tab (changing them needs Manage Alert Thresholds)", "grants": {}},
+	{"key": "settings_ai_config", "name": "Settings: AI Config", "category": "Settings",
+	 "description": "See the AI Config tab (risk score weights, red-flag symptoms)", "grants": {}},
+	{"key": "settings_data", "name": "Settings: Data", "category": "Settings",
+	 "description": "See the Data tab in Settings", "grants": {}},
+	{"key": "settings_security", "name": "Settings: Security", "category": "Settings",
+	 "description": "See the Security tab in Settings", "grants": {}},
 ]
 CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 
 # Not given to Administrator / System Manager automatically: these change what the user sees
 # (a field worker's menu and dashboard), not what they are allowed to do.
-NOT_AUTO_FOR_ADMIN = {"chp_workspace", "officer_workspace", "receive_tasks", "view_own_reports"}
+NOT_AUTO_FOR_ADMIN = {"chp_workspace", "officer_workspace", "fhw_workspace", "receive_tasks", "view_own_reports"}
 
 # Workspace for each workspace capability, checked in order. Users without one get the full app.
-WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer")]
+WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_workspace", "fhw")]
 
 # Capabilities set for the CHP role by setup_chp_role (run once; adjust later in Roles & Permissions)
 CHP_CAPABILITIES = ["chp_workspace", "create_reports", "view_own_reports", "receive_tasks", "use_knowledge_base"]

@@ -1214,7 +1214,7 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
 }
 
 const DECISION_OPTIONS = [
-  { value: 'confirm', title: 'Confirm event', hint: 'It is a real event. Response steps open next.', icon: Check, enabled: (s, g, inv) => s === 'Investigating' && g?.canConfirm && !inv?.mustEscalate },
+  { value: 'confirm', title: 'Confirm event', hint: 'It is a real event. RCCE steps open next.', icon: Check, enabled: (s, g, inv) => s === 'Investigating' && g?.canConfirm && !inv?.mustEscalate },
   { value: 'escalate', title: 'Escalate to County/MoH', hint: 'County or National MOH need to lead.', icon: ExternalLink, enabled: (s) => ['New', 'Verifying', 'Investigating', 'Confirmed'].includes(s) },
   { value: 'close_unconfirmed', title: 'Close: no event found', hint: 'The investigation found no event. Reporters are thanked.', icon: X, enabled: (s) => s === 'Investigating' },
 ]
@@ -1352,7 +1352,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
 
   return (
     <div className={card}>
-      <PanelHeader title="Response & close" sub="Do the protocol's response steps, then close and send feedback" />
+      <PanelHeader title="Response & close" sub="Do the protocol's RCCE steps, then close and send feedback" />
 
       {status === 'Discarded' && inv.decision && (
         <div className="rounded-xl bg-gray-50 border border-gray-100 p-4 mb-5">
@@ -1367,7 +1367,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
       {status !== 'Discarded' && (
         <div className="mb-6">
           {steps.length === 0 ? (
-            <p className="text-sm text-gray-500">This protocol has no response steps.</p>
+            <p className="text-sm text-gray-500">This protocol has no RCCE steps.</p>
           ) : (
             <>
               {active && <StepProgress steps={steps} open={open} handed={inv.gates?.handedOverSteps} editable={editable} />}

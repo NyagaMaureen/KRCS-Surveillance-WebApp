@@ -52,7 +52,7 @@ WASH_FIELDS = [
 
 
 def _can_view():
-	return any(has_capability(c) for c in ("view_review_queue", "view_alerts", "view_reports", MANAGE))
+	return any(has_capability(c) for c in ("view_review_queue", "view_alerts", "view_reports", "view_context_data", MANAGE))
 
 
 def _require_view():

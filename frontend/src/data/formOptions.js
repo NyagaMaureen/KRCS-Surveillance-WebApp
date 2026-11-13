@@ -1,4 +1,4 @@
-export const STATUSES = ['Submitted', 'Reviewed', 'Investigating', 'Linked', 'Closed']
+export const STATUSES = ['Submitted', 'Investigating', 'Closed', 'Recorded']   // Submitted is shown as 'Awaiting review'
 export const SEVERITIES = ['Mild', 'Moderate', 'Severe', 'Critical']
 export const AGE_BANDS = ['Under 5', '5-17', '18-59', '60+']
 export const CATEGORIES = ['Human Disease', 'Animal Disease']
@@ -20,6 +20,7 @@ export const ANIMAL_EXPOSURE_OPTIONS = [
 
 export const STATUS_COLORS = {
   Submitted: 'bg-amber-50 text-amber-600',
+  Recorded: 'bg-gray-100 text-gray-700',
   Reviewed: 'bg-green-50 text-green-600',
   Linked: 'bg-red-50 text-red-700',
   Investigating: 'bg-blue-50 text-blue-600',

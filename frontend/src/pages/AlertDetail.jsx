@@ -76,6 +76,7 @@ export default function AlertDetail() {
   const [reviewOutcome, setReviewOutcome] = useState('')
   const [reviewNote, setReviewNote] = useState('')
   const [note, setNote] = useState('')
+  const [showAllLog, setShowAllLog] = useState(false)
   const [notice, setNotice] = useState(null)
   const noticeTimer = useRef(null)
 
@@ -166,6 +167,12 @@ export default function AlertDetail() {
   const reasons = [...new Set((alert?.tags || []).map((t) => WHY[t]).filter(Boolean))]
   const dataError = (alert?.insights || []).some((i) => /POSSIBLE DATA ENTRY ERROR/i.test(i))
   const timeline = (alert?.timeline || []).filter((s) => !/^Latest check/i.test(s.label || ''))
+  // notes people wrote, and automatic updates (status changes), newest first in one list
+  const log = [
+    ...(alert?.notes || []).map((n) => ({ at: n.createdAt || n.at, text: n.text, by: n.by,
+      note: !(/alert engine|system/i.test(n.by || '') || /^status /i.test(n.text || '')) })),
+    ...timeline.map((s) => ({ at: s.at, text: s.label, by: s.by, note: false })),
+  ].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
   const BTN = `inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium ${FOCUS}`
 
   return (
@@ -325,36 +332,34 @@ export default function AlertDetail() {
             </Section>
           </div>
 
-          <ContextPanel subCounty={alert.subCounty} county={alert.county} people={alert.affected} disease={alert.disease} />
+          {/* context and the rise's notes and history, side by side on wide screens */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ContextPanel subCounty={alert.subCounty} county={alert.county} people={alert.affected} disease={alert.disease} />
 
-          <Section title={`Notes${(alert.notes || []).length ? ` (${alert.notes.length})` : ''}`}>
-            {(alert.notes || []).map((n, i) => (
-              <div key={i} className="mb-2 rounded-lg bg-gray-50 px-3 py-2">
-                <p className="whitespace-pre-wrap text-sm text-gray-700">{n.text}</p>
-                <p className="mt-1 text-xs text-gray-400">{n.by || 'Unknown'} · {fmtDateTime(n.createdAt || n.at)}</p>
+            <Section title="Notes and history">
+              <div className="mb-3 flex gap-2">
+                <label className="sr-only" htmlFor="rise-note">Add a note</label>
+                <input id="rise-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note about this rise…"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-gray-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" />
+                <button type="button" onClick={saveNote} disabled={!note.trim() || !!pending} className={`${BTN} h-9 border border-gray-200 text-gray-900 hover:bg-gray-50 disabled:opacity-50`}>Save</button>
               </div>
-            ))}
-            <div className="flex gap-2">
-              <label className="sr-only" htmlFor="rise-note">Add a note</label>
-              <input id="rise-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note about this rise…"
-                className="h-9 min-w-0 flex-1 rounded-lg border border-gray-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" />
-              <button type="button" onClick={saveNote} disabled={!note.trim() || !!pending} className={`${BTN} h-9 border border-gray-200 text-gray-800 hover:bg-gray-50 disabled:opacity-50`}>Save</button>
-            </div>
-          </Section>
-
-          {timeline.length > 0 && (
-            <details className="rounded-xl border border-gray-100 bg-white p-5">
-              <summary className={`cursor-pointer rounded text-sm font-semibold text-gray-900 ${FOCUS}`}>History</summary>
-              <ol className="mt-3 space-y-2 text-sm">
-                {timeline.map((s, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="w-40 shrink-0 text-xs text-gray-500">{fmtDateTime(s.at)}</span>
-                    <span className="text-gray-700">{s.label}{s.by ? ` · ${s.by}` : ''}</span>
-                  </li>
-                ))}
-              </ol>
-            </details>
-          )}
+              {log.length ? (
+                <ol className="divide-y divide-gray-100">
+                  {(showAllLog ? log : log.slice(0, 5)).map((x, i) => (
+                    <li key={i} className="py-2">
+                      {x.note ? <p className="whitespace-pre-wrap text-sm text-gray-900">{x.text}</p> : <p className="text-sm text-gray-700">{x.text}</p>}
+                      <p className="mt-0.5 text-xs text-gray-500">{x.note ? 'Note' : 'Update'}{x.by ? ` · ${x.by}` : ''} · {fmtDateTime(x.at)}</p>
+                    </li>
+                  ))}
+                </ol>
+              ) : <p className="text-sm text-gray-500">No notes yet.</p>}
+              {log.length > 5 && (
+                <button type="button" onClick={() => setShowAllLog(!showAllLog)} className={`mt-2 rounded text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>
+                  {showAllLog ? 'Show less' : `Show all ${log.length}`}
+                </button>
+              )}
+            </Section>
+          </div>
 
           {(alert.relatedAlerts || []).filter((r) => r.id).length > 0 && (
             <Section title={`Other rises in ${alert.subCounty || 'this place'}`}>

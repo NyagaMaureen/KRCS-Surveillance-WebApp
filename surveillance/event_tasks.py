@@ -60,6 +60,14 @@ def _role_label(user):
 	return ", ".join(sorted(roles)[:2]) or None
 
 
+def _ref_no(name):
+	"""Referral number shown to people: the task number, TSK-00009 -> REF-009."""
+	try:
+		return f"REF-{int(str(name).rsplit('-', 1)[-1]):03d}"
+	except ValueError:
+		return name
+
+
 def _overdue(t):
 	return t.status in OPEN_STATUSES and t.due_date and getdate(t.due_date) < getdate(nowdate())
 
@@ -83,6 +91,8 @@ def _shape(t, me=None):
 		"caseReport": t.get("case_report") or None,
 		"patient": {"ageGroup": t.get("patient_age_group") or None, "sex": t.get("patient_sex") or None},
 		"reason": t.get("reason") or "",
+		"people": cint(t.get("people_referred")) or None,
+		"ref": _ref_no(t.name) if t.task_type == "Referral" else None,
 		"selfMade": t.assigned_by == t.assigned_to,
 	}
 
@@ -357,7 +367,7 @@ def get_my_referable_reports():
 
 
 @frappe.whitelist(methods=["POST"])
-def create_referral(facility, reason, case_report=None, age_group=None, sex=None, urgency=None, client_ref=None):
+def create_referral(facility, reason, case_report=None, age_group=None, sex=None, urgency=None, client_ref=None, people=None):
 	"""A CHP records a patient they referred to a health facility. No names are stored.
 	client_ref (optional, from the app): a retry with the same reference returns the referral already saved."""
 	require_capability(RECEIVE)
@@ -372,6 +382,9 @@ def create_referral(facility, reason, case_report=None, age_group=None, sex=None
 		frappe.throw(_("Enter the health facility."))
 	if not reason:
 		frappe.throw(_("Say briefly why the patient was referred."))
+	people = cint(people) if people not in (None, "") else None   # number of people referred (KRCS review, Nov 2026)
+	if people is not None and people < 1:
+		frappe.throw(_("Number of people referred must be at least 1."))
 	if age_group and age_group not in AGE_GROUPS:
 		frappe.throw(_("Unknown age group."))
 	if sex and sex not in ("Female", "Male"):
@@ -394,7 +407,7 @@ def create_referral(facility, reason, case_report=None, age_group=None, sex=None
 		"doctype": DOCTYPE, "event": event, "task_type": "Referral", "title": f"Referral to {facility}"[:140],
 		"assigned_to": user, "assigned_by": user, "due_date": nowdate(), "status": "Assigned",
 		"facility": facility, "urgency": urgency or "Routine", "reason": reason, "case_report": case_report or None,
-		"patient_age_group": age_group or None, "patient_sex": sex or None, "client_ref": ref, **ctx,
+		"patient_age_group": age_group or None, "patient_sex": sex or None, "client_ref": ref, "people_referred": people, **ctx,
 	}).insert(ignore_permissions=True)
 	if event:
 		_log(frappe.get_doc("Surveillance Event", event), "Referral recorded",

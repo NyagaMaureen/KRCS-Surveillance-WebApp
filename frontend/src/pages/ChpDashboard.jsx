@@ -12,6 +12,7 @@ import {
 // What each report status means for the CHP who sent it
 const REPORT_STATUS = {
   Submitted: { label: 'Sent', hint: 'Waiting for the officer to check' },
+  Recorded: { label: 'Received', hint: 'Recorded and counted; no officer check needed' },
   Reviewed: { label: 'Checked', hint: 'Checked by the officer' },
   Linked: { label: 'Under review', hint: 'Being reviewed with other reports' },
   Investigating: { label: 'Being investigated', hint: 'The team is following up' },
@@ -23,7 +24,7 @@ const STAT_ICONS = { reports: FileText, followups: CheckCircle2, referrals: Arro
 const QUICK = [
   { label: 'Report an event', to: '/record-health-signal', icon: Plus, tone: 'bg-red-50 text-red-700' },
   { label: 'My follow-ups', to: '/follow-ups', icon: ClipboardList, tone: 'bg-emerald-50 text-emerald-700' },
-  { label: 'AI Assistant', to: '/ai-data-assistant', icon: Sparkles, tone: 'bg-violet-50 text-violet-700' },
+  { label: 'KRCS Data Assistant', to: '/ai-data-assistant', icon: Sparkles, tone: 'bg-violet-50 text-violet-700' },
 ]
 
 export default function ChpDashboard() {

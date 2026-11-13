@@ -35,6 +35,8 @@ import Feedback from '../pages/Feedback'
 import FeedbackInbox from '../pages/FeedbackInbox'
 import ChpDashboard from '../pages/ChpDashboard'
 import ChpSettings from '../pages/ChpSettings'
+import FhwDashboard from '../pages/FhwDashboard'
+import FacilityReferrals from '../pages/FacilityReferrals'
 import DataQuality from '../pages/DataQuality'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
@@ -49,7 +51,7 @@ function byWorkspace(pages) {
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
-  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: Dashboard, chp: ChpDashboard, officer: SurveillanceDashboard }) },
+  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: Dashboard, chp: ChpDashboard, officer: SurveillanceDashboard, fhw: FhwDashboard }) },
   { path: '/surveillance-dashboard', name: 'surveillance-dashboard', element: SurveillanceDashboard },
   { path: '/ai-governance-dashboard', name: 'ai-governance-dashboard', element: AiGovernanceDashboard },
   { path: '/investigations', name: 'investigations', element: Investigations },
@@ -70,7 +72,7 @@ const rawRoutes = [
   { path: '/channels', name: 'channels', element: Channels },
   { path: '/facility-data', name: 'facility-data', element: FacilityData },
   { path: '/context-data', name: 'context-data', element: ContextData },
-  { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings, officer: ChpSettings }) },
+  { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings }) },
   { path: '/help-center', name: 'help-center', element: HelpCenter },
   { path: '/audit-log', name: 'audit-log', element: AuditLog },
   { path: '/ai-data-assistant', name: 'ai-data-assistant', element: AiDataAssistant },
@@ -79,7 +81,7 @@ const rawRoutes = [
   { path: '/my-tasks', name: 'my-tasks', element: MyTasks },
   { path: '/data-quality', name: 'data-quality', element: DataQuality },
   { path: '/follow-ups', name: 'follow-ups', element: FollowUps },
-  { path: '/referrals', name: 'referrals', element: Referrals },
+  { path: '/referrals', name: 'referrals', element: byWorkspace({ full: Referrals, fhw: FacilityReferrals }) },
   { path: '/feedback', name: 'feedback', element: Feedback },
   { path: '/feedback-inbox', name: 'feedback-inbox', element: FeedbackInbox },
 ]

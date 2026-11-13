@@ -230,15 +230,15 @@ def get_data_quality(days=30):
 	dismissed = set(frappe.get_all(DQ_DISMISS, pluck="issue_key")) if frappe.db.table_exists(DQ_DISMISS) else set()
 	issues = []
 
-	def add(kind, key, title, detail, link, at=None):
+	def add(kind, key, title, detail, link, at=None, source=None):
 		k = f"{kind}:{key}"
 		if k not in dismissed:
 			issues.append({"key": k, "kind": kind, "kindLabel": DQ_KINDS[kind], "title": title, "detail": detail,
-				"link": link, "at": str(at) if at else None})
+				"link": link, "at": str(at) if at else None, "source": source})
 
 	reports = frappe.get_all("Case Report", filters=_report_filters(since),
 		fields=["name", "location_name", "sub_county", "latitude", "longitude", "onset_date", "creation", "suspected_disease",
-			"review_outcome", "symptom_tags", "reported_by", "owner"], order_by="creation desc", limit_page_length=3000)
+			"review_outcome", "symptom_tags", "reported_by", "owner", "channel"], order_by="creation desc", limit_page_length=3000)
 	for r in reports:
 		if not r.sub_county:
 			add("location", r.name, f"{r.name}: no sub-county", f"Place given: {r.location_name or 'none'}. Officers can't scope or map it.",
@@ -265,6 +265,19 @@ def get_data_quality(days=30):
 				add("duplicate", f"{a.name}|{b.name}", f"{a.name} and {b.name} look the same",
 					"Same reporter, place and symptoms within 24 hours. Check if it was sent twice.", f"/reports/{b.name}", b.creation)
 
+	# CBS signals in the Review Queue: missing place or no disease matched (KRCS review: data quality from all sources)
+	cbs_filters = {"source": "CBS", "signal_date": [">=", since]}
+	if _region():
+		cbs_filters["region"] = _region()
+	for s in frappe.get_all("Surveillance Signal", filters=cbs_filters,
+			fields=["ref", "disease", "sub_county", "area", "signal_date", "event"], limit_page_length=3000):
+		link = f"/alerts-signals/{s.event}" if s.event else "/epi-trends"
+		if not s.sub_county:
+			add("location", f"cbs-{s.ref}", f"CBS {s.ref}: no sub-county", f"Place given: {s.area or 'none'}.", link, s.signal_date, "CBS")
+		if not s.disease or s.disease == "unclassified-illness":
+			add("unclassified", f"cbs-{s.ref}", f"CBS {s.ref}: no disease matched", "Check the CBS report and the suspected disease.", link,
+				s.signal_date, "CBS")
+
 	# open events flagged "confirm the number"
 	for e in frappe.get_all(EVENT, filters={**_scope(), "status": ["in", OPEN], "data_warning": ["is", "set"]},
 			fields=["name", "disease_name", "data_warning", "first_reported"]):
@@ -279,14 +292,25 @@ def get_data_quality(days=30):
 		comp = _completeness(4, subs)
 		for f in comp.get("facilities") or []:
 			if f["pct"] < 100:
-				add("completeness", f"{f['facility']}:{comp.get('upTo')}", f"{f['facility']}: {f['reported']} of {f['weeks']} weeks reported",
-					f"{f['subCounty'] or ''}. MOH 505 weeks up to {comp.get('upTo')}.", "/facility-data")
+				add("completeness", f"{f['facility']}:{comp.get('upTo')}",
+					f"{f['facility']}: {f['reported']} of the last {f['weeks']} weeks reported",
+					f"{f['subCounty'] or ''}. MOH 505 weeks up to {getdate(comp.get('upTo')).strftime('%-d %b %Y')}.",
+					"/facility-data?tab=coverage")
 	except Exception:
 		frappe.log_error(title="Data quality: completeness failed", message=frappe.get_traceback())
 
+	# where each issue came from, for the source filter: the report's channel, CBS, or MOH 505 (facility completeness)
+	channel_of = {r.name: (r.channel or "Web") for r in reports}
+	for i in issues:
+		if i["source"] is None:
+			if i["kind"] == "completeness":
+				i["source"] = "MOH 505"
+			elif i["link"].startswith("/reports/"):
+				i["source"] = channel_of.get(i["link"].rsplit("/", 1)[-1])
 	counts = {k: sum(1 for i in issues if i["kind"] == k) for k in DQ_KINDS}
 	return {"issues": issues, "counts": counts, "kinds": DQ_KINDS, "days": cint(days or 30),
-		"reportsChecked": len(reports), "canDismiss": has_capability("view_data_quality")}
+		"reportsChecked": len(reports), "canDismiss": has_capability("view_data_quality"),
+		"sources": ["Mobile", "WhatsApp", "Web", "CBS", "MOH 505", "EMR"]}
 
 
 @frappe.whitelist(methods=["POST"])

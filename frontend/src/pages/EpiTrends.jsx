@@ -118,7 +118,8 @@ export default function EpiTrends() {
   const openRise = useCallback((id) => navigate(`/epi-trends/${encodeURIComponent(id)}`), [navigate])
   // only diseases that have something to show, rising ones first (the server sorts them)
   const series = useMemo(() => (data?.series || []).filter((s) => s.confirmedTotal || (showUnconfirmed && s.unconfirmedTotal) || s.flags.some((f) => f.length)), [data, showUnconfirmed])
-  const current = series.find((s) => s.disease === disease) || series[0] || null   // opens on the first rising disease, else the busiest
+  const showAll = !disease || disease === 'all'   // opens on 'All diseases': one chart per active disease, rising first
+  const current = series.find((s) => s.disease === disease) || series[0] || null
   const SEL = `h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 ${FOCUS}`
 
   return (
@@ -151,8 +152,9 @@ export default function EpiTrends() {
         </select>
         <div className="flex flex-col items-start gap-2">
         <label className="sr-only" htmlFor="epi-disease">Disease</label>
-        <select id="epi-disease" value={current?.disease || ''} onChange={(e) => setParam({ disease: e.target.value })} className={`${SEL} min-w-[16rem] max-w-full`} disabled={!series.length}>
+        <select id="epi-disease" value={showAll && series.length ? 'all' : current?.disease || ''} onChange={(e) => setParam({ disease: e.target.value })} className={`${SEL} min-w-[16rem] max-w-full`} disabled={!series.length}>
           {!series.length && <option value="">No diseases with cases</option>}
+          {series.length > 1 && <option value="all">All diseases ({series.length})</option>}
           {[...series].sort((a, b) => alphaName(a.name).localeCompare(alphaName(b.name))).map((d) => (
             <option key={d.disease} value={d.disease}>
               {d.name}{d.risingNow ? ' · rising now' : ''} · {fmtNum(d.confirmedTotal + (showUnconfirmed ? d.unconfirmedTotal : 0))} cases
@@ -198,6 +200,11 @@ export default function EpiTrends() {
             <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
               No cases in this period{subCounty ? ` in ${subCounty}` : ''}{showUnconfirmed ? '' : '. Try “Include unconfirmed” or a longer period'}.
             </div>
+          ) : showAll ? (
+            series.map((s) => (
+              <DiseaseCard key={s.disease} item={s} weeks={data.weeks} labels={Object.fromEntries(data.sources.map((x) => [x.key, x.label]))}
+                showUnconfirmed={showUnconfirmed} onOpenRise={openRise} others={0} />
+            ))
           ) : (
             <DiseaseCard item={current} weeks={data.weeks} labels={Object.fromEntries(data.sources.map((x) => [x.key, x.label]))}
               showUnconfirmed={showUnconfirmed} onOpenRise={openRise} others={series.length - 1} />

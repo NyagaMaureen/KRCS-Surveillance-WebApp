@@ -4,7 +4,7 @@ import { rolePermissionsLink } from '../utils/links'
 import { Search, Plus, Pencil, Trash2, X, UserRound, UserPlus, AlertCircle, Loader2, Users, CheckCircle2, UserX, Ban, ShieldCheck } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import RolesPermissions from '../components/settings/RolesPermissions'
-import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties } from '../api/frappe'
+import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties, getReferralFacilities } from '../api/frappe'
 
 const tabs = [
   { key: 'users', label: 'Users', icon: Users },
@@ -39,6 +39,7 @@ const emptyForm = () => ({
   primary_role: '',
   assigned_region: '',
   assigned_sub_county: '',
+  assigned_facility: '',
   account_status: 'Active',
   password: '',
 })
@@ -170,6 +171,7 @@ export default function UserManagement() {
       primary_role: u.primary_role || '',
       assigned_region: u.assigned_region || '',
       assigned_sub_county: u.assigned_sub_county || '',
+      assigned_facility: u.assigned_facility || '',
       account_status: u.account_status || 'Active',
       password: '',
     })
@@ -290,13 +292,14 @@ export default function UserManagement() {
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">{roleNotice}</div>
       )}
 
-      <div className="flex w-full gap-1 bg-white border border-gray-100 rounded-2xl p-1.5 mb-6">
+      <div role="tablist" className="mb-6 flex w-full overflow-hidden rounded-xl border border-gray-200 bg-white">
         {tabs.map((tab) => (
-          <div key={tab.key} className="flex flex-1 justify-center">
+          <div key={tab.key} className="flex flex-1">
             <button
+              role="tab" aria-selected={activeTab === tab.key}
               onClick={() => setSearchParams({ tab: tab.key })}
-              className={['flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap',
-                activeTab === tab.key ? 'bg-red-600 text-white' : 'text-gray-900 hover:bg-gray-50'].join(' ')}
+              className={['flex w-full items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400',
+                activeTab === tab.key ? 'bg-red-600 text-white' : 'text-gray-900 hover:bg-red-50'].join(' ')}
             >
               <tab.icon className="w-4 h-4" />
               {tab.label}
@@ -513,6 +516,13 @@ export default function UserManagement() {
                         </select>
                         <p className="text-xs text-gray-500 mt-1.5">CHA / SCDSC: receives alerts for new signals in this sub-county.</p>
                       </div>
+                      {form.primary_role === 'Facility Health Worker' && (
+                        <div>
+                          <label className={labelCls}>Facility</label>
+                          <FacilitySelect value={form.assigned_facility} onChange={(v) => updateForm({ assigned_facility: v })} className={inputCls} />
+                          <p className="text-xs text-gray-500 mt-1.5">Referrals CHPs make to this facility show on this person's Referrals page. Add facilities under MOH 505 Facility Reports → Facilities.</p>
+                        </div>
+                      )}
                     </div>
                   </section>
                 </div>
@@ -570,5 +580,17 @@ export default function UserManagement() {
         </div>
       )}
     </AppShell>
+  )
+}
+
+// facility list (MOH 505 Reporting Facilities); facilities added on that page appear here straight away
+function FacilitySelect({ value, onChange, className }) {
+  const [list, setList] = useState(null)
+  useEffect(() => { getReferralFacilities().then(setList).catch(() => setList([])) }, [])
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={className}>
+      <option value="">{list === null ? 'Loading…' : 'Select a facility'}</option>
+      {(list || []).map((f) => <option key={f.name} value={f.name}>{f.name}{f.subCounty ? ` · ${f.subCounty}` : ''}</option>)}
+    </select>
   )
 }

@@ -235,6 +235,17 @@ def get_trends(period="12w", sub_county=None, disease=None, start=None, end=None
 			"communityTotal": com_conf, "facilityTotal": fac_conf, "unconfirmedTotal": unconf_total,
 			"confirmedTotal": com_conf + fac_conf}
 		item["risingNow"] = any(fl for w, fl in zip(weeks, week_flags) if w in recent)
+		# where each week's cases came from, for the chart tooltip: [{name, confirmed, unconfirmed}] per shown week
+		places = []
+		for i in range(USUAL_WEEKS, len(hist_weeks)):
+			row = []
+			for sc, info in subs.items():
+				c = (sc_com[(d, sc)][i] if (d, sc) in sc_com else 0) + (sc_fac[(d, sc)][i] if (d, sc) in sc_fac else 0)
+				u = sc_unc[(d, sc)][i] if (d, sc) in sc_unc else 0
+				if c or u:
+					row.append({"name": info["name"], "confirmed": c, "unconfirmed": u})
+			places.append(sorted(row, key=lambda x: -(x["confirmed"] + x["unconfirmed"])))
+		item["places"] = places
 		series.append(item)
 		for i, (w, fl) in enumerate(zip(weeks, week_flags)):
 			if w not in recent:

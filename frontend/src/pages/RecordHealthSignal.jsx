@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Paperclip, FileText, X, Stethoscope, MapPin, AlertCircle, CheckCircle2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import { useCapabilities } from '../context/CapabilitiesContext'
 import SymptomPicker from '../components/report/SymptomPicker'
 import PhotoField, { ImageModal, UploadStatus } from '../components/report/PhotoField'
 import VoiceField from '../components/report/VoiceField'
@@ -21,7 +22,7 @@ const EXPOSURE_LABEL = {
   'Bite or scratch': 'An animal bite or scratch',
 }
 
-const steps = ['Reporter Info', 'Symptoms', 'Details', 'Review Report']
+const steps = ['Signal and Location', 'Symptoms', 'Supporting Information', 'Review Report']
 
 const ATTACHMENT_TYPES = [
   { type: 'Text Note', icon: FileText, accept: null },
@@ -29,7 +30,7 @@ const ATTACHMENT_TYPES = [
 ]
 
 const FIELD_META = {
-  phone_number: { label: 'Phone number', step: 1 },
+  phone_number: { label: 'Phone number', step: 4 },   // fetched from the profile, shown on the review step
   category: { label: 'Category', step: 1 },
   signal_type: { label: 'Signal type', step: 1 },
   region: { label: 'Region', step: 1 },
@@ -38,9 +39,8 @@ const FIELD_META = {
   affected_count: { label: 'People affected', step: 2 },
   deaths_count: { label: 'Deaths', step: 2 },
   symptoms: { label: 'Symptoms or animal exposure', step: 2 },
-  age_group: { label: 'Age group', step: 2 },
+  age_group: { label: 'Age groups', step: 2 },
   onset_date: { label: 'Onset date', step: 3 },
-  report_date: { label: 'Report date', step: 3 },
 }
 
 const WHOLE_NUMBER = /^\d+$/
@@ -75,15 +75,15 @@ function validate(f, today) {
   else if (!e.affected_count && Number(deaths) > Number(affected)) e.deaths_count = 'Deaths cannot exceed people affected'
 
   if (!f.symptoms.length && (!f.animal_exposure || f.animal_exposure === 'None')) e.symptoms = 'Select at least one symptom or an animal exposure'
-  if (!f.age_group) e.age_group = 'Select an age group'
+  if (!f.age_groups.length) e.age_group = 'Select at least one age group'
 
   if (!f.onset_date) e.onset_date = 'Enter the onset date'
   else if (f.onset_date > today) e.onset_date = 'Onset date cannot be in the future'
-  if (!f.report_date) e.report_date = 'Enter the report date'
-  else if (f.report_date > today) e.report_date = 'Report date cannot be in the future'
-  else if (f.onset_date && f.report_date < f.onset_date) e.report_date = 'Report date cannot be before the onset date'
   return e
 }
+
+// several age groups can be ticked (the people affected may be of different ages); the youngest is kept as Age Group
+const youngestAge = (list) => (AGE_GROUPS.find((g) => list.includes(g.value)) || {}).value || ''
 
 function Field({ id, label, required, error, hint, children }) {
   return (
@@ -101,6 +101,8 @@ const inputCls = (err) => `${inputBase} ${err ? 'border-red-400 bg-red-50' : 'bo
 
 export default function RecordHealthSignal() {
   const navigate = useNavigate()
+  const { has } = useCapabilities()
+  const canSeeDisease = has('see_suspected_disease')   // role-based (KRCS review, 12 Nov 2026)
   const today = toDateInputValue(new Date())
   const [currentStep, setCurrentStep] = useState(1)
   const [regions, setRegions] = useState([])
@@ -140,7 +142,7 @@ export default function RecordHealthSignal() {
     signal_type: '', category: '', region: '', sub_county: '', location_name: '',
     latitude: null, longitude: null, gps_accuracy: null, affected_count: '',
     symptoms: [], onset_date: '', report_date: today, attachments: [], additional_notes: '',
-    age_group: '', animal_exposure: '', deaths_count: '0',
+    age_group: '', age_groups: [], animal_exposure: '', deaths_count: '0',
   })
 
   const [classifyResults, setClassifyResults] = useState([])
@@ -175,12 +177,12 @@ export default function RecordHealthSignal() {
       return
     }
     classifyTimerRef.current = setTimeout(() => {
-      previewDiseases({ symptoms: form.symptoms, age_group: form.age_group, animal_exposure: form.animal_exposure, absent: answeredNo })
+      previewDiseases({ symptoms: form.symptoms, age_group: form.age_groups.join(', ') || form.age_group, animal_exposure: form.animal_exposure, absent: answeredNo })
         .then((r) => { setClassifyResults(r.matches || []); setPossible(r.possible || []) })
         .catch(() => { setClassifyResults([]); setPossible([]) })
     }, 400)
     return () => clearTimeout(classifyTimerRef.current)
-  }, [form.symptoms, form.age_group, form.animal_exposure, answeredNo])
+  }, [form.symptoms, form.age_group, form.age_groups, form.animal_exposure, answeredNo])
 
   // the AI model's view, used only to pick extra questions (never shown as a disease to the reporter); it needs
   // the symptoms only, so it is not asked again when an answer is No
@@ -245,8 +247,8 @@ export default function RecordHealthSignal() {
   const regionLabel = useMemo(() => (regions.find((r) => r.name === form.region) || {}).region_name || '', [regions, form.region])
   const symptomLabels = useMemo(() => form.symptoms.map((id) => (symptoms.find((s) => s.name === id) || {}).symptom_name).filter(Boolean), [form.symptoms, symptoms])
 
-  function useMyLocation() {
-    touch('gps')
+  function useMyLocation(auto = false) {
+    if (!auto) touch('gps')
     if (!navigator.geolocation) {
       setGeoError('This device has no GPS. Enter the coordinates manually.')
       setManualGps(true)
@@ -425,7 +427,7 @@ export default function RecordHealthSignal() {
         symptoms: form.symptoms.map((s) => ({ symptom: s })),
         onset_date: form.onset_date, report_date: form.report_date, attachments: [...form.attachments, ...uploaded],
         additional_notes: form.additional_notes, channel: 'Web', status: 'Submitted', client_ref: clientRef.current,
-        age_group: form.age_group, animal_exposure: form.animal_exposure, deaths_count: Number(form.deaths_count),
+        age_group: form.age_group, age_groups: form.age_groups.join(', '), animal_exposure: form.animal_exposure, deaths_count: Number(form.deaths_count),
         absent_symptoms: JSON.stringify(answeredNo.filter((id) => !form.symptoms.includes(id))),
       })
       // advice from the suspected disease's protocol; if none was matched but a priority disease is possible, from that one
@@ -458,6 +460,12 @@ export default function RecordHealthSignal() {
       if (!profile.assigned_region || !profile.assigned_sub_county) setEditLocation(true)
       setProfileLoaded(true)
     })
+  }, [])
+
+  // GPS is captured automatically when the form opens; the button is only for capturing again
+  useEffect(() => {
+    if (navigator.geolocation) useMyLocation(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -537,6 +545,7 @@ export default function RecordHealthSignal() {
                 <p className="text-sm text-gray-500">The surveillance officer will review it and may call you.</p>
               </div>
             </div>
+            {canSeeDisease && (
             <div className="rounded-xl border border-red-100 bg-red-50/60 p-4 mb-6">
               <p className="text-xs text-gray-500">Suspected disease</p>
               <p className="text-base font-semibold text-gray-900">{sent.diseaseName || (sent.possibleName ? `Possible ${sent.possibleName}` : 'Unclassified illness: no priority disease matched the signs')}</p>
@@ -545,6 +554,7 @@ export default function RecordHealthSignal() {
               )}
               <p className="text-xs text-gray-400 mt-0.5">Based on the signs you entered. An officer will verify.</p>
             </div>
+            )}
             {(sent.advice?.steps?.length > 0 || sent.advice?.general?.length > 0) && (
               <div className="mb-6">
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">What to do now</h4>
@@ -610,20 +620,23 @@ export default function RecordHealthSignal() {
 
           {currentStep === 1 && (
             <div>
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Reporter Information</h3>
+              <h3 className="text-base font-bold text-black mb-4">Signal</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <div className="block text-sm font-semibold mb-1">Reporter</div>
-                  <p className="text-sm text-gray-700 py-1">{form.reporter_name || '\u2014'}</p>
-                </div>
-                <Field id="phone_number" label="Phone number" required error={shown('phone_number')}>
-                  <p className="text-sm text-gray-700 py-1">{form.phone_number || '\u2014'}</p>
-                  {phoneMissing && phoneWarning}
+                <Field id="category" label="Category" required error={shown('category')}>
+                  <select value={form.category} onChange={(e) => updateForm({ category: e.target.value })} onBlur={() => touch('category')} className={inputCls(shown('category'))}>
+                    <option value="">Select category</option>
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </Field>
-                <div>
-                  <div className="block text-sm font-semibold mb-1">Channel <span className="text-red-700">*</span></div>
-                  <p className="text-sm text-gray-700 py-1">Web</p>
-                </div>
+                <Field id="signal_type" label="Signal Type" required error={shown('signal_type')}>
+                  <select value={form.signal_type} onChange={(e) => updateForm({ signal_type: e.target.value })} onBlur={() => touch('signal_type')} className={inputCls(shown('signal_type'))}>
+                    <option value="">Select signal type</option>
+                    <option>Suspected Outbreak</option><option>Community Signal</option><option>Facility Signal</option>
+                  </select>
+                </Field>
+              </div>
+              <h3 className="text-base font-bold text-black mt-6 mb-4">Location</h3>
+              <div className="mb-4">
                 {form.region && form.sub_county && (locationLocked || !editLocation) && (
                   <div>
                     <div className="block text-sm font-semibold mb-1">Reporting area</div>
@@ -639,21 +652,6 @@ export default function RecordHealthSignal() {
                   </div>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <Field id="category" label="Category" required error={shown('category')}>
-                  <select value={form.category} onChange={(e) => updateForm({ category: e.target.value })} onBlur={() => touch('category')} className={inputCls(shown('category'))}>
-                    <option value="">Select category</option>
-                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </Field>
-                <Field id="signal_type" label="Signal Type" required error={shown('signal_type')}>
-                  <select value={form.signal_type} onChange={(e) => updateForm({ signal_type: e.target.value })} onBlur={() => touch('signal_type')} className={inputCls(shown('signal_type'))}>
-                    <option value="">Select signal type</option>
-                    <option>Suspected Outbreak</option><option>Community Signal</option><option>Facility Signal</option>
-                  </select>
-                </Field>
-              </div>
-              <h3 className="text-sm font-bold text-gray-900 mt-6 mb-4">Location</h3>
               {locationLocked && !(form.region && form.sub_county) ? (
                 <p className="flex items-center gap-1.5 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
                   <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -692,11 +690,11 @@ export default function RecordHealthSignal() {
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="button"
-                    onClick={useMyLocation}
+                    onClick={() => useMyLocation()}
                     disabled={geoLoading}
                     className="inline-flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60"
                   >
-                    {geoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />} Use my location
+                    {geoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />} {geoLoading ? 'Getting your location...' : form.latitude !== null ? 'Capture again' : 'Use my location'}
                   </button>
                   {form.gps_accuracy !== null && !errors.gps && (
                     <span className="inline-flex items-center gap-1 text-xs text-green-700">
@@ -729,7 +727,7 @@ export default function RecordHealthSignal() {
 
           {currentStep === 2 && (
             <div>
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Affected Person Details</h3>
+              <h3 className="text-base font-bold text-black mb-4">Affected Person Details</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                 <Field id="affected_count" label="Number of people affected" required error={shown('affected_count')}>
                   <input value={form.affected_count} onChange={(e) => updateForm({ affected_count: e.target.value })} onBlur={() => touch('affected_count')} type="number" min="1" step="1" className={inputCls(shown('affected_count'))} placeholder="Estimated count" />
@@ -739,7 +737,7 @@ export default function RecordHealthSignal() {
                 </Field>
               </div>
 
-              <h3 className="text-sm font-bold text-gray-900 mb-3 pt-2 border-t border-gray-100">
+              <h3 className="text-base font-bold text-black mb-3 pt-2 border-t border-gray-100">
                 Select All Observed Symptoms <span className="text-red-700">*</span>
                 <span className="block text-xs font-normal text-gray-400 mt-0.5">Select at least one symptom, or an animal exposure below.</span>
               </h3>
@@ -748,17 +746,21 @@ export default function RecordHealthSignal() {
 
 
               <div className="pt-6 mt-6 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-900 mb-4">About the affected person(s)</h3>
+                <h3 className="text-base font-bold text-black mb-4">About the affected person(s)</h3>
 
                 <div className="mb-5">
-                  <Field id="age_group" label="Age group" required error={shown('age_group')} hint="Age of the person reported (or the youngest, if several).">
+                  <Field id="age_group" label="Age groups" required error={shown('age_group')} hint="Tick every age group among the people affected.">
                     <div className="flex flex-wrap gap-2">
                       {AGE_GROUPS.map((g) => (
                         <button
                           key={g.value}
                           type="button"
-                          onClick={() => { updateForm({ age_group: form.age_group === g.value ? '' : g.value }); touch('age_group') }}
-                          className={['px-4 py-2 rounded-full text-sm font-medium border transition-colors', form.age_group === g.value ? 'bg-red-600 border-red-600 text-white' : shown('age_group') ? 'border-red-300 text-gray-600 hover:bg-gray-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'].join(' ')}
+                          aria-pressed={form.age_groups.includes(g.value)}
+                          onClick={() => {
+                            const next = form.age_groups.includes(g.value) ? form.age_groups.filter((x) => x !== g.value) : [...form.age_groups, g.value]
+                            updateForm({ age_groups: next, age_group: youngestAge(next) }); touch('age_group')
+                          }}
+                          className={['px-4 py-2 rounded-full text-sm font-medium border transition-colors', form.age_groups.includes(g.value) ? 'bg-red-600 border-red-600 text-white' : shown('age_group') ? 'border-red-300 text-gray-600 hover:bg-gray-50' : 'border-gray-200 text-gray-600 hover:bg-gray-50'].join(' ')}
                         >
                           {g.label}
                         </button>
@@ -796,14 +798,11 @@ export default function RecordHealthSignal() {
 
           {currentStep === 3 && (
             <div>
-              <h3 className="text-sm font-bold text-gray-900 mb-4">Additional Details</h3>
+              <h3 className="text-base font-bold text-black mb-4">When did it start?</h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
-                <Field id="onset_date" label="When Did It Start?" required error={shown('onset_date')}>
+                <Field id="onset_date" label="Onset date" required error={shown('onset_date')}>
                   <input type="date" max={today} value={form.onset_date} onChange={(e) => updateForm({ onset_date: e.target.value })} onBlur={() => touch('onset_date')} className={inputCls(shown('onset_date'))} />
-                </Field>
-                <Field id="report_date" label="Report date" required error={shown('report_date')}>
-                  <input type="date" max={today} min={form.onset_date || undefined} value={form.report_date} onChange={(e) => updateForm({ report_date: e.target.value })} onBlur={() => touch('report_date')} className={inputCls(shown('report_date'))} />
                 </Field>
               </div>
               <div className="flex gap-2 mb-6">
@@ -813,13 +812,15 @@ export default function RecordHealthSignal() {
                 <span className="text-xs text-gray-400 self-center">Set onset date</span>
               </div>
 
+              <h3 className="text-base font-bold text-black mb-1 pt-6 border-t border-gray-100">Supporting Information</h3>
+              <p className="text-xs text-gray-400 mb-4">Optional. Photos, a voice note, files and notes help the officer verify the signal.</p>
               <div className="mb-6">
-                <h3 className="text-sm font-bold text-gray-900 mb-2">Add photo {optionalHint}</h3>
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">Add photo</h4>
                 <PhotoField photos={photos} setPhotos={setPhotos} onRetry={(id) => uploadPhoto(id).catch(() => {})} />
               </div>
 
               <div className="mb-6">
-                <h3 className="text-sm font-bold text-gray-900 mb-2">Record voice note {optionalHint}</h3>
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">Record voice note</h4>
                 <VoiceField voice={voice} setVoice={setVoice} onRetry={() => uploadVoice().catch(() => {})} />
                 {voice && (
                   <fieldset id="field-voice-language" className={`mt-3 rounded-xl border p-3 ${stepTried.voiceLang && voiceLangMissing ? 'border-red-300 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
@@ -845,7 +846,7 @@ export default function RecordHealthSignal() {
                 </div>
               )}
 
-              <h3 className="text-sm font-bold text-gray-900 mb-3">Add Supporting Info</h3>
+              <h4 className="text-sm font-semibold text-gray-900 mb-3">Other files and notes</h4>
               <div className="flex gap-3 mb-2">
                 {ATTACHMENT_TYPES.map(({ type, icon: Icon, accept }) => (
                   <div key={type} className="flex flex-col items-center">
@@ -987,11 +988,10 @@ export default function RecordHealthSignal() {
                     <Group title="What happened" step={2}>
                       <Item label="People affected">{form.affected_count}</Item>
                       <Item label="Deaths">{form.deaths_count === '' ? '' : String(form.deaths_count)}</Item>
-                      <Item label="Age group">{form.age_group}</Item>
+                      <Item label="Age groups">{form.age_groups.join(', ')}</Item>
                     </Group>
                     <Group title="Dates" step={3}>
                       <Item label="Onset date">{formatReadableDate(form.onset_date)}</Item>
-                      <Item label="Report date">{formatReadableDate(form.report_date)}</Item>
                     </Group>
                   </>
                 )
@@ -1039,7 +1039,7 @@ export default function RecordHealthSignal() {
                   <p className="text-sm text-gray-700 mt-0.5">{form.attachments.length ? `${form.attachments.length} attached` : 'None'}</p>
                 </div>
               </div>
-              {phoneMissing && <div className="mb-4">{phoneWarning}</div>}
+              {phoneMissing && <div id="field-phone_number" className="mb-4">{phoneWarning}</div>}
               <div className="flex justify-between">
                 <button onClick={() => setCurrentStep(1)} className="border border-gray-200 rounded-lg px-6 py-2.5 text-sm font-semibold hover:bg-gray-50 transition-colors">Edit</button>
                 <button onClick={submitReport} disabled={submitting || phoneMissing} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-colors">
