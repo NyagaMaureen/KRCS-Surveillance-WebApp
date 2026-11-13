@@ -122,11 +122,12 @@ export async function setIcd11(diseaseKey, { code, title, uri }) {
   })
 }
 
-export async function saveAlertThresholds(thresholds, outbreakMultiplier, priorities) {
+export async function saveAlertThresholds(thresholds, outbreakMultiplier, priorities, actives) {
   return callMethodPost('/api/method/surveillance.alert_thresholds.save_alert_thresholds', {
     thresholds,
     outbreak_multiplier: outbreakMultiplier,
     priorities,
+    actives,
   })
 }
 

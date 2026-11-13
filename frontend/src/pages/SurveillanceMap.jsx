@@ -258,7 +258,7 @@ export default function SurveillanceMap() {
         <div className="relative">
           <select value={diseaseFilter} onChange={(e) => setDiseaseFilter(e.target.value)} className={selectCls}>
             <option value="">Disease Type</option>
-            {diseaseOptions.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
+            {diseaseOptions.filter((d) => d.active).map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
           </select>
           <Filter className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>

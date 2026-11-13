@@ -89,9 +89,11 @@ def _stat(key, label, value, icon, now, before, more_is_bad, unit=""):
 
 def _weekly(sources, subs, first, last, disease=None):
 	values = {"sources": tuple(sources), "first": first, "last": last, "subs": tuple(subs) or ("",)}
-	extra = ""
+	from surveillance.alert_thresholds import active_diseases
+	extra = " and disease in %(active)s"   # only diseases ticked Active are shown
+	values["active"] = tuple(active_diseases()) or ("",)
 	if disease:
-		extra = " and disease = %(disease)s"
+		extra += " and disease = %(disease)s"
 		values["disease"] = disease
 	return frappe.db.sql(f"""select disease, week_start, sum(signals) n, sum(affected) a
 		from `tabWeekly Count` where source in %(sources)s and week_start between %(first)s and %(last)s
@@ -332,5 +334,10 @@ def get_analytics(weeks=13, source="all", disease=None):
 		"hourPattern": _hour_pattern(reports),
 		"completeness": completeness,
 		"indicators": _indicators(since, completeness["overall"]),
-		"diseases": [{"value": k, "label": v} for k, v in sorted(names.items(), key=lambda x: x[1] or "")],
+		"diseases": [{"value": k, "label": v} for k, v in sorted(names.items(), key=lambda x: (x[1] or "").lower().removeprefix("suspected ")) if k in _active()],
 	}
+
+
+def _active():
+	from surveillance.alert_thresholds import active_diseases
+	return active_diseases()

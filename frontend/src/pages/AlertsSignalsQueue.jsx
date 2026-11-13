@@ -280,7 +280,7 @@ export default function AlertsSignalsQueue() {
             </select>
             <select aria-label="Disease" value={disease} onChange={(e) => setParam({ disease: e.target.value })} className={SELECT_SOFT}>
               <option value="">All diseases</option>
-              {diseases.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
+              {diseases.filter((d) => d.active || d.key === 'unclassified-illness').map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
             </select>
             <select aria-label="Channel" value={channel} onChange={(e) => setParam({ channel: e.target.value })} className={SELECT_SOFT}>
               <option value="">All channels</option>

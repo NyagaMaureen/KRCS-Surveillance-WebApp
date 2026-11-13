@@ -108,7 +108,8 @@ def get_dashboard(trend_source="all", weeks=None, sub_county=None, disease=None)
 		out["eventsAvailable"] = True
 	out["trends"] = _trends(trend_source, today, weeks=n_weeks, sub_county=sub_county, disease=disease)
 	# the disease list offers only diseases shown in the charts (before the disease filter), so it stays stable once one is picked
-	out["diseaseOptions"] = sorted(set(out.pop("_diseases", [])) | set(out["trends"].pop("_diseases", [])))
+	out["diseaseOptions"] = sorted(set(out.pop("_diseases", [])) | set(out["trends"].pop("_diseases", [])),
+		key=lambda n: (n or "").lower().removeprefix("suspected "))   # A-Z, ignoring "Suspected"
 	out["generatedAt"] = str(now_datetime())
 	return out
 
@@ -198,10 +199,12 @@ def _event_sections(today, n_weeks=12, source="all", sub_county=None, disease=No
 			res[r.disease_name or "Unknown"] += 1
 		return res
 	cur, prev = by_disease(start), by_disease(prev_start, add_days(start, -1))
-	order = sorted(cur, key=lambda k: -cur[k])
+	from surveillance.alert_thresholds import active_names
+	shown_names = active_names()   # only diseases ticked Active are shown
+	order = [k for k in sorted(cur, key=lambda k: -cur[k]) if k in shown_names]
 	distribution = {"labels": order, "data": [cur[k] for k in order], "changePct": [_pct(cur[k], prev.get(k, 0)) for k in order]}
 
-	return {"stats": stats, "alerts": alerts, "dailyVolume": volume, "distribution": distribution, "_diseases": sorted(present)}
+	return {"stats": stats, "alerts": alerts, "dailyVolume": volume, "distribution": distribution, "_diseases": sorted(present & shown_names)}
 
 
 def _trends(source, today, weeks=None, sub_county=None, disease=None):
@@ -252,10 +255,12 @@ def _trends(source, today, weeks=None, sub_county=None, disease=None):
 		series[r.disease][getdate(r.week_start)] += n
 
 	names = _disease_names()
-	top = [d for d in sorted(totals, key=lambda k: -totals[k]) if totals[d] > 0][:TOP_DISEASES]
+	from surveillance.alert_thresholds import active_diseases
+	active = active_diseases()   # only diseases ticked Active are shown
+	top = [d for d in sorted(totals, key=lambda k: -totals[k]) if totals[d] > 0 and d in active][:TOP_DISEASES]
 	shown = sorted({names.get(d, d) for d in top})
 	if disease:
-		top = [d for d in sorted(totals, key=lambda k: -totals[k]) if totals[d] > 0 and names.get(d, d) == disease]
+		top = [d for d in sorted(totals, key=lambda k: -totals[k]) if totals[d] > 0 and d in active and names.get(d, d) == disease]
 	latest = None if source in CHANNEL_SOURCES else frappe.db.sql(
 		"select max(week_start) from `tabWeekly Count` where source in %(s)s", {"s": tuple(TREND_SOURCES[source])})[0][0]
 	return {

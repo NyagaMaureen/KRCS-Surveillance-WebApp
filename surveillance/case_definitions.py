@@ -428,10 +428,12 @@ def preview(symptoms=None, age_group=None, animal_exposure=None, absent=None):
 
 @frappe.whitelist()
 def get_disease_options():
-	"""Active priority diseases for the officer's 'Change suspected disease' dropdown."""
+	"""All diseases (the officer's 'Choose another disease' list uses them all). active = ticked Active in
+	Alert Thresholds: filter dropdowns (Reports, Review Queue, map) offer only those."""
 	rows = frappe.get_all("Alert Threshold Config", filters={"is_active": 1},
-		fields=["name", "disease_name", "category"], order_by="sort_order asc")
-	return [{"key": r.name, "name": r.disease_name, "category": r.category} for r in rows]
+		fields=["name", "disease_name", "category", "monitored"], order_by="sort_order asc")
+	return [{"key": r.name, "name": r.disease_name, "category": r.category, "active": bool(r.monitored)}
+		for r in sorted(rows, key=lambda r: (r.disease_name or r.name).lower().removeprefix("suspected "))]   # A-Z, ignoring "Suspected"
 
 
 @frappe.whitelist(methods=["POST"])

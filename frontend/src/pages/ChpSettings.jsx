@@ -3,7 +3,7 @@ import { User, Mail, Phone, MapPin, Shield, Lock, CalendarDays, Activity, Pencil
 import AppShell from '../components/layout/AppShell'
 import { getMyAccount, updateMyProfile, changeMyPassword, uploadFile } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { CARD, INPUT, BTN_PRIMARY, BTN_SECONDARY, StatCard, Badge, Toast, Skeleton, shortWhen } from '../components/chp/ui'
+import { CARD, INPUT, BTN_PRIMARY, BTN_SECONDARY, StatCard, Toast, Skeleton, shortWhen } from '../components/chp/ui'
 
 const STAT_ICONS = { reports: FileText, followups: CheckCircle2, referrals: ArrowRightLeft, onTime: Clock }
 
@@ -176,23 +176,7 @@ export default function ChpSettings() {
           </ul>
         </section>
 
-        <section className={`${CARD} p-5`}>
-          <h2 className="text-sm font-semibold text-gray-900">Permissions</h2>
-          <p className="text-xs text-gray-500 mt-0.5 mb-4">What your account can do. Set by your administrator.</p>
-          {acc.permissions.length ? (
-            <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {acc.permissions.map((p) => (
-                <li key={p.key} className="flex items-start gap-2 rounded-lg border border-gray-100 px-3 py-2.5">
-                  <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    <span className="block text-sm text-gray-900">{p.name}</span>
-                    <span className="block text-xs text-gray-500">{p.description}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : <Badge>No permissions</Badge>}
-        </section>
+       
       </div>
       <Toast text={toast.text} error={toast.error} />
     </AppShell>

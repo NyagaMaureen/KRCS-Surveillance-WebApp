@@ -10,6 +10,9 @@ import { FOCUS, PERIODS, SEVERITY, RISE, weekLabel, weekRange, fmtNum, DiseaseCh
 // flagged as an unusual rise. Data and counting rules: surveillance/epi_trends.py.
 
 
+// A-Z ignoring 'Suspected', so 'Suspected Measles' sits under M
+const alphaName = (n) => (n || '').toLowerCase().replace(/^suspected\s+/, '')
+
 function DiseaseCard({ item, weeks, labels, showUnconfirmed, onOpenRise, others }) {
   const flaggedWeeks = item.flags.filter((f) => f.length).length
   const parts = [
@@ -150,7 +153,7 @@ export default function EpiTrends() {
         <label className="sr-only" htmlFor="epi-disease">Disease</label>
         <select id="epi-disease" value={current?.disease || ''} onChange={(e) => setParam({ disease: e.target.value })} className={`${SEL} min-w-[16rem] max-w-full`} disabled={!series.length}>
           {!series.length && <option value="">No diseases with cases</option>}
-          {series.map((d) => (
+          {[...series].sort((a, b) => alphaName(a.name).localeCompare(alphaName(b.name))).map((d) => (
             <option key={d.disease} value={d.disease}>
               {d.name}{d.risingNow ? ' · rising now' : ''} · {fmtNum(d.confirmedTotal + (showUnconfirmed ? d.unconfirmedTotal : 0))} cases
             </option>

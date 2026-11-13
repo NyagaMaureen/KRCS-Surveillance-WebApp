@@ -105,7 +105,7 @@ def get_options():
 	subs = frappe.get_all("Sub County", filters=sc_filters, fields=["name", "sub_county_name", "county"], order_by="county, sub_county_name")
 	bounds = frappe.db.sql("select min(week_start), max(week_start) from `tabWeekly Count`")[0]
 	return {
-		"diseases": [{"value": k, "label": v} for k, v in sorted(names.items(), key=lambda x: x[1] or "")],
+		"diseases": [{"value": k, "label": v} for k, v in sorted(names.items(), key=lambda x: (x[1] or "").lower().removeprefix("suspected ")) if k in _active()],
 		"sources": [{"value": k, "label": v} for k, v in SOURCES.items()],
 		"subCounties": [{"value": s.sub_county_name, "label": f"{s.sub_county_name} · {s.county}", "county": s.county} for s in subs],
 		"counties": sorted({s.county for s in subs if s.county}),
@@ -131,6 +131,9 @@ def _counts_where(a, names):
 		like = f"%{a.search.strip()}%"
 		where.append("(disease in %(search_d)s or sub_county like %(like)s or county like %(like)s)")
 		values.update({"search_d": tuple(hits) or ("",), "like": like})
+	from surveillance.alert_thresholds import active_diseases
+	where.append("disease in %(active)s")   # weekly counts: only diseases ticked Active
+	values["active"] = tuple(active_diseases()) or ("",)
 	if diseases:
 		where.append("disease in %(diseases)s")
 		values["diseases"] = tuple(diseases)
@@ -325,3 +328,8 @@ def export(params=None):
 	else:
 		rows, summary, _, _ = _query_counts(a, names, paged=False)
 	return {"rows": rows, "total": summary["rows"], "truncated": summary["rows"] > MAX_EXPORT}
+
+
+def _active():
+	from surveillance.alert_thresholds import active_diseases
+	return active_diseases()

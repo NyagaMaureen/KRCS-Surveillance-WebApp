@@ -200,7 +200,7 @@ export default function Reports() {
         </select>
         <select value={diseaseFilter} onChange={(e) => setDiseaseFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Suspected Diseases</option>
-          {diseaseOptions.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
+          {diseaseOptions.filter((d) => d.active).map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
         </select>
         <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Locations</option>

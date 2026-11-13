@@ -200,7 +200,11 @@ def get_trends(period="12w", sub_county=None, disease=None, start=None, end=None
 	recent = {add_days(_monday(today()), -7), _monday(today())}
 	shown = slice(USUAL_WEEKS, len(hist_weeks))
 	series, rising = [], []
+	from surveillance.alert_thresholds import active_diseases
+	active = active_diseases()   # only diseases ticked Active are shown; the rise page (one disease) shows any
 	for d in sorted(set(confirmed) | set(unconfirmed) | {k for k, _ in flags}):
+		if not disease and d not in active:
+			continue
 		week_flags = [flags.get((d, w), []) for w in weeks]
 		m = meta.get(d)
 		name = (m.disease_name if m else None) or ("Unclassified illness" if d == UNCLASSIFIED else d)
@@ -263,4 +267,4 @@ def get_trends(period="12w", sub_county=None, disease=None, start=None, end=None
 		"sources": [{"key": k, "label": label} for k, label in SOURCES],
 		"series": series, "rising": unique,
 		"subCounties": sorted(v["name"] for v in all_subs.values()),
-		"diseases": sorted(({"key": k, "name": v.disease_name or k} for k, v in meta.items()), key=lambda x: x["name"])}
+		"diseases": sorted(({"key": k, "name": v.disease_name or k} for k, v in meta.items() if k in active), key=lambda x: x["name"])}

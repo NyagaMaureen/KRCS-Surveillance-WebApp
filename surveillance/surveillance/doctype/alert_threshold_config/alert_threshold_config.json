@@ -12,6 +12,7 @@
   "note",
   "threshold",
   "is_active",
+  "monitored",
   "sort_order",
   "icd11_code",
   "icd11_title",
@@ -63,6 +64,13 @@
    "label": "Is Active"
   },
   {
+   "default": "0",
+   "fieldname": "monitored",
+   "fieldtype": "Check",
+   "label": "Active",
+   "description": "Shown everywhere (Epi Trends, dashboard, map, filters). Inactive diseases are still classified and counted."
+  },
+  {
    "fieldname": "sort_order",
    "fieldtype": "Int",
    "label": "Sort Order"
@@ -101,7 +109,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-13 09:53:40.526088",
+ "modified": "2026-11-13 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Alert Threshold Config",

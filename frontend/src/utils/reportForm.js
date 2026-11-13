@@ -119,7 +119,7 @@ export function validateReport(form, photoCount, hasVoice) {
   if (!form.signal_type) e.signal_type = 'Select a signal type'
   if (!form.region) e.region = 'Select a region'
   if (!form.sub_county) e.sub_county = 'Select a sub-county'
-  if (!form.location_name.trim()) e.location_name = 'Enter the location, village or block name'
+  // location_name is optional: GPS is always required (same rule as case_report_rules.py and the mobile app)
 
   const lat = form.latitude === '' || form.latitude === null ? NaN : Number(form.latitude)
   const lng = form.longitude === '' || form.longitude === null ? NaN : Number(form.longitude)

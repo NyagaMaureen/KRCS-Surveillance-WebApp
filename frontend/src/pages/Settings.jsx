@@ -127,6 +127,7 @@ export default function Settings() {
   const [diseases, setDiseases] = useState([])
   const [diseaseThresholds, setDiseaseThresholds] = useState({})
   const [diseasePriorities, setDiseasePriorities] = useState({})
+  const [diseaseActives, setDiseaseActives] = useState({})
   const [outbreakMultiplier, setOutbreakMultiplier] = useState(2.5)
   const [thresholdsLoading, setThresholdsLoading] = useState(true)
   const [thresholdsError, setThresholdsError] = useState('')
@@ -209,8 +210,13 @@ export default function Settings() {
 
   const filteredDiseases = useMemo(() => {
     const q = diseaseSearchQuery.trim().toLowerCase()
-    if (!q) return diseases
-    return diseases.filter((d) => d.name.toLowerCase().includes(q) || d.icd11_code?.toLowerCase().includes(q) || d.icd11_title?.toLowerCase().includes(q))
+    // active first, then by priority (Critical, High, Normal), then A-Z ignoring 'Suspected'
+    const alphaName = (n) => (n || '').toLowerCase().replace(/^suspected\s+/, '')
+    const rank = { Critical: 0, High: 1, Standard: 2 }
+    const sorted = diseases.map((d, i) => [d, i]).sort(([a, i], [b, j]) =>
+      (b.active ? 1 : 0) - (a.active ? 1 : 0) || (rank[a.priority] ?? 2) - (rank[b.priority] ?? 2) || alphaName(a.name).localeCompare(alphaName(b.name)) || i - j).map(([d]) => d)
+    if (!q) return sorted
+    return sorted.filter((d) => d.name.toLowerCase().includes(q) || d.icd11_code?.toLowerCase().includes(q) || d.icd11_title?.toLowerCase().includes(q))
   }, [diseases, diseaseSearchQuery])
 
   function syncForm(u) {
@@ -223,7 +229,7 @@ export default function Settings() {
   }
 
   function startEditDiseaseThresholds() {
-    setDiseaseThresholdsBackup({ values: diseaseThresholds, multiplier: outbreakMultiplier, diseases, priorities: diseasePriorities })
+    setDiseaseThresholdsBackup({ values: diseaseThresholds, multiplier: outbreakMultiplier, diseases, priorities: diseasePriorities, actives: diseaseActives })
     setEditingDiseaseThresholds(true)
   }
 
@@ -233,6 +239,7 @@ export default function Settings() {
       setOutbreakMultiplier(diseaseThresholdsBackup.multiplier)
       setDiseases(diseaseThresholdsBackup.diseases)
       setDiseasePriorities(diseaseThresholdsBackup.priorities)
+      setDiseaseActives(diseaseThresholdsBackup.actives || {})
     }
     setEditingDiseaseThresholds(false)
     cancelAddDisease()
@@ -283,10 +290,13 @@ export default function Settings() {
       Object.entries(diseasePriorities).filter(([key, value]) => originalPriorities[key] !== value)
     )
     try {
-      const result = await saveAlertThresholds(numericThresholds, Number(outbreakMultiplier), changedPriorities)
+      const originalActives = diseaseThresholdsBackup?.actives || {}
+      const changedActives = Object.fromEntries(Object.entries(diseaseActives).filter(([key, value]) => originalActives[key] !== value))
+      const result = await saveAlertThresholds(numericThresholds, Number(outbreakMultiplier), changedPriorities, changedActives)
       setDiseases(result.diseases)
       setDiseaseThresholds(Object.fromEntries(result.diseases.map((d) => [d.key, d.threshold])))
       setDiseasePriorities(Object.fromEntries(result.diseases.map((d) => [d.key, d.priority])))
+      setDiseaseActives(Object.fromEntries(result.diseases.map((d) => [d.key, !!d.active])))
       setOutbreakMultiplier(result.outbreak_multiplier)
       setEditingDiseaseThresholds(false)
       setDiseaseThresholdsBackup(null)
@@ -310,6 +320,7 @@ export default function Settings() {
       const disease = await addDisease({ disease_name: name, threshold: Number(newDiseaseThreshold) || 1, category: 'human', priority: newDiseasePriority, ...icd11Payload })
       setDiseases((prev) => [...prev, disease])
       setDiseaseThresholds((prev) => ({ ...prev, [disease.key]: disease.threshold }))
+      setDiseaseActives((prev) => ({ ...prev, [disease.key]: !!disease.active }))
       setDiseasePriorities((prev) => ({ ...prev, [disease.key]: disease.priority }))
       if (diseaseThresholdsBackup) {
         setDiseaseThresholdsBackup((prev) => ({
@@ -455,6 +466,7 @@ export default function Settings() {
       setDiseases(result.diseases)
       setDiseaseThresholds(Object.fromEntries(result.diseases.map((d) => [d.key, d.threshold])))
       setDiseasePriorities(Object.fromEntries(result.diseases.map((d) => [d.key, d.priority])))
+      setDiseaseActives(Object.fromEntries(result.diseases.map((d) => [d.key, !!d.active])))
       setOutbreakMultiplier(result.outbreak_multiplier)
     } catch (e) {
       setThresholdsError(e.message || 'Could not load disease alert thresholds.')
@@ -813,15 +825,16 @@ export default function Settings() {
                 </div>
               )}
 
-              <div className="hidden sm:grid grid-cols-[1fr_140px_150px] gap-4 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              <div className="hidden sm:grid grid-cols-[1fr_140px_150px_70px] gap-4 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
                 <span>Disease</span>
                 <span>Threshold / week</span>
                 <span>Priority</span>
+                <span className="text-center">Active</span>
               </div>
 
               <div className="divide-y divide-gray-100 border-t border-gray-100">
                 {filteredDiseases.map((disease) => (
-                  <div key={disease.key} className="py-4 grid grid-cols-1 sm:grid-cols-[1fr_140px_150px] gap-3 sm:gap-4 sm:items-start">
+                  <div key={disease.key} className={`py-4 grid grid-cols-1 sm:grid-cols-[1fr_140px_150px_70px] gap-3 sm:gap-4 sm:items-start ${diseaseActives[disease.key] ? '' : 'opacity-50'}`}>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium text-gray-900">{disease.name}</p>
@@ -914,6 +927,16 @@ export default function Settings() {
                         ))}
                       </select>
                     </div>
+
+                    <div className="flex sm:justify-center sm:pt-3">
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+                        <input type="checkbox" checked={!!diseaseActives[disease.key]} disabled={!editingDiseaseThresholds}
+                          onChange={(e) => setDiseaseActives((prev) => ({ ...prev, [disease.key]: e.target.checked }))}
+                          aria-label={`Show ${disease.name} everywhere`}
+                          className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-200" />
+                        <span className="sm:hidden">Active</span>
+                      </label>
+                    </div>
                   </div>
                 ))}
 
@@ -922,7 +945,7 @@ export default function Settings() {
                 )}
               </div>
 
-              <p className="text-xs text-gray-400 mt-4">Priority sets how serious one suspected case is. Alerts for Critical diseases are always treated as critical.</p>
+              <p className="text-xs text-gray-400 mt-4">Priority sets how serious one suspected case is. Alerts for Critical diseases are always treated as critical. Active diseases are shown everywhere (Epi Trends, dashboard, map, filters); inactive ones (greyed) are still classified and counted in the background, and appear with their history once ticked.</p>
 
               {saveThresholdsError && <p className="text-red-700 text-sm mt-4">{saveThresholdsError}</p>}
 

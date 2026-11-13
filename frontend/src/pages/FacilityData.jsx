@@ -10,11 +10,12 @@ import {
   getFacilityUploads, getFacilityCoverage, getReportingFacilities, saveReportingFacility, getSubCounties,
 } from '../api/frappe'
 
+
 const TABS = [
-  { key: 'upload', label: 'Upload files', icon: Upload },
   { key: 'coverage', label: 'Coverage', icon: Grid3x3 },
-  { key: 'history', label: 'Upload history', icon: History },
   { key: 'facilities', label: 'Facilities', icon: Building2 },
+  { key: 'upload', label: 'Upload files', icon: Upload },
+  { key: 'history', label: 'Upload history', icon: History },
 ]
 
 const STATUS_STYLES = {

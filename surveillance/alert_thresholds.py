@@ -93,6 +93,7 @@ def _row(d):
 		"note": d.note or "",
 		"threshold": d.threshold,
 		"priority": d.get("priority") or "Standard",
+		"active": bool(d.get("monitored")),
 		"sort_order": d.sort_order,
 		"icd11_code": d.get("icd11_code") or "",
 		"icd11_title": d.get("icd11_title") or "",
@@ -108,7 +109,7 @@ def get_alert_thresholds():
 	rows = frappe.get_all(
 		DOCTYPE,
 		filters={"is_active": 1},
-		fields=["disease_key", "disease_name", "category", "note", "threshold", "priority", "sort_order",
+		fields=["disease_key", "disease_name", "category", "note", "threshold", "priority", "sort_order", "monitored",
 		        "icd11_code", "icd11_title", "icd11_uri"],
 		order_by="sort_order asc, creation asc",
 	)
@@ -146,6 +147,7 @@ def add_disease(disease_name, threshold=1, category="human", note="", icd11_code
 		"threshold": _valid_threshold(threshold),
 		"priority": _valid_priority(priority),
 		"is_active": 1,
+		"monitored": 1,   # a disease an admin adds is shown everywhere
 		"sort_order": max_order + 1,
 		"icd11_code": code,
 		"icd11_title": (icd11_title or "").strip() if code else "",
@@ -155,14 +157,15 @@ def add_disease(disease_name, threshold=1, category="human", note="", icd11_code
 
 
 @frappe.whitelist(methods=["POST"])
-def save_alert_thresholds(thresholds=None, outbreak_multiplier=None, priorities=None):
+def save_alert_thresholds(thresholds=None, outbreak_multiplier=None, priorities=None, actives=None):
 	"""thresholds: {"awd-cholera": 1, ...}   priorities: {"awd-cholera": "High", ...} (both optional)"""
 	require_capability(CAPABILITY)
 
 	thresholds = frappe.parse_json(thresholds) if isinstance(thresholds, str) else (thresholds or {})
 	priorities = frappe.parse_json(priorities) if isinstance(priorities, str) else (priorities or {})
+	actives = frappe.parse_json(actives) if isinstance(actives, str) else (actives or {})   # {"malaria": true, ...}
 
-	for key in set(thresholds) | set(priorities):
+	for key in set(thresholds) | set(priorities) | set(actives):
 		if not frappe.db.exists(DOCTYPE, key):
 			frappe.throw(_("Unknown disease: {0}").format(key))
 		doc = frappe.get_doc(DOCTYPE, key)
@@ -175,6 +178,11 @@ def save_alert_thresholds(thresholds=None, outbreak_multiplier=None, priorities=
 			new_priority = _valid_priority(priorities[key])
 			if doc.priority != new_priority:
 				doc.priority, changed = new_priority, True
+		if key in actives:
+			new_active = 1 if actives[key] else 0
+			if (doc.monitored or 0) != new_active:
+				doc.monitored, changed = new_active, True
+				frappe.local.active_diseases = None
 		if changed:
 			doc.save(ignore_permissions=True)  # still validated + version-tracked
 
@@ -204,6 +212,7 @@ def seed_defaults():
 				"threshold": 1,
 				"priority": DEFAULT_PRIORITY.get(key, "Standard"),
 				"is_active": 1,
+				"monitored": 1,   # priority diseases and unusual events are shown
 				"sort_order": i,
 			}).insert(ignore_permissions=True)
 
@@ -246,7 +255,8 @@ def seed_extra_diseases():
 		if frappe.db.exists(doctype, key):
 			continue
 		values = {"disease_name": name, "category": "Human", "threshold": threshold,
-			"priority": priority, "is_active": 1, "key": key, "disease_key": key}
+			"priority": priority, "is_active": 1, "key": key, "disease_key": key,
+			"monitored": 1 if key == "unusual-event" else 0}   # the other MOH 505 diseases are counted, not shown
 		doc = frappe.get_doc({"doctype": doctype, **{k: v for k, v in values.items() if meta.has_field(k)}})
 		doc.insert(ignore_permissions=True, set_name=key)
 		added.append(key)
@@ -254,3 +264,21 @@ def seed_extra_diseases():
 		frappe.db.commit()
 		print(f"Added diseases: {', '.join(added)}")
 	return added
+
+
+# ---------- Active diseases (Nov 2026) ----------
+# Only diseases ticked Active (Settings -> Alert Thresholds) are shown on Epi Trends, the dashboard, the map, Analytics,
+# Data Explorer and the Reports / Review Queue filters. Inactive ones are still classified, routed to the Review Queue,
+# counted and checked by the alert engine in the background, so ticking one later shows it with its history.
+
+def active_diseases():
+	"""Keys of the diseases ticked Active (cached for one request)."""
+	if getattr(frappe.local, "active_diseases", None) is None:
+		frappe.local.active_diseases = set(frappe.get_all(DOCTYPE, filters={"is_active": 1, "monitored": 1}, pluck="name"))
+	return frappe.local.active_diseases
+
+
+def active_names():
+	"""Display names of the active diseases (events store the name, not the key)."""
+	keys = active_diseases()
+	return {r.disease_name for r in frappe.get_all(DOCTYPE, filters={"name": ["in", list(keys) or [""]]}, fields=["disease_name"])}
