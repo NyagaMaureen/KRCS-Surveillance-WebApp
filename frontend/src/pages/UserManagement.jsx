@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { rolePermissionsLink } from '../utils/links'
 import { Search, Plus, Pencil, Trash2, X, UserRound, UserPlus, AlertCircle, Loader2, Users, CheckCircle2, UserX, Ban, ShieldCheck } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import { PageSizeSelect } from '../components/common/Pager'
 import RolesPermissions from '../components/settings/RolesPermissions'
 import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties, getReferralFacilities } from '../api/frappe'
 
@@ -11,7 +12,6 @@ const tabs = [
   { key: 'roles', label: 'Roles & Permissions', icon: ShieldCheck },
 ]
 
-const PAGE_SIZE = 8
 const STATUSES = ['Active', 'Inactive', 'Suspended']
 
 const STATUS_COLORS = {
@@ -121,6 +121,7 @@ export default function UserManagement() {
     })
   }, [users, search, roleFilter, statusFilter, regionFilter])
 
+  const [PAGE_SIZE, setPageSize] = useState(10)
   const lastPage = Math.max(0, Math.ceil(filteredUsers.length / PAGE_SIZE) - 1)
   const pagedUsers = filteredUsers.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
   useEffect(() => {
@@ -193,6 +194,10 @@ export default function UserManagement() {
     setFormError('')
     if (!editingUser && !form.password) {
       setFormError('Set a temporary password before adding this user.')
+      return
+    }
+    if (!form.assigned_region || !form.assigned_sub_county) {   // every user has a region and sub-county (KRCS, 16 Nov 2026)
+      setFormError('Choose the region and sub-county for this user.')
       return
     }
     const phone = (form.mobile_no || '').replace(/\s+/g, '')
@@ -336,6 +341,7 @@ export default function UserManagement() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-400 text-xs bg-gray-50 border-b border-gray-100">
+                  <th className="w-10 px-5 py-3 font-medium">#</th>
                   <th className="px-5 py-3 font-medium">User</th>
                   <th className="px-5 py-3 font-medium">Role</th>
                   <th className="px-5 py-3 font-medium">Region</th>
@@ -346,8 +352,9 @@ export default function UserManagement() {
                 </tr>
               </thead>
               <tbody>
-                {pagedUsers.map((u) => (
+                {pagedUsers.map((u, i) => (
                   <tr key={u.name} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-5 py-3 tabular-nums text-gray-900">{page * PAGE_SIZE + i + 1}</td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2.5">
                         <UserRound className="w-5 h-5 text-gray-400 shrink-0" />
@@ -399,6 +406,7 @@ export default function UserManagement() {
                 <button onClick={() => setPage(Math.max(0, page - 1))} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600">Previous</button>
               </div>
               <span className="text-xs text-gray-500">{paginationLabel}</span>
+              <PageSizeSelect value={PAGE_SIZE} onChange={(n) => { setPageSize(n); setPage(0) }} />
               <div className="flex gap-2">
                 <button onClick={() => setPage(Math.min(lastPage, page + 1))} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600">Next</button>
                 <button onClick={() => setPage(lastPage)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600">Last</button>
@@ -486,16 +494,16 @@ export default function UserManagement() {
                     <h4 className="text-xs font-semibold tracking-wide text-gray-500 uppercase mb-3">Area assignment</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className={labelCls}>Region</label>
+                        <label className={labelCls}>Region <span className="text-red-600">*</span></label>
                         <select value={form.assigned_region} onChange={(e) => updateForm({ assigned_region: e.target.value, assigned_sub_county: '' })} className={inputCls}>
                           <option value="">Select a region</option>
                           {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className={labelCls}>Sub-county <span className="font-normal text-gray-400">(optional)</span></label>
+                        <label className={labelCls}>Sub-county <span className="text-red-600">*</span></label>
                         <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value })} disabled={!form.assigned_region} className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`}>
-                          <option value="">{form.assigned_region ? 'No sub-county' : 'Select a region first'}</option>
+                          <option value="">{form.assigned_region ? 'Select a sub-county' : 'Select a region first'}</option>
                           {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}
                         </select>
                         <p className="text-xs text-gray-500 mt-1.5">CHA / SCDSC: receives alerts for new signals in this sub-county.</p>

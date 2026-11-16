@@ -34,10 +34,10 @@ import Feedback from '../pages/Feedback'
 import FeedbackInbox from '../pages/FeedbackInbox'
 import ChpDashboard from '../pages/ChpDashboard'
 import ChpSettings from '../pages/ChpSettings'
-import FhwDashboard from '../pages/FhwDashboard'
 import FacilityReferrals from '../pages/FacilityReferrals'
 import DataQuality from '../pages/DataQuality'
 import FullDashboard from '../pages/FullDashboard'
+import HqDashboard from '../pages/HqDashboard'
 import MyProfile from '../pages/MyProfile'
 import NotificationSettings from '../pages/NotificationSettings'
 import ChangePassword from '../pages/ChangePassword'
@@ -54,7 +54,7 @@ function byWorkspace(pages) {
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
-  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: FullDashboard, chp: ChpDashboard, officer: SurveillanceDashboard, fhw: FhwDashboard }) },
+  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: FullDashboard, chp: ChpDashboard, officer: HqDashboard, fhw: HqDashboard, cha: HqDashboard }) },
   { path: '/surveillance-dashboard', name: 'surveillance-dashboard', element: SurveillanceDashboard },
   { path: '/ai-governance-dashboard', name: 'ai-governance-dashboard', element: AiGovernanceDashboard },
   { path: '/investigations', name: 'investigations', element: Investigations },
@@ -75,10 +75,10 @@ const rawRoutes = [
   { path: '/channels', name: 'channels', element: Channels },
   { path: '/facility-data', name: 'facility-data', element: FacilityData },
   { path: '/context-data', name: 'context-data', element: ContextData },
-  { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings }) },
+  { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings }) },   // others: Settings, showing only what their permissions allow
   { path: '/help-center', name: 'help-center', element: HelpCenter },
-  { path: '/profile', name: 'profile', element: byWorkspace({ full: MyProfile, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings }) },
-  { path: '/change-password', name: 'change-password', element: byWorkspace({ full: ChangePassword, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings }) },
+  { path: '/profile', name: 'profile', element: byWorkspace({ full: MyProfile, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings, cha: ChpSettings }) },
+  { path: '/change-password', name: 'change-password', element: byWorkspace({ full: ChangePassword, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings, cha: ChpSettings }) },
   { path: '/notifications', name: 'notifications', element: NotificationSettings },
   { path: '/audit-log', name: 'audit-log', element: AuditLog },
   { path: '/ai-data-assistant', name: 'ai-data-assistant', element: AiDataAssistant },

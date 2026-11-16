@@ -12,6 +12,7 @@ import AppShell from '../components/layout/AppShell'
 import Embedded from '../components/layout/Embedded'
 import EpiTrends from './EpiTrends'
 import SurveillanceMap from './SurveillanceMap'
+import { useCapabilities } from '../context/CapabilitiesContext'
 import { getHqGlance, getHqSurveillance, getHqPerformance, getHqStatus, getHqFilterOptions } from '../api/frappe'
 
 // HQ Admin dashboard (KRCS Dashboard re-organization, 13 Nov 2026): five tabs, each with cards and charts.
@@ -25,13 +26,16 @@ const AMBER = '#D97706'
 const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-gray-400'
 const SELECT = `h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 ${FOCUS}`
 
+// requires: the permission that opens the tab; hq: KRCS Admin and other HQ users only (not sub-county dashboards)
 const TABS = [
   { key: 'glance', label: 'At a Glance', icon: Gauge, filters: true },
   { key: 'surveillance', label: 'Surveillance & Response', icon: ShieldCheck, filters: true, category: true },
-  { key: 'epi', label: 'Epidemiological Trends', icon: TrendingUp },
-  { key: 'performance', label: 'System Performance', icon: Activity, filters: true },
-  { key: 'maps', label: 'Maps', icon: MapIcon },
+  { key: 'epi', label: 'Epidemiological Trends', icon: TrendingUp, requires: 'view_alerts' },
+  { key: 'performance', label: 'System Performance', icon: Activity, filters: true, requires: 'view_analytics', hq: true },
+  { key: 'maps', label: 'Maps', icon: MapIcon, requires: 'view_surveillance_map' },
 ]
+// dashboard title per workspace; officers, FHWs and CHAs see their assigned sub-county only
+const TITLES = { full: 'KRCS Admin Dashboard', officer: 'Surveillance Officer Dashboard', fhw: 'Facility Health Worker Dashboard', cha: 'CHA Dashboard' }
 
 const CARD_ICONS = {
   signals: Radio, closed: CheckCheck, escalated: ArrowUpRight, pending: Hourglass, channels: Wifi,
@@ -55,7 +59,9 @@ const legendBottom = { position: 'bottom', labels: { ...tick, boxWidth: 10, boxH
 
 const today = () => new Date().toISOString().slice(0, 10)
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10) }
-const EMPTY_FILTERS = { region: '', subCounty: '', from: '', to: '', channel: '', status: '', category: '' }
+// period as on Epi Trends: last N weeks up to today
+const PERIODS = [['4w', 'Last 4 weeks', 28], ['8w', 'Last 8 weeks', 56], ['12w', 'Last 12 weeks', 84], ['6m', 'Last 6 months', 182], ['12m', 'Last 12 months', 364]]
+const EMPTY_FILTERS = { region: '', subCounty: '', period: '4w', channel: '', status: '', category: '' }
 
 function ago(v) {
   if (!v) return 'never'
@@ -71,8 +77,16 @@ function ago(v) {
 
 export default function HqDashboard() {
   const [params, setParams] = useSearchParams()
-  const tab = TABS.find((t) => t.key === params.get('tab')) || TABS[0]
-  const [filters, setFilters] = useState({ ...EMPTY_FILTERS, from: daysAgo(29), to: today() })
+  const { has: can, workspace } = useCapabilities()
+  const scoped = workspace !== 'full'
+  const tabs = TABS.filter((t) => (!t.requires || can(t.requires)) && !(t.hq && scoped))
+  const tab = tabs.find((t) => t.key === params.get('tab')) || tabs[0]
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  // what the server gets: the period as from / to dates
+  const query = useMemo(() => {
+    const days = (PERIODS.find((p) => p[0] === filters.period) || PERIODS[0])[2]
+    return { ...filters, from: daysAgo(days - 1), to: today() }
+  }, [filters])
   const [options, setOptions] = useState(null)
   const [status, setStatus] = useState(null)
   const [stamp, setStamp] = useState(0)   // bumps on Refresh now
@@ -84,14 +98,16 @@ export default function HqDashboard() {
     setParams((prev) => { const next = new URLSearchParams(prev); next.set('tab', key); return next })
   }
   const set = (k, v) => setFilters((f) => ({ ...f, [k]: v, ...(k === 'region' ? { subCounty: '' } : {}) }))
-  const changed = Object.entries(filters).some(([k, v]) => (k === 'from' ? v !== daysAgo(29) : k === 'to' ? v !== today() : v))
+  const changed = Object.entries(filters).some(([k, v]) => (k === 'period' ? v !== EMPTY_FILTERS.period : v))
 
   return (
     <AppShell>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="border-l-4 border-red-600 pl-3">
-          <h2 className="text-xl font-bold text-gray-900">KRCS Surveillance Dashboard</h2>
-          <p className="text-sm text-gray-900">Surveillance and system performance at a glance</p>
+          <h2 className="text-xl font-bold text-gray-900">{TITLES[workspace] || TITLES.full}</h2>
+          <p className="text-sm text-gray-900">
+            {options?.lockedSubCounty ? `${options.lockedSubCounty} sub-county at a glance` : 'Surveillance and system performance at a glance'}
+          </p>
         </div>
       </div>
 
@@ -99,7 +115,7 @@ export default function HqDashboard() {
       <div className="mb-6 overflow-x-auto rounded-xl bg-gray-50 px-4 py-4">
         <div role="tablist" className="relative flex min-w-[640px] items-start justify-between">
           <div className="absolute left-8 right-8 top-6 h-px bg-gray-300" aria-hidden="true" />
-          {TABS.map((t) => {
+          {tabs.map((t) => {
             const on = t.key === tab.key
             return (
               <button key={t.key} type="button" role="tab" aria-selected={on} onClick={() => pickTab(t.key)}
@@ -116,7 +132,10 @@ export default function HqDashboard() {
       </div>
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-base font-bold text-gray-900">{tab.label}</h3>
+        <h3 className="text-base font-bold text-gray-900">
+          {tab.label}
+          {tab.filters && <span className="font-normal"> · {(PERIODS.find((p) => p[0] === filters.period) || PERIODS[0])[1]}{options?.lockedSubCounty ? ` · ${options.lockedSubCounty}` : ''}</span>}
+        </h3>
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={() => setStamp((s) => s + 1)}
             className={`inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50 ${FOCUS}`}>
@@ -128,18 +147,19 @@ export default function HqDashboard() {
           </span>
         </div>
       </div>
-      <SyncStatus status={status} />
-
       {tab.filters && (
         <FilterBar filters={filters} set={set} options={options} category={tab.category} changed={changed}
-          clear={() => setFilters({ ...EMPTY_FILTERS, from: daysAgo(29), to: today() })} />
+          clear={() => setFilters(EMPTY_FILTERS)} />
       )}
 
-      {tab.key === 'glance' && <GlanceTab filters={filters} stamp={stamp} />}
-      {tab.key === 'surveillance' && <SurveillanceTab filters={filters} stamp={stamp} />}
-      {tab.key === 'performance' && <PerformanceTab filters={filters} stamp={stamp} />}
+      {tab.key === 'glance' && <GlanceTab filters={query} stamp={stamp} />}
+      {tab.key === 'surveillance' && <SurveillanceTab filters={query} stamp={stamp} />}
+      {tab.key === 'performance' && <PerformanceTab filters={query} stamp={stamp} />}
       {tab.key === 'epi' && <Embedded><EpiTrends key={stamp} /></Embedded>}
       {tab.key === 'maps' && <Embedded><SurveillanceMap key={stamp} /></Embedded>}
+
+      {/* data sync under the charts (KRCS, 16 Nov 2026) */}
+      <SyncStatus status={status} />
     </AppShell>
   )
 }
@@ -148,11 +168,15 @@ export default function HqDashboard() {
 
 function SyncStatus({ status }) {
   if (!status) return null
-  const chips = status.sources.map((s) => `${s.label}: ${s.key === 'moh505' && s.week ? `up to ${s.week}, ` : ''}${s.key === 'moh505' ? `uploaded ${ago(s.last)}` : `last ${ago(s.last)}`}`)
-  if (status.mobile) chips.push(`Mobile app: ${status.mobile.waiting} report${status.mobile.waiting === 1 ? '' : 's'} waiting on phones${status.mobile.failed ? `, ${status.mobile.failed} failed` : ''}`)
+  // when data last came in from each source
+  const chips = status.sources.map((s) => {
+    if (s.key === 'moh505') return s.week ? `MOH 505: latest week ${s.week}, loaded ${ago(s.last)}` : 'MOH 505: no weeks loaded yet'
+    return s.last ? `${s.label}: latest ${ago(s.last)}` : `${s.label}: nothing received yet`
+  })
+  if (status.mobile) chips.push(`Mobile app: ${status.mobile.waiting ? `${status.mobile.waiting} report${status.mobile.waiting === 1 ? '' : 's'} still on phones, not sent yet` : 'all reports sent'}${status.mobile.failed ? `, ${status.mobile.failed} failed` : ''}`)
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-gray-900">
-      <span className="font-semibold">Data sync:</span>
+    <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4 text-xs text-gray-900">
+      <span className="font-semibold">Last data received:</span>
       {chips.map((c) => <span key={c} className="rounded-full border border-gray-200 bg-white px-2.5 py-1">{c}</span>)}
     </div>
   )
@@ -161,7 +185,7 @@ function SyncStatus({ status }) {
 function FilterBar({ filters, set, options, category, changed, clear }) {
   const subs = (options?.subCounties || []).filter((s) => !filters.region || s.region === filters.region)
   return (
-    <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-3">
+    <div className="mb-5 flex flex-wrap items-end justify-end gap-3 rounded-xl border border-gray-200 bg-white p-3">
       {!options?.lockedRegion && (options?.regions?.length || 0) > 1 && (
         <Field label="Region">
           <select className={SELECT} value={filters.region} onChange={(e) => set('region', e.target.value)}>
@@ -170,14 +194,23 @@ function FilterBar({ filters, set, options, category, changed, clear }) {
           </select>
         </Field>
       )}
+      {options?.lockedSubCounty ? (
+        <Field label="Sub-county">
+          <span className="flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900">{options.lockedSubCounty}</span>
+        </Field>
+      ) : (
       <Field label="Sub-county">
         <select className={SELECT} value={filters.subCounty} onChange={(e) => set('subCounty', e.target.value)}>
           <option value="">All sub-counties</option>
           {subs.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </Field>
-      <Field label="From"><input type="date" className={SELECT} value={filters.from} max={filters.to} onChange={(e) => set('from', e.target.value)} /></Field>
-      <Field label="To"><input type="date" className={SELECT} value={filters.to} min={filters.from} max={today()} onChange={(e) => set('to', e.target.value)} /></Field>
+      )}
+      <Field label="Period">
+        <select className={SELECT} value={filters.period} onChange={(e) => set('period', e.target.value)}>
+          {PERIODS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+      </Field>
       <Field label="Channel">
         <select className={SELECT} value={filters.channel} onChange={(e) => set('channel', e.target.value)}>
           <option value="">All channels</option>
@@ -309,6 +342,7 @@ function Loading({ error }) {
 const SEV = { critical: 'bg-red-50 text-red-800', high: 'bg-amber-50 text-amber-800', standard: 'bg-gray-100 text-gray-900' }
 
 function GlanceTab({ filters, stamp }) {
+  const { has: can } = useCapabilities()
   const { data, error } = useTabData(getHqGlance, filters, stamp)
   if (!data) return <Loading error={error} />
   const dist = data.distribution
@@ -329,20 +363,21 @@ function GlanceTab({ filters, stamp }) {
               <table className="red-head w-full border-collapse text-sm">
                 <thead>
                   <tr className="text-left text-xs">
-                    <th className="px-3 py-2">Event</th><th className="px-3 py-2">Place</th><th className="px-3 py-2">Reports</th>
+                    <th className="w-10 px-3 py-2">#</th><th className="px-3 py-2">Event</th><th className="px-3 py-2">Place</th><th className="px-3 py-2">Reports</th>
                     <th className="px-3 py-2">People</th><th className="px-3 py-2">Priority</th><th className="px-3 py-2">Status</th><th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
-                  {data.priorityEvents.map((e) => (
+                  {data.priorityEvents.map((e, i) => (
                     <tr key={e.id} className="hover:bg-red-50/40">
+                      <td className="px-3 py-2 tabular-nums text-gray-900">{i + 1}</td>
                       <td className="px-3 py-2 font-medium text-gray-900">{e.title}</td>
                       <td className="px-3 py-2 text-gray-900">{e.place || '—'}</td>
                       <td className="px-3 py-2 text-gray-900">{e.reports}</td>
                       <td className="px-3 py-2 text-gray-900">{e.people || '—'}</td>
                       <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${SEV[e.severity] || SEV.standard}`}>{e.severity}</span></td>
                       <td className="px-3 py-2 text-gray-900">{e.status}</td>
-                      <td className="px-3 py-2 text-right"><Link to={`/alerts-signals/${encodeURIComponent(e.id)}`} className={`rounded text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>Open</Link></td>
+                      <td className="px-3 py-2 text-right">{can('view_review_queue') && <Link to={`/alerts-signals/${encodeURIComponent(e.id)}`} className={`rounded text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>Open</Link>}</td>
                     </tr>
                   ))}
                 </tbody>

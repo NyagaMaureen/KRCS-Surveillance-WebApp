@@ -5,6 +5,8 @@ import {
   History, Grid3x3, Building2, RefreshCw,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import Pager from '../components/common/Pager'
+import usePaged from '../components/common/usePaged'
 import {
   uploadFileWithProgress, previewFacilityUpload, confirmFacilityUpload, discardFacilityUpload,
   getFacilityUploads, getFacilityCoverage, getReportingFacilities, saveReportingFacility, getSubCounties,
@@ -594,6 +596,7 @@ function FacilitiesTab({ version, onAdd, onEdit }) {
     setLoading(true)
     getReportingFacilities().then(setRows).catch(() => setRows([])).finally(() => setLoading(false))
   }, [version])
+  const facPaged = usePaged(rows, 10, version)
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -609,6 +612,7 @@ function FacilitiesTab({ version, onAdd, onEdit }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-gray-400 text-xs bg-gray-50 border-b border-gray-100">
+            <th className="w-10 px-5 py-3 font-medium">#</th>
             <th className="px-5 py-3 font-medium">Facility</th>
             <th className="px-5 py-3 font-medium">Name in KHIS files</th>
             <th className="px-5 py-3 font-medium">Sub-county</th>
@@ -619,11 +623,12 @@ function FacilitiesTab({ version, onAdd, onEdit }) {
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan={6} className="px-5 py-10 text-center text-gray-400">Loading…</td></tr>
+            <tr><td colSpan={7} className="px-5 py-10 text-center text-gray-400">Loading…</td></tr>
           ) : !rows.length ? (
-            <tr><td colSpan={6} className="px-5 py-10 text-center text-gray-400">No facilities yet</td></tr>
-          ) : rows.map((f) => (
+            <tr><td colSpan={7} className="px-5 py-10 text-center text-gray-400">No facilities yet</td></tr>
+          ) : facPaged.shown.map((f, i) => (
             <tr key={f.name} className="border-b border-gray-50 hover:bg-gray-50">
+              <td className="px-5 py-3 tabular-nums text-gray-900">{facPaged.offset + i + 1}</td>
               <td className="px-5 py-3 text-gray-900 font-medium">{f.name}</td>
               <td className="px-5 py-3"><code className="text-xs bg-gray-100 rounded px-1.5 py-0.5 text-gray-700">{f.khisMatch}</code></td>
               <td className="px-5 py-3 text-gray-700">{f.county} / {f.subCountyName}</td>
@@ -638,6 +643,7 @@ function FacilitiesTab({ version, onAdd, onEdit }) {
           ))}
         </tbody>
       </table>
+      <Pager paged={facPaged} noun="facilities" />
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { Search, RefreshCw, ShieldAlert, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import { PageSizeSelect } from '../components/common/Pager'
 import { getReviewEvents, getDiseaseOptions } from '../api/frappe'
 import { statusLabel, parseDate } from '../data/eventHelpers'
 import { RiskPill } from '../components/risk/RiskScore'
@@ -215,7 +216,7 @@ export default function AlertsSignalsQueue() {
 
   const [page, setPage] = useState(0)
   useEffect(() => setPage(0), [tab, q, disease, channel, sevFilter, overdueOnly, sort])
-  const PAGE = 10
+  const [PAGE, setPAGE] = useState(10)
   const lastPage = Math.max(0, Math.ceil(visibleEvents.length / PAGE) - 1)
   const pageRows = visibleEvents.slice(page * PAGE, page * PAGE + PAGE)
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000
@@ -261,9 +262,9 @@ export default function AlertsSignalsQueue() {
               return (
                 <button key={key} aria-pressed={on}
                   onClick={() => key === 'overdue' ? setParam({ overdue: overdueOnly ? '' : '1', tab: 'all' }) : setParam({ tab: key === 'new' ? '' : key, overdue: '' })}
-                  className={`${card} text-left px-4 py-3 hover:border-gray-200 ${on ? 'ring-1 ring-gray-300' : ''} ${alarm ? 'bg-red-50 border-red-100' : ''} ${FOCUS}`}>
-                  <span className={`block text-xs ${alarm ? 'text-red-700' : 'text-gray-500'}`}>{label}</span>
-                  <span className={`block text-xl font-semibold tabular-nums mt-1 ${alarm ? 'text-red-700' : 'text-gray-900'}`}>{loading ? '–' : value}</span>
+                  className={`rounded-xl text-left px-4 py-3 text-white ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
+                  <span className="block text-[11px] font-bold uppercase tracking-wide">{label}{alarm && <span className="ml-1.5 rounded bg-white/25 px-1 normal-case">act now</span>}</span>
+                  <span className="block text-2xl font-bold tabular-nums mt-1">{loading ? '–' : value}</span>
                 </button>
               )
             })}
@@ -385,7 +386,8 @@ export default function AlertsSignalsQueue() {
                   <button onClick={() => setPage(0)} disabled={page === 0} className={pageBtn}>First</button>
                   <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} className={pageBtn}>Previous</button>
                 </div>
-                <span className="text-sm text-gray-500">Showing {page * PAGE + 1} to {Math.min(visibleEvents.length, page * PAGE + PAGE)} of {visibleEvents.length}</span>
+                <span className="inline-flex items-center gap-2 text-sm text-gray-500">Showing {page * PAGE + 1} to {Math.min(visibleEvents.length, page * PAGE + PAGE)} of {visibleEvents.length}
+                  <PageSizeSelect value={PAGE} onChange={(n) => { setPAGE(n); setPage(0) }} /></span>
                 <div className="flex gap-2">
                   <button onClick={() => setPage(Math.min(lastPage, page + 1))} disabled={page >= lastPage} className={pageBtn}>Next</button>
                   <button onClick={() => setPage(lastPage)} disabled={page >= lastPage} className={pageBtn}>Last</button>

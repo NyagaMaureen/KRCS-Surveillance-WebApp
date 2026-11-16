@@ -21,6 +21,8 @@ import {
   CopyPlus,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import Pager from '../components/common/Pager'
+import usePaged from '../components/common/usePaged'
 import { KB_CATEGORIES, KB_WORKSPACE_LIMIT_BYTES } from '../data/mockKnowledgeBase'
 import {
   uploadFile, getKbDocuments, createKbDocument, reindexKbDocument, deleteKbDocument, updateKbDocument,
@@ -138,14 +140,14 @@ function useClickOutside(ref, handler) {
 
 function StatCard({ icon: Icon, label, value, sub }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 px-5 py-4 flex items-center justify-between gap-4">
+    <div className="rounded-xl bg-red-600 px-5 py-4 flex items-center justify-between gap-4 text-white">
       <div className="min-w-0">
-        <div className="text-xs font-medium text-gray-400">{label}</div>
-        <div className="text-xl font-semibold text-gray-900 mt-1">{value}</div>
-        <div className="text-xs text-gray-400 mt-1 truncate">{sub}</div>
+        <div className="text-[11px] font-bold uppercase tracking-wide">{label}</div>
+        <div className="text-2xl font-bold mt-1">{value}</div>
+        <div className="text-xs mt-1 truncate">{sub}</div>
       </div>
-      <div className="bg-gray-100 rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-        <Icon className="w-5 h-5 text-gray-500" />
+      <div className="bg-white/20 rounded-full w-10 h-10 flex items-center justify-center shrink-0">
+        <Icon className="w-5 h-5 text-white" />
       </div>
     </div>
   )
@@ -878,45 +880,71 @@ function TrustedSources({ onToast }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-6">
-      <p className="text-sm text-gray-500 mb-1">Websites the assistant may quote when approved KRCS documents do not answer a question.</p>
-      <p className="text-sm text-gray-500 mb-4">Every such answer names the website and says it is not KRCS-approved, and the question still goes to the supervisor. PubMed is searched now; other websites are searched once Claude is connected.</p>
+    <div className="space-y-5">
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <h3 className="text-base font-bold text-gray-900">{form.name ? 'Edit trusted source' : 'Add a trusted source'}</h3>
+        <p className="mt-1 text-sm text-gray-900">Websites the assistant may quote when approved KRCS documents do not answer a question. Every such answer names the website, says it is not KRCS-approved, and the question still goes to the supervisor.</p>
+        <form onSubmit={save} className="mt-4 grid grid-cols-1 items-end gap-3 md:grid-cols-[1fr_1fr_160px_auto]">
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-900">Name
+            <input value={form.sourceName} onChange={set('sourceName')} placeholder="e.g. World Health Organization" className={INPUT} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-900">Website
+            <input value={form.website} onChange={set('website')} placeholder="e.g. who.int" className={INPUT} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-900">Type
+            <select value={form.kind} onChange={set('kind')} className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm">
+              <option value="Website">Website</option>
+              <option value="PubMed">PubMed search</option>
+            </select>
+          </label>
+          <div className="flex items-center gap-2">
+            <button type="submit" disabled={saving || !form.sourceName.trim() || !form.website.trim()} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:bg-gray-200">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{form.name ? 'Save' : 'Add source'}
+            </button>
+            {form.name && <button type="button" onClick={() => setForm(EMPTY_SOURCE)} className="text-sm font-medium text-gray-900 hover:underline">Cancel</button>}
+          </div>
+        </form>
+      </div>
 
-      <form onSubmit={save} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_160px_auto] gap-3 items-center">
-        <input value={form.sourceName} onChange={set('sourceName')} placeholder="Name, e.g. World Health Organization" className={INPUT} aria-label="Name" />
-        <input value={form.website} onChange={set('website')} placeholder="Website, e.g. who.int" className={INPUT} aria-label="Website" />
-        <select value={form.kind} onChange={set('kind')} className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white" aria-label="Type">
-          <option value="Website">Website</option>
-          <option value="PubMed">PubMed</option>
-        </select>
-        <div className="flex items-center gap-2">
-          <button type="submit" disabled={saving || !form.sourceName.trim() || !form.website.trim()} className="px-5 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-gray-200 text-white text-sm font-medium inline-flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}{form.name ? 'Save' : 'Add'}
-          </button>
-          {form.name && <button type="button" onClick={() => setForm(EMPTY_SOURCE)} className="text-sm text-gray-500 hover:text-gray-900">Cancel</button>}
-        </div>
-      </form>
-
-      {error && <p className="mt-4 bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3">{error}</p>}
-      {rows && !rows.length && <p className="mt-6 text-sm text-gray-400 text-center">No trusted sources yet.</p>}
-      {!!rows?.length && (
-        <div className="mt-5 border border-gray-100 rounded-xl divide-y divide-gray-100">
-          {rows.map((r) => (
-            <div key={r.name} className="flex flex-wrap items-center gap-3 px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <div className={`text-sm font-medium ${r.enabled ? 'text-gray-900' : 'text-gray-400'}`}>{r.sourceName}</div>
-                <div className="text-xs text-gray-500">{r.website} · {r.kind === 'PubMed' ? 'PubMed search' : 'Website'}</div>
-              </div>
-              <label className="flex items-center gap-2 text-xs text-gray-600">
-                <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="accent-red-600" />
-                {r.enabled ? 'In use' : 'Off'}
-              </label>
-              <button type="button" onClick={() => setForm({ ...r })} className="text-xs font-medium text-gray-600 hover:text-gray-900 inline-flex items-center gap-1"><Pencil className="w-3.5 h-3.5" />Edit</button>
-              <button type="button" onClick={() => remove(r)} className="text-xs font-medium text-red-700 hover:underline inline-flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" />Remove</button>
-            </div>
-          ))}
-        </div>
-      )}
+      {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        {!rows ? <p className="p-8 text-sm text-gray-900">Loading…</p> : !rows.length ? (
+          <p className="p-10 text-center text-sm text-gray-900">No trusted sources yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="text-left text-xs">
+                  <th className="w-10 px-3 py-3">#</th><th className="px-3 py-3">Source</th><th className="px-3 py-3">Website</th>
+                  <th className="px-3 py-3">Type</th><th className="px-3 py-3">In use</th><th className="px-3 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.name} className="hover:bg-gray-50">
+                    <td className="px-3 py-3 tabular-nums text-gray-900">{i + 1}</td>
+                    <td className="px-3 py-3 font-medium text-gray-900">{r.sourceName}</td>
+                    <td className="px-3 py-3 text-gray-900">{r.website}</td>
+                    <td className="px-3 py-3 text-gray-900">{r.kind === 'PubMed' ? 'PubMed search' : 'Website'}</td>
+                    <td className="px-3 py-3">
+                      <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-900">
+                        <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="h-4 w-4 accent-red-600" />
+                        {r.enabled ? 'Yes' : 'No'}
+                      </label>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-end gap-3">
+                        <button type="button" onClick={() => setForm({ ...r })} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"><Pencil className="h-3.5 w-3.5" />Edit</button>
+                        <button type="button" onClick={() => remove(r)} className="inline-flex items-center gap-1 text-xs font-medium text-gray-900 hover:underline"><Trash2 className="h-3.5 w-3.5" />Remove</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -1025,7 +1053,7 @@ export default function KnowledgeBase() {
     () => [ALL_REGIONS, ...regionList.map((r) => (typeof r === 'string' ? r : r.region_name || r.name)).filter((n) => n && n !== ALL_REGIONS)],
     [regionList]
   )
-  const diseaseSelectOptions = useMemo(() => diseaseOptions.map((d) => ({ value: d.key, label: d.name })), [diseaseOptions])
+  const diseaseSelectOptions = useMemo(() => diseaseOptions.filter((d) => d.active).map((d) => ({ value: d.key, label: d.name })), [diseaseOptions])   // active diseases only
   const diseaseNames = useMemo(() => Object.fromEntries(diseaseOptions.map((d) => [d.key, d.name])), [diseaseOptions])
 
   const loadDocuments = useCallback(async () => {
@@ -1093,6 +1121,7 @@ export default function KnowledgeBase() {
       return true
     })
   }, [documents, search, quick, filters, diseaseNames])
+  const docsPaged = usePaged(filteredDocuments, 10, `${search}|${quick}|${JSON.stringify(filters)}`)
 
   function handleUploaded(doc, message) {
     if (doc) setDocuments((prev) => [doc, ...prev.filter((d) => d.id !== doc.id)])
@@ -1205,7 +1234,7 @@ export default function KnowledgeBase() {
 
       {canManage && (
         <div className="flex gap-6 border-b border-gray-100 mb-5">
-          {[{ key: 'documents', label: 'Documents' }, { key: 'test', label: 'Test search' }, { key: 'sources', label: 'Trusted sources' }, { key: 'health', label: 'Health' }].map((t) => (
+          {[{ key: 'documents', label: 'Documents' }, { key: 'sources', label: 'Trusted sources' }].map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
@@ -1218,11 +1247,7 @@ export default function KnowledgeBase() {
         </div>
       )}
 
-      {tab === 'health' && canManage ? (
-        <HealthPanel />
-      ) : tab === 'test' && canManage ? (
-        <TestSearch />
-      ) : tab === 'sources' && canManage ? (
+      {tab === 'sources' && canManage ? (
         <TrustedSources onToast={showToast} />
       ) : (
         <>
@@ -1285,6 +1310,7 @@ export default function KnowledgeBase() {
                 <table className="w-full text-sm min-w-[760px]">
                   <thead>
                     <tr className="text-left text-gray-500 text-xs bg-gray-50 border-b border-gray-100">
+                      <th className="w-10 px-4 py-3 font-medium">#</th>
                       <th className="px-6 py-3 font-medium">Document</th>
                       <th className="px-6 py-3 font-medium">Audience</th>
                       <th className="px-6 py-3 font-medium">Status</th>
@@ -1292,11 +1318,12 @@ export default function KnowledgeBase() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredDocuments.map((doc) => {
+                    {docsPaged.shown.map((doc, i) => {
                       const a = approvalKey(doc)
                       const showApprove = canApprove && a !== 'approved'
                       return (
                         <tr key={doc.id} className="border-b border-gray-50 hover:bg-gray-50/60 align-top">
+                          <td className="px-4 py-4 tabular-nums text-gray-900">{docsPaged.offset + i + 1}</td>
                           <td className="px-6 py-4">
                             <div className="flex items-start gap-3">
                               <FileText className="w-5 h-5 text-gray-400 mt-0.5 shrink-0" />
@@ -1359,6 +1386,7 @@ export default function KnowledgeBase() {
                 </table>
               </div>
             )}
+            <Pager paged={docsPaged} noun="documents" />
           </div>
         </>
       )}

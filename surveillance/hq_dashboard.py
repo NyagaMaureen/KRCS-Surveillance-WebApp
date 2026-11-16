@@ -8,9 +8,11 @@
   Last updated / sync      get_status
 
 Filters on every call: region, sub_county (name), from_date, to_date, channel, status, category (Human / Animal).
-A user limited to a region (no View All Regions) only ever sees that region.
+A user limited to a region (no View All Regions) only ever sees that region. Surveillance Officers, FHWs and CHAs see
+only their assigned sub-county (user_scope.locked_area) and have no System Performance tab.
 
-Only diseases ticked Active are shown (charts, lists and counts); reports not matched to any disease are kept, as in
+Only diseases ticked Active are shown (charts, lists and counts), except the Total signals cards, which count
+everything received with the active-disease count as their note; reports not matched to any disease are kept, as in
 the Review Queue. "Signals" are everything that came in: field reports (Case Report: Mobile, Web, WhatsApp, SMS, USSD) plus CBS and
 EMR signals that did not come from a field report. Report statuses are the ones people see: Awaiting review,
 Investigating, Closed, Recorded. CBS / EMR signals take their status from the event they were grouped into.
@@ -22,6 +24,7 @@ import frappe
 from frappe.utils import add_days, cint, get_datetime, getdate, now_datetime, nowdate
 
 from surveillance.capabilities import has_capability, require_capability
+from surveillance.user_scope import locked_area
 
 VIEW = "view_analytics"
 CHANNELS = ["Mobile", "Web", "WhatsApp", "CBS", "EMR"]   # SMS and USSD are not used (KRCS, 16 Nov 2026)
@@ -41,13 +44,22 @@ USER_ROLES = ["CHP", "Facility Health Worker", "Public Health Officer", "HIS Off
 
 # ---------- filters ----------
 
+def _require_dashboard():
+	"""The dashboard: HQ-level users need View Analytics; officers, FHWs and CHAs see their own sub-county."""
+	if not has_capability(VIEW) and not locked_area():
+		frappe.throw("You do not have permission to see this dashboard.", frappe.PermissionError)
+
+
 def _f(region=None, sub_county=None, from_date=None, to_date=None, channel=None, status=None, category=None):
 	from surveillance.events import _user_region
+	area = locked_area()
+	if area:
+		region, sub_county = area.region, area.sub_county
 	to_d = getdate(to_date) if to_date else getdate(nowdate())
 	from_d = getdate(from_date) if from_date else add_days(to_d, -29)
 	if from_d > to_d:
 		from_d, to_d = to_d, from_d
-	mine = _user_region()
+	mine = area.region if area else _user_region()
 	return frappe._dict(
 		region=mine or (region or None), sub_county=(sub_county or "").strip().lower() or None,
 		from_d=from_d, to_d=to_d, start=get_datetime(f"{from_d} 00:00:00"), end=get_datetime(f"{to_d} 23:59:59"),
@@ -77,14 +89,15 @@ def _disease_label(dis, key):
 
 # ---------- every signal in the period ----------
 
-def _signals(f, dis=None, ignore_channel=False):
-	"""Field reports + CBS / EMR signals in the period, after the filters. One dict per signal."""
+def _signals(f, dis=None, ignore_channel=False, all_diseases=False):
+	"""Field reports + CBS / EMR signals in the period, after the filters. One dict per signal.
+	Active diseases only (plus unmatched reports), unless all_diseases (the Total signals cards)."""
 	dis = dis or _diseases()
 	subs = _sub_names()
 	rows = []
 
 	cr_filters = {"creation": ["between", [f.start, f.end]]}
-	if f.region:
+	if f.region and not f.sub_county:
 		cr_filters["region"] = f.region
 	reports = frappe.get_all("Case Report", filters=cr_filters, limit_page_length=0,
 		fields=["name", "creation", "channel", "status", "category", "signal_type", "suspected_disease", "region",
@@ -102,7 +115,7 @@ def _signals(f, dis=None, ignore_channel=False):
 			"subCounty": (sc.sub_county_name if sc else "") or "", "event": ev_of.get(r.name), "people": cint(r.affected_count)})
 
 	sig_filters = {"source": ["in", ["CBS", "EMR"]], "signal_date": ["between", [f.start, f.end]]}
-	if f.region:
+	if f.region and not f.sub_county:
 		sig_filters["region"] = f.region
 	for s in frappe.get_all("Surveillance Signal", filters=sig_filters, limit_page_length=0,
 			fields=["name", "source", "signal_date", "disease", "region", "sub_county", "event", "people"]):
@@ -126,7 +139,7 @@ def _signals(f, dis=None, ignore_channel=False):
 	active = _active()
 	out = []
 	for r in rows:
-		if r["disease"] and r["disease"] not in active:
+		if r["disease"] and r["disease"] not in active and not all_diseases:
 			continue
 		if f.sub_county and r["subCounty"].strip().lower() != f.sub_county:
 			continue
@@ -151,7 +164,7 @@ def _card(key, label, value, note=""):
 
 def _event_filters(f, **extra):
 	ef = dict(extra)
-	if f.region:
+	if f.region and not f.sub_county:
 		ef["region"] = f.region
 	return ef
 
@@ -164,7 +177,7 @@ def _event_in_sub(e, f):
 
 @frappe.whitelist()
 def get_glance(region=None, sub_county=None, from_date=None, to_date=None, channel=None, status=None, category=None):
-	require_capability(VIEW)
+	_require_dashboard()
 	f = _f(region, sub_county, from_date, to_date, channel, status, category)
 	dis = _diseases()
 	rows = _signals(f, dis)
@@ -184,7 +197,7 @@ def get_glance(region=None, sub_county=None, from_date=None, to_date=None, chann
 	top = [(k, n) for k, n in by_disease.most_common() if k][:5]
 	return {
 		"cards": [
-			_card("signals", "Total signals received", len(rows), "across all channels"),
+			_card("signals", "Total signals received", len(_signals(f, dis, all_diseases=True)), f"{len(rows)} for active diseases"),
 			_card("closed", "Investigated and closed", st["Closed"], "reports closed"),
 			_card("escalated", "Escalated", sum(1 for r in rows if r["escalated"]), "to county / MOH"),
 			_card("pending", "Pending verification", st["Awaiting review"], "awaiting review"),
@@ -217,10 +230,30 @@ def _tasks(f, task_type, date_field, done=True):
 	return sum(1 for t in rows if not f.sub_county or (t.sub_county or "").strip().lower() == f.sub_county)
 
 
+def _response_time(analytics, weeks, last, sub_county=None):
+	"""Analytics time to start verification; for a sub-county only, the events of that sub-county."""
+	if not sub_county:
+		return analytics._response_time(weeks, last)
+	from statistics import median
+	cols = [add_days(last, -7 * i) for i in reversed(range(weeks))]
+	names = set(frappe.get_all("Surveillance Event", filters={"creation": [">=", cols[0]]},
+		or_filters={"sub_county": sub_county, "area": ["like", f"%{sub_county}%"]}, pluck="name"))
+	events = [e for e in analytics._events_since(cols[0]) if e.name in names]
+	acts = analytics._actions(events)
+	per_week = {}
+	for e in events:
+		h = analytics._hours_to_verify(e, acts)
+		if h is not None:
+			per_week.setdefault(analytics._week_start(e.creation), []).append(h)
+	return {"labels": [analytics._epi(w) for w in cols],
+		"medianHours": [round(median(per_week[w]), 1) if per_week.get(w) else None for w in cols],
+		"verified": [len(per_week.get(w, [])) for w in cols], "target": 24}
+
+
 @frappe.whitelist()
 def get_surveillance(region=None, sub_county=None, from_date=None, to_date=None, channel=None, status=None, category=None,
 		disease=None):
-	require_capability(VIEW)
+	_require_dashboard()
 	from surveillance import analytics
 	f = _f(region, sub_county, from_date, to_date, channel, status, category)
 	dis = _diseases()
@@ -249,7 +282,7 @@ def get_surveillance(region=None, sub_county=None, from_date=None, to_date=None,
 	names = {k: v.disease_name or k for k, v in dis.items()}
 	return {
 		"cards": [
-			_card("submitted", "Total signals submitted", len(rows)),
+			_card("submitted", "Total signals submitted", len(_signals(f, dis, all_diseases=True)), f"{len(rows)} for active diseases"),
 			_card("investigating", "Under investigation", st["Investigating"]),
 			_card("closed", "Investigated and closed", st["Closed"]),
 			_card("escalated", "Escalated", sum(1 for r in rows if r["escalated"])),
@@ -262,9 +295,9 @@ def get_surveillance(region=None, sub_county=None, from_date=None, to_date=None,
 		"eventDiseases": {"labels": [k for k, _ in ev_dis.most_common()], "data": [n for _, n in ev_dis.most_common()]},
 		"expected": analytics._expected(n_weeks, "all", subs, names, last, disease or None),
 		"periodCompare": analytics._period_compare("all", subs, names, last),
-		"responseTime": analytics._response_time(n_weeks, last),
+		"responseTime": _response_time(analytics, n_weeks, last, f.sub_county),
 		"diseases": [{"value": k, "label": v.disease_name or k} for k, v in
-			sorted(dis.items(), key=lambda x: (x[1].disease_name or "").lower().removeprefix("suspected ")) if v.is_active],
+			sorted(dis.items(), key=lambda x: (x[1].disease_name or "").lower().removeprefix("suspected ")) if k in active],
 	}
 
 
@@ -332,6 +365,8 @@ def _dq_top(f):
 @frappe.whitelist()
 def get_performance(region=None, sub_county=None, from_date=None, to_date=None, channel=None, status=None, category=None):
 	require_capability(VIEW)
+	if locked_area():
+		frappe.throw("System Performance is for HQ users.", frappe.PermissionError)
 	from surveillance import analytics
 	f = _f(region, sub_county, from_date, to_date, channel, status, category)
 	dis = _diseases()
@@ -385,7 +420,7 @@ def _latest(doctype, field, filters=None):
 
 @frappe.whitelist()
 def get_status():
-	require_capability(VIEW)
+	_require_dashboard()
 	idsr_week = _latest("IDSR Facility Week", "week_start")
 	mobile = None
 	if frappe.db.table_exists("Mobile Sync Stats"):
@@ -398,8 +433,11 @@ def get_status():
 		"sources": [
 			{"key": "field", "label": "Field reports", "last": _latest("Case Report", "creation")},
 			{"key": "whatsapp", "label": "WhatsApp", "last": _latest("Case Report", "creation", {"channel": "WhatsApp"})},
-			{"key": "cbs", "label": "KRCS CBS", "last": _latest("Surveillance Signal", "creation", {"source": "CBS"})},
-			{"key": "moh505", "label": "MOH 505", "last": _latest("IDSR Upload", "ingested_on", {"status": "Ingested"}),
+			# CBS arrives as signals and as weekly counts (hourly sync): the newest of the two
+			{"key": "cbs", "label": "KRCS CBS", "last": max(filter(None, [_latest("Surveillance Signal", "creation", {"source": "CBS"}),
+				_latest("Weekly Count", "modified", {"source": "CBS"})]), default=None)},
+			# MOH 505 weeks can be loaded by upload or from KHIS files: when the newest week row was saved
+			{"key": "moh505", "label": "MOH 505", "last": _latest("IDSR Facility Week", "modified"),
 				"week": f"W{getdate(idsr_week).isocalendar()[1]}" if idsr_week else None},
 		],
 		"mobile": mobile,
@@ -408,16 +446,22 @@ def get_status():
 
 @frappe.whitelist()
 def get_filter_options():
-	"""Regions and sub-counties the user may pick (their own region only, if limited), channels and statuses."""
-	require_capability(VIEW)
+	"""Regions and sub-counties the user may pick (their own region only, if limited), channels and statuses.
+	Officers, FHWs and CHAs: their sub-county only (lockedSubCounty)."""
+	_require_dashboard()
 	from surveillance.events import _scope, _user_region
-	mine = _user_region()
+	area = locked_area()
+	mine = area.region if area else _user_region()
 	pilot, _d = _scope()
 	regions = frappe.get_all("Region", filters={"name": mine} if mine else {}, fields=["name", "region_name"], order_by="region_name asc")
 	subs = [s for s in frappe.get_all("Sub County", filters={"region": mine} if mine else {},
 		fields=["sub_county_name", "region"], order_by="sub_county_name asc") if (s.sub_county_name or "").strip().lower() in pilot]
+	if area:
+		subs = [s for s in subs if (s.sub_county_name or "").strip().lower() == area.sub_county.strip().lower()]
 	return {
 		"lockedRegion": mine,
+		"lockedSubCounty": area.sub_county if area else None,
+		"canSeeAll": has_capability(VIEW) and not area,
 		"regions": [{"value": r.name, "label": r.region_name or r.name} for r in regions],
 		"subCounties": [{"value": s.sub_county_name, "label": s.sub_county_name, "region": s.region} for s in subs],
 		"channels": [{"value": c, "label": CHANNEL_LABEL.get(c, c)} for c in CHANNELS],

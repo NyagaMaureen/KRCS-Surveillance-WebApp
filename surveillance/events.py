@@ -834,8 +834,13 @@ def _dismiss_unclassified(event, note):
 @frappe.whitelist()
 def get_map_events(status="open", disease=None, days=30):
 	"""Review Queue events for the Surveillance Map (same region rules as the queue).
-	status: "open" (New, Verifying, Investigating, Confirmed, Escalated) | "all" | one status name."""
-	filters = dict(_scope_filters())
+	status: "open" (New, Verifying, Investigating, Confirmed, Escalated) | "all" | one status name.
+	Officers, FHWs and CHAs without the Review Queue permission see their own sub-county (their dashboard Maps tab)."""
+	from surveillance.user_scope import locked_area
+	area = locked_area()
+	if area and not has_capability(VIEW):
+		require_capability("view_surveillance_map")   # their dashboard Maps tab: their sub-county only
+	filters = dict(_scope_filters()) if has_capability(VIEW) or not area else {}
 	if status == "open":
 		filters["status"] = ["in", OPEN]
 	elif status and status != "all":
@@ -846,6 +851,13 @@ def get_map_events(status="open", disease=None, days=30):
 		filters["last_reported"] = [">=", add_days(now_datetime(), -cint(days))]
 	rows = frappe.get_all("Surveillance Event", filters=filters, fields=FIELDS, order_by="last_reported desc",
 		limit_page_length=1000)
+	from surveillance.alert_thresholds import active_diseases
+	from surveillance.user_scope import locked_area
+	active = active_diseases()   # active diseases only, plus unmatched reports (as in the Review Queue)
+	rows = [d for d in rows if not d.disease or d.disease in active or d.disease == "unclassified-illness"]
+	area = locked_area()   # officers, FHWs and CHAs: their sub-county only
+	if area:
+		rows = [d for d in rows if (d.sub_county or "").strip().lower() == area.sub_county.strip().lower()]
 	events = [_shape(d) for d in rows]
 	mapped = [e for e in events if e["lat"] is not None and e["lng"] is not None]
 	counts = {"open": sum(1 for e in events if e["status"] in OPEN),

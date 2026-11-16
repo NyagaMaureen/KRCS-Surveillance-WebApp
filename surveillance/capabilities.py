@@ -142,6 +142,9 @@ CAPABILITIES += [
 	{"key": "fhw_workspace", "name": "Facility Health Worker Workspace", "category": "Workspaces",
 	 "description": "Facility dashboard and menu: report when the EMR is down, referrals to my facility, alerts nearby",
 	 "grants": {}},
+	{"key": "cha_workspace", "name": "CHA Workspace", "category": "Workspaces",
+	 "description": "CHA dashboard (their sub-county) and menu: Referrals, My Tasks, plus what their permissions allow",
+	 "grants": {}},
 	{"key": "receive_referrals", "name": "Confirm Referrals to My Facility", "category": "Review Queue",
 	 "description": "See referrals CHPs make to the user's assigned facility and mark whether the people arrived",
 	 "grants": {}},
@@ -173,10 +176,10 @@ CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 
 # Not given to Administrator / System Manager automatically: these change what the user sees
 # (a field worker's menu and dashboard), not what they are allowed to do.
-NOT_AUTO_FOR_ADMIN = {"chp_workspace", "officer_workspace", "fhw_workspace", "receive_tasks", "view_own_reports"}
+NOT_AUTO_FOR_ADMIN = {"chp_workspace", "officer_workspace", "fhw_workspace", "cha_workspace", "receive_tasks", "view_own_reports"}
 
 # Workspace for each workspace capability, checked in order. Users without one get the full app.
-WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_workspace", "fhw")]
+WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_workspace", "fhw"), ("cha_workspace", "cha")]
 
 # Capabilities set for the CHP role by setup_chp_role (run once; adjust later in Roles & Permissions)
 CHP_CAPABILITIES = ["chp_workspace", "create_reports", "view_own_reports", "receive_tasks", "use_knowledge_base"]

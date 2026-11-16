@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import AppShell from '../components/layout/AppShell'
-import { CARD, INPUT, TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, BTN_SMALL, Badge, Toast, PageTitle, shortWhen } from '../components/chp/ui'
+import Pager from '../components/common/Pager'
+import usePaged from '../components/common/usePaged'
+import { TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, BTN_SMALL, Badge, Toast, shortWhen } from '../components/chp/ui'
 import { getChatbotLog, getChatbotMetrics, listChatbotLogs, updateChatbotEscalation } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
@@ -13,19 +15,6 @@ const OUTCOMES = ['Matched', 'No Match', 'Restricted', 'Escalated', 'Conflict', 
 const CHANNELS = ['Web', 'Mobile', 'WhatsApp', 'SMS', 'USSD', 'API']
 const today = () => new Date().toISOString().slice(0, 10)
 const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10)
-
-function Metric({ label, value, target, good, hint }) {
-  const met = value == null || good == null ? null : good(value)
-  return (
-    <div className={`${CARD} px-4 py-3`}>
-      <span className="block text-xs text-gray-500">{label}</span>
-      <span className={`block text-xl font-semibold tabular-nums ${met === false ? 'text-red-600' : 'text-gray-900'}`}>
-        {value == null ? '–' : value}
-      </span>
-      {(target || hint) && <span className="block text-xs text-gray-400 mt-0.5">{target ? `Target ${target}` : hint}</span>}
-    </div>
-  )
-}
 
 function Detail({ id, onClose, canHandle, onChanged }) {
   const [d, setD] = useState(null)
@@ -106,6 +95,29 @@ function Detail({ id, onClose, canHandle, onChanged }) {
   )
 }
 
+// how long answers took, in words: 386083 ms -> "6.4 min"
+function duration(ms) {
+  if (ms == null) return null
+  if (ms < 1000) return 'under 1 s'
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`
+  return `${(ms / 60000).toFixed(1)} min`
+}
+
+// red card like Signals Captured; note explains the number in plain words, warn when a target is missed
+function StatCard({ label, value, note, warn }) {
+  return (
+    <div className="rounded-xl bg-red-600 p-4 text-white">
+      <p className="text-[11px] font-bold uppercase tracking-wide">{label}</p>
+      <p className="mt-1 text-2xl font-bold tabular-nums">{value ?? '—'}</p>
+      {note && <p className="mt-0.5 text-xs">{note}</p>}
+      {warn && <p className="mt-1 inline-block rounded bg-white/20 px-1.5 py-0.5 text-[11px] font-semibold">{warn}</p>}
+    </div>
+  )
+}
+
+const FOCUS_RING = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-gray-400'
+const FILTER = `h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 ${FOCUS_RING}`
+
 export default function ChatbotQueryLog() {
   const { has } = useCapabilities()
   const [from, setFrom] = useState(daysAgo(30))
@@ -126,58 +138,73 @@ export default function ChatbotQueryLog() {
   }, [from, to, channel, level, outcome, esc])
   useEffect(() => { load() }, [load])
 
+  const paged = usePaged(rows, 10, `${from}|${to}|${channel}|${level}|${outcome}|${esc}`)
+  const pct = (v) => (v == null ? null : `${v}%`)
   return (
     <AppShell>
-      <div className="p-6 max-w-7xl mx-auto">
-        <PageTitle title="Chatbot Query Log" subtitle="Every question to the Knowledge Base and the Response Support Chatbot, with what was shown, why, and who could see it. Acceptance metrics follow SRS Table 18 and Table 25." />
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-5">
-          <Metric label="Guidance questions" value={m?.guidance_questions} hint={`${m?.questions ?? '–'} records`} />
-          <Metric label="Match rate" value={m?.match_rate != null ? `${m.match_rate}%` : null} target="≥ 75%" good={() => m.match_rate >= 75} />
-          <Metric label="Escalation rate" value={m?.escalation_rate != null ? `${m.escalation_rate}%` : null} target="≤ 25%" good={() => m.escalation_rate <= 25} />
-          <Metric label="Restricted to public" value={m?.public_restricted_leaks} target="0" good={(v) => v === 0} />
-          <Metric label="Denied requests" value={m?.denied} hint="access decision DENY" />
-          <Metric label="Open escalations" value={m?.open_escalations} hint="Open or in progress" />
-          <Metric label="p95 latency" value={m?.p95_latency_ms != null ? `${m.p95_latency_ms} ms` : null} hint={m?.helpful_rate != null ? `${m.helpful_rate}% found it helpful` : 'no feedback yet'} />
-        </div>
-
-        <div className="flex flex-wrap gap-3 mb-4 items-end">
-          <label className="text-xs text-gray-500">From<input type="date" className={`${INPUT} mt-1`} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label className="text-xs text-gray-500">To<input type="date" className={`${INPUT} mt-1`} value={to} onChange={(e) => setTo(e.target.value)} /></label>
-          <label className="text-xs text-gray-500">Channel<select className={`${INPUT} mt-1`} value={channel} onChange={(e) => setChannel(e.target.value)}><option value="">All</option>{CHANNELS.map((c) => <option key={c}>{c}</option>)}</select></label>
-          <label className="text-xs text-gray-500">Level<select className={`${INPUT} mt-1`} value={level} onChange={(e) => setLevel(e.target.value)}><option value="">All</option><option>Conversation</option><option>Retrieval</option></select></label>
-          <label className="text-xs text-gray-500">Outcome<select className={`${INPUT} mt-1`} value={outcome} onChange={(e) => setOutcome(e.target.value)}><option value="">All</option>{OUTCOMES.map((o) => <option key={o}>{o}</option>)}</select></label>
-          <label className="text-xs text-gray-500">Escalation<select className={`${INPUT} mt-1`} value={esc} onChange={(e) => setEsc(e.target.value)}><option value="">All</option>{['Open', 'In Progress', 'Answered', 'Closed'].map((o) => <option key={o}>{o}</option>)}</select></label>
-          <button type="button" className={BTN_SECONDARY} onClick={load}>Refresh</button>
-        </div>
-
-        <section className={CARD}>
-          {!rows ? <p className="p-8 text-sm text-gray-400">Loading…</p> : !rows.length ? <p className="p-10 text-center text-sm text-gray-400">No questions in this period.</p> : (
-            <div className="relative overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-gray-500 border-b border-gray-100">
-                  <tr><th className="px-4 py-2">When</th><th className="px-2">Channel</th><th className="px-2">Who</th><th className="px-2">Question</th><th className="px-2">Outcome</th><th className="px-2">Access</th><th className="px-2">Escalation</th><th className="px-2"><span className="sr-only">Open</span></th></tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} className="border-b border-gray-50 align-top">
-                      <td className="px-4 py-2 whitespace-nowrap text-gray-500">{shortWhen(r.createdAt)}</td>
-                      <td className="px-2 py-2">{r.channel}<span className="block text-xs text-gray-400">{r.level}</span></td>
-                      <td className="px-2 py-2">{r.userName || r.userRef || r.user || '—'}<span className="block text-xs text-gray-400">{r.actorClass || r.audience}</span></td>
-                      <td className="px-2 py-2 max-w-md"><span className="line-clamp-2">{r.question}</span></td>
-                      <td className="px-2 py-2"><Badge tone={OUTCOME_TONE[r.outcome]}>{r.outcome}</Badge>{r.reason && <span className="block text-xs text-gray-400 mt-0.5">{r.reason}</span>}</td>
-                      <td className="px-2 py-2"><Badge tone={r.accessDecision === 'DENY' ? 'red' : 'softGreen'}>{r.accessDecision || '—'}</Badge>{r.denyReason && <span className="block text-xs text-gray-400 mt-0.5">{r.denyReason}</span>}</td>
-                      <td className="px-2 py-2">{r.escalationStatus ? <Badge tone={ESC_TONE[r.escalationStatus]}>{r.escalationStatus}</Badge> : '—'}</td>
-                      <td className="px-2 py-2"><button type="button" className={BTN_SMALL} onClick={() => setOpen(r.id)}>View</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-        {open && <Detail id={open} onClose={() => setOpen(null)} canHandle={has('handle_chatbot_escalations')} onChanged={load} />}
-        <Toast {...toast} />
+      <div className="mb-6">
+        <h2 className="text-xl font-bold text-brand-navy">AI Assistant Query Log</h2>
+        <p className="text-sm text-gray-900">Every question asked to the KRCS Data Assistant and the chatbot: what was answered, and who could see it.</p>
       </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Questions asked" value={m?.guidance_questions} note={m ? `${m.questions} records in total` : ''} />
+        <StatCard label="Answered from approved content" value={pct(m?.match_rate)} note="Target: 75% or more"
+          warn={m?.match_rate != null && m.match_rate < 75 ? 'Below target' : ''} />
+        <StatCard label="Passed on to a person" value={pct(m?.escalation_rate)} note="Target: 25% or less"
+          warn={m?.escalation_rate != null && m.escalation_rate > 25 ? 'Above target' : ''} />
+        <StatCard label="Answers rated helpful" value={pct(m?.helpful_rate)} note={m?.helpful_rate == null ? 'No ratings yet' : 'Of the answers users rated'} />
+        <StatCard label="Time to answer" value={duration(m?.p95_latency_ms)} note="95 out of 100 answers came within this time" />
+        <StatCard label="Waiting for a reply" value={m?.open_escalations} note="Questions passed on, still open" />
+        <StatCard label="Requests refused" value={m?.denied} note="The user was not allowed to see the answer" />
+        <StatCard label="Restricted content shown to the public" value={m?.public_restricted_leaks} note="Must stay at 0"
+          warn={m?.public_restricted_leaks ? 'Check these now' : ''} />
+      </div>
+
+      {/* filters in one row, as on the Review Queue */}
+      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-white p-3">
+        <label className="inline-flex items-center gap-1.5 text-sm text-gray-900">From <input type="date" aria-label="From" className={FILTER} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label className="inline-flex items-center gap-1.5 text-sm text-gray-900">To <input type="date" aria-label="To" className={FILTER} value={to} onChange={(e) => setTo(e.target.value)} /></label>
+        <select aria-label="Channel" className={FILTER} value={channel} onChange={(e) => setChannel(e.target.value)}><option value="">All channels</option>{CHANNELS.map((c) => <option key={c}>{c}</option>)}</select>
+        <select aria-label="Records" className={FILTER} value={level} onChange={(e) => setLevel(e.target.value)}><option value="">Questions and searches</option><option value="Conversation">Questions</option><option value="Retrieval">Searches behind them</option></select>
+        <select aria-label="Outcome" className={FILTER} value={outcome} onChange={(e) => setOutcome(e.target.value)}><option value="">All outcomes</option>{OUTCOMES.map((o) => <option key={o}>{o}</option>)}</select>
+        <select aria-label="Passed on" className={FILTER} value={esc} onChange={(e) => setEsc(e.target.value)}><option value="">Passed on: all</option>{['Open', 'In Progress', 'Answered', 'Closed'].map((o) => <option key={o}>{o}</option>)}</select>
+        <button type="button" className={`inline-flex h-9 items-center rounded-lg bg-red-600 px-3.5 text-sm font-medium text-white hover:bg-red-700 ${FOCUS_RING}`} onClick={load}>Refresh</button>
+      </div>
+
+      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        {!rows ? <p className="p-8 text-sm text-gray-900">Loading…</p> : !rows.length ? <p className="p-10 text-center text-sm text-gray-900">No questions in this period.</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="text-left text-xs">
+                  <th className="w-10 px-3 py-3">#</th><th className="px-3 py-3">When</th><th className="px-3 py-3">Channel</th><th className="px-3 py-3">Who</th>
+                  <th className="px-3 py-3">Question</th><th className="px-3 py-3">Outcome</th><th className="px-3 py-3">Access</th><th className="px-3 py-3">Passed on</th>
+                  <th className="px-3 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.shown.map((r, i) => (
+                  <tr key={r.id} className="align-top hover:bg-gray-50">
+                    <td className="px-3 py-3 tabular-nums text-gray-900">{paged.offset + i + 1}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-gray-900">{shortWhen(r.createdAt)}</td>
+                    <td className="px-3 py-3 text-gray-900">{r.channel}</td>
+                    <td className="px-3 py-3 text-gray-900">{r.userName || r.userRef || r.user || '—'}<span className="block text-xs text-gray-900">{r.actorClass || r.audience}</span></td>
+                    <td className="max-w-md px-3 py-3 text-gray-900"><span className="line-clamp-2">{r.question}</span></td>
+                    <td className="px-3 py-3"><Badge tone={OUTCOME_TONE[r.outcome]}>{r.outcome}</Badge>{r.reason && <span className="mt-0.5 block text-xs text-gray-900">{r.reason}</span>}</td>
+                    <td className="px-3 py-3"><Badge tone={r.accessDecision === 'DENY' ? 'red' : 'softGreen'}>{r.accessDecision === 'DENY' ? 'Refused' : r.accessDecision ? 'Allowed' : '—'}</Badge>{r.denyReason && <span className="mt-0.5 block text-xs text-gray-900">{r.denyReason}</span>}</td>
+                    <td className="px-3 py-3">{r.escalationStatus ? <Badge tone={ESC_TONE[r.escalationStatus]}>{r.escalationStatus}</Badge> : '—'}</td>
+                    <td className="px-3 py-3 text-right"><button type="button" className={`inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 ${FOCUS_RING}`} onClick={() => setOpen(r.id)}>View</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Pager paged={paged} noun="questions" />
+      </section>
+      {open && <Detail id={open} onClose={() => setOpen(null)} canHandle={has('handle_chatbot_escalations')} onChanged={load} />}
+      <Toast {...toast} />
     </AppShell>
   )
 }

@@ -7,7 +7,7 @@ export const SIDEBAR_MENU = [
     { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: 'receive_tasks' },
   ]},
   { section: 'SURVEILLANCE AND RESPONSE', items: [
-    { label: 'Signals Captured', icon: 'FileText', page: 'reports', requiresCapability: 'view_reports' },
+    { label: 'Signals Captured', icon: 'FileText', page: 'reports', requiresCapability: ['view_reports', 'view_own_reports'] },
     { label: 'Review Queue', icon: 'BellRing', page: 'alerts-signals', requiresCapability: 'view_review_queue' },
   ]},
   { section: 'DATA AND INSIGHTS', items: [
@@ -30,7 +30,6 @@ export const SIDEBAR_MENU = [
   ]},
   { section: 'SECURITY', items: [
     { label: 'Users', icon: 'Users', page: 'user-management', query: 'tab=users', requiresCapability: 'view_users' },
-    { label: 'User Groups', icon: 'UsersRound', soon: true },
     { label: 'Roles & Permissions', icon: 'KeyRound', page: 'user-management', query: 'tab=roles', requiresCapability: 'view_users' },
     { label: 'Audit Log', icon: 'ClipboardList', page: 'audit-log', requiresCapability: 'view_audit_log' },
     { label: 'Security Settings', icon: 'Lock', page: 'settings', query: 'tab=security', requiresCapability: 'settings_security' },
@@ -73,65 +72,34 @@ export const CHP_MENU = [
 export const OFFICER_MENU = [
   { section: 'OVERVIEW', items: [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
-  ]},
-  { section: 'FIELD ACTIVITIES', items: [
-    { label: 'Signals Captured', icon: 'FileText', page: 'reports', requiresCapability: ['create_reports', 'view_reports', 'view_own_reports'] },
-  ]},
-  { section: 'LIVE MONITORING', items: [
-    { label: 'Review Queue', icon: 'BellRing', page: 'alerts-signals', requiresCapability: 'view_review_queue' },
-    { label: 'Epi Trends', icon: 'TrendingUp', page: 'epi-trends', requiresCapability: 'view_alerts' },
-    { label: 'Surveillance Map', icon: 'Map', page: 'surveillance-map', requiresCapability: 'view_surveillance_map' },
-  ]},
-  { section: 'OPERATIONS', items: [
-    { label: 'Chatbot Query Log', icon: 'MessagesSquare', page: 'chatbot-query-log', requiresCapability: 'view_chatbot_logs' },
-  ]},
-  { section: 'ANALYTICS', items: [
-    { label: 'Data Quality', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
-    { label: 'Trends', icon: 'Activity', page: 'analytics', requiresCapability: 'view_analytics' },
-  ]},
-  { section: 'KNOWLEDGE ASSISTANT', items: [
-    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },
-  ]},
-  { section: 'SUPPORT', items: [
-    { label: 'Feedback', icon: 'MessageSquareWarning', page: 'feedback', requiresCapability: null },
-    { label: 'Help Center', icon: 'HelpCircle', page: 'help-center', requiresCapability: null },
-  ]},
-  { section: 'SYSTEM', items: [
-    { label: 'Settings', icon: 'Settings', page: 'settings', requiresCapability: null },
+    { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: 'receive_tasks' },
   ]},
 ]
 
-// Facility Health Worker workspace: report when the EMR is down, referrals to my facility, alerts nearby
+// Facility Health Worker and CHA: their dashboard, Referrals and My Tasks. Everything else comes from their
+// permissions (Roles & Permissions) and appears in the same section as in the full menu (KRCS, 16 Nov 2026).
 export const FHW_MENU = [
   { section: 'OVERVIEW', items: [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
-  ]},
-  { section: 'LIVE MONITORING', items: [
-    { label: 'Epi Trends', icon: 'TrendingUp', page: 'epi-trends', requiresCapability: 'view_alerts' },
-  ]},
-  { section: 'REPORTING', items: [
-    { label: 'Signals Captured', icon: 'FileText', page: 'reports', requiresCapability: ['create_reports', 'view_own_reports'] },
-  ]},
-  { section: 'MY WORK', items: [
     { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals', requiresCapability: 'receive_referrals' },
     { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: 'receive_tasks' },
   ]},
-  { section: 'KNOWLEDGE ASSISTANT', items: [
-    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },
-  ]},
-  { section: 'SUPPORT', items: [
-    { label: 'Feedback', icon: 'MessageSquareWarning', page: 'feedback', requiresCapability: null },
-    { label: 'Help Center', icon: 'HelpCircle', page: 'help-center', requiresCapability: null },
-  ]},
-  { section: 'SYSTEM', items: [
-    { label: 'Settings', icon: 'Settings', page: 'settings', requiresCapability: null },
+]
+
+export const CHA_MENU = [
+  { section: 'OVERVIEW', items: [
+    { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
+    { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals', requiresCapability: 'receive_tasks' },
+    { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: 'receive_tasks' },
   ]},
 ]
 
-export const MENUS = { full: SIDEBAR_MENU, chp: CHP_MENU, officer: OFFICER_MENU, fhw: FHW_MENU }
+export const MENUS = { full: SIDEBAR_MENU, chp: CHP_MENU, officer: OFFICER_MENU, fhw: FHW_MENU, cha: CHA_MENU }
 
 // Pages each workspace may open (menu pages plus their detail pages). 'full' = no restriction.
 export const WORKSPACE_PAGES = {
+  cha: ['login', 'dashboard', 'referrals', 'my-tasks', 'epi-trends', 'alert-detail', 'ai-data-assistant', 'feedback',
+    'help-center', 'settings'],
   fhw: ['login', 'dashboard', 'epi-trends', 'alert-detail', 'reports', 'report-detail', 'record-health-signal', 'referrals', 'my-tasks',
     'ai-data-assistant', 'feedback', 'help-center', 'settings'],
   chp: ['login', 'dashboard', 'reports', 'report-detail', 'record-health-signal', 'follow-ups', 'referrals',
@@ -175,17 +143,34 @@ function visibleItems(items, has) {
   })
 }
 
-/** The menu this user sees: their workspace menu plus any page their permissions add. */
+/** The menu this user sees.
+ * full: the whole menu, filtered by permission.
+ * chp: the CHP menu, plus pages extra permissions add (under MORE).
+ * officer, fhw, cha: their own items (Dashboard, Referrals, My Tasks) plus every full-menu page their permissions
+ * allow, each in the same section as in the full menu (e.g. Data Quality under DATA AND INSIGHTS). */
 export function menuFor(workspace, has) {
   const base = MENUS[workspace] || SIDEBAR_MENU
   const menu = base.map((g) => ({ ...g, items: visibleItems(g.items, has) })).filter((g) => g.items.length > 0)
   if (base === SIDEBAR_MENU) return menu
-  const inMenu = new Set(flatItems(base).map((i) => i.page))
-  const seen = new Set()
-  const extra = flatItems(SIDEBAR_MENU)
-    .filter((i) => i.requiresCapability && !inMenu.has(i.page) && !(NOT_ADDED[workspace] || []).includes(i.page) && has(i.requiresCapability))
-    .filter((i) => !seen.has(itemKey(i)) && seen.add(itemKey(i)))
-  return extra.length ? [...menu, { section: 'MORE', items: extra }] : menu
+  const own = new Set(flatItems(base).map((i) => i.page))
+  const skip = NOT_ADDED[workspace] || []
+  if (workspace === 'chp') {
+    const seen = new Set()
+    const extra = flatItems(SIDEBAR_MENU)
+      .filter((i) => i.requiresCapability && !own.has(i.page) && !skip.includes(i.page) && has(i.requiresCapability))
+      .filter((i) => !seen.has(itemKey(i)) && seen.add(itemKey(i)))
+    return extra.length ? [...menu, { section: 'MORE', items: extra }] : menu
+  }
+  const placed = SIDEBAR_MENU.map((g) => ({
+    ...g,
+    items: visibleItems(g.items.filter((i) => !own.has(i.page) && !skip.includes(i.page)), has),
+  }))
+  const out = menu.map((g) => {   // same section name: their own items first
+    const same = placed.find((p) => p.section === g.section)
+    return same ? { ...g, items: [...g.items, ...same.items] } : g
+  })
+  placed.forEach((p) => { if (!out.some((g) => g.section === p.section)) out.push(p) })
+  return out.filter((g) => g.items.some((i) => !i.soon))
 }
 
 /** Pages this user may open, or null for no restriction (full menu). */

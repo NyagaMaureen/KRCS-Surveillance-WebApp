@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Building2, Check, X, FileText, Loader2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import Pager from '../components/common/Pager'
+import usePaged from '../components/common/usePaged'
 import { FOCUS, TEXTAREA, Skeleton, Toast } from '../components/chp/ui'
 import { getFacilityReferrals, confirmReferral, getReferralReport } from '../api/frappe'
 
@@ -48,6 +50,7 @@ export default function FacilityReferrals() {
     return c
   }, [data])
   const rows = (data?.referrals || []).filter((r) => tab === 'All' || r.status === tab)
+  const paged = usePaged(rows, 10, tab)
 
   function saved(updated) {
     setData((d) => ({ ...d, referrals: d.referrals.map((r) => (r.id === updated.id ? updated : r)) }))
@@ -83,7 +86,7 @@ export default function FacilityReferrals() {
           <>
             {/* phones: one card per referral */}
             <ul className="divide-y divide-gray-100 lg:hidden">
-              {rows.map((r) => (
+              {paged.shown.map((r) => (
                 <li key={r.id} className="px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -110,7 +113,7 @@ export default function FacilityReferrals() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
+                  {paged.shown.map((r) => (
                     <tr key={r.id} className="align-top hover:bg-gray-50">
                       <td className="whitespace-nowrap px-4 py-3 font-semibold text-gray-900">{r.ref || '—'}</td>
                       <td className="px-4 py-3 text-gray-900">{people(r.people)}{r.patient && <span className="block text-xs text-gray-500">{r.patient}</span>}</td>
@@ -130,6 +133,7 @@ export default function FacilityReferrals() {
                 </tbody>
               </table>
             </div>
+            <Pager paged={paged} noun="referrals" />
           </>
         )}
       </div>

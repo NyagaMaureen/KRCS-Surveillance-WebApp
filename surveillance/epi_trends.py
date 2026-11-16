@@ -57,6 +57,10 @@ def _sub_counties():
 		n = (s.sub_county_name or s.name or "").strip()
 		if n.lower() in subs and (not region or s.region == region):
 			out[n.lower()] = {"id": s.name, "name": n, "region": s.region, "county": s.county}
+	from surveillance.user_scope import locked_area
+	area = locked_area()   # officers, FHWs and CHAs: their sub-county only
+	if area:
+		out = {k: v for k, v in out.items() if k == area.sub_county.strip().lower()}
 	return out
 
 

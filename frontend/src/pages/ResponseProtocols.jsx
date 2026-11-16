@@ -5,6 +5,8 @@ import {
   CheckCircle2, FileEdit, Stethoscope, CalendarClock, AlertTriangle, ExternalLink,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
+import Pager from '../components/common/Pager'
+import usePaged from '../components/common/usePaged'
 import {
   getProtocols, saveProtocol, setProtocolStatus, deleteProtocol, getDiseaseOptions,
   exportCsv, currentUserFullName,
@@ -47,13 +49,13 @@ const isOverdue = (p) => p.status !== 'Retired' && !!p.reviewDate && String(p.re
 
 function SummaryCard({ label, value, Icon }) {
   return (
-    <div className={`${card} p-5 flex items-start justify-between`}>
+    <div className="rounded-xl bg-red-600 p-5 flex items-start justify-between text-white">
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-gray-400">{label}</span>
-        <span className="text-2xl font-semibold text-gray-900">{value}</span>
+        <span className="text-[11px] font-bold uppercase tracking-wide">{label}</span>
+        <span className="text-2xl font-bold">{value}</span>
       </div>
-      <span className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center">
-        <Icon className="w-5 h-5 text-gray-500" aria-hidden="true" />
+      <span className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center">
+        <Icon className="w-5 h-5 text-white" aria-hidden="true" />
       </span>
     </div>
   )
@@ -109,12 +111,13 @@ function ProtocolHeader({ p }) {
   )
 }
 
-function ProtocolRow({ protocol: p, onOpen }) {
+function ProtocolRow({ protocol: p, onOpen, n }) {
   const retired = p.status === 'Retired'
   const qCount = (p.questions || []).length
   const keyCount = (p.questions || []).filter((q) => q.neededToStart).length
   return (
     <tr onClick={() => onOpen(p)} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 cursor-pointer">
+      <td className="px-3 py-3.5 tabular-nums text-gray-900">{n}</td>
       <td className="px-3 py-3.5">
         <span className={`font-medium ${retired ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{p.title}</span>
         <span className="block text-xs text-gray-400 mt-0.5">{p.diseaseName} · {p.version}</span>
@@ -730,6 +733,7 @@ export default function ResponseProtocols() {
       .sort((a, b) =>
         (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3) || a.title.localeCompare(b.title))
   }, [protocols, disease, status, search])
+  const protoPaged = usePaged(visible, 10, `${disease}|${status}|${search}`)
 
   const openId = params.get('protocol')
   const openProtocol = openId ? protocols.find((p) => p.id === openId) : null
@@ -910,7 +914,8 @@ export default function ResponseProtocols() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-left text-xs text-gray-500">
-                  <th className="px-3 py-2.5 font-medium rounded-l-lg">Protocol</th>
+                  <th className="w-10 px-3 py-2.5 font-medium rounded-l-lg">#</th>
+                  <th className="px-3 py-2.5 font-medium">Protocol</th>
                   <th className="px-3 py-2.5 font-medium hidden md:table-cell">Priority</th>
                   <th className="px-3 py-2.5 font-medium">Status</th>
                   <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Steps</th>
@@ -920,10 +925,11 @@ export default function ResponseProtocols() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((p) => <ProtocolRow key={p.id} protocol={p} onOpen={(proto) => openDetail(proto.id)} />)}
+                {protoPaged.shown.map((p, i) => <ProtocolRow key={p.id} n={protoPaged.offset + i + 1} protocol={p} onOpen={(proto) => openDetail(proto.id)} />)}
               </tbody>
             </table>
           </div>
+          <Pager paged={protoPaged} noun="protocols" />
         </div>
       )}
 

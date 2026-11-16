@@ -25,18 +25,18 @@ export function PageTitle({ title, subtitle, action }) {
 export function StatCard({ label, value, unit, change, icon: Icon, hint }) {
   const shown = value == null ? '—' : `${value}${unit && value != null ? unit : ''}`
   return (
-    <div className={`${CARD} p-4 flex items-center gap-3`} title={hint}>
+    <div className="rounded-xl bg-red-600 p-4 flex items-center gap-3 text-white" title={hint}>
       {Icon && (
-        <span className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-          <Icon className="w-4 h-4 text-gray-500" aria-hidden="true" />
+        <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+          <Icon className="w-4 h-4 text-white" aria-hidden="true" />
         </span>
       )}
       <div className="min-w-0">
-        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-xs font-semibold text-white">{label}</p>
         <p className="flex items-baseline gap-2">
-          <span className="text-xl font-semibold text-gray-900 tabular-nums">{shown}</span>
+          <span className="text-xl font-bold text-white tabular-nums">{shown}</span>
           {change != null && (
-            <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium ${change >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+            <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-white">
               {change >= 0 ? <TrendingUp className="w-3 h-3" aria-hidden="true" /> : <TrendingDown className="w-3 h-3" aria-hidden="true" />}
               {Math.abs(change)}%
             </span>

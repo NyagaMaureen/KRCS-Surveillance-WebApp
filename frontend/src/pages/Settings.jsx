@@ -783,17 +783,23 @@ export default function Settings({ only = '' }) {
                 </div>
               )}
 
-              <div className="hidden sm:grid grid-cols-[1fr_140px_150px_70px] gap-4 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                <span>Disease</span>
-                <span>Threshold / week</span>
-                <span>Priority</span>
-                <span className="text-center">Active</span>
-              </div>
-
-              <div className="divide-y divide-gray-100 border-t border-gray-100">
-                {filteredDiseases.map((disease) => (
-                  <div key={disease.key} className={`py-4 grid grid-cols-1 sm:grid-cols-[1fr_140px_150px_70px] gap-3 sm:gap-4 sm:items-start ${diseaseActives[disease.key] ? '' : 'opacity-50'}`}>
-                    <div className="min-w-0">
+              {/* a table like the other pages (KRCS, 16 Nov 2026) */}
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="w-full min-w-[640px] border-collapse text-sm">
+                <thead>
+                  <tr className="text-left text-xs">
+                    <th className="w-10 px-3 py-3">#</th>
+                    <th className="px-3 py-3">Disease</th>
+                    <th className="w-40 px-3 py-3">Threshold / week</th>
+                    <th className="w-44 px-3 py-3">Priority</th>
+                    <th className="w-20 px-3 py-3 text-center">Active</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {filteredDiseases.map((disease, i) => (
+                  <tr key={disease.key} className={`align-top ${diseaseActives[disease.key] ? '' : 'opacity-50'}`}>
+                    <td className="px-3 py-3 tabular-nums text-gray-900">{i + 1}</td>
+                    <td className="min-w-0 px-3 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium text-gray-900">{disease.name}</p>
                         {disease.note && <span className="text-xs font-medium text-red-700 bg-red-50 rounded px-1.5 py-0.5">{disease.note}</span>}
@@ -855,28 +861,26 @@ export default function Settings({ only = '' }) {
                           </button>
                         </div>
                       )}
-                    </div>
+                    </td>
 
-                    <div>
-                      <span className="sm:hidden block text-xs font-medium text-gray-400 mb-1">Threshold / week</span>
+                    <td className="px-3 py-3">
                       <input
                         type="number"
                         min="1"
                         value={diseaseThresholds[disease.key]}
                         disabled={!editingDiseaseThresholds}
                         onChange={(e) => updateDiseaseThreshold(disease.key, e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200"
+                        className="w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200"
                       />
-                    </div>
+                    </td>
 
-                    <div>
-                      <span className="sm:hidden block text-xs font-medium text-gray-400 mb-1">Priority</span>
+                    <td className="px-3 py-3">
                       <select
                         value={diseasePriorities[disease.key] || 'Standard'}
                         disabled={!editingDiseaseThresholds}
                         onChange={(e) => updateDiseasePriority(disease.key, e.target.value)}
                         className={[
-                          'w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200',
+                          'w-full rounded-lg border border-gray-200 bg-gray-50 disabled:text-gray-500 px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-200',
                           PRIORITY_OPTIONS.find((p) => p.value === (diseasePriorities[disease.key] || 'Standard'))?.colorClass || 'text-gray-600',
                         ].join(' ')}
                       >
@@ -884,23 +888,24 @@ export default function Settings({ only = '' }) {
                           <option key={p.value} value={p.value}>{p.label || p.value}</option>
                         ))}
                       </select>
-                    </div>
+                    </td>
 
-                    <div className="flex sm:justify-center sm:pt-3">
-                      <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+                    <td className="px-3 py-3 text-center">
+                      <label className="inline-flex items-center gap-2 pt-2 text-sm text-gray-600">
                         <input type="checkbox" checked={!!diseaseActives[disease.key]} disabled={!editingDiseaseThresholds}
                           onChange={(e) => setDiseaseActives((prev) => ({ ...prev, [disease.key]: e.target.checked }))}
                           aria-label={`Show ${disease.name} everywhere`}
                           className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-200" />
-                        <span className="sm:hidden">Active</span>
                       </label>
-                    </div>
-                  </div>
+                    </td>
+                  </tr>
                 ))}
 
                 {filteredDiseases.length === 0 && (
-                  <p className="text-sm text-gray-400 py-8 text-center">No diseases match “{diseaseSearchQuery}”</p>
+                  <tr><td colSpan={5} className="py-8 text-center text-sm text-gray-900">No diseases match “{diseaseSearchQuery}”</td></tr>
                 )}
+                </tbody>
+              </table>
               </div>
 
               <p className="text-xs text-gray-400 mt-4">Priority sets how serious one suspected case is. Alerts for Critical diseases are always treated as critical. Active diseases are shown everywhere (Epi Trends, dashboard, map, filters); inactive ones (greyed) are still classified and counted in the background, and appear with their history once ticked.</p>

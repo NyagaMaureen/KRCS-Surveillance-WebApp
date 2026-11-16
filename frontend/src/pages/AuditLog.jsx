@@ -2,9 +2,9 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Search, Download, MoreHorizontal, Eye, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
+import { PageSizeSelect } from '../components/common/Pager'
 import { getAuditLogs, exportCsv } from '../api/frappe'
 
-const PAGE_SIZE = 20
 
 const CATEGORY_COLORS = {
   Investigation: 'bg-purple-50 text-purple-700',
@@ -83,6 +83,7 @@ export default function AuditLog() {
     })
   }, [logs, search, categoryFilter, roleFilter, userFilter, dateRange])
 
+  const [PAGE_SIZE, setPageSize] = useState(25)
   const lastPage = Math.max(0, Math.ceil(filteredLogs.length / PAGE_SIZE) - 1)
   const pagedLogs = filteredLogs.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
   const paginationLabel = (() => {
@@ -229,6 +230,7 @@ export default function AuditLog() {
             <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50">Previous</button>
           </div>
           <span className="text-sm text-gray-500">{paginationLabel}</span>
+          <PageSizeSelect value={PAGE_SIZE} onChange={(n) => { setPageSize(n); setPage(0) }} />
           <div className="flex gap-2">
             <button onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={page >= lastPage} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50">Next</button>
             <button onClick={() => setPage(lastPage)} disabled={page >= lastPage} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50">Last</button>

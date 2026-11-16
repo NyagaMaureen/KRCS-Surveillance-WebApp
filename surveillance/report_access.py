@@ -16,6 +16,17 @@ def _own_only(user):
 	return user not in ("Administrator",) and not has_capability("view_reports", user) and has_capability("view_own_reports", user)
 
 
+def _sub_county_only(user):
+	"""Surveillance Officers, FHWs and CHAs with View Reports: only their assigned sub-county, the same place their
+	dashboard shows (KRCS, 16 Nov 2026)."""
+	if user in ("Administrator",) or not has_capability("view_reports", user):
+		return None
+	from surveillance.user_scope import SCOPED_WORKSPACES, user_workspace
+	if user_workspace(user) not in SCOPED_WORKSPACES or not frappe.get_meta("User").has_field("assigned_sub_county"):
+		return None
+	return frappe.db.get_value("User", user, "assigned_sub_county") or None
+
+
 def _region_only(user):
 	"""The region a View Reports user is limited to, or None (all regions)."""
 	if user in ("Administrator",) or not has_capability("view_reports", user) or has_capability("view_all_regions", user):
@@ -31,6 +42,9 @@ def case_report_query(user=None):
 	own = f"`tabCase Report`.reported_by = {u} or `tabCase Report`.owner = {u}"
 	if _own_only(user):
 		return f"({own})"
+	sub = _sub_county_only(user)
+	if sub:
+		return f"(`tabCase Report`.sub_county = {frappe.db.escape(sub)} or {own})"
 	region = _region_only(user)
 	if region:
 		return f"(`tabCase Report`.region = {frappe.db.escape(region)} or {own})"
@@ -42,6 +56,9 @@ def case_report_permission(doc, ptype=None, user=None):
 	own = doc.get("reported_by") == user or doc.owner == user
 	if _own_only(user):
 		return own
+	sub = _sub_county_only(user)
+	if sub:
+		return own or doc.get("sub_county") == sub
 	region = _region_only(user)
 	if region:
 		return own or doc.get("region") == region

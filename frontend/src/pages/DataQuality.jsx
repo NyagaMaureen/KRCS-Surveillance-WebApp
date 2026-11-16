@@ -102,12 +102,12 @@ export default function DataQuality() {
           const on = kind === k
           return (
             <button key={k} type="button" aria-pressed={on} onClick={() => setKind(on ? '' : k)} title={KIND_HELP[k]}
-              className={`rounded-xl border p-4 text-left transition-colors ${on ? 'border-red-600 bg-red-600 text-white' : 'border-gray-100 bg-white hover:border-red-200'} ${FOCUS}`}>
+              className={`rounded-xl p-4 text-left text-white transition-colors ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
               <div className="flex items-center justify-between">
-                <span className={`text-2xl font-bold ${on ? 'text-white' : 'text-gray-900'}`}>{n}</span>
-                <Icon className={`h-4 w-4 ${on ? 'text-white' : n ? 'text-red-700' : 'text-gray-300'}`} aria-hidden="true" />
+                <span className="text-2xl font-bold text-white">{n}</span>
+                <Icon className="h-4 w-4 text-white" aria-hidden="true" />
               </div>
-              <span className={`mt-1 block text-xs font-semibold ${on ? 'text-white' : 'text-gray-900'}`}>{label}</span>
+              <span className="mt-1 block text-xs font-semibold text-white">{label}</span>
             </button>
           )
         })}
