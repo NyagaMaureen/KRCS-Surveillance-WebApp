@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff, Search, X, Lock, MessageSquare } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import { getCurrentUser, getMyProfile, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds, searchIcd11, setIcd11 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
@@ -19,6 +20,18 @@ const TABS = [
   { key: 'security', label: 'Security', icon: Shield, requires: 'settings_security' },
   { key: 'feedback', label: 'Feedback', icon: MessageSquare, requires: 'view_feedback' },
 ]
+
+// page title per menu item (Settings has no tabs: each menu item opens one part)
+const PAGE_TITLES = {
+  profile: ['My Profile', 'Your details'],
+  password: ['Change Password', 'Change the password you sign in with'],
+  notifications: ['Notifications', 'Choose which notifications you get'],
+  'ai-config': ['AI Risk Engine', 'How the risk score is worked out and which symptoms are red flags'],
+  'alert-thresholds': ['Alert Thresholds', 'Case counts that raise alerts, and the regions under surveillance'],
+  data: ['Data and Database', 'Data retention, export and system maintenance'],
+  security: ['Security Settings', 'Sign-in and session rules'],
+  feedback: ['Feedback Received', 'Feedback sent by users of the app and WhatsApp'],
+}
 
 const SESSION_TIMEOUT_OPTIONS = [
   { value: '15-min', label: '15 min' },
@@ -117,12 +130,18 @@ function Toggle({ enabled, onClick }) {
   )
 }
 
-export default function Settings() {
+// only='profile': the My Profile page (account menu), without the tab bar
+export default function Settings({ only = '' }) {
   const { has } = useCapabilities()
-  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get('tab') || 'profile')
+  const [searchParams] = useSearchParams()
+  const urlTab = searchParams.get('tab') || ''
+  const [activeTab, setActiveTab] = useState(() => only || urlTab)
+  useEffect(() => { if (!only && urlTab) setActiveTab(urlTab) }, [only, urlTab])   // menu links open a tab
   const [newFeedback, setNewFeedback] = useState(0)
-  const visibleTabs = TABS.filter((t) => !t.requires || has(t.requires))
-  const tabOpen = (key) => activeTab === key && visibleTabs.some((t) => t.key === key)   // a tab opened by link still needs the permission
+  // Profile and Notifications are in the account menu (top right) since Nov 2026, not Settings tabs
+  const visibleTabs = TABS.filter((t) => !['profile', 'notifications', 'system'].includes(t.key) && (!t.requires || has(t.requires)))
+  const shown = only || (visibleTabs.some((t) => t.key === activeTab) ? activeTab : (visibleTabs[0]?.key || 'profile'))
+  const tabOpen = (key) => shown === key && (only === key || visibleTabs.some((t) => t.key === key))   // a tab opened by link still needs the permission
   useEffect(() => {
     if (has('view_feedback')) listFeedback('New').then((r) => setNewFeedback(r?.counts?.new || 0)).catch(() => {})
   }, [has])
@@ -505,33 +524,34 @@ export default function Settings() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-brand-navy">Settings</h2>
-        <p className="text-sm text-gray-400">Manage the system settings and preferences</p>
+        <h2 className="text-xl font-bold text-brand-navy">{PAGE_TITLES[shown]?.[0] || 'Settings'}</h2>
+        <p className="text-sm text-gray-400">{PAGE_TITLES[shown]?.[1] || 'Manage the system settings and preferences'}</p>
       </div>
 
-      <div className="flex w-full gap-1 bg-white border border-gray-100 rounded-2xl p-1.5 mb-6">
+      <div className="hidden">
         {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={['flex flex-1 items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap',
-              activeTab === tab.key ? 'bg-red-600 text-white' : 'text-gray-900 hover:bg-gray-50'].join(' ')}
+              shown === tab.key ? 'bg-red-600 text-white' : 'text-gray-900 hover:bg-gray-50'].join(' ')}
           >
             <tab.icon className="w-4 h-4" />
             {tab.label}
             {tab.key === 'feedback' && newFeedback > 0 && (
               <span className={['text-[10px] font-semibold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center',
-                activeTab === tab.key ? 'bg-white text-red-600' : 'bg-red-600 text-white'].join(' ')}>{newFeedback}</span>
+                shown === tab.key ? 'bg-white text-red-600' : 'bg-red-600 text-white'].join(' ')}>{newFeedback}</span>
             )}
           </button>
         ))}
       </div>
 
 
-      {activeTab === 'feedback' && has('view_feedback') && <FeedbackList onCounts={(c) => setNewFeedback(c.new || 0)} />}
+      {shown === 'feedback' && has('view_feedback') && <FeedbackList onCounts={(c) => setNewFeedback(c.new || 0)} />}
 
-      {(activeTab === 'profile' || !visibleTabs.some((t) => t.key === activeTab)) && (
+      {(shown === 'profile' || shown === 'password') && (
         <div className="space-y-6">
+          {shown === 'profile' && (
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
@@ -596,6 +616,9 @@ export default function Settings() {
             </div>
           </div>
 
+          )}
+
+          {shown === 'password' && (
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <div className="flex items-center gap-3 mb-6">
               <ShieldCheck className="w-7 h-7 text-gray-900" />
@@ -667,6 +690,7 @@ export default function Settings() {
 
             <button disabled className="bg-red-600/20 text-white rounded-lg px-5 py-2.5 text-sm font-semibold cursor-not-allowed">Update Password</button>
           </div>
+          )}
         </div>
       )}
 
@@ -687,74 +711,6 @@ export default function Settings() {
                 <Toggle enabled={pref.enabled} onClick={() => toggleNotificationPref(pref.key)} />
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {tabOpen('system') && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <MapPin className="w-7 h-7 text-gray-900" />
-              <h3 className="text-lg font-semibold text-gray-900">Active surveillance regions</h3>
-            </div>
-
-            <div className="divide-y divide-gray-100">
-              {surveillanceRegions.map((region) => (
-                <div key={region.name} className="flex items-center justify-between gap-6 py-4">
-                  <span className="border border-gray-200 rounded-2xl px-4 py-2 text-sm font-medium text-gray-900">{region.name}</span>
-                  <Toggle enabled={region.active} onClick={() => toggleRegion(region.name)} />
-                </div>
-              ))}
-            </div>
-
-            {addingRegion ? (
-              <div className="flex items-center gap-3 mt-4">
-                <input
-                  value={newRegionName}
-                  onChange={(e) => setNewRegionName(e.target.value)}
-                  onKeyUp={(e) => { if (e.key === 'Enter') confirmAddRegion() }}
-                  placeholder="Region name"
-                  autoFocus
-                  className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
-                />
-                <button onClick={confirmAddRegion} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">Add</button>
-                <button onClick={cancelAddRegion} className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600">Cancel</button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setAddingRegion(true)}
-                className="flex items-center gap-2 mt-4 border border-gray-200 bg-gray-50 rounded-md px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-100"
-              >
-                <Plus className="w-4 h-4" /> Add Region
-              </button>
-            )}
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <Wrench className="w-7 h-7 text-gray-900" />
-              <h3 className="text-lg font-semibold text-gray-900">System Maintenance</h3>
-            </div>
-
-            <div className="divide-y divide-gray-100">
-              <div className="flex items-center justify-between gap-6 py-5">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Auto-backup</p>
-                  <p className="text-sm text-gray-400 mt-0.5">Daily automated database backups</p>
-                </div>
-                <Toggle enabled={maintenance.autoBackup} onClick={() => setMaintenance({ ...maintenance, autoBackup: !maintenance.autoBackup })} />
-              </div>
-              <div className="flex items-center justify-between gap-6 py-5">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Maintenance mode</p>
-                  <p className="text-sm text-gray-400 mt-0.5">Show maintenance page to non-admin users</p>
-                </div>
-                <Toggle enabled={maintenance.maintenanceMode} onClick={() => setMaintenance({ ...maintenance, maintenanceMode: !maintenance.maintenanceMode })} />
-              </div>
-            </div>
-
-            <p className="text-sm text-gray-400 mt-4">Last backup: {maintenance.lastBackup} · Size: {maintenance.lastBackupSize}</p>
           </div>
         </div>
       )}
@@ -1047,6 +1003,48 @@ export default function Settings() {
         </div>
       )}
 
+      {tabOpen('alert-thresholds') && (
+        <div className="mt-6">
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <MapPin className="w-7 h-7 text-gray-900" />
+              <h3 className="text-lg font-semibold text-gray-900">Active surveillance regions</h3>
+            </div>
+
+            <div className="divide-y divide-gray-100">
+              {surveillanceRegions.map((region) => (
+                <div key={region.name} className="flex items-center justify-between gap-6 py-4">
+                  <span className="border border-gray-200 rounded-2xl px-4 py-2 text-sm font-medium text-gray-900">{region.name}</span>
+                  <Toggle enabled={region.active} onClick={() => toggleRegion(region.name)} />
+                </div>
+              ))}
+            </div>
+
+            {addingRegion ? (
+              <div className="flex items-center gap-3 mt-4">
+                <input
+                  value={newRegionName}
+                  onChange={(e) => setNewRegionName(e.target.value)}
+                  onKeyUp={(e) => { if (e.key === 'Enter') confirmAddRegion() }}
+                  placeholder="Region name"
+                  autoFocus
+                  className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                />
+                <button onClick={confirmAddRegion} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">Add</button>
+                <button onClick={cancelAddRegion} className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600">Cancel</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddingRegion(true)}
+                className="flex items-center gap-2 mt-4 border border-gray-200 bg-gray-50 rounded-md px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-100"
+              >
+                <Plus className="w-4 h-4" /> Add Region
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {tabOpen('ai-config') && (
         <div className="space-y-6">
         {has('manage_alert_thresholds') && <RiskWeights />}
@@ -1129,6 +1127,36 @@ export default function Settings() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {tabOpen('data') && (
+        <div className="mt-6">
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <Wrench className="w-7 h-7 text-gray-900" />
+              <h3 className="text-lg font-semibold text-gray-900">System Maintenance</h3>
+            </div>
+
+            <div className="divide-y divide-gray-100">
+              <div className="flex items-center justify-between gap-6 py-5">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Auto-backup</p>
+                  <p className="text-sm text-gray-400 mt-0.5">Daily automated database backups</p>
+                </div>
+                <Toggle enabled={maintenance.autoBackup} onClick={() => setMaintenance({ ...maintenance, autoBackup: !maintenance.autoBackup })} />
+              </div>
+              <div className="flex items-center justify-between gap-6 py-5">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Maintenance mode</p>
+                  <p className="text-sm text-gray-400 mt-0.5">Show maintenance page to non-admin users</p>
+                </div>
+                <Toggle enabled={maintenance.maintenanceMode} onClick={() => setMaintenance({ ...maintenance, maintenanceMode: !maintenance.maintenanceMode })} />
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-400 mt-4">Last backup: {maintenance.lastBackup} · Size: {maintenance.lastBackupSize}</p>
           </div>
         </div>
       )}

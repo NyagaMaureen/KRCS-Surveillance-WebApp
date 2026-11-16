@@ -273,13 +273,13 @@ export default function UserManagement() {
     <AppShell>
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-brand-navy">User Management</h2>
-          <p className="text-sm text-gray-400">Control users, roles, permissions, and platform access</p>
+          <h2 className="text-xl font-bold text-brand-navy">{activeTab === 'roles' ? 'Roles & Permissions' : 'Users'}</h2>
+          <p className="text-sm text-gray-400">{activeTab === 'roles' ? 'What each role can see and do' : 'Add and manage the people who use the system'}</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={openRoleModal} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-500 flex items-center gap-2 hover:bg-gray-50">
+          {activeTab === 'roles' && <button onClick={openRoleModal} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-500 flex items-center gap-2 hover:bg-gray-50">
             <Plus className="w-4 h-4" /> Add Role
-          </button>
+          </button>}
           {activeTab === 'users' && (
             <button onClick={openAddUser} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add User
@@ -291,22 +291,6 @@ export default function UserManagement() {
       {roleNotice && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">{roleNotice}</div>
       )}
-
-      <div role="tablist" className="mb-6 flex w-full overflow-hidden rounded-xl border border-gray-200 bg-white">
-        {tabs.map((tab) => (
-          <div key={tab.key} className="flex flex-1">
-            <button
-              role="tab" aria-selected={activeTab === tab.key}
-              onClick={() => setSearchParams({ tab: tab.key })}
-              className={['flex w-full items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400',
-                activeTab === tab.key ? 'bg-red-600 text-white' : 'text-gray-900 hover:bg-red-50'].join(' ')}
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          </div>
-        ))}
-      </div>
 
       {activeTab === 'roles' ? (
         <RolesPermissions

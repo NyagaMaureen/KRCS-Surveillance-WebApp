@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import { useEmbedded } from './embedContext'
 
 export default function AppShell({ children }) {
   const [navOpen, setNavOpen] = useState(false)
+  const embedded = useEmbedded()
+  if (embedded) return <>{children}</>   // inside a dashboard tab: no second sidebar or header
   return (
     <div className="flex bg-white min-h-screen">
       <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />

@@ -1,36 +1,47 @@
-// Full app menu (officers, admins). Items are filtered by capability.
+// Full app menu (HQ Admin and other admins): "KRCS Main Menu Re-Organization" (13 Nov 2026), as a flat list with
+// the document's groups as headings (flat list, KRCS 16 Nov 2026). soon: shown as "Soon" with no link (not built yet).
+// query / hash open one tab or section of a page. Items may also have children (a group that opens and closes).
 export const SIDEBAR_MENU = [
   { section: 'OVERVIEW', items: [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
     { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: 'receive_tasks' },
   ]},
-  { section: 'FIELD ACTIVITIES', items: [
+  { section: 'SURVEILLANCE AND RESPONSE', items: [
     { label: 'Signals Captured', icon: 'FileText', page: 'reports', requiresCapability: 'view_reports' },
     { label: 'Review Queue', icon: 'BellRing', page: 'alerts-signals', requiresCapability: 'view_review_queue' },
-    { label: 'Epi Trends', icon: 'TrendingUp', page: 'epi-trends', requiresCapability: 'view_alerts' },
-    { label: 'Surveillance Map', icon: 'Map', page: 'surveillance-map', requiresCapability: 'view_surveillance_map' },
   ]},
-  { section: 'RESPONSE', items: [
-    { label: 'Response Protocols', icon: 'Layers', page: 'response-protocols', requiresCapability: 'view_response_protocols' },
-    { label: 'Response', icon: 'MessageSquareShare', page: 'response', requiresCapability: 'view_review_queue' },
-    { label: 'Event Lifecycle', icon: 'LifeBuoy', page: 'event-lifecycle', requiresCapability: 'view_review_queue' },
-    { label: 'Knowledge Base', icon: 'BookOpen', page: 'knowledge-base', requiresCapability: ['manage_knowledge_base', 'approve_knowledge_base'] },
+  { section: 'DATA AND INSIGHTS', items: [
     { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },
-    { label: 'Chatbot Query Log', icon: 'MessagesSquare', page: 'chatbot-query-log', requiresCapability: 'view_chatbot_logs' },
+    { label: 'Monitoring Reports', icon: 'FileBarChart', soon: true },
+    { label: 'Data Quality', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
   ]},
-  { section: 'DATA', items: [
-    { label: 'Analytics', icon: 'BarChart3', page: 'analytics', requiresCapability: 'view_analytics' },
-    { label: 'Data Explorer', icon: 'FileSearch', page: 'data-explorer', requiresCapability: 'view_analytics' },
-    { label: 'Reporting Channels', icon: 'Radar', page: 'channels', requiresCapability: 'view_reporting_channels' },
+  { section: 'DATA MANAGEMENT', items: [
+    { label: 'Response Protocols', icon: 'Layers', page: 'response-protocols', requiresCapability: 'view_response_protocols' },
     { label: 'MOH 505 Facility Reports', icon: 'FileSpreadsheet', page: 'facility-data', requiresCapability: 'upload_facility_data' },
     { label: 'Context Data', icon: 'CloudSun', page: 'context-data', requiresCapability: ['view_context_data', 'manage_context_data'] },
   ]},
-  { section: 'ADMINISTRATION', items: [
-    { label: 'User Management', icon: 'Users', page: 'user-management', requiresCapability: 'view_users' },
-    { label: 'Data Quality', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
+  { section: 'SYSTEM SETTINGS', items: [
+    { label: 'AI Risk Engine', icon: 'Wand2', page: 'settings', query: 'tab=ai-config', requiresCapability: 'settings_ai_config' },
+    { label: 'AI Knowledge Base', icon: 'BookOpen', page: 'knowledge-base', requiresCapability: ['manage_knowledge_base', 'approve_knowledge_base'] },
+    { label: 'AI Assistant Query Log', icon: 'MessagesSquare', page: 'chatbot-query-log', requiresCapability: 'view_chatbot_logs' },
+    { label: 'Alert Thresholds', icon: 'Clock', page: 'settings', query: 'tab=alert-thresholds', requiresCapability: 'settings_alert_thresholds' },
+    { label: 'Reporting Channels', icon: 'Radar', page: 'channels', requiresCapability: 'view_reporting_channels' },
+    { label: 'Data and Database', icon: 'HardDrive', page: 'settings', query: 'tab=data', requiresCapability: 'settings_data' },
+  ]},
+  { section: 'SECURITY', items: [
+    { label: 'Users', icon: 'Users', page: 'user-management', query: 'tab=users', requiresCapability: 'view_users' },
+    { label: 'User Groups', icon: 'UsersRound', soon: true },
+    { label: 'Roles & Permissions', icon: 'KeyRound', page: 'user-management', query: 'tab=roles', requiresCapability: 'view_users' },
     { label: 'Audit Log', icon: 'ClipboardList', page: 'audit-log', requiresCapability: 'view_audit_log' },
-    { label: 'Settings', icon: 'Settings', page: 'settings', requiresCapability: null },
-    { label: 'Help Center', icon: 'HelpCircle', page: 'help-center', requiresCapability: null },
+    { label: 'Security Settings', icon: 'Lock', page: 'settings', query: 'tab=security', requiresCapability: 'settings_security' },
+  ]},
+  { section: 'HELP CENTER', items: [
+    { label: 'Contact Us', icon: 'Phone', page: 'help-center', hash: 'contact', requiresCapability: null },
+    { label: 'FAQs', icon: 'MessageCircleQuestion', page: 'help-center', hash: 'faqs', requiresCapability: null },
+    { label: 'Guides', icon: 'BookOpenText', page: 'help-center', hash: 'guides', requiresCapability: null },
+    { label: 'Video Tutorials', icon: 'PlaySquare', page: 'help-center', hash: 'videos', requiresCapability: null },
+    { label: 'Feedback', icon: 'MessageSquareWarning', page: 'feedback', requiresCapability: null },
+    { label: 'Feedback Received', icon: 'Inbox', page: 'settings', query: 'tab=feedback', requiresCapability: 'view_feedback' },
   ]},
 ]
 
@@ -72,8 +83,6 @@ export const OFFICER_MENU = [
     { label: 'Surveillance Map', icon: 'Map', page: 'surveillance-map', requiresCapability: 'view_surveillance_map' },
   ]},
   { section: 'OPERATIONS', items: [
-    { label: 'Response', icon: 'MessageSquareShare', page: 'response', requiresCapability: 'view_review_queue' },
-    { label: 'Event Lifecycle', icon: 'LifeBuoy', page: 'event-lifecycle', requiresCapability: 'view_review_queue' },
     { label: 'Chatbot Query Log', icon: 'MessagesSquare', page: 'chatbot-query-log', requiresCapability: 'view_chatbot_logs' },
   ]},
   { section: 'ANALYTICS', items: [
@@ -151,16 +160,31 @@ const CAPABILITY_PAGES = {
 // pages a workspace covers in its own way (CHPs see their tasks as Follow-ups and Referrals)
 const NOT_ADDED = { chp: ['my-tasks'], officer: ['data-explorer'] }   // officers have Data Explorer as Trends
 
-const visibleItems = (items, has) => items.filter((item) => !item.requiresCapability || has(item.requiresCapability))
+// Every linkable item of a menu, children included (groups themselves have no page)
+export const flatItems = (menu) => menu.flatMap((g) => g.items.flatMap((i) => i.children || [i])).filter((i) => i.page)
+
+const itemKey = (i) => `${i.page}?${i.query || ''}#${i.hash || ''}`
+
+function visibleItems(items, has) {
+  return items.flatMap((item) => {
+    if (item.children) {
+      const children = visibleItems(item.children, has)
+      return children.some((c) => !c.soon) ? [{ ...item, children }] : []   // hide a group with nothing to open
+    }
+    return item.soon || !item.requiresCapability || has(item.requiresCapability) ? [item] : []
+  })
+}
 
 /** The menu this user sees: their workspace menu plus any page their permissions add. */
 export function menuFor(workspace, has) {
   const base = MENUS[workspace] || SIDEBAR_MENU
   const menu = base.map((g) => ({ ...g, items: visibleItems(g.items, has) })).filter((g) => g.items.length > 0)
   if (base === SIDEBAR_MENU) return menu
-  const inMenu = new Set(base.flatMap((g) => g.items.map((i) => i.page)))
-  const extra = SIDEBAR_MENU.flatMap((g) => g.items)
+  const inMenu = new Set(flatItems(base).map((i) => i.page))
+  const seen = new Set()
+  const extra = flatItems(SIDEBAR_MENU)
     .filter((i) => i.requiresCapability && !inMenu.has(i.page) && !(NOT_ADDED[workspace] || []).includes(i.page) && has(i.requiresCapability))
+    .filter((i) => !seen.has(itemKey(i)) && seen.add(itemKey(i)))
   return extra.length ? [...menu, { section: 'MORE', items: extra }] : menu
 }
 
@@ -168,11 +192,11 @@ export function menuFor(workspace, has) {
 export function pagesFor(workspace, has) {
   const fixed = WORKSPACE_PAGES[workspace]
   if (!fixed) return null
-  const pages = new Set(fixed)
-  menuFor(workspace, has).forEach((g) => g.items.forEach((i) => {
+  const pages = new Set([...fixed, 'profile', 'change-password', 'notifications'])   // account menu, top right
+  flatItems(menuFor(workspace, has)).forEach((i) => {
     pages.add(i.page)
     ;(LINKED_PAGES[i.page] || []).forEach((p) => pages.add(p))
-  }))
+  })
   Object.entries(CAPABILITY_PAGES).forEach(([cap, list]) => { if (has(cap)) list.forEach((p) => pages.add(p)) })
   return pages
 }

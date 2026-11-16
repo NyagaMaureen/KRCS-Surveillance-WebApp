@@ -5,7 +5,8 @@ import {
   Bell,
   Sparkles,
   ChevronDown,
-  Settings,
+  UserCircle,
+  KeyRound,
   LogOut,
   Menu
 } from 'lucide-react'
@@ -142,9 +143,9 @@ export default function Header({ onOpenNav }) {
     [now]
   )
 
-  function goToSettings() {
+  function goTo(path) {
     setMenuOpen(false)
-    navigate('/settings')
+    navigate(path)
   }
 
   function goToAiAssistant() {
@@ -265,13 +266,27 @@ export default function Header({ onOpenNav }) {
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 top-[calc(100%+8px)] w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
+            <div className="absolute right-0 top-[calc(100%+8px)] w-52 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
               <button
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
-                onClick={goToSettings}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer"
+                onClick={() => goTo('/profile')}
               >
-                <Settings className="w-4 h-4 text-gray-500" />
-                Settings
+                <UserCircle className="w-4 h-4 text-gray-900" />
+                My Profile
+              </button>
+              <button
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer"
+                onClick={() => goTo('/change-password')}
+              >
+                <KeyRound className="w-4 h-4 text-gray-900" />
+                Change Password
+              </button>
+              <button
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer"
+                onClick={() => goTo('/notifications')}
+              >
+                <Bell className="w-4 h-4 text-gray-900" />
+                Notifications
               </button>
               <button
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-700 hover:bg-red-50 transition-colors cursor-pointer"

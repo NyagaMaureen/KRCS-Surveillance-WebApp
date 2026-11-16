@@ -1,7 +1,6 @@
-import { MENUS } from '../data/sidebarMenu'
+import { MENUS, flatItems } from '../data/sidebarMenu'
 
 import Login from '../pages/Login'
-import Dashboard from '../pages/Dashboard'
 import Analytics from '../pages/Analytics'
 import DataExplorer from '../pages/DataExplorer'
 import Reports from '../pages/Reports'
@@ -38,6 +37,10 @@ import ChpSettings from '../pages/ChpSettings'
 import FhwDashboard from '../pages/FhwDashboard'
 import FacilityReferrals from '../pages/FacilityReferrals'
 import DataQuality from '../pages/DataQuality'
+import FullDashboard from '../pages/FullDashboard'
+import MyProfile from '../pages/MyProfile'
+import NotificationSettings from '../pages/NotificationSettings'
+import ChangePassword from '../pages/ChangePassword'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 // One URL, a different page per workspace (CHP gets the simple version)
@@ -51,7 +54,7 @@ function byWorkspace(pages) {
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
-  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: Dashboard, chp: ChpDashboard, officer: SurveillanceDashboard, fhw: FhwDashboard }) },
+  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: FullDashboard, chp: ChpDashboard, officer: SurveillanceDashboard, fhw: FhwDashboard }) },
   { path: '/surveillance-dashboard', name: 'surveillance-dashboard', element: SurveillanceDashboard },
   { path: '/ai-governance-dashboard', name: 'ai-governance-dashboard', element: AiGovernanceDashboard },
   { path: '/investigations', name: 'investigations', element: Investigations },
@@ -74,6 +77,9 @@ const rawRoutes = [
   { path: '/context-data', name: 'context-data', element: ContextData },
   { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings }) },
   { path: '/help-center', name: 'help-center', element: HelpCenter },
+  { path: '/profile', name: 'profile', element: byWorkspace({ full: MyProfile, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings }) },
+  { path: '/change-password', name: 'change-password', element: byWorkspace({ full: ChangePassword, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings }) },
+  { path: '/notifications', name: 'notifications', element: NotificationSettings },
   { path: '/audit-log', name: 'audit-log', element: AuditLog },
   { path: '/ai-data-assistant', name: 'ai-data-assistant', element: AiDataAssistant },
   { path: '/knowledge-base', name: 'knowledge-base', element: KnowledgeBase },
@@ -90,11 +96,17 @@ const rawRoutes = [
 // A page listed without a capability in some menu stays open to everyone.
 const CAPABILITY_BY_PAGE = {}
 const OPEN_PAGES = new Set()
-Object.values(MENUS).flatMap((menu) => menu.flatMap((group) => group.items)).forEach((item) => {
+Object.values(MENUS).flatMap((menu) => flatItems(menu)).forEach((item) => {
   if (!item.requiresCapability) OPEN_PAGES.add(item.page)
   else [].concat(item.requiresCapability).forEach((c) => (CAPABILITY_BY_PAGE[item.page] = CAPABILITY_BY_PAGE[item.page] || new Set()).add(c))
 })
 CAPABILITY_BY_PAGE['report-detail'] = CAPABILITY_BY_PAGE.reports
+// pages no longer in the main menu (now dashboard tabs, or removed for now) keep needing their permission
+const OFF_MENU = { analytics: 'view_analytics', 'data-explorer': 'view_analytics', 'surveillance-map': 'view_surveillance_map',
+  'epi-trends': 'view_alerts', response: 'view_review_queue', 'event-lifecycle': 'view_review_queue' }
+Object.entries(OFF_MENU).forEach(([page, cap]) => {
+  if (!OPEN_PAGES.has(page) && !CAPABILITY_BY_PAGE[page]) CAPABILITY_BY_PAGE[page] = new Set([cap])
+})
 
 export const routes = rawRoutes.map((route) => ({
   ...route,

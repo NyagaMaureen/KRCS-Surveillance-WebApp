@@ -1395,3 +1395,17 @@ export async function confirmReferral(task, arrived, note) {
 export async function getReferralReport(task) {
   return callMethod(`${FHW}referral_report?task=${encodeURIComponent(task)}`)
 }
+
+// ---------- HQ Admin dashboard (tabs) ----------
+const HQ = '/api/method/surveillance.hq_dashboard.'
+function hqQuery(f = {}) {
+  const qs = new URLSearchParams()
+  const map = { region: 'region', subCounty: 'sub_county', from: 'from_date', to: 'to_date', channel: 'channel', status: 'status', category: 'category', disease: 'disease' }
+  Object.entries(map).forEach(([k, p]) => { if (f[k]) qs.set(p, f[k]) })
+  return qs.toString()
+}
+export async function getHqGlance(f) { return callMethod(`${HQ}get_glance?${hqQuery(f)}`) }
+export async function getHqSurveillance(f) { return callMethod(`${HQ}get_surveillance?${hqQuery(f)}`) }
+export async function getHqPerformance(f) { return callMethod(`${HQ}get_performance?${hqQuery(f)}`) }
+export async function getHqStatus() { return callMethod(`${HQ}get_status`) }
+export async function getHqFilterOptions() { return callMethod(`${HQ}get_filter_options`) }

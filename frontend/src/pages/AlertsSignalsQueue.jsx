@@ -301,10 +301,10 @@ export default function AlertsSignalsQueue() {
               </select>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="red-head w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left text-xs text-gray-500">
-                    <th className="px-3 py-2.5 font-medium rounded-l-lg w-10 text-gray-400">#</th>
+                  <tr className="text-left text-xs text-gray-900">
+                    <th className="px-3 py-2.5 font-medium w-10 text-gray-900">#</th>
                     <th className="px-3 py-2.5 font-medium">Event ID</th>
                     <th className="px-3 py-2.5 font-medium">Disease</th>
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Channel</th>

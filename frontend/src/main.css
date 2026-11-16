@@ -23,3 +23,16 @@ button:not(:disabled),
   to { opacity: 1; transform: translateY(0); }
 }
 .toast-in { animation: toast-in 0.2s ease-out; }
+
+/* KRCS review (16 Nov 2026): black text, and every table gets the Signals Captured look: grid lines and black bold
+   headers with a red line under them. A table can opt out with class "no-grid". Placeholders stay light. */
+@theme {
+  --color-gray-400: #1f2937;
+}
+@layer base {
+  main table:not(.no-grid) { border-collapse: collapse; }
+  main table:not(.no-grid) th, main table:not(.no-grid) td { border: 1px solid #e5e7eb; }
+  main table:not(.no-grid) thead th { color: #111827; font-weight: 700 !important; }
+  main table.red-head thead th { border-bottom: 2px solid #EE2435; }   /* Review Queue, dashboard; Signals Captured has its own */
+  input::placeholder, textarea::placeholder { color: #6b7280 !important; }
+}

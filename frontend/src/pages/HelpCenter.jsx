@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Search, MessageSquare, PlaySquare, BookOpen, Info, ChevronDown, ExternalLink, FileText } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 
@@ -27,6 +28,10 @@ const FAQS = [
 export default function HelpCenter() {
   const [query, setQuery] = useState('')
   const [openFaq, setOpenFaq] = useState(FAQS[0].question)
+  const { hash } = useLocation()
+  useEffect(() => {   // the Help Center menu opens a section: #contact, #faqs, #guides, #videos
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [hash])
 
   const filteredFaqs = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -73,7 +78,7 @@ export default function HelpCenter() {
         ))}
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 mb-6">
+      <div id="faqs" className="bg-white border border-gray-100 rounded-2xl p-6 mb-6 scroll-mt-6">
         <div className="mb-4">
           <h3 className="text-base text-gray-900">Frequently Asked Questions</h3>
           <p className="text-sm text-gray-500 mt-1">{filteredFaqs.length} results</p>
@@ -94,7 +99,7 @@ export default function HelpCenter() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 mb-6">
+      <div id="guides" className="bg-white border border-gray-100 rounded-2xl p-6 mb-6 scroll-mt-6">
         <div className="mb-4">
           <h3 className="text-base text-gray-900">Resources & Downloads</h3>
           <p className="text-sm text-gray-500 mt-1">Access guides, tutorials, and documentation</p>
@@ -102,7 +107,7 @@ export default function HelpCenter() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {RESOURCES.map((resource) => (
-            <a key={resource.label} href="#" className="flex items-center gap-4 border border-gray-100 rounded-xl px-5 py-5 hover:border-red-200 hover:shadow-sm transition">
+            <a key={resource.label} id={resource.label === 'Video Tutorials' ? 'videos' : undefined} href="#" className="scroll-mt-6 flex items-center gap-4 border border-gray-100 rounded-xl px-5 py-5 hover:border-red-200 hover:shadow-sm transition">
               <resource.icon className="w-6 h-6 text-gray-900 shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -117,7 +122,7 @@ export default function HelpCenter() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-2xl p-6">
+      <div id="contact" className="bg-white border border-gray-100 rounded-2xl p-6 scroll-mt-6">
         <h3 className="text-base text-gray-900 mb-5">Need More Help?</h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
