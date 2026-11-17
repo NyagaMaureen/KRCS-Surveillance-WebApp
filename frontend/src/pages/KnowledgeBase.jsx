@@ -140,14 +140,14 @@ function useClickOutside(ref, handler) {
 
 function StatCard({ icon: Icon, label, value, sub }) {
   return (
-    <div className="rounded-xl bg-red-600 px-5 py-4 flex items-center justify-between gap-4 text-white">
-      <div className="min-w-0">
+    <div className="relative rounded-xl bg-red-600 px-5 py-4 text-center text-white">
+      <div className="min-w-0 px-6">
         <div className="text-[11px] font-bold uppercase tracking-wide">{label}</div>
         <div className="text-2xl font-bold mt-1">{value}</div>
         <div className="text-xs mt-1 truncate">{sub}</div>
       </div>
-      <div className="bg-white/20 rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-        <Icon className="w-5 h-5 text-white" />
+      <div className="absolute right-3 top-3 bg-white/20 rounded-full w-8 h-8 flex items-center justify-center">
+        <Icon className="w-4 h-4 text-white" />
       </div>
     </div>
   )
@@ -843,9 +843,10 @@ function TestSearch() {
   )
 }
 
-const EMPTY_SOURCE = { name: null, sourceName: '', website: '', kind: 'Website', enabled: true, notes: '' }
+const EMPTY_SOURCE = { name: null, sourceName: '', website: '', kind: 'Website', enabled: true, notes: '', allowedRoles: [] }
+const PUBLIC_AUDIENCE = 'Public (WhatsApp community)'
 
-function TrustedSources({ onToast }) {
+function TrustedSources({ onToast, roleOptions = [] }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [form, setForm] = useState(EMPTY_SOURCE)
@@ -884,7 +885,7 @@ function TrustedSources({ onToast }) {
       <div className="rounded-xl border border-gray-200 bg-white p-5">
         <h3 className="text-base font-bold text-gray-900">{form.name ? 'Edit trusted source' : 'Add a trusted source'}</h3>
         <p className="mt-1 text-sm text-gray-900">Websites the assistant may quote when approved KRCS documents do not answer a question. Every such answer names the website, says it is not KRCS-approved, and the question still goes to the supervisor.</p>
-        <form onSubmit={save} className="mt-4 grid grid-cols-1 items-end gap-3 md:grid-cols-[1fr_1fr_160px_auto]">
+        <form onSubmit={save} className="mt-4 grid grid-cols-1 items-end gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_160px_1fr_auto]">
           <label className="flex flex-col gap-1 text-xs font-semibold text-gray-900">Name
             <input value={form.sourceName} onChange={set('sourceName')} placeholder="e.g. World Health Organization" className={INPUT} />
           </label>
@@ -897,6 +898,12 @@ function TrustedSources({ onToast }) {
               <option value="PubMed">PubMed search</option>
             </select>
           </label>
+          {/* nobody picked = everyone (all staff and the public) */}
+          <div className="flex flex-col gap-1 text-xs font-semibold text-gray-900">Who can get answers from it
+            <MultiSelectDropdown label="Everyone" selected={form.allowedRoles || []}
+              options={[...roleOptions.filter((r) => r !== ALL_ROLES), PUBLIC_AUDIENCE]}
+              onChange={(v) => setForm((f) => ({ ...f, allowedRoles: v }))} />
+          </div>
           <div className="flex items-center gap-2">
             <button type="submit" disabled={saving || !form.sourceName.trim() || !form.website.trim()} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:bg-gray-200">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}{form.name ? 'Save' : 'Add source'}
@@ -916,7 +923,7 @@ function TrustedSources({ onToast }) {
               <thead>
                 <tr className="text-left text-xs">
                   <th className="w-10 px-3 py-3">#</th><th className="px-3 py-3">Source</th><th className="px-3 py-3">Website</th>
-                  <th className="px-3 py-3">Type</th><th className="px-3 py-3">In use</th><th className="px-3 py-3 text-right">Actions</th>
+                  <th className="px-3 py-3">Type</th><th className="px-3 py-3">Who can use it</th><th className="px-3 py-3">In use</th><th className="px-3 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -926,6 +933,7 @@ function TrustedSources({ onToast }) {
                     <td className="px-3 py-3 font-medium text-gray-900">{r.sourceName}</td>
                     <td className="px-3 py-3 text-gray-900">{r.website}</td>
                     <td className="px-3 py-3 text-gray-900">{r.kind === 'PubMed' ? 'PubMed search' : 'Website'}</td>
+                    <td className="px-3 py-3 text-xs text-gray-900">{r.allowedRoles?.length ? r.allowedRoles.join(', ') : 'Everyone'}</td>
                     <td className="px-3 py-3">
                       <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-900">
                         <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="h-4 w-4 accent-red-600" />
@@ -1248,7 +1256,7 @@ export default function KnowledgeBase() {
       )}
 
       {tab === 'sources' && canManage ? (
-        <TrustedSources onToast={showToast} />
+        <TrustedSources onToast={showToast} roleOptions={roleOptions} />
       ) : (
         <>
           <div className="flex items-center gap-3 flex-wrap mb-4">

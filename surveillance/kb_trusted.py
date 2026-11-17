@@ -48,9 +48,29 @@ def _clean_site(value):
 	return site[4:] if site.startswith("www.") else site
 
 
+PUBLIC = "Public (WhatsApp community)"
+
+
+def _roles_of(value):
+	"""allowed_roles is stored as one role per line; empty means everyone (all staff and the public)."""
+	return [r.strip() for r in str(value or "").replace(",", "\n").splitlines() if r.strip()]
+
+
 def _row(d):
 	return {"name": d.name, "sourceName": d.source_name, "website": d.website, "kind": d.kind,
-		"enabled": bool(d.enabled), "notes": d.notes or "", "modified": str(d.modified)[:16]}
+		"enabled": bool(d.enabled), "notes": d.notes or "", "modified": str(d.modified)[:16],
+		"allowedRoles": _roles_of(d.get("allowed_roles"))}
+
+
+def _may_use(roles_text, ctx):
+	"""May the person asking get answers from this source? ctx: kb_access context (None = no check)."""
+	allowed = set(_roles_of(roles_text))
+	if not allowed or ctx is None:
+		return True
+	if ctx.get("public_only"):
+		return PUBLIC in allowed
+	roles = ctx.get("roles")
+	return roles is None or "All roles" in allowed or bool(allowed & set(roles))
 
 
 @frappe.whitelist()
@@ -60,7 +80,7 @@ def list_sources():
 
 
 @frappe.whitelist(methods=["POST"])
-def save_source(source_name, website, kind="Website", enabled=1, notes=None, name=None):
+def save_source(source_name, website, kind="Website", enabled=1, notes=None, name=None, allowed_roles=None):
 	require_capability(CAPABILITY)
 	source_name, site = (source_name or "").strip(), _clean_site(website)
 	if not source_name or not site:
@@ -70,7 +90,10 @@ def save_source(source_name, website, kind="Website", enabled=1, notes=None, nam
 	if kind not in KINDS:
 		frappe.throw(_("Type must be Website or PubMed."))
 	doc = frappe.get_doc(DOCTYPE, name) if name else frappe.new_doc(DOCTYPE)
-	doc.update({"source_name": source_name, "website": site, "kind": kind, "enabled": cint(enabled), "notes": notes or ""})
+	roles = frappe.parse_json(allowed_roles) if isinstance(allowed_roles, str) and allowed_roles.startswith("[") else allowed_roles
+	roles = _roles_of("\n".join(roles) if isinstance(roles, list) else roles)
+	doc.update({"source_name": source_name, "website": site, "kind": kind, "enabled": cint(enabled), "notes": notes or "",
+		"allowed_roles": "\n".join(roles)})
 	doc.save(ignore_permissions=True)
 	return _row(doc)
 
@@ -169,23 +192,30 @@ def _pubmed(source, query, detected):
 	return out[:MAX_RESULTS]
 
 
-def lookup(query, language="English", detected=None, level=None):
-	"""Answer from enabled trusted sources, or None. Never raises: on any error the caller falls back to no-match.
-	With a Claude API key: Claude searches all enabled websites (WHO, PubMed, ...). Without one, or if that finds
-	nothing: PubMed's own search for sources of type PubMed."""
+def lookup(query, language="English", detected=None, level=None, ctx=None):
+	"""Answer from the enabled trusted sources this person may use (ctx), or None. Never raises: on any error the
+	caller falls back to no-match. Order: the trusted websites (WHO, Kenya MoH, ...) first, PubMed last.
+	With a Claude API key Claude searches and writes both; without one, PubMed's own search is used."""
 	if not cint(frappe.conf.get("kb_trusted_lookup", 1)) or not frappe.db.exists("DocType", DOCTYPE):
 		return None
 	from surveillance import kb_claude
+	fields = ["source_name", "website", "kind"] + (["allowed_roles"] if frappe.db.has_column(DOCTYPE, "allowed_roles") else [])
+	usable = [s for s in frappe.get_all(DOCTYPE, filters={"enabled": 1}, fields=fields) if _may_use(s.get("allowed_roles"), ctx)]
+	websites = [s for s in usable if s.kind != "PubMed"]
+	pubmed = [s for s in usable if s.kind == "PubMed"]
 	if kb_claude.enabled():
-		trusted = frappe.get_all(DOCTYPE, filters={"enabled": 1}, fields=["source_name", "website"])
-		try:
-			found = kb_claude.web_answer(query, trusted, language, level)
-			if found:
-				return found
-		except Exception as e:
-			frappe.log_error(title="Knowledge Base: Claude web search failed, using PubMed search", message=str(e)[:300])
+		for group, research in ((websites, False), (pubmed, True)):
+			if not group:
+				continue
+			try:
+				found = kb_claude.web_answer(query, group, language, level, research=research)
+				if found:
+					return found
+			except Exception as e:
+				frappe.log_error(title="Knowledge Base: Claude web search failed", message=str(e)[:300])
+		return None
 	found = []
-	for s in frappe.get_all(DOCTYPE, filters={"enabled": 1, "kind": "PubMed"}, fields=["source_name", "website"]):
+	for s in pubmed:
 		try:
 			found += _pubmed(frappe._dict(s), query, detected)
 		except Exception as e:

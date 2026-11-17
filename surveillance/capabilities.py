@@ -26,10 +26,10 @@ CAPABILITIES = [
 	{"key": "create_reports", "name": "Create Reports", "category": "Case Reports",
 	 "description": "Submit new case reports",
 	 "grants": {"Case Report": ["read", "create"], "Region": ["read"], "Symptom": ["read"], "Sub County": ["read"]}},
-	{"key": "edit_reports", "name": "Edit Reports", "category": "Case Reports",
-	 "description": "Edit existing case reports", "grants": {"Case Report": ["read", "write"]}},
-	{"key": "delete_reports", "name": "Delete Reports", "category": "Case Reports",
-	 "description": "Delete case reports", "grants": {"Case Report": ["read", "delete"]}},
+	{"key": "edit_reports", "name": "Update Reports", "category": "Case Reports",
+	 "description": "Update existing reports; every change is kept in the report's Update history and the Audit Log",
+	 "grants": {"Case Report": ["read", "write"]}},
+	# Delete Reports was removed (KRCS 17 Nov 2026): reports are never deleted, only viewed and updated
 	{"key": "export_reports", "name": "Export Reports", "category": "Case Reports",
 	 "description": "Export case reports to file", "grants": {"Case Report": ["read", "export"]}},
 	{"key": "verify_suspected_disease", "name": "Verify Suspected Disease", "category": "Case Reports",
@@ -180,6 +180,62 @@ CAPABILITIES += [
 	{"key": "push_model_metrics", "name": "Send AI Model Measures", "category": "Monitoring Reports",
 	 "description": "For the AI server's user only: send model measures from MLflow (e.g. speech-to-text word error rate)", "grants": {}},
 ]
+
+# Roles & Permissions: headings and names follow the main menu, in the menu's order (KRCS 17 Nov 2026).
+# Only what people see changes; the keys (and every check in the code) stay the same.
+MENU_LABELS = {
+	"view_analytics": ("Dashboard", "View Dashboard"), "view_alerts": ("Dashboard", "View Epidemiological Trends"),
+	"view_surveillance_map": ("Dashboard", "View Surveillance Map"), "export_data": ("Dashboard", "Export Data"),
+	"view_reports": ("Signals Captured", "View All Signals"), "view_own_reports": ("Signals Captured", "View Own Signals"),
+	"create_reports": ("Signals Captured", "Create Reports"), "edit_reports": ("Signals Captured", "Update Signals"),
+	"export_reports": ("Signals Captured", "Export Signals"),
+	"verify_suspected_disease": ("Signals Captured", "Verify Suspected Disease"),
+	"see_suspected_disease": ("Signals Captured", "See Suspected Disease After Reporting"),
+	"view_review_queue": ("Review Queue", "View Review Queue"), "act_on_events": ("Review Queue", "Act on Events"),
+	"view_all_tasks": ("Review Queue", "View All Tasks"), "receive_tasks": ("Review Queue", "Receive Tasks"),
+	"receive_referrals": ("Review Queue", "Confirm Referrals to My Facility"),
+	"investigate_alerts": ("Review Queue", "Investigate Alerts"),
+	"use_knowledge_base": ("KRCS Data Assistant", "Use the Data Assistant"),
+	"view_restricted_kb": ("KRCS Data Assistant", "See Restricted Content"),
+	"view_sensitive_kb": ("KRCS Data Assistant", "See Sensitive Content"),
+	"kb_national_scope": ("KRCS Data Assistant", "National Scope"),
+	"kb_service": ("KRCS Data Assistant", "Service Access (chatbot)"),
+	"view_monitoring_reports": ("Monitoring Reports", "View Monitoring Reports"),
+	"export_monitoring_reports": ("Monitoring Reports", "Export Monitoring Reports"),
+	"push_model_metrics": ("Monitoring Reports", "Send AI Model Measures"),
+	"view_data_quality": ("Data Quality", "View Data Quality"),
+	"view_response_protocols": ("Response Protocols", "View Response Protocols"),
+	"manage_response_protocols": ("Response Protocols", "Manage Response Protocols"),
+	"upload_facility_data": ("MOH 505 Facility Reports", "Upload MOH 505 Files"),
+	"view_context_data": ("Context Data", "View Context Data"), "manage_context_data": ("Context Data", "Manage Context Data"),
+	"settings_ai_config": ("AI Risk Engine", "AI Risk Engine Settings"),
+	"manage_knowledge_base": ("AI Knowledge Base", "Manage Knowledge Base"),
+	"approve_knowledge_base": ("AI Knowledge Base", "Approve Knowledge Base"),
+	"view_chatbot_logs": ("AI Assistant Query Log", "View Query Log"),
+	"handle_chatbot_escalations": ("AI Assistant Query Log", "Handle Escalations"),
+	"settings_alert_thresholds": ("Alert Thresholds", "Open Alert Thresholds"),
+	"manage_alert_thresholds": ("Alert Thresholds", "Manage Alert Thresholds"),
+	"view_reporting_channels": ("Reporting Channels", "View Reporting Channels"),
+	"settings_data": ("Data and Database", "Data and Database Settings"),
+	"manage_reference_data": ("Data and Database", "Manage Regions & Symptoms"),
+	"view_users": ("Users and Roles", "View Users"), "manage_users": ("Users and Roles", "Manage Users"),
+	"manage_roles": ("Users and Roles", "Manage Roles & Permissions"), "view_all_regions": ("Users and Roles", "View All Regions"),
+	"view_audit_log": ("Audit Log", "View Audit Log"),
+	"settings_security": ("Security Settings", "Security Settings"),
+	"view_feedback": ("Feedback Received", "View Feedback Received"),
+	"settings_notifications": ("Notifications and System", "Notification Settings"),
+	"settings_system": ("Notifications and System", "System Settings"),
+}
+CATEGORY_ORDER = ["Dashboard", "Signals Captured", "Review Queue", "KRCS Data Assistant", "Monitoring Reports", "Data Quality",
+	"Response Protocols", "MOH 505 Facility Reports", "Context Data", "AI Risk Engine", "AI Knowledge Base",
+	"AI Assistant Query Log", "Alert Thresholds", "Reporting Channels", "Data and Database", "Users and Roles", "Audit Log",
+	"Security Settings", "Feedback Received", "Notifications and System", "Workspaces"]
+for _c in CAPABILITIES:
+	if _c["key"] in MENU_LABELS:
+		_c["category"], _c["name"] = MENU_LABELS[_c["key"]]
+_ORDER = list(MENU_LABELS)
+CAPABILITIES.sort(key=lambda c: (CATEGORY_ORDER.index(c["category"]) if c["category"] in CATEGORY_ORDER else len(CATEGORY_ORDER),
+	_ORDER.index(c["key"]) if c["key"] in _ORDER else len(_ORDER)))
 CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 
 # Not given to Administrator / System Manager automatically: these change what the user sees

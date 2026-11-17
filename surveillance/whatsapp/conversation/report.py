@@ -357,7 +357,10 @@ def build_doc(s, ctx):
 		"animal_exposure": d.animal_exposure,
 		# An Int column is never blank; extraction_note says when deaths were not asked.
 		"deaths_count": d.deaths_count or 0,
-		"additional_notes": "\n\n".join(x for x in [*d.notes, extraction_note(s)] if x) or None,
+		# Additional Notes: only what the reporter wrote (their message, then any notes they typed). What was filled
+		# in from the message stays with the report as extraction_details (KRCS 17 Nov 2026).
+		"additional_notes": "\n\n".join(x for x in [d.description, *d.notes] if x) or None,
+		"extraction_details": extraction_note(s),
 		"channel": "WhatsApp",
 		"status": "Submitted",
 		"client_ref": _client_ref(ctx),

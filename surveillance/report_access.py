@@ -44,7 +44,10 @@ def case_report_query(user=None):
 		return f"({own})"
 	sub = _sub_county_only(user)
 	if sub:
-		return f"(`tabCase Report`.sub_county = {frappe.db.escape(sub)} or {own})"
+		from surveillance.health_units import report_condition
+		unit = report_condition(user)   # CHAs: their CHU(s) and reports from no CHU (KRCS 17 Nov 2026)
+		place = f"`tabCase Report`.sub_county = {frappe.db.escape(sub)}" + (f" and {unit}" if unit else "")
+		return f"(({place}) or {own})"
 	region = _region_only(user)
 	if region:
 		return f"(`tabCase Report`.region = {frappe.db.escape(region)} or {own})"
@@ -58,7 +61,8 @@ def case_report_permission(doc, ptype=None, user=None):
 		return own
 	sub = _sub_county_only(user)
 	if sub:
-		return own or doc.get("sub_county") == sub
+		from surveillance.health_units import cha_scope, report_ok
+		return own or (doc.get("sub_county") == sub and report_ok(cha_scope(user), doc.get("community_health_unit")))
 	region = _region_only(user)
 	if region:
 		return own or doc.get("region") == region

@@ -107,7 +107,7 @@ SURVEILLANCE_ROLES = [
 ]
 
 fixtures = [
-	{"dt": "Custom Field", "filters": [["name", "in", ["User-primary_role", "User-account_status", "User-assigned_region", "User-assigned_sub_county"]]]},
+	{"dt": "Custom Field", "filters": [["name", "in", ["User-primary_role", "User-account_status", "User-assigned_region", "User-assigned_sub_county", "User-health_units"]]]},
 	{"dt": "Role", "filters": [["name", "in", SURVEILLANCE_ROLES]]},
 	{"dt": "Surveillance Role"},
 	{"dt": "Region"},
@@ -180,12 +180,13 @@ doc_events = {
 		"after_insert": "surveillance.push.on_notification",
 	},
 	"Case Report": {
-		"validate": "surveillance.case_report_rules.validate_complete",
+		"validate": ["surveillance.case_report_rules.validate_complete", "surveillance.health_units.set_report_unit"],
 		"on_update": ["surveillance.events.on_case_report", "surveillance.transcription.on_case_report"],
 		"on_trash": "surveillance.events.on_case_report_trash",
 	},
 	# WhatsApp: staff are matched by User.mobile_no; lists come from these DocTypes
 	"User": {
+		"validate": "surveillance.health_units.validate_user",   # CHP: one CHU, CHA: one or more (KRCS 17 Nov 2026)
 		"after_insert": "surveillance.whatsapp.data.clear_staff_cache",
 		"on_update": "surveillance.whatsapp.data.clear_staff_cache",
 		"on_trash": "surveillance.whatsapp.data.clear_staff_cache",

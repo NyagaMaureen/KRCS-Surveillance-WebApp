@@ -32,6 +32,23 @@ export function CapabilitiesProvider({ children }) {
     refresh()
   }, [refresh])
 
+  // ticks changed in Roles & Permissions reach people without logging out: the menu is checked again when the
+  // window gets focus and every 5 minutes (quietly: nothing changes on screen unless the permissions did)
+  useEffect(() => {
+    const quiet = () => {
+      getMyCapabilities()
+        .then(({ capabilities: caps, primary_role, workspace: ws }) => {
+          setCapabilities((prev) => (prev.join('|') === (caps || []).join('|') ? prev : caps || []))
+          setPrimaryRole(primary_role)
+          setWorkspace(ws || 'full')
+        })
+        .catch(() => {})
+    }
+    const timer = setInterval(quiet, 5 * 60 * 1000)
+    window.addEventListener('focus', quiet)
+    return () => { clearInterval(timer); window.removeEventListener('focus', quiet) }
+  }, [])
+
   // key can be one capability or a list (any of them is enough)
   const has = useCallback(
     (key) => (Array.isArray(key) ? key.some((k) => capabilities.includes(k)) : capabilities.includes(key)),

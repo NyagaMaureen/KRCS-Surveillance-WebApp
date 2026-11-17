@@ -565,6 +565,10 @@ def _scope_filters():
 	"""Officers see their own region plus events with no location at all (location missing).
 	Events in places outside our Sub County list (e.g. other CBS counties) are for national users only."""
 	require_capability(VIEW)
+	from surveillance.health_units import visible_events
+	vis = visible_events()   # CHAs: their sub-county, reports from their CHU(s) or from no CHU (KRCS 17 Nov 2026)
+	if vis is not None:
+		return {"name": ["in", list(vis) or [""]]}
 	region = _user_region()
 	if not region:
 		return {}
@@ -582,6 +586,10 @@ def _region_name(region):
 
 
 def _check_access(doc):
+	from surveillance.health_units import visible_events
+	vis = visible_events()
+	if vis is not None and doc.name not in vis:
+		frappe.throw(_("This event is not in your Community Health Unit."), frappe.PermissionError)
 	region = _user_region()
 	if region and doc.sub_county and doc.region != region:
 		frappe.throw(_("This event is outside your region."), frappe.PermissionError)
@@ -691,6 +699,8 @@ def _shape(d, detail=False):
 			fields=["name", "source", "ref", "signal_date", "area", "disease", "people", "deaths", "reported", "reason",
 				"latitude", "longitude", "check_reached", "check_case_definition", "check_status", "checked_by", "checked_on"],
 			order_by="signal_date desc")]
+		from surveillance.health_units import filter_signals, visible_events
+		out["signals"] = filter_signals(out["signals"])   # a CHA does not see other CHUs' reports
 		out["timeline"] = [{"at": str(a.at), "user": a.user, "action": a.action, "note": a.note}
 			for a in sorted(d.actions or [], key=lambda a: a.at or now_datetime(), reverse=True)]
 		for sg in out["signals"]:
@@ -698,6 +708,9 @@ def _shape(d, detail=False):
 		out["channels"] = _channels_for([d.name]).get(d.name, [])
 		out["canAct"] = has_capability(ACT)
 		out["related"] = related_events(d.disease, d.sub_county, d.last_reported, exclude=d.name) if d.status in OPEN else []
+		vis = visible_events()
+		if vis is not None:
+			out["related"] = [r for r in out["related"] if r.get("id") in vis]
 		merged = next((a.note for a in (d.actions or []) if a.action == "Merged"), None)
 		out["mergedInto"] = merged.split(" ")[2] if merged and merged.startswith("Merged into ") else None
 	return out
@@ -858,6 +871,10 @@ def get_map_events(status="open", disease=None, days=30):
 	area = locked_area()   # officers, FHWs and CHAs: their sub-county only
 	if area:
 		rows = [d for d in rows if (d.sub_county or "").strip().lower() == area.sub_county.strip().lower()]
+	from surveillance.health_units import visible_events
+	vis = visible_events()   # CHAs: their CHU(s)
+	if vis is not None:
+		rows = [d for d in rows if d.name in vis]
 	events = [_shape(d) for d in rows]
 	mapped = [e for e in events if e["lat"] is not None and e["lng"] is not None]
 	counts = {"open": sum(1 for e in events if e["status"] in OPEN),

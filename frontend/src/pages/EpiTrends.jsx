@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, TrendingUp, CheckCircle2, ChevronRight, AlertTriangle } from 'lucide-react'
+import { RefreshCw, TrendingUp } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getEpiTrends } from '../api/frappe'
-import { FOCUS, PERIODS, SEVERITY, RISE, weekLabel, weekRange, fmtNum, DiseaseChart } from '../components/epi/TrendChart'
+import { FOCUS, PERIODS, RISE, fmtNum, DiseaseChart } from '../components/epi/TrendChart'
 
 // Epi Trends: one disease at a time. Confirmed cases each week, stacked by where they were reported (small numbers next
 // to big facility counts are labelled so they stay visible), with the usual level and the weeks the alert engine
@@ -39,50 +39,6 @@ function DiseaseCard({ item, weeks, labels, showUnconfirmed, onOpenRise, others 
       </div>
       <DiseaseChart item={item} weeks={weeks} labels={labels} showUnconfirmed={showUnconfirmed} onOpenRise={onOpenRise} />
     </section>
-  )
-}
-
-function RisingNow({ rising, onOpenRise }) {
-  if (!rising.length) {
-    return (
-      <div className="flex items-center gap-2 rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-900">
-        <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-        No unusual rises in the last two weeks for the places and diseases shown.
-      </div>
-    )
-  }
-  return (
-    <div>
-      <h2 className="mb-2 text-[15px] font-semibold text-gray-900">Rising now <span className="font-normal text-gray-500">· flagged in the last two weeks</span></h2>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {rising.map((r) => {
-          const s = SEVERITY[r.severity] || SEVERITY.standard
-          return (
-            <button key={r.alert} type="button" onClick={() => onOpenRise(r.alert)}
-              className={`group flex items-start gap-3 rounded-xl border border-gray-100 bg-white p-3 text-left hover:border-gray-300 ${FOCUS}`}>
-              <TrendingUp className="mt-0.5 h-4 w-4 shrink-0" style={{ color: RISE }} aria-hidden="true" />
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[15px] font-semibold text-gray-900">{r.name}</span>
-                  <span className={`rounded-full px-1.5 py-px text-[11.5px] font-semibold ${s.cls}`}>{s.label}</span>
-                </span>
-                <span className="mt-0.5 block text-[13px] text-gray-600">{r.subCounty} · {weekLabel(r.week)} ({weekRange(r.week)})</span>
-                <span className="mt-1 block text-[13px] text-gray-800">
-                  <b className="font-semibold">{fmtNum(r.cases)}</b> confirmed{r.unconfirmed ? `, ${fmtNum(r.unconfirmed)} unconfirmed` : ''} · usual about {fmtNum(r.usual ?? 0)}
-                  <span className="text-gray-500"> · {r.group === 'facility' ? 'health facility data' : 'community and field reports'}</span>
-                </span>
-                {r.surge && (
-                  <span className="mt-1 flex items-center gap-1 text-[11.5px] text-amber-800">
-                    <AlertTriangle className="h-3 w-3" aria-hidden="true" /> Several diseases rose here together: check it is not just more reporting
-                  </span>
-                )}
-              </span>
-              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-300 group-hover:text-gray-600" aria-hidden="true" />
-            </button>
-          )
-        })}
-      </div>
-    </div>
   )
 }
 
@@ -186,16 +142,6 @@ export default function EpiTrends() {
 
       {!error && data && (
         <div className={`space-y-5 transition-opacity ${loading ? 'opacity-60' : ''}`}>
-          <RisingNow rising={data.rising || []} onOpenRise={openRise} />
-
-          <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
-            <p className="text-[13px] text-gray-500">
-              Confirmed: reports an officer verified (and clear-cut common illnesses), every community (CBS) signal, and facility counts.
-              {showUnconfirmed ? ' Unconfirmed: reports still waiting in the Review Queue.' : ' Turn on “Include unconfirmed” to also see reports still waiting for an officer.'}
-              {' '}Usual level: the average of the 8 weeks before each week. Rises are flagged from all reported cases, so they can show before cases are confirmed.
-            </p>
-          </div>
-
           {!current ? (
             <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
               No cases in this period{subCounty ? ` in ${subCounty}` : ''}{showUnconfirmed ? '' : '. Try “Include unconfirmed” or a longer period'}.

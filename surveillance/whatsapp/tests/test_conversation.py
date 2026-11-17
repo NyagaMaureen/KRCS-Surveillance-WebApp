@@ -1223,9 +1223,11 @@ class TestFreeText(FrappeTestCase):
 			("reg-dadaab", "Garissa-Fafi", 5, "2026-10-12", "Human Disease", "Amina"),
 		)
 		self.assertRegex(
-			r["additional_notes"],
+			r["extraction_details"],
 			r'Message: "5 children have diarrhoea[\s\S]*affected_count = 5 \(0\.90\)[\s\S]*Asked as follow-up questions: Deaths',
 		)
+		self.assertTrue(r["additional_notes"].startswith("5 children have diarrhoea"))   # only the reporter's words
+		self.assertNotIn("Filled in from the message", r["additional_notes"])
 
 	def test_pin_gives_the_area_category_assumed_deaths_not_asked_for_one(self):
 		stats = []
@@ -1250,8 +1252,9 @@ class TestFreeText(FrappeTestCase):
 			(r["region"], r["sub_county"], r["category"], r["affected_count"], r["deaths_count"]),
 			("reg-dadaab", "Garissa-Dadaab", "Human Disease", 1, 0),
 		)
-		self.assertIn("Category: Human Disease assumed", r["additional_notes"])
-		self.assertIn("Deaths: not asked", r["additional_notes"])
+		self.assertIn("Category: Human Disease assumed", r["extraction_details"])
+		self.assertIn("Deaths: not asked", r["extraction_details"])
+		self.assertEqual(r["additional_notes"], "my child has diarrhoea and vomiting")
 		[st] = stats
 		self.assertEqual((st["draft"].messages, st["seconds"]), (5, 50))
 
@@ -1333,7 +1336,7 @@ class TestFreeText(FrappeTestCase):
 		h.tap("Confirm & submit")
 		self.assertIn("Bleeding:* take the person to a health facility now", h.bodies())
 		self.assertIn(
-			"Danger signs mentioned: deaths, bleeding (threat: high)", h.data.reports[0]["additional_notes"]
+			"Danger signs mentioned: deaths, bleeding (threat: high)", h.data.reports[0]["extraction_details"]
 		)
 
 	def test_service_down_falls_back_to_keywords(self):

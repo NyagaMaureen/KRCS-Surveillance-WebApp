@@ -262,7 +262,7 @@ export default function AlertsSignalsQueue() {
               return (
                 <button key={key} aria-pressed={on}
                   onClick={() => key === 'overdue' ? setParam({ overdue: overdueOnly ? '' : '1', tab: 'all' }) : setParam({ tab: key === 'new' ? '' : key, overdue: '' })}
-                  className={`rounded-xl text-left px-4 py-3 text-white ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
+                  className={`rounded-xl text-center px-4 py-3 text-white ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
                   <span className="block text-[11px] font-bold uppercase tracking-wide">{label}{alarm && <span className="ml-1.5 rounded bg-white/25 px-1 normal-case">act now</span>}</span>
                   <span className="block text-2xl font-bold tabular-nums mt-1">{loading ? '–' : value}</span>
                 </button>

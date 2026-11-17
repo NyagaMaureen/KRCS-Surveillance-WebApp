@@ -181,12 +181,12 @@ export default function Reports() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {statCards.map((c) => (
-          <div key={c.label} className="bg-red-600 rounded-xl p-4 flex items-center justify-between">
-            <div>
+          <div key={c.label} className="relative bg-red-600 rounded-xl p-4 text-center">
+            <div className="px-6">
               <div className="text-xs font-semibold text-white">{c.label}</div>
               <div className="text-2xl font-bold text-white">{c.value}</div>
             </div>
-            <div className="bg-white/20 rounded-full p-2"><c.icon className="w-4 h-4 text-white" /></div>
+            <div className="absolute right-3 top-3 bg-white/20 rounded-full p-1.5"><c.icon className="w-3.5 h-3.5 text-white" /></div>
           </div>
         ))}
       </div>

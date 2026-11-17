@@ -60,7 +60,9 @@ def _f(region=None, sub_county=None, from_date=None, to_date=None, channel=None,
 	if from_d > to_d:
 		from_d, to_d = to_d, from_d
 	mine = area.region if area else _user_region()
+	from surveillance.health_units import cha_scope, visible_events
 	return frappe._dict(
+		cha=cha_scope(), vis=visible_events(),   # CHAs: their CHU(s) only (KRCS 17 Nov 2026)
 		region=mine or (region or None), sub_county=(sub_county or "").strip().lower() or None,
 		from_d=from_d, to_d=to_d, start=get_datetime(f"{from_d} 00:00:00"), end=get_datetime(f"{to_d} 23:59:59"),
 		channel=channel if channel in CHANNELS else None, status=status if status in STATUSES else None,
@@ -101,7 +103,10 @@ def _signals(f, dis=None, ignore_channel=False, all_diseases=False):
 		cr_filters["region"] = f.region
 	reports = frappe.get_all("Case Report", filters=cr_filters, limit_page_length=0,
 		fields=["name", "creation", "channel", "status", "category", "signal_type", "suspected_disease", "region",
-			"sub_county", "affected_count"])
+			"sub_county", "affected_count"] + (["community_health_unit"] if f.get("cha") else []))
+	if f.get("cha"):
+		from surveillance.health_units import report_ok
+		reports = [r for r in reports if report_ok(f.cha, r.community_health_unit)]
 	ev_of = {}
 	if reports:
 		for s in frappe.get_all("Surveillance Signal", filters={"source": "Field", "ref": ["in", [r.name for r in reports]]},
@@ -170,6 +175,8 @@ def _event_filters(f, **extra):
 
 
 def _event_in_sub(e, f):
+	if f.get("vis") is not None and e.name not in f.vis:
+		return False
 	return not f.sub_county or (e.sub_county or "").strip().lower() == f.sub_county
 
 
@@ -226,7 +233,9 @@ def _tasks(f, task_type, date_field, done=True):
 	tf[date_field] = ["between", [f.start, f.end]]
 	if done:
 		tf["status"] = "Done"
-	rows = frappe.get_all("Event Task", filters=tf, fields=["name", "sub_county"], limit_page_length=0)
+	rows = frappe.get_all("Event Task", filters=tf, fields=["name", "sub_county", "event"], limit_page_length=0)
+	if f.get("vis") is not None:
+		rows = [t for t in rows if t.event in f.vis]
 	return sum(1 for t in rows if not f.sub_county or (t.sub_county or "").strip().lower() == f.sub_county)
 
 
@@ -238,6 +247,10 @@ def _response_time(analytics, weeks, last, sub_county=None):
 	cols = [add_days(last, -7 * i) for i in reversed(range(weeks))]
 	names = set(frappe.get_all("Surveillance Event", filters={"creation": [">=", cols[0]]},
 		or_filters={"sub_county": sub_county, "area": ["like", f"%{sub_county}%"]}, pluck="name"))
+	from surveillance.health_units import visible_events
+	vis = visible_events()
+	if vis is not None:
+		names &= vis
 	events = [e for e in analytics._events_since(cols[0]) if e.name in names]
 	acts = analytics._actions(events)
 	per_week = {}
@@ -478,3 +491,48 @@ def get_filter_options():
 		"channels": [{"value": c, "label": CHANNEL_LABEL.get(c, c)} for c in CHANNELS],
 		"statuses": [{"value": s, "label": s} for s in STATUSES],
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def export_xlsx(title, meta=None, sheets=None):
+	"""A dashboard tab's numbers as Excel: who downloaded it, when and with which filters, then a sheet per chart or
+	table (made from what was on screen). Anyone who can see the dashboard may download (KRCS, 17 Nov 2026)."""
+	import io
+	from openpyxl import Workbook
+	from openpyxl.styles import Font, PatternFill
+	_require_dashboard()
+	meta = frappe.parse_json(meta) if isinstance(meta, str) else (meta or [])
+	sheets = frappe.parse_json(sheets) if isinstance(sheets, str) else (sheets or [])
+	wb = Workbook()
+	wb.remove(wb.active)
+	head, red = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="EE2435")
+	used = set()
+	for s in sheets[:40]:
+		name = re.sub(r"[\\/*?:\[\]]", " ", str(s.get("name") or "Sheet")).strip()[:28] or "Sheet"
+		base, n = name, 2
+		while name.lower() in used:
+			name, n = f"{base[:25]} {n}", n + 1
+		used.add(name.lower())
+		ws = wb.create_sheet(name)
+		if len(wb.sheetnames) == 1:   # the first sheet starts with the title and who downloaded it, when, which filters
+			ws.append([str(title or "Dashboard")])
+			ws["A1"].font = Font(bold=True, size=14)
+			for line in meta:
+				ws.append([str(line)])
+			ws.append([])
+		cols = [str(c) for c in (s.get("columns") or [])]
+		if cols:
+			ws.append(cols)
+			for c in ws[ws.max_row]:
+				c.font, c.fill = head, red
+		for r in (s.get("rows") or [])[:5000]:
+			ws.append([v if isinstance(v, (int, float)) else ("" if v is None else str(v)) for v in r])
+		for i in range(1, max(len(cols), 1) + 1):
+			ws.column_dimensions[ws.cell(1, i).column_letter].width = 42 if i == 1 else 18
+	if not wb.sheetnames:
+		wb.create_sheet("Dashboard")
+	buf = io.BytesIO()
+	wb.save(buf)
+	frappe.response["filename"] = "dashboard.xlsx"
+	frappe.response["filecontent"] = buf.getvalue()
+	frappe.response["type"] = "binary"

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import {
   Gauge, ShieldCheck, TrendingUp, Activity, Map as MapIcon, RefreshCw, Clock, RotateCcw,
   Radio, CheckCheck, ArrowUpRight, Hourglass, Wifi, Search, Footprints, ArrowRightLeft, ListChecks,
   Users, UserRound, UserCheck, MessageCircle, Smartphone, Bot, Percent, Sparkles,
+  Download, FileSpreadsheet, FileText, Image as ImageIcon,
 } from 'lucide-react'
+import { DashExportContext, downloadPanel, downloadTabPng, printTab, downloadTabExcel } from '../components/dashboard/dashExport'
 import '../charts/chartSetup'
 import { CHART_FONT } from '../charts/chartSetup'
 import AppShell from '../components/layout/AppShell'
@@ -13,7 +15,7 @@ import Embedded from '../components/layout/Embedded'
 import EpiTrends from './EpiTrends'
 import SurveillanceMap from './SurveillanceMap'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { getHqGlance, getHqSurveillance, getHqPerformance, getHqStatus, getHqFilterOptions } from '../api/frappe'
+import { getHqGlance, getHqSurveillance, getHqPerformance, getHqStatus, getHqFilterOptions, currentUserFullName } from '../api/frappe'
 
 // HQ Admin dashboard (KRCS Dashboard re-organization, 13 Nov 2026): five tabs, each with cards and charts.
 // Layout from the design Elizabeth shared; colours are the app's (red cards, red and navy charts).
@@ -61,7 +63,16 @@ const today = () => new Date().toISOString().slice(0, 10)
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10) }
 // period as on Epi Trends: last N weeks up to today
 const PERIODS = [['4w', 'Last 4 weeks', 28], ['8w', 'Last 8 weeks', 56], ['12w', 'Last 12 weeks', 84], ['6m', 'Last 6 months', 182], ['12m', 'Last 12 months', 364]]
-const EMPTY_FILTERS = { region: '', subCounty: '', period: '4w', channel: '', status: '', category: '' }
+// Period and From/To side by side (KRCS, 17 Nov 2026): a period fills in the dates; changing a date makes it "Custom"
+const datesFor = (period) => {
+  const days = (PERIODS.find((p) => p[0] === period) || PERIODS[0])[2]
+  return { from: daysAgo(days - 1), to: today() }
+}
+const blankFilters = () => ({ region: '', subCounty: '', period: '4w', ...datesFor('4w'), channel: '', status: '', category: '' })
+const EMPTY_FILTERS = blankFilters()
+const fmtDay = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+const periodText = (f) => (f.period === 'custom' ? `${fmtDay(f.from)} to ${fmtDay(f.to)}` : (PERIODS.find((p) => p[0] === f.period) || PERIODS[0])[1])
+const BTN_SMALL = 'inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50 disabled:opacity-50'
 
 function ago(v) {
   if (!v) return 'never'
@@ -77,15 +88,16 @@ function ago(v) {
 
 export default function HqDashboard() {
   const [params, setParams] = useSearchParams()
-  const { has: can, workspace } = useCapabilities()
+  const { has: can, workspace, primaryRole } = useCapabilities()
   const scoped = workspace !== 'full'
   const tabs = TABS.filter((t) => (!t.requires || can(t.requires)) && !(t.hq && scoped))
   const tab = tabs.find((t) => t.key === params.get('tab')) || tabs[0]
-  const [filters, setFilters] = useState(EMPTY_FILTERS)
-  // what the server gets: the period as from / to dates
+  const [filters, setFilters] = useState(blankFilters)
+  // what the server gets: the from / to dates (the period only fills them in)
   const query = useMemo(() => {
-    const days = (PERIODS.find((p) => p[0] === filters.period) || PERIODS[0])[2]
-    return { ...filters, from: daysAgo(days - 1), to: today() }
+    const rest = { ...filters }
+    delete rest.period
+    return rest
   }, [filters])
   const [options, setOptions] = useState(null)
   const [status, setStatus] = useState(null)
@@ -97,8 +109,44 @@ export default function HqDashboard() {
   function pickTab(key) {
     setParams((prev) => { const next = new URLSearchParams(prev); next.set('tab', key); return next })
   }
-  const set = (k, v) => setFilters((f) => ({ ...f, [k]: v, ...(k === 'region' ? { subCounty: '' } : {}) }))
-  const changed = Object.entries(filters).some(([k, v]) => (k === 'period' ? v !== EMPTY_FILTERS.period : v))
+  const set = (k, v) => setFilters((f) => {
+    if (k === 'period') return v === 'custom' ? { ...f, period: v } : { ...f, period: v, ...datesFor(v) }
+    if (k === 'from' || k === 'to') return { ...f, [k]: v, period: 'custom' }
+    return { ...f, [k]: v, ...(k === 'region' ? { subCounty: '' } : {}) }
+  })
+  const changed = Object.entries(filters).some(([k, v]) => (k === 'period' ? v !== EMPTY_FILTERS.period : k === 'from' || k === 'to' ? false : v))
+
+  // downloads: what was on screen, who downloaded it and with which filters
+  const panels = useRef(new Map())
+  const cards = useRef([])
+  const [busy, setBusy] = useState('')
+  const metaRef = useRef(null)
+  const buildMeta = () => {
+    const regionLabel = options?.regions?.find((r) => r.value === filters.region)?.label
+    const channelLabel = options?.channels?.find((c) => c.value === filters.channel)?.label
+    const statusLabel = options?.statuses?.find((s) => s.value === filters.status)?.label
+    const where = options?.lockedSubCounty ? `${options.lockedSubCounty} sub-county` : filters.subCounty ? `${filters.subCounty} sub-county` : regionLabel || 'All regions'
+    const text = [`${periodText(filters)} (${fmtDay(filters.from)} to ${fmtDay(filters.to)})`, where, channelLabel || 'All channels',
+      statusLabel || 'All statuses', tab.category && filters.category ? filters.category : null].filter(Boolean).join(' · ')
+    return { dashboard: TITLES[workspace] || TITLES.full, tab: tab.label, filters: text, user: currentUserFullName(), role: primaryRole }
+  }
+  useEffect(() => { metaRef.current = buildMeta })
+  const exportCtx = useMemo(() => ({ panels, setCards: (list) => { cards.current = list }, meta: () => metaRef.current() }), [])
+  async function exportTab(kind) {
+    const list = [...panels.current.values()].filter((e) => e.node.current)
+    const win = kind === 'pdf' ? window.open('', '_blank') : null
+    setBusy(kind)
+    try {
+      if (kind === 'png') await downloadTabPng(list, cards.current, buildMeta())
+      else if (kind === 'pdf') { if (win) printTab(win, list, cards.current, buildMeta()) }
+      else await downloadTabExcel(list, cards.current, buildMeta())
+    } catch (e) {
+      if (win) win.close()
+      window.alert(e.message || 'The download did not work. Please try again.')
+    } finally {
+      setBusy('')
+    }
+  }
 
   return (
     <AppShell>
@@ -134,9 +182,17 @@ export default function HqDashboard() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-base font-bold text-gray-900">
           {tab.label}
-          {tab.filters && <span className="font-normal"> · {(PERIODS.find((p) => p[0] === filters.period) || PERIODS[0])[1]}{options?.lockedSubCounty ? ` · ${options.lockedSubCounty}` : ''}</span>}
+          {tab.filters && <span className="font-normal"> · {periodText(filters)}{options?.lockedSubCounty ? ` · ${options.lockedSubCounty}` : ''}</span>}
         </h3>
         <div className="flex flex-wrap items-center gap-3">
+          {tab.filters && (
+            <div className="flex flex-wrap items-center gap-2" aria-label="Download this tab">
+              <span className="text-xs font-semibold text-gray-900">Download</span>
+              <button type="button" disabled={!!busy} onClick={() => exportTab('png')} className={`${BTN_SMALL} ${FOCUS}`}><ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />{busy === 'png' ? 'Preparing…' : 'PNG'}</button>
+              <button type="button" disabled={!!busy} onClick={() => exportTab('pdf')} className={`${BTN_SMALL} ${FOCUS}`}><FileText className="h-3.5 w-3.5" aria-hidden="true" />PDF</button>
+              <button type="button" disabled={!!busy} onClick={() => exportTab('xlsx')} className={`${BTN_SMALL} ${FOCUS}`}><FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />{busy === 'xlsx' ? 'Preparing…' : 'Excel'}</button>
+            </div>
+          )}
           <button type="button" onClick={() => setStamp((s) => s + 1)}
             className={`inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50 ${FOCUS}`}>
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh now
@@ -149,12 +205,14 @@ export default function HqDashboard() {
       </div>
       {tab.filters && (
         <FilterBar filters={filters} set={set} options={options} category={tab.category} changed={changed}
-          clear={() => setFilters(EMPTY_FILTERS)} />
+          clear={() => setFilters(blankFilters())} />
       )}
 
-      {tab.key === 'glance' && <GlanceTab filters={query} stamp={stamp} />}
-      {tab.key === 'surveillance' && <SurveillanceTab filters={query} stamp={stamp} />}
-      {tab.key === 'performance' && <PerformanceTab filters={query} stamp={stamp} />}
+      <DashExportContext.Provider value={exportCtx}>
+        {tab.key === 'glance' && <GlanceTab filters={query} stamp={stamp} />}
+        {tab.key === 'surveillance' && <SurveillanceTab filters={query} stamp={stamp} />}
+        {tab.key === 'performance' && <PerformanceTab filters={query} stamp={stamp} />}
+      </DashExportContext.Provider>
       {tab.key === 'epi' && <Embedded><EpiTrends key={stamp} /></Embedded>}
       {tab.key === 'maps' && <Embedded><SurveillanceMap key={stamp} /></Embedded>}
 
@@ -209,7 +267,14 @@ function FilterBar({ filters, set, options, category, changed, clear }) {
       <Field label="Period">
         <select className={SELECT} value={filters.period} onChange={(e) => set('period', e.target.value)}>
           {PERIODS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          <option value="custom">Custom dates</option>
         </select>
+      </Field>
+      <Field label="From">
+        <input type="date" className={SELECT} value={filters.from} max={filters.to} onChange={(e) => e.target.value && set('from', e.target.value)} />
+      </Field>
+      <Field label="To">
+        <input type="date" className={SELECT} value={filters.to} min={filters.from} max={today()} onChange={(e) => e.target.value && set('to', e.target.value)} />
       </Field>
       <Field label="Channel">
         <select className={SELECT} value={filters.channel} onChange={(e) => set('channel', e.target.value)}>
@@ -259,16 +324,22 @@ function useTabData(fetcher, filters, stamp, extra = '') {
 }
 
 function Cards({ cards }) {
+  const exp = useContext(DashExportContext)
+  useEffect(() => {
+    if (!exp) return undefined
+    exp.setCards(cards)   // the tab's PNG, PDF and Excel include the cards
+    return () => exp.setCards([])
+  }, [exp, cards])
   return (
     <div className={`mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 ${cards.length === 5 ? 'xl:grid-cols-5' : ''}`}>
       {cards.map((c) => {
         const Icon = CARD_ICONS[c.key] || Sparkles
         return (
-          <div key={c.key} className="relative overflow-hidden rounded-xl bg-red-600 p-4 text-white">
-            <p className="pr-8 text-[11px] font-bold uppercase tracking-wide">{c.label}</p>
+          <div key={c.key} className="relative overflow-hidden rounded-xl bg-red-600 p-4 text-center text-white">
+            <p className="px-7 text-[11px] font-bold uppercase tracking-wide">{c.label}</p>
             <p className="mt-1 text-3xl font-bold">{typeof c.value === 'number' ? c.value.toLocaleString() : c.value}</p>
             {c.note && <p className="mt-0.5 text-xs">{c.note}</p>}
-            <Icon className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 text-white/30" aria-hidden="true" />
+            <Icon className="absolute right-3 top-3 h-5 w-5 text-white/50" aria-hidden="true" />
           </div>
         )
       })}
@@ -277,14 +348,32 @@ function Cards({ cards }) {
 }
 
 function Panel({ title, icon: Icon = TrendingUp, note, action, children, height = 'h-72', className = '' }) {
+  const exp = useContext(DashExportContext)
+  const node = useRef(null)
+  const wide = className.includes('col-span-2')
+  useEffect(() => {
+    if (!exp) return undefined
+    const list = exp.panels.current
+    list.set(title, { title, note, wide, node })
+    return () => { list.delete(title) }
+  }, [exp, title, note, wide])
   return (
-    <section className={`rounded-xl border border-gray-200 bg-white p-5 ${className}`}>
+    <section ref={node} className={`min-w-0 rounded-xl border border-gray-200 bg-white p-5 ${className}`}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h4 className="flex items-center gap-2 text-sm font-bold text-gray-900"><Icon className="h-4 w-4 text-red-600" aria-hidden="true" />{title}</h4>
           {note && <p className="mt-0.5 text-xs text-gray-900">{note}</p>}
         </div>
-        {action}
+        <div className="flex items-center gap-2">
+          {action}
+          {exp && (
+            <button type="button" title="Download as PNG" aria-label={`Download ${title} as PNG`}
+              onClick={() => downloadPanel({ title, note, wide, node }, exp.meta())}
+              className={`rounded-lg border border-gray-200 p-1.5 text-gray-900 hover:bg-gray-50 ${FOCUS}`}>
+              <Download className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </div>
       {height ? <div className={`relative ${height}`}>{children}</div> : children}
     </section>
@@ -468,7 +557,7 @@ function PerformanceTab({ filters, stamp }) {
         </Panel>
         <Panel title="Signals submitted by hour of day" icon={Clock}><VBar series={data.hours} color={NAVY} /></Panel>
         {/* the Monitoring Reports R38 measures for the same period and area; how each is obtained is in that report */}
-        <Panel title="AI performance" icon={Sparkles} note="How often each AI part agreed with what people decided. How each is measured: Monitoring Reports, R38." height={null}>
+        <Panel title="AI performance" icon={Sparkles} note="How often each AI part agreed with what people decided" height={null}>
           <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
             {(data.aiMeasures || []).map((m) => (
               <li key={m.key} className="flex items-center justify-between gap-3 px-4 py-2.5">

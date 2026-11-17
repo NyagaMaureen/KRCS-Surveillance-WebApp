@@ -47,10 +47,10 @@ export default function ChpDashboard() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-1">
         {(data?.stats || [{ key: 'reports' }, { key: 'followups' }, { key: 'referrals' }, { key: 'onTime' }]).map((s) => (
-          <StatCard key={s.key} label={s.label || ' '} value={data ? s.value : null} unit={s.unit} change={s.change} icon={STAT_ICONS[s.key]} hint={s.hint} />
+          <StatCard key={s.key} label={s.label || ' '} value={data ? s.value : null} unit={s.unit} icon={STAT_ICONS[s.key]} hint={s.hint} />
         ))}
       </div>
-      <p className="text-xs text-gray-400 mb-5">{data?.period || 'This month'}</p>
+      <p className="text-xs text-gray-400 mb-5">{(data?.period || 'This month').replace(/,?\s*compared with.*$/i, '')}</p>
 
       <section className={`${CARD} p-5 mb-5`}>
         <h2 className="text-sm font-semibold text-gray-900 mb-3">Quick actions</h2>

@@ -25,15 +25,15 @@ export function PageTitle({ title, subtitle, action }) {
 export function StatCard({ label, value, unit, change, icon: Icon, hint }) {
   const shown = value == null ? '—' : `${value}${unit && value != null ? unit : ''}`
   return (
-    <div className="rounded-xl bg-red-600 p-4 flex items-center gap-3 text-white" title={hint}>
+    <div className="relative rounded-xl bg-red-600 p-4 text-center text-white" title={hint}>
       {Icon && (
-        <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-          <Icon className="w-4 h-4 text-white" aria-hidden="true" />
+        <span className="absolute right-3 top-3 w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
+          <Icon className="w-3.5 h-3.5 text-white" aria-hidden="true" />
         </span>
       )}
-      <div className="min-w-0">
+      <div className="min-w-0 px-7">
         <p className="text-xs font-semibold text-white">{label}</p>
-        <p className="flex items-baseline gap-2">
+        <p className="flex items-baseline justify-center gap-2">
           <span className="text-xl font-bold text-white tabular-nums">{shown}</span>
           {change != null && (
             <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-white">

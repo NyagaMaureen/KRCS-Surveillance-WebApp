@@ -60,7 +60,7 @@ export function FeedbackList({ onCounts }) {
           const on = status === s
           return (
             <button key={s || 'all'} type="button" aria-pressed={on} onClick={() => setStatus(s)}
-              className={`rounded-xl p-4 text-left text-white ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
+              className={`rounded-xl p-4 text-center text-white ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
               <span className="block text-[11px] font-bold uppercase tracking-wide">{s || 'All feedback'}</span>
               <span className="mt-1 block text-2xl font-bold tabular-nums">{n ?? '–'}</span>
             </button>

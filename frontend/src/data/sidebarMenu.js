@@ -11,7 +11,7 @@ export const SIDEBAR_MENU = [
     { label: 'Review Queue', icon: 'BellRing', page: 'alerts-signals', requiresCapability: 'view_review_queue' },
   ]},
   { section: 'DATA AND INSIGHTS', items: [
-    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },
+    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: ['use_knowledge_base', 'manage_knowledge_base'] },
     { label: 'Monitoring Reports', icon: 'FileBarChart', page: 'monitoring-reports', requiresCapability: 'view_monitoring_reports' },
     { label: 'Data Quality', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
   ]},
@@ -57,7 +57,7 @@ export const CHP_MENU = [
     { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals', requiresCapability: 'receive_tasks' },
   ]},
   { section: 'KNOWLEDGE ASSISTANT', items: [
-    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },
+    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: ['use_knowledge_base', 'manage_knowledge_base'] },
   ]},
   { section: 'SUPPORT', items: [
     { label: 'Feedback', icon: 'MessageSquareWarning', page: 'feedback', requiresCapability: null },

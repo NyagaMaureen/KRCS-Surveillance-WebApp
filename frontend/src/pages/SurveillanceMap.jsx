@@ -200,7 +200,7 @@ export default function SurveillanceMap() {
   }
 
   const { stats } = data
-  const selectCls = 'appearance-none bg-gray-50 border border-gray-100 rounded-lg pl-10 pr-9 py-2.5 text-sm font-medium text-gray-900 min-w-[150px] focus:outline-none'
+  const selectCls = 'appearance-none w-full sm:w-auto bg-gray-50 border border-gray-100 rounded-lg pl-10 pr-9 py-2.5 text-sm font-medium text-gray-900 min-w-0 sm:min-w-[150px] focus:outline-none'
   const cardBtn = 'text-left rounded-2xl focus:outline-none focus:ring-2 focus:ring-red-100 hover:shadow-sm transition-shadow'
 
   return (
@@ -228,7 +228,7 @@ export default function SurveillanceMap() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <button type="button" className={cardBtn} onClick={() => applyCard('open')}>
           <StatCard icon={MapPin} label="Open events" value={stats.open} />
         </button>
@@ -255,7 +255,7 @@ export default function SurveillanceMap() {
           />
         </div>
 
-        <div className="relative">
+        <div className="relative basis-[calc(50%-0.375rem)] sm:basis-auto">
           <select value={diseaseFilter} onChange={(e) => setDiseaseFilter(e.target.value)} className={selectCls}>
             <option value="">Disease Type</option>
             {diseaseOptions.filter((d) => d.active).map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
@@ -263,7 +263,7 @@ export default function SurveillanceMap() {
           <Filter className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
-        <div className="relative">
+        <div className="relative basis-[calc(50%-0.375rem)] sm:basis-auto">
           <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} className={selectCls}>
             <option value="">Severity Level</option>
             {SEVERITIES.map((s) => <option key={s} value={s}>{cap(s)}</option>)}
@@ -271,14 +271,14 @@ export default function SurveillanceMap() {
           <Filter className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
-        <div className="relative">
+        <div className="relative basis-[calc(50%-0.375rem)] sm:basis-auto">
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setWaitingOnly(false) }} className={selectCls} aria-label="Status">
             {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <Filter className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
-        <div className="relative">
+        <div className="relative basis-[calc(50%-0.375rem)] sm:basis-auto">
           <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={selectCls} aria-label="Period">
             {PERIOD_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
@@ -299,7 +299,7 @@ export default function SurveillanceMap() {
       <div className="flex flex-col lg:flex-row gap-4">
         <div
           ref={mapBoxRef}
-          className="bg-white rounded-2xl border border-gray-100 overflow-hidden relative flex-1 min-w-0 h-[420px] lg:h-[600px]"
+          className="bg-white rounded-2xl border border-gray-100 overflow-hidden relative w-full min-w-0 shrink-0 h-[60vh] min-h-[320px] max-h-[520px] lg:w-auto lg:flex-1 lg:shrink lg:h-[600px] lg:max-h-none"
         >
           <div className="absolute inset-0">
             <MapView events={mapEvents} hoveredId={hoveredId} focus={focus} onToast={showToast} />

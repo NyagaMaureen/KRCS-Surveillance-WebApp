@@ -81,6 +81,7 @@ DEFAULT_RERANKER = "jinaai/jina-reranker-v2-base-multilingual"
 DEFAULT_LLM = "qwen3:4b"
 DENSE, SPARSE = "dense", "bm25"   # named vectors in the hybrid collection
 CONTEXT_PASSAGES = 5              # passages given to the LLM
+CLAUDE_PASSAGES = 8               # Claude reads more and keeps only the relevant ones
 NOT_FOUND = {
 	"English": "I couldn't find this in the approved KRCS documents. Please check with your supervisor or the relevant guideline.",
 	"Kiswahili": "Sikupata jibu la swali hili katika nyaraka zilizoidhinishwa za KRCS. Tafadhali wasiliana na msimamizi wako au mwongozo husika.",
@@ -1120,14 +1121,19 @@ def search_service_status():
 		"models_match": info.get("models") == _search_models()}
 
 
-def _retrieve(query, ctx, category=None, disease=None, language=None, limit=CONTEXT_PASSAGES):
+def _retrieve(query, ctx, category=None, disease=None, language=None, limit=CONTEXT_PASSAGES, expanded=None):
 	"""Best passages from the search service, which applies the filter built here from the asker's access.
+	expanded: what the question is about in search words (Claude's reading of it, kb_claude.understand), if any.
 	Returns (detected_disease, [(rank_score, point)] best first, whether the re-ranker scored them)."""
-	detected = _detect_disease(query)
+	detected = _detect_disease(query) or (_detect_disease(expanded) if expanded else None)
 	flt = _filter(ctx, category, disease)
+	if expanded:
+		expanded = f"{query} ({expanded})"
+	elif detected:
+		expanded = f"{query} ({detected['name']})"   # e.g. "kipindupindu" -> cholera
 	reply = _search_service({
 		"query": query,
-		"expanded_query": f"{query} ({detected['name']})" if detected else query,  # e.g. "kipindupindu" -> cholera
+		"expanded_query": expanded or query,
 		"collection": _collection(),
 		"filter": flt.model_dump(mode="json", exclude_none=True) if flt else None,
 		"language": language,
@@ -1229,8 +1235,12 @@ SYSTEM_PROMPT = """You are the KRCS surveillance assistant for Kenya Red Cross s
 Answer the question using ONLY the numbered sources below. They are approved KRCS documents.
 
 Rules:
-- Write one clear, direct answer, like an experienced public health officer. Start with the answer itself.
-- Use short paragraphs or a short list when there are steps, symptoms or criteria.
+- First work out what the person needs (for example: what to do now about a case they are reporting). Answer that,
+  for their level (community or facility) when you can tell it.
+- Use only the sources that are about the question. Ignore sources about other diseases or situations.
+- Write one clear, direct answer, like an experienced public health officer. Start with a one-sentence answer, then
+  the steps or details as a short list. Use a few short bold labels (e.g. **What to do now**) only when they help.
+- Keep it short: what the person needs to act, not everything the sources say.
 - After each fact, cite its source number in square brackets, e.g. [1] or [2][3].
 - Use only what the sources say. Do not add facts, doses, numbers or advice that are not in them.
 - If the sources do not answer the question, reply exactly: NOT_IN_SOURCES
@@ -1344,8 +1354,14 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 	# short follow-ups ("what about children?") are searched together with the previous question
 	last_user = next((m["content"] for m in reversed(hist) if m["role"] == "user"), "")
 	search_q = f"{last_user} {query}" if last_user and len(query.split()) <= 6 else query
+	# with Claude: it reads the question first (what the person needs, which disease, which level), the search uses
+	# that, and it writes the answer from the passages that are relevant (docs first, the web only if they do not answer)
+	use_claude = kb_claude.enabled()
+	claude_writes = use_claude and mode != "verbatim" and not ctx.get("public_only") and summary_allowed(ctx)
+	about = kb_claude.understand(query, hist) if claude_writes else None
 	try:
-		detected, ranked, reranked = _retrieve(search_q, ctx, category, disease, language, CONTEXT_PASSAGES)
+		detected, ranked, reranked = _retrieve(search_q, ctx, category, disease, language,
+			CLAUDE_PASSAGES if claude_writes else CONTEXT_PASSAGES, expanded=about)
 	except KBUnavailable as e:
 		audit.failed(e)
 		raise
@@ -1376,8 +1392,9 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 	level = kb_grounding.level_of(query, frappe.get_roles())
 
 	def no_match(trace, reason):
-		# approved KRCS documents did not answer: try the trusted external sources (kb_trusted), clearly labelled
-		ext = kb_trusted.lookup(query, language, detected, level)
+		# approved KRCS documents did not answer: try the trusted external sources this person may use (kb_trusted),
+		# clearly labelled: the trusted websites first, PubMed last
+		ext = kb_trusted.lookup(query, language, detected, level, ctx=ctx)
 		if ext:
 			return finish(ext["answer"], "trusted_source", ext["sources"], [s["n"] for s in ext["sources"]], trace,
 				reason=f"{reason}|trusted:{','.join(ext['names'])}", outcome="Escalated", escalate=True)
@@ -1397,8 +1414,9 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 	floor_ok = floor_ok or _covers_disease(detected, ranked)
 	if floor_ok:
 		ranked, dense = _focus(ranked, dense, detected, ctx)
-	if not floor_ok:
+	if not floor_ok and not claude_writes:
 		return no_match(trace, "below_score_floor")
+	weak = not floor_ok   # Claude still reads these first; only if they do not answer does it go to the web
 
 	# KB-13: conflicting documents: higher authority wins; equal authority escalates
 	scored = list(zip(ranked, dense))
@@ -1429,7 +1447,6 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 
 	# who writes answers: Claude when an API key is set, otherwise the local model when switched on, otherwise nobody
 	# (the approved text is quoted as it is)
-	use_claude = kb_claude.enabled()
 	if mode == "verbatim" or not summary_allowed(ctx) or not (use_claude or cint(_conf("kb_generation_enabled", 1))):
 		return give_verbatim()
 
@@ -1457,17 +1474,36 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 	except Exception as e:
 		frappe.log_error(title="Knowledge Base: answer model unavailable, returned passages only",
 			message=f"{'Claude' if use_claude else 'local model'}: {e}"[:300])
+		if weak:   # the passages were not a clear match: do not show them as the answer
+			return no_match(trace, "llm_unavailable")
 		return give_verbatim("llm_unavailable", error=f"LLM: {e}"[:300])
 	if "NOT_IN_SOURCES" in raw:
 		return no_match(trace, "model_not_in_sources")
 	# the model numbered the passages it was given 1..k; map back to the source numbers the user sees
-	answer = re.sub(r"\[(\d+)\]", lambda m: f"[{renumber.get(int(m.group(1)), 0)}]", raw)
+	renum = lambda text: re.sub(r"\[(\d+)\]", lambda m: f"[{renumber.get(int(m.group(1)), 0)}]", text)   # noqa: E731
+	answer = renum(raw)
 	problems = kb_grounding.check(answer, sources)
+	if problems and use_claude:
+		# one more try: Claude is told exactly which sentences failed the check
+		try:
+			raw = kb_claude.fix_answer(system, messages[1:], raw, problems).strip()
+			if "NOT_IN_SOURCES" in raw:
+				return no_match(trace, "model_not_in_sources")
+			answer = renum(raw)
+			problems = kb_grounding.check(answer, sources)
+		except Exception as e:
+			frappe.log_error(title="Knowledge Base: Claude retry failed", message=str(e)[:300])
+	cited = sorted({int(n) for n in re.findall(r"\[(\d+)\]", answer)} & {s["n"] for s in sources})
 	if problems:
-		return give_verbatim("grounding_failed", error=json.dumps(problems[:5])[:500])
-	used = sorted({int(n) for n in re.findall(r"\[(\d+)\]", answer)})
-	answer = kb_grounding.label_translation(answer, language, [s for s in sources if s["n"] in used])
-	return finish(answer, "summary", sources, used, trace, **extra)
+		if weak or not cited:
+			return no_match(trace, "grounding_failed")
+		# only the passages Claude found relevant, word for word; never the unrelated ones
+		answer, used = kb_grounding.verbatim([s for s in sources if s["n"] in cited], language)
+		return finish(answer, "verbatim", [s for s in sources if s["n"] in used], used, trace, reason="grounding_failed",
+			error=json.dumps(problems[:5])[:500])
+	answer = kb_grounding.label_translation(answer, language, [s for s in sources if s["n"] in cited])
+	# only the sources the answer uses are returned: the user is never shown unrelated passages
+	return finish(answer, "summary", [s for s in sources if s["n"] in cited], cited, trace, **extra)
 
 
 def summary_allowed(ctx):
@@ -1478,6 +1514,8 @@ def summary_allowed(ctx):
 	configured = kb_access._split(frappe.conf.get("kb_summary_roles"))
 	if configured:
 		return ctx.get("roles") is None or bool(set(configured) & set(ctx.get("roles") or []))
+	if kb_claude.enabled():
+		return True   # KRCS 17 Nov 2026: with Claude, every staff member gets a written answer (checked, cited)
 	level = ctx.get("max_level")
 	return level is None or level >= kb_access.AUDIENCE_CLASSES["Professional"]
 

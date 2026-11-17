@@ -106,7 +106,7 @@ function duration(ms) {
 // red card like Signals Captured; note explains the number in plain words, warn when a target is missed
 function StatCard({ label, value, note, warn }) {
   return (
-    <div className="rounded-xl bg-red-600 p-4 text-white">
+    <div className="rounded-xl bg-red-600 p-4 text-center text-white">
       <p className="text-[11px] font-bold uppercase tracking-wide">{label}</p>
       <p className="mt-1 text-2xl font-bold tabular-nums">{value ?? '—'}</p>
       {note && <p className="mt-0.5 text-xs">{note}</p>}

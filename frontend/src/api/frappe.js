@@ -263,6 +263,7 @@ export async function createUser(userData) {
     assigned_region: userData.assigned_region || '',
     assigned_sub_county: userData.assigned_sub_county || '',
     assigned_facility: userData.assigned_facility || '',
+    health_units: (userData.health_units || []).map((u) => ({ health_unit: u })),
     mobile_no: (userData.mobile_no || '').trim(),
     account_status: userData.account_status || 'Active',
 
@@ -334,6 +335,7 @@ export async function updateUser(name, userData) {
     assigned_region: userData.assigned_region || '',
     assigned_sub_county: userData.assigned_sub_county || '',
     assigned_facility: userData.assigned_facility || '',
+    health_units: (userData.health_units || []).map((u) => ({ health_unit: u })),
     mobile_no: (userData.mobile_no || '').trim(),
     account_status: userData.account_status || 'Active',
 
@@ -371,6 +373,24 @@ export async function deleteDoc(doctype, name) {
 
 export async function deleteUser(name) {
   return deleteDoc('User', name)
+}
+
+// Community Health Units (surveillance.health_units): a CHP belongs to one, a CHA heads one or more
+export async function getHealthUnits({ subCounty, activeOnly } = {}) {
+  const params = new URLSearchParams()
+  if (subCounty) params.set('sub_county', subCounty)
+  if (activeOnly) params.set('active_only', '1')
+  return (await callMethod(`/api/method/surveillance.health_units.get_units?${params}`)) || []
+}
+
+export async function saveHealthUnit({ id, name, subCounty, active }) {
+  return callMethodPost('/api/method/surveillance.health_units.save_unit', {
+    name: id || null, health_unit_name: name, sub_county: subCounty, is_active: active ? 1 : 0,
+  })
+}
+
+export async function getUserHealthUnits() {
+  return (await callMethod('/api/method/surveillance.health_units.get_user_units')) || {}
 }
 
 export async function getUsers(opts = {}) {
@@ -796,8 +816,10 @@ export async function createReport(fields) {
   return data.message
 }
 
+// Signals Captured Update: only changed fields are saved; each change is kept in the report's Update history
+// (surveillance.reports.update_report). Returns { report, changed: [{ field, from, to }] }.
 export async function updateReport(name, fields) {
-  return updateDoc('Case Report', name, fields)
+  return callMethodPost('/api/method/surveillance.reports.update_report', { report: name, changes: JSON.stringify(fields) })
 }
 
 export async function deleteReport(name) {
@@ -991,7 +1013,7 @@ export const deleteAssistantChat = (id) => callMethodPost('/api/method/surveilla
 export const getTrustedSources = () => callMethod('/api/method/surveillance.kb_trusted.list_sources')
 export const saveTrustedSource = (source) => callMethodPost('/api/method/surveillance.kb_trusted.save_source', {
   name: source.name || null, source_name: source.sourceName, website: source.website, kind: source.kind,
-  enabled: source.enabled ? 1 : 0, notes: source.notes || '',
+  enabled: source.enabled ? 1 : 0, notes: source.notes || '', allowed_roles: JSON.stringify(source.allowedRoles || []),
 })
 export const deleteTrustedSource = (name) => callMethodPost('/api/method/surveillance.kb_trusted.delete_source', { name })
 
@@ -1433,5 +1455,26 @@ export async function downloadMonitoringExport(report, format, filters, table) {
   document.body.appendChild(link)
   link.click()
   link.remove()
+  URL.revokeObjectURL(url)
+}
+
+// Dashboard tab as Excel (surveillance.hq_dashboard.export_xlsx): sheets [{name, columns, rows}]
+export async function downloadDashboardExcel({ title, meta, sheets, filename }) {
+  const res = await fetch(`${BASE}/api/method/surveillance.hq_dashboard.export_xlsx`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken() },
+    body: JSON.stringify({ title, meta, sheets }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(extractErrorMessage(data))
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || 'dashboard.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
   URL.revokeObjectURL(url)
 }

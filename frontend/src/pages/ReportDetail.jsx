@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Trash2, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
+import { ArrowLeft, Pencil, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope, History } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getReport, updateReport, deleteDoc, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getReportCandidates, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
+import { getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getReportCandidates, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
 import { parseReason } from '../components/risk/reasonParts'
 import DiseaseChoices from '../components/risk/DiseaseChoices'
 import VoicePicked from '../components/report/VoicePicked'
@@ -91,9 +91,47 @@ function SupportingInfoItem({ item, onOpenImage, onRemove, picked, report, canAd
 
 const OPEN_EVENT = ['New', 'Verifying', 'Investigating', 'Confirmed', 'Escalated']
 
+// Every update made on Signals Captured: when, who, and each field from -> to (Case Report Change rows)
+function UpdateHistory({ changes }) {
+  const groups = useMemo(() => {
+    const out = []
+    for (const c of changes || []) {
+      const key = `${c.at}|${c.user}`
+      let g = out.find((x) => x.key === key)
+      if (!g) { g = { key, at: c.at, by: c.by_name || c.user, rows: [] }; out.push(g) }
+      g.rows.push(c)
+    }
+    return out.sort((a, b) => String(b.at).localeCompare(String(a.at)))
+  }, [changes])
+  if (!groups.length) return null
+  return (
+    <div className="pt-6 border-t border-gray-100 mb-8">
+      <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3"><History className="w-4 h-4 text-gray-500" aria-hidden="true" /> Update history</h3>
+      <ol className="space-y-3">
+        {groups.map((g) => (
+          <li key={g.key} className="rounded-lg border border-gray-100 bg-gray-50/60 px-4 py-3">
+            <p className="text-xs text-gray-500 mb-1.5">{formatDateTime(g.at)} · <span className="font-medium text-gray-700">{g.by}</span></p>
+            <ul className="space-y-1">
+              {g.rows.map((r, i) => (
+                <li key={i} className="text-sm text-gray-800">
+                  <span className="font-medium">{r.field_label}:</span>{' '}
+                  {r.new_value === 'removed'
+                    ? <><span className="line-through text-gray-500">{r.old_value}</span> removed</>
+                    : r.old_value === '—' && String(r.new_value || '').startsWith('added ')
+                      ? <>{r.new_value}</>
+                      : <><span className="text-gray-500">{r.old_value}</span> <span aria-hidden="true">→</span><span className="sr-only">changed to</span> <span className="font-medium">{r.new_value}</span></>}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 export default function ReportDetail() {
   const { id } = useParams()
-  const navigate = useNavigate()
 
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -103,8 +141,7 @@ export default function ReportDetail() {
   const [editAttachments, setEditAttachments] = useState([])
   const [actionError, setActionError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [changingDisease, setChangingDisease] = useState(false)
   const [lightboxImage, setLightboxImage] = useState(null)
   const [uploading, setUploading] = useState({})
   const [uploadErrors, setUploadErrors] = useState({})
@@ -117,7 +154,8 @@ export default function ReportDetail() {
   const [savingDisease, setSavingDisease] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '', error: false })
   const toastTimerRef = useRef(null)
-  const { has } = useCapabilities()
+  const { has, workspace } = useCapabilities()
+  const isChp = workspace === 'chp'   // CHPs see their report without the suspected disease (KRCS 17 Nov 2026)
   const [reporterRole, setReporterRole] = useState('')
   useEffect(() => {
     if (!report?.name) return
@@ -181,6 +219,7 @@ export default function ReportDetail() {
     try {
       const updated = await setSuspectedDisease(report.name, key)
       setReport((prev) => ({ ...prev, ...updated }))
+      setChangingDisease(false)
       showToast('Suspected disease updated')
     } catch (e) {
       showToast(e.message || 'Could not update suspected disease', true)
@@ -188,6 +227,9 @@ export default function ReportDetail() {
       setSavingDisease(false)
     }
   }
+
+  // an officer already chose the disease: show only that (the possible diseases open with "Change the disease")
+  const officerChose = report?.classified_by === 'Officer' && !!report?.suspected_disease
 
   const categoryOptions = useMemo(() => withCurrentValue(CATEGORIES, report?.category), [report])
   const attachments = report?.attachments || []
@@ -258,25 +300,14 @@ export default function ReportDetail() {
     }
     setSaving(true)
     try {
-      const updated = await updateReport(report.name, { ...editForm, attachments: editAttachments })
+      const { report: updated, changed } = await updateReport(report.name, { ...editForm, attachments: editAttachments })
       setReport({ ...report, ...updated })
       setMode('view')
+      showToast(changed.length ? `Updated: ${[...new Set(changed.map((c) => c.field))].join(', ')}` : 'Nothing was changed')
     } catch (e) {
       setActionError(e.message || 'Something went wrong saving the report.')
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function confirmDelete() {
-    setActionError('')
-    setDeleting(true)
-    try {
-      await deleteDoc('Case Report', report.name)
-      navigate('/reports')
-    } catch (e) {
-      setActionError(e.message || 'Something went wrong deleting the report.')
-      setDeleting(false)
     }
   }
 
@@ -341,20 +372,14 @@ export default function ReportDetail() {
                 <p className="text-sm text-gray-400">Submitted {formatDateTime(report.creation)} via {(report.channel || '—').toUpperCase()}</p>
               </div>
 
-              {mode === 'view' && (has('edit_reports') || has('delete_reports')) && (
+              {mode === 'view' && has('edit_reports') && (
                 <div className="flex gap-2">
-                  {has('edit_reports') && <button
+                  <button
                     onClick={startEdit}
                     className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-amber-100 transition-colors"
                   >
-                    <Pencil className="w-4 h-4" /> Edit
-                  </button>}
-                  {has('delete_reports') && <button
-                    onClick={() => setConfirmingDelete(true)}
-                    className="inline-flex items-center gap-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-red-100 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" /> Delete
-                  </button>}
+                    <Pencil className="w-4 h-4" /> Update
+                  </button>
                 </div>
               )}
             </div>
@@ -456,7 +481,7 @@ export default function ReportDetail() {
                   </div>
                   )}
 
-                  <div className="pt-6 border-t border-gray-100 mb-8">
+                  {!isChp && <div className="pt-6 border-t border-gray-100 mb-8">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <h3 className="text-sm font-bold text-gray-900">Suspected Disease</h3>
@@ -482,7 +507,19 @@ export default function ReportDetail() {
                           Open {cands.event.id} ({cands.event.status}) &rarr;
                         </Link>
                       </div>
+                    ) : officerChose && !changingDisease ? (
+                      has('verify_suspected_disease') ? (
+                        <button type="button" onClick={() => setChangingDisease(true)} className="mb-3 text-sm font-medium text-red-700 hover:underline">
+                          Change the disease
+                        </button>
+                      ) : null
                     ) : has('verify_suspected_disease') && cands ? (
+                      <>
+                      {changingDisease && (
+                        <button type="button" onClick={() => setChangingDisease(false)} className="mb-2 text-sm font-medium text-gray-500 hover:text-gray-900">
+                          Keep {diseaseName || report.suspected_disease}
+                        </button>
+                      )}
                       <DiseaseChoices
                         cands={cands}
                         current={report.classified_by === 'Officer' ? report.suspected_disease : null}
@@ -491,6 +528,7 @@ export default function ReportDetail() {
                         options={diseaseOptions}
                         hasCurrent={!!report.suspected_disease}
                       />
+                      </>
                     ) : null}
 
                     {report.classification_reason && (() => {
@@ -502,7 +540,7 @@ export default function ReportDetail() {
                           {byPerson ? (
                             <>
                               <p className="text-sm text-gray-700">{classificationLines.decision}</p>
-                              {rules && (
+                              {rules && changingDisease && (
                                 <p className="mt-1 text-xs text-gray-500">
                                   The case definition suggested: {rules.head.replace(/^Suspected\s+/i, '')}{rules.signs ? ` (${rules.signs})` : ''}
                                 </p>
@@ -526,7 +564,7 @@ export default function ReportDetail() {
                       )
                     })()}
 
-                    {alsoConsistentWith(report.also_consistent_with).length > 0 && (
+                    {!officerChose && alsoConsistentWith(report.also_consistent_with).length > 0 && (
                       <div>
                         <div className="text-xs font-medium text-gray-400 mb-1.5">Also consistent with</div>
                         <div className="flex flex-wrap gap-1.5">
@@ -536,12 +574,14 @@ export default function ReportDetail() {
                         </div>
                       </div>
                     )}
-                  </div>
+                  </div>}
 
                   <div className="pt-6 border-t border-gray-100 mb-8">
                     <div className="text-xs font-medium text-gray-400 mb-2">Additional Notes</div>
-                    <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-4 leading-relaxed">{report.additional_notes || 'No additional notes provided.'}</p>
+                    <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-4 leading-relaxed whitespace-pre-line">{report.additional_notes || 'No additional notes provided.'}</p>
                   </div>
+
+                  {!isChp && <UpdateHistory changes={report.changes} />}
 
                 </>
               ) : (
@@ -674,7 +714,7 @@ export default function ReportDetail() {
                   <div className="flex justify-end gap-3">
                     <button onClick={cancelEdit} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
                     <button onClick={saveEdit} disabled={saving} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors">
-                      {saving ? 'Saving...' : 'Save Changes'}
+                      {saving ? 'Saving...' : 'Save Update'}
                     </button>
                   </div>
                 </>
@@ -693,23 +733,6 @@ export default function ReportDetail() {
         </div>
       )}
 
-      {confirmingDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setConfirmingDelete(false) }}>
-          <div className="bg-white rounded-xl w-full max-w-md p-6">
-            <h3 className="font-bold text-gray-900 mb-2">Delete Report</h3>
-            <div className="bg-red-50 border border-red-100 rounded-lg p-4 mb-6">
-              <p className="text-sm text-gray-700">Are you sure you want to delete report <span className="font-semibold">{report?.name}</span>? This action cannot be undone.</p>
-            </div>
-            {actionError && <p className="text-red-700 text-sm mb-4">{actionError}</p>}
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setConfirmingDelete(false)} className="border border-gray-200 rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={confirmDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors">
-                {deleting ? 'Deleting...' : 'Delete Report'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </AppShell>
   )
 }

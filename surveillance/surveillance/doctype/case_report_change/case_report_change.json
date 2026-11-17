@@ -1,0 +1,62 @@
+{
+ "doctype": "DocType",
+ "module": "Surveillance",
+ "engine": "InnoDB",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "creation": "2026-11-17 14:30:00.000000",
+ "modified": "2026-11-17 14:30:00.000000",
+ "links": [],
+ "states": [],
+ "actions": [],
+ "name": "Case Report Change",
+ "istable": 1,
+ "editable_grid": 0,
+ "permissions": [],
+ "fields": [
+  {
+   "fieldname": "at",
+   "fieldtype": "Datetime",
+   "label": "At",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "Updated by",
+   "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "by_name",
+   "fieldtype": "Data",
+   "label": "Name"
+  },
+  {
+   "fieldname": "field_label",
+   "fieldtype": "Data",
+   "label": "Field",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "old_value",
+   "fieldtype": "Small Text",
+   "label": "Before",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "new_value",
+   "fieldtype": "Small Text",
+   "label": "After",
+   "in_list_view": 1
+  }
+ ],
+ "field_order": [
+  "at",
+  "user",
+  "by_name",
+  "field_label",
+  "old_value",
+  "new_value"
+ ]
+}

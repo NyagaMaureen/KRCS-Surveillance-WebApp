@@ -140,3 +140,91 @@ def get_reporter_role(report):
 	if mine:
 		return {"role": mine[0]}
 	return {"role": "Administrator" if "System Manager" in roles else None}
+
+
+# ---------- Signals Captured: Update (KRCS 17 Nov 2026) ----------
+# Officers with Update Signals change a report here. Every change is kept on the report (Update history: what changed,
+# from what to what, by whom and when) and shows in the Audit Log. Reports are never deleted.
+EDITABLE = {"location_name": "Location", "category": "Category", "onset_date": "Onset Date", "region": "Region",
+	"sub_county": "Sub-county", "latitude": "Latitude", "longitude": "Longitude", "additional_notes": "Additional Notes"}
+
+
+def _norm(field, value):
+	if value in (None, ""):
+		return None
+	if field == "onset_date":
+		return str(getdate(value))
+	if field in ("latitude", "longitude"):
+		try:
+			return round(float(value), 6)
+		except (TypeError, ValueError):
+			return None
+	return str(value).strip() or None
+
+
+def _shown(field, value):
+	if value is None:
+		return "—"
+	if field == "region":
+		return frappe.db.get_value("Region", value, "region_name") or value
+	if field == "sub_county":
+		return frappe.db.get_value("Sub County", value, "sub_county_name") or value
+	if field == "onset_date":
+		return frappe.utils.formatdate(value, "d MMM yyyy")
+	return str(value)
+
+
+def _attachment_label(row):
+	kind = row.get("attachment_type") or "Attachment"
+	if kind == "Text Note":
+		text = (row.get("text_content") or "").strip()
+		return f'Text note "{text[:60]}{"…" if len(text) > 60 else ""}"'
+	return f"{kind} {(row.get('file') or '').rsplit('/', 1)[-1]}".strip()
+
+
+@frappe.whitelist(methods=["POST"])
+def update_report(report, changes=None):
+	"""Update a report from Signals Captured. changes: the edited fields (EDITABLE) and optionally attachments (the full
+	list after editing: rows with a name are kept, rows without one are added). Returns the report and what changed."""
+	from surveillance.capabilities import require_capability
+	require_capability("edit_reports")
+	changes = frappe.parse_json(changes) if isinstance(changes, str) else (changes or {})
+	doc = frappe.get_doc("Case Report", report)
+	if not frappe.has_permission("Case Report", "read", doc=doc):
+		frappe.throw(_("This report is outside your area."), frappe.PermissionError)
+
+	diffs = []
+	for field, label in EDITABLE.items():
+		if field not in changes:
+			continue
+		old, new = _norm(field, doc.get(field)), _norm(field, changes.get(field))
+		if old == new:
+			continue
+		diffs.append((label, _shown(field, old), _shown(field, new)))
+		doc.set(field, new)
+	if diffs and any(d[0] == "Sub-county" for d in diffs) and not any(d[0] == "Region" for d in diffs) and doc.sub_county:
+		doc.region = frappe.db.get_value("Sub County", doc.sub_county, "region") or doc.region
+
+	if "attachments" in changes:
+		wanted = changes.get("attachments") or []
+		keep = {a.get("name") for a in wanted if a.get("name")}
+		removed = [r for r in doc.attachments if r.name not in keep]
+		for r in removed:
+			doc.remove(r)
+			diffs.append(("Attachments", _attachment_label(r), "removed"))
+		for a in wanted:
+			if a.get("name") or not (a.get("file") or (a.get("text_content") or "").strip()):
+				continue
+			row = doc.append("attachments", {"attachment_type": a.get("attachment_type") or "Attachment",
+				"file": a.get("file") or None, "text_content": (a.get("text_content") or "").strip() or None})
+			diffs.append(("Attachments", "—", f"added {_attachment_label(row)}"))
+
+	if not diffs:
+		return {"report": doc.as_dict(), "changed": []}
+	at, user = now_datetime(), frappe.session.user
+	for label, old, new in diffs:
+		doc.append("changes", {"at": at, "user": user, "by_name": get_fullname(user), "field_label": label,
+			"old_value": old, "new_value": new})
+	doc.save(ignore_permissions=True)   # Update Signals and the area check above are the permission
+	return {"report": frappe.get_doc("Case Report", doc.name).as_dict(),
+		"changed": [{"field": l, "from": o, "to": n} for l, o, n in diffs]}

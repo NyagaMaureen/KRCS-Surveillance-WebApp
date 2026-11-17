@@ -88,7 +88,7 @@ export default function MyTasks() {
             const on = when === s.key
             return (
               <button key={s.key} aria-pressed={on} onClick={() => set({ when: on ? '' : s.key, status: '' })}
-                className={`rounded-xl p-4 text-left text-white ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
+                className={`rounded-xl p-4 text-center text-white ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
                 <span className="block text-[11px] font-bold uppercase tracking-wide">{s.label}</span>
                 <span className="mt-1 block text-2xl font-bold tabular-nums">{loading && !data ? '–' : s.value}</span>
               </button>

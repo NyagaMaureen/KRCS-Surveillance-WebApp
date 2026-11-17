@@ -28,3 +28,6 @@ surveillance.patches.fhw_epi_trends_access
 surveillance.patches.cha_workspace_setup
 surveillance.patches.map_permission_defaults
 surveillance.patches.monitoring_reports_setup
+surveillance.patches.health_units_setup
+surveillance.patches.signals_update_no_delete
+surveillance.patches.whatsapp_notes_message_only

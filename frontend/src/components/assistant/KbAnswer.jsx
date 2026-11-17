@@ -46,6 +46,7 @@ export default function KbAnswer({ result, onFeedback }) {
   const [copied, setCopied] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const [openN, setOpenN] = useState(null)
+  const [showSources, setShowSources] = useState(false)   // sources are folded away until the user asks
   const [feedback, setFeedback] = useState(result?.feedback || null)
   const [feedbackError, setFeedbackError] = useState(false)
 
@@ -60,12 +61,13 @@ export default function KbAnswer({ result, onFeedback }) {
   const externalNames = [...new Set(sources.map((s) => String(s.section || '').split(' · ')[0]).filter(Boolean))]
   const BADGE = {
     verbatim: 'KRCS approved guidance',
-    summary: 'KRCS approved guidance · summary checked against the documents',
+    summary: 'From KRCS approved guidance',
     public: 'KRCS approved guidance',
     trusted_source: `${externalNames.length && externalNames.every((n) => n === 'PubMed') ? 'Published research' : 'Trusted source'} · ${externalNames.join(', ') || 'external'}`,
   }
 
   function jump(n) {
+    setShowSources(true)
     setOpenN(n)
     if (!usedSet.has(n)) setShowAll(true)
   }
@@ -166,8 +168,15 @@ export default function KbAnswer({ result, onFeedback }) {
         <ReactMarkdown components={components}>{answer}</ReactMarkdown>
       </div>
 
-      {(visibleSources.length > 0 || (!notFound && unused.length > 0)) && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+      {!notFound && sources.length > 0 && (
+        <button type="button" onClick={() => { setShowSources((v) => !v); setOpenN(null) }} aria-expanded={showSources}
+          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900">
+          <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+          {showSources ? 'Hide sources' : `Show sources (${used.length || sources.length})`}
+        </button>
+      )}
+      {showSources && (visibleSources.length > 0 || (!notFound && unused.length > 0)) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           {visibleSources.map((s) => (
             <button
               key={s.n}
@@ -192,7 +201,7 @@ export default function KbAnswer({ result, onFeedback }) {
         </div>
       )}
 
-      {openSource && (
+      {showSources && openSource && (
         <div className="mt-2 rounded-lg bg-gray-50 p-3 text-sm leading-normal text-gray-600">
           {detail && <p className="mb-1.5 text-xs text-gray-500">{detail}</p>}
           <p className="whitespace-pre-wrap">{openSource.text}</p>

@@ -51,21 +51,21 @@ SEEN_AGAIN_MINUTES = 10  # the same report with the same filters opened again wi
 FILTERS_ALL = ["region", "sub_county", "period", "disease", "channel"]
 REPORTS = [
 	{"key": "R34", "title": "Surveillance Signal Summary", "filters": FILTERS_ALL,
-	 "description": "Every signal received in the period: field reports, CBS and EMR, by week, channel, disease and sub-county."},
+	 "description": "How many signals came in, for which diseases, from where and through which channel."},
 	{"key": "R35", "title": "Alert and Triage", "filters": ["region", "sub_county", "period", "disease"],
-	 "description": "Events created in the period: priority, risk score, and how fast verification started against the target."},
+	 "description": "How many events there were, how urgent they were, and how fast officers started checking them."},
 	{"key": "R36", "title": "Investigation and Response", "filters": ["region", "sub_county", "period", "disease"],
-	 "description": "What happened to the events of the period: decisions, closures and the field tasks done for them."},
+	 "description": "What was decided for each event, which are closed, and the field tasks done for them."},
 	{"key": "R37", "title": "Data Quality", "filters": ["region", "sub_county", "period"],
-	 "description": "The Data Quality checks for reports and CBS signals of the period, and MOH 505 reporting completeness."},
+	 "description": "Reports with a missing place, sent late or not matched to a disease, and facilities missing MOH 505 weeks."},
 	{"key": "R38", "title": "AI Performance", "filters": ["region", "sub_county", "period", "disease"],
-	 "description": "How often each AI part agreed with what people decided in the end, and the model measures from MLflow."},
+	 "description": "How often the AI's suggestions matched what officers decided in the end."},
 	{"key": "R39", "title": "Operational KPI", "filters": ["region", "sub_county", "period", "channel"],
-	 "description": "The main performance measures for the period, one row per sub-county."},
+	 "description": "How fast reports are picked up and handled, sub-county by sub-county."},
 	{"key": "R40", "title": "Integration Health", "filters": ["period"], "hq": True,
-	 "description": "Each outside system the platform depends on: when data last came in, and errors in the period."},
+	 "description": "Whether data from CBS, MOH 505, WhatsApp, phones and the AI server is coming in."},
 	{"key": "R40b", "title": "System Health", "filters": ["period"], "hq": True,
-	 "description": "Application errors, background jobs, sign-ins and phones with reports waiting to send, day by day."},
+	 "description": "Errors, failed background jobs, sign-ins and phones with reports waiting to send."},
 ]
 REPORT_MAP = {r["key"]: r for r in REPORTS}
 
@@ -120,6 +120,22 @@ def _weeks(f):
 def _week(d):
 	d = getdate(d)
 	return add_days(d, -d.weekday())
+
+
+def _period_weeks(f):
+	"""Whole weeks in the period: Last 4 weeks = 4 (it touches 5 calendar weeks)."""
+	return max(1, min(round(((f.to_d - f.from_d).days + 1) / 7), 52))
+
+
+def _moh_note(comp, weeks):
+	"""MOH 505 reports come in weekly per facility, and are counted over the latest weeks that were uploaded."""
+	if not comp.get("upTo"):
+		return "no MOH 505 files uploaded yet"
+	try:
+		up = f" up to {_wlabel(comp['upTo'])}"
+	except Exception:
+		up = ""
+	return f"of weekly facility reports, latest {weeks} weeks uploaded{up}"
 
 
 def _wlabel(w):
@@ -371,7 +387,7 @@ def _r36(f):
 			"who it was assigned to and its outcome (choose Field tasks).",
 		],
 		# second table: every field task of these events, what it was and who had it
-		"tables": [{"key": "tasks", "title": "Field tasks", "columns": [("id", "Task"), ("event", "Event"), ("type", "Type"),
+		"tables": [{"key": "tasks", "title": "Field tasks", "columns": [("event", "Event"), ("type", "Type"),
 			("task", "What to do"), ("place", "Place"), ("assignedTo", "Assigned to"), ("assignedBy", "Assigned by"),
 			("assignedOn", "Assigned on"), ("due", "Due"), ("status", "Status"), ("completedOn", "Completed on"),
 			("overdue", "Overdue"), ("outcome", "Outcome")],
@@ -442,7 +458,7 @@ def _r37(f):
 		if not s.disease or s.disease == "unclassified-illness":
 			add("unclassified", f"cbs-{s.ref}", f"CBS {s.ref}", "No disease matched.", "CBS", s.signal_date, s.sub_county or "")
 
-	weeks = max(1, min(len(f.weeks), 52))
+	weeks = _period_weeks(f)
 	comp = _completeness(weeks, _scope_subs(f))
 	for c in comp.get("facilities") or []:
 		if c["pct"] < 100:
@@ -458,8 +474,8 @@ def _r37(f):
 			_card("location", "Missing place", kinds[DQ_LABELS["location"]]),
 			_card("late", "Sent late", kinds[DQ_LABELS["late"]], "more than a day after symptoms started"),
 			_card("duplicate", "Possible duplicates", kinds[DQ_LABELS["duplicate"]]),
-			_card("completeness", "MOH 505 completeness", "—" if comp.get("overall") is None else f"{comp['overall']}%",
-				f"last {weeks} weeks loaded" if comp.get("upTo") else "no MOH 505 weeks loaded"),
+			_card("completeness", "MOH 505 reports received", "—" if comp.get("overall") is None else f"{comp['overall']}%",
+				_moh_note(comp, weeks)),
 		],
 		"charts": [
 			_counter_chart("kinds", "Issues by kind", "hbar", kinds, keys=list(DQ_LABELS.values()), label="Issues"),
@@ -476,6 +492,10 @@ def _r37(f):
 # ---------- R38 AI Performance ----------
 
 SHOWN = "Shown to officer"
+AI_CARD_NOTE = {"top_suggestion": "First suggestion right", "in_suggestions": "Right disease in the list",
+	"risk_precision": "High-risk events that were real", "risk_recall": "Real events flagged high risk",
+	"voice": "Voice note details accepted", "wer": "Words heard correctly",
+	"answer_rate": "Questions answered", "helpful": "Answers rated helpful"}
 SOURCE_LABEL = {"Case definition": "Case definition", "Possible": "Possible (warning sign)", "Model": "AI model",
 	"Unlikely": "Listed as unlikely"}
 
@@ -546,41 +566,46 @@ def ai_measures(f, sugg=None, decided=None):
 	offered = sum(cint(v.offered) for v in voice)
 	accepted = sum(min(cint(v.accepted), cint(v.offered)) for v in voice)
 
-	wer = _latest_per_model(("wer", "word_error_rate"))
-	pct = lambda v: round(flt(v) * 100, 1) if flt(v) <= 1 else round(flt(v), 1)   # noqa: E731 - MLflow may send 0.12 or 12
-	wer_avg = round(sum(pct(m.value) for m in wer) / len(wer), 1) if wer else None
-	wer_based = (", ".join(f"{_stt_label(m.model)} {pct(m.value)}%" for m in wer) + f" (MLflow, {_dt(max(m.recorded_on for m in wer))})"
-		if wer else "Not sent by the AI server yet")
+	speech = _speech_correct()
+	speech_avg = round(sum(v for _l, v, _d in speech) / len(speech), 1) if speech else None
+	speech_based = ", ".join(f"{label} {v}%" for label, v, _d in speech) if speech else "Not sent by the AI server yet"
 	questions, rate, helpful, _asked = _chatbot(f, _diseases())
+	none = "No data yet"
 
 	return [
-		_measure("top_suggestion", "Disease suggestions", "First suggested disease matches the officer's final disease",
-			_pct(len(top), len(judged)), f"{len(judged)} reports" if judged else "No settled reports with suggestions yet",
-			"Officers see a list of possible diseases for each report: case definitions met, possible diseases (a warning sign "
-			"is there) and the AI model's suggestions, in that order. We save the list the officer first saw and compare the "
-			"first one with the disease the report ends up with, once an officer chose it or its event was confirmed or escalated."),
-		_measure("in_suggestions", "Disease suggestions", "Officer's final disease was one of the diseases suggested",
-			_pct(len(listed), len(judged)), f"{len(judged)} reports" if judged else "No settled reports with suggestions yet",
-			"Same reports: counts a match anywhere in the list shown (case definition, possible or AI model)."),
-		_measure("risk_precision", "Risk engine", "High-risk events that were confirmed or escalated (precision)", _pct(len(tp), len(high)),
-			f"{len(high)} high-risk events decided" if high else "No high-risk events decided in the period",
-			f"Events decided in the period with a risk score of {HIGH_RISK} or more: how many the officer confirmed or escalated."),
-		_measure("risk_recall", "Risk engine", "Confirmed or escalated events that were scored high risk (recall)", _pct(len(tp), len(positive)),
-			f"{len(positive)} confirmed or escalated" if positive else "No events confirmed or escalated in the period",
-			f"Events confirmed or escalated in the period: how many had a risk score of {HIGH_RISK} or more."),
-		_measure("voice", "Voice notes", "Details picked from voice notes that officers accepted", _pct(accepted, offered),
-			f"{offered} details offered on {len(voice)} reports" if offered else "No voice note details reviewed yet",
-			"When an officer checks a voice note against the report, we count the details offered and the ones they added."),
-		_measure("wer", "Speech to text", "Word error rate on test recordings (lower is better)", wer_avg, wer_based,
-			"The AI server tests each speech model in use (English, Kiswahili, mixed) on recordings with known text and sends the "
-			"result from MLflow. The value is the average of the latest result for each language; each one is listed under Based on."),
-		_measure("answer_rate", "KRCS Data Assistant", "Questions answered from approved content", rate,
-			f"{questions} questions" if questions else "No questions in the period",
-			"From the AI Assistant Query Log: questions answered from KRCS-approved documents.", target=75),
-		_measure("helpful", "KRCS Data Assistant", "Answers rated helpful by users", helpful,
-			"Of the answers users rated" if helpful is not None else "No ratings yet",
-			"Users can mark an answer helpful or not; this is the share marked helpful."),
+		_measure("top_suggestion", "Disease suggestions", "First suggestion was the right disease",
+			_pct(len(top), len(judged)), f"{len(judged)} reports" if judged else none,
+			"The first disease on the list the officer saw, against the disease the report ended up with."),
+		_measure("in_suggestions", "Disease suggestions", "Right disease was somewhere in the list",
+			_pct(len(listed), len(judged)), f"{len(judged)} reports" if judged else none,
+			"Case definitions, possible diseases and the AI model's suggestions, as shown to the officer."),
+		_measure("risk_precision", "Risk score", "High-risk events that turned out real", _pct(len(tp), len(high)),
+			f"{len(high)} high-risk events decided" if high else none,
+			f"Events with a risk score of {HIGH_RISK} or more that the officer confirmed or escalated."),
+		_measure("risk_recall", "Risk score", "Real events that were flagged high risk", _pct(len(tp), len(positive)),
+			f"{len(positive)} confirmed or escalated events" if positive else none,
+			f"Confirmed or escalated events that had a risk score of {HIGH_RISK} or more."),
+		_measure("voice", "Voice notes", "Details from voice notes that officers accepted", _pct(accepted, offered),
+			f"{offered} details on {len(voice)} reports" if offered else none,
+			"Symptoms, age and other details picked from voice notes, against what officers added to the report."),
+		_measure("wer", "Speech to text", "Words heard correctly", speech_avg, speech_based,
+			"Each speech model is tested on recordings where the right words are known (average of the languages)."),
+		_measure("answer_rate", "Data Assistant", "Questions answered from KRCS documents", rate,
+			f"{questions} questions" if questions else none,
+			"Questions answered from approved KRCS documents (target 75% or more).", target=75),
+		_measure("helpful", "Data Assistant", "Answers rated helpful", helpful,
+			"of the answers users rated" if helpful is not None else none,
+			"Users can mark an answer helpful or not."),
 	]
+
+
+def _speech_correct():
+	"""[(language, % of words heard correctly, test date)] from the latest word error rate of each speech model."""
+	out = []
+	for m in _latest_per_model(("wer", "word_error_rate")):
+		wer = flt(m.value) * 100 if flt(m.value) <= 1 else flt(m.value)   # MLflow may send 0.12 or 12
+		out.append((_stt_label(m.model), round(max(0, 100 - wer), 1), getdate(m.recorded_on).strftime("%-d %b")))
+	return out
 
 
 def _voice_reviews(f):
@@ -641,11 +666,7 @@ def _r38(f):
 	decided = [e for e in decided if e.decision]
 	high = lambda e: cint(e.risk_score) >= HIGH_RISK   # noqa: E731
 	pos = lambda e: e.decision in DECIDED_POSITIVE      # noqa: E731
-	metrics = frappe.get_all("AI Model Metric", fields=["model", "metric", "value", "model_version", "run_id", "dataset", "recorded_on"],
-		order_by="recorded_on desc", limit=200) if frappe.db.table_exists("AI Model Metric") else []
-	latest = {}
-	for m in metrics:
-		latest.setdefault((m.model, m.metric), m)
+	speech = _speech_correct()
 
 	def name(k):
 		return _disease_label(dis, k) if k else ""
@@ -653,8 +674,12 @@ def _r38(f):
 	def shown(s):
 		return "; ".join(f"{i + 1}. {name(k)} ({SOURCE_LABEL.get(s.sources.get(k), s.sources.get(k) or '')})" for i, k in enumerate(s.shownKeys))
 	return {
-		"cards": [_card(m["key"], f"{m['part']}: {m['measure']}", "—" if m["value"] is None else f"{m['value']}%", m["based"])
-			for m in measures],
+		"cards": [_card(m["key"], m["part"], "—" if m["value"] is None else f"{m['value']}%",
+			AI_CARD_NOTE.get(m["key"], m["measure"]).lower() if m["value"] is not None else "No data yet") for m in measures],
+		"extraCharts": [
+			_chart("speech", "Speech to text: words heard correctly, by language", "bar", [x[0] for x in speech],
+				[{"label": "% of words correct", "data": [x[1] for x in speech]}], "Latest test of each speech model"),
+		],
 		"measures": measures,
 		"charts": [
 			_chart("agree_week", "First suggestion matched the final disease, per week", "line", [_wlabel(w) for w in f.weeks],
@@ -668,8 +693,6 @@ def _r38(f):
 				[{"label": "Events", "data": [sum(1 for e in decided if high(e) and pos(e)), sum(1 for e in decided if high(e) and not pos(e)),
 					sum(1 for e in decided if not high(e) and pos(e)), sum(1 for e in decided if not high(e) and not pos(e))]}]),
 		],
-		"modelMetrics": [{"model": m.model, "metric": m.metric, "value": m.value, "version": m.model_version or "",
-			"run": m.run_id or "", "dataset": m.dataset or "", "recordedOn": _dt(m.recorded_on)} for m in latest.values()],
 		"notes": [
 			"Suggestions start being saved when this update is installed: reports opened by an officer before then are not counted.",
 			"A report counts once its disease is settled: an officer chose it on the report, or its event was confirmed or escalated.",
@@ -735,7 +758,7 @@ def _r39(f):
 		tf["region"] = f.region
 	tasks = [t for t in frappe.get_all("Event Task", filters=tf, fields=["sub_county", "status", "due_date", "completed_on"],
 		limit_page_length=0) if (t.sub_county or "").strip().lower() in scope]
-	comp = analytics._completeness(max(1, min(len(f.weeks), 52)), scope)
+	comp = analytics._completeness(_period_weeks(f), scope)
 	comp_by = defaultdict(list)
 	for c in comp.get("facilities") or []:
 		comp_by[(c["subCounty"] or "").strip().lower()].append(c)
@@ -776,8 +799,9 @@ def _r39(f):
 			_card("verified", "Verification started on time", show(k["verifiedInTarget"]),
 				f"{k['inTarget']} of {k['started']} events started; {k['events']} events in all"),
 			_card("tasks", "Field tasks done by the due date", show(k["tasksOnTime"]), f"{k['tasksOnTimeN']} of {k['tasksDue']} tasks due in the period"),
-			_card("moh505", "MOH 505 weeks reported", show(k["moh505"]),
-				f"{k['mohReported']} of {k['mohWeeks']} facility-weeks" if k["mohWeeks"] else "no MOH 505 weeks loaded"),
+			_card("moh505", "MOH 505 reports received", show(k["moh505"]),
+				f"{k['mohReported']} of {k['mohWeeks']} weekly facility reports, latest {_period_weeks(f)} weeks uploaded"
+				if k["mohWeeks"] else "no MOH 505 files uploaded yet"),
 		],
 		"charts": [
 			_chart("reports_week", "Field reports per week", "bar", [_wlabel(w) for w in f.weeks],
@@ -942,7 +966,8 @@ def _r40(f):
 def _r40b(f):
 	days = [add_days(f.from_d, i) for i in range((f.to_d - f.from_d).days + 1)]
 	between = ["between", [f.start, f.end]]
-	errors = frappe.get_all("Error Log", filters={"creation": between}, fields=["creation", "method"], limit_page_length=0)
+	errors = frappe.get_all("Error Log", filters={"creation": between}, fields=["name", "creation", "method", "error"],
+		order_by="creation desc", limit_page_length=0)
 	jobs = frappe.get_all("Scheduled Job Log", filters={"creation": between, "status": "Failed"},
 		fields=["creation", "scheduled_job_type"], limit_page_length=0)
 	logins = frappe.get_all("Activity Log", filters={"operation": "Login", "creation": between},
@@ -997,7 +1022,126 @@ def _r40b(f):
 			"failedLogins": bad_day.get(d, 0), "waiting": sync_day[d][0] if d in sync_day else "",
 			"syncFailed": sync_day[d][1] if d in sync_day else "", "longestWait": sync_day[d][2] if d in sync_day else ""}
 			for d in reversed(days)],
+		"tableTitle": "Day by day",
+		# second table: each application error, what it was
+		"tables": [{"key": "errors", "title": "Application errors", "columns": [("when", "When"), ("error", "Error"),
+			("message", "Message")],
+			"rows": [{"when": _dt(e.creation), "error": e.method or "Unknown", "message": _last_line(e.error)} for e in errors[:500]]}],
 	}
+
+
+def _last_line(trace):
+	"""The useful last line of a traceback, e.g. "TypeError: ... is not subscriptable"."""
+	lines = [x.strip() for x in (trace or "").strip().splitlines() if x.strip()]
+	return (lines[-1] if lines else "")[:300]
+
+
+# What each report shows (KRCS 17 Nov 2026: lighter reports). The builders work out more; these are kept.
+SIMPLE = {
+	"R34": {"cards": ["signals", "people", "grouped", "unmatched"], "charts": ["weeks", "diseases"],
+		"cols": ["id", "date", "channel", "disease", "subCounty", "status", "people"]},
+	"R35": {"cards": ["events", "priority", "in_target", "median"], "charts": ["severity", "median_week"],
+		"cols": ["id", "disease", "subCounty", "severity", "riskLevel", "status", "created", "hours", "inTarget"]},
+	"R36": {"cards": ["events", "decided", "closed", "overdue"], "charts": ["decisions", "tasks"], "cols": None},
+	"R37": {"cards": ["issues", "location", "late", "completeness"], "charts": ["kinds", "facilities"], "cols": None},
+	"R38": {"cards": ["top_suggestion", "risk_precision", "voice", "wer"], "charts": ["speech", "came_from"],
+		"cols": ["report", "date", "subCounty", "first", "final", "settledBy", "firstMatched", "inList"]},
+	"R39": {"cards": ["reports", "picked48", "verified", "tasks"], "charts": ["reports_week", "by_sub"], "cols": None},
+	"R40": {"cards": ["ok", "warning", "down"], "charts": [], "cols": ["integration", "status", "lastData", "note"]},
+	"R40b": {"cards": ["errors", "jobs", "failed_logins", "phones"], "charts": ["errors_day"], "cols": None},
+}
+
+
+def _top(chart):
+	"""(label, value) of the biggest bar in a one-series chart, or None."""
+	if not chart or not chart["series"]:
+		return None
+	pairs = [(label, v) for label, v in zip(chart["labels"], chart["series"][0]["data"]) if v]
+	return max(pairs, key=lambda x: x[1]) if pairs else None
+
+
+def _in_short(report, out, rows):
+	"""A few plain sentences for the top of the summary, written from the report's own numbers."""
+	c = {x["key"]: x for x in out.get("cards", [])}
+	ch = {x["key"]: x for x in out.get("charts", []) + out.get("extraCharts", [])}
+	v = lambda k: c[k]["value"] if k in c else None   # noqa: E731
+	s = []
+	if report == "R34":
+		s.append(f"{v('signals')} signals came in, with {v('people')} people affected.")
+		for key, text in [("diseases", "Most reported disease: {} ({})."), ("subcounties", "Most signals came from {} ({})."),
+				("channels", "Most signals came through {} ({})."), ("weeks", "Busiest week: {} ({} signals).")]:
+			top = _top(ch.get(key))
+			if top:
+				s.append(text.format(*top))
+		if v("unmatched"):
+			s.append(f"{v('unmatched')} signals did not match any disease and need an officer to look at them.")
+	elif report == "R35":
+		s.append(f"{v('events')} events were created; {v('priority')} of them critical or high priority.")
+		waiting = sum(1 for r in rows if r.get("hours") == "")
+		if v("in_target") not in (None, "—"):
+			s.append(f"Verification started on time for {v('in_target')} of the events where it started; "
+				f"half started within {v('median')}.")
+		if waiting:
+			s.append(f"{waiting} events have not started verification yet.")
+	elif report == "R36":
+		s.append(f"{v('decided')} of {v('events')} events have a decision ({c['decided']['note']}).")
+		s.append(f"{v('closed')} are closed" + (f"; half were closed within {c['days']['value']} days." if c.get("days", {}).get("value") not in (None, "—") else "."))
+		if v("tasks"):
+			s.append(f"{v('tasks')} field tasks were assigned and {c['tasks']['note']}" + (f"; {v('overdue')} are overdue." if v("overdue") else "."))
+	elif report == "R37":
+		s.append(f"{v('issues')} data issues were found in {v('checked')} field reports and the CBS signals.")
+		top = _top(ch.get("kinds"))
+		if top:
+			s.append(f"The most common issue: {top[0].lower()} ({top[1]}).")
+		if v("completeness") not in (None, "—"):
+			s.append(f"Facilities sent {v('completeness')} of their weekly MOH 505 reports ({c['completeness']['note'].replace('of weekly facility reports, ', '')}).")
+		low = ch.get("facilities")
+		if low and low["labels"]:
+			s.append(f"Lowest: {low['labels'][0]} ({low['series'][0]['data'][0]}% of weeks).")
+	elif report == "R38":
+		for m in out.get("measures", []):
+			if m["value"] is not None:
+				s.append(f"{m['part']}: {m['measure'].lower()} {m['value']}% ({m['based']}).")
+		missing = [f"{m['part'].lower()} ({m['measure'].lower()})" for m in out.get("measures", []) if m["value"] is None]
+		if missing:
+			s.append("No data yet for " + "; ".join(missing) + ".")
+	elif report == "R39":
+		s.append(f"{v('reports')} field reports were sent ({c['reports']['note']}).")
+		s.append(f"{v('picked48')} were picked up by an officer within 48 hours, and verification started on time for {v('verified')} of events.")
+		s.append(f"Field tasks done by the due date: {v('tasks')}.")
+		top = _top(ch.get("by_sub"))
+		if top:
+			s.append(f"Most reports came from {top[0]} ({top[1]}).")
+	elif report == "R40":
+		bad = [r for r in rows if r["status"] in ("Warning", "Down")]
+		if not bad:
+			s.append("All integrations are working normally.")
+		for r in bad:
+			s.append(f"{r['integration']}: {'down' if r['status'] == 'Down' else 'needs a look'}" + (f" ({r['note']})." if r["note"] else "."))
+		unset = [r["integration"] for r in rows if r["status"] == "Not set up"]
+		if unset:
+			s.append("Not set up yet: " + ", ".join(unset) + ".")
+	elif report == "R40b":
+		s.append(f"{v('errors')} application errors and {v('jobs')} failed background jobs in the period.")
+		top = _top(ch.get("top_errors"))
+		if top:
+			s.append(f"Most frequent error: {top[0]} ({top[1]} times).")
+		if v("failed_logins"):
+			s.append(f"{v('failed_logins')} failed sign-ins.")
+		if v("phones"):
+			s.append(f"{v('phones')} phones still have reports waiting to send ({c['phones']['note']}).")
+	return [x for x in s if x]
+
+
+def _simplify(report, out, rows):
+	keep = SIMPLE.get(report, {})
+	out["inShort"] = _in_short(report, out, rows)
+	out.pop("notes", None)   # explanations removed (KRCS 17 Nov 2026); the cards say what each number is
+	charts = {x["key"]: x for x in out.get("charts", []) + out.pop("extraCharts", [])}
+	cards = {x["key"]: x for x in out.get("cards", [])}
+	out["cards"] = [cards[k] for k in keep.get("cards", cards) if k in cards]
+	out["charts"] = [charts[k] for k in keep.get("charts", charts) if k in charts]
+	return keep.get("cols")
 
 
 BUILDERS = {"R34": _r34, "R35": _r35, "R36": _r36, "R37": _r37, "R38": _r38, "R39": _r39, "R40": _r40, "R40b": _r40b}
@@ -1009,8 +1153,9 @@ def _build(report, filters):
 	r = _require(report)
 	f = _filters(filters)
 	out = BUILDERS[report](f)
-	cols = [{"key": k, "label": label} for k, label in out.pop("columns")]
 	rows = out.pop("rows")
+	only = _simplify(report, out, rows)
+	cols = [{"key": k, "label": label} for k, label in out.pop("columns") if not only or k in only]
 	# the detail view: the main table, plus any other tables (R36 has Events and Field tasks)
 	tables = [{"key": "main", "title": out.pop("tableTitle", "Details"), "columns": cols, "rows": rows}]
 	for x in out.pop("tables", []):
@@ -1118,19 +1263,18 @@ def _xlsx(out):
 	ws["A1"].font = Font(bold=True, size=14)
 	for label, value in [("Area", out["scope"]), ("Period", out["period"]), ("Generated", f"{out['generatedAt']} by {out['generatedBy']}")]:
 		ws.append([label, value])
+	if out["summary"].get("inShort"):
+		ws.append([])
+		ws.append(["Key points"])
+		ws.cell(ws.max_row, 1).font = bold
+		for line in out["summary"]["inShort"]:
+			ws.append([line])
 	ws.append([])
 	ws.append(["Measure", "Value", "Note"])
 	for c in ws[ws.max_row]:
 		c.font, c.fill = white, red
 	for c in out["summary"].get("cards", []):
 		ws.append([c["label"], c["value"], c.get("note") or ""])
-	if out["summary"].get("measures"):
-		hw = wb.create_sheet("How measured")
-		hw.append(["AI part", "Measure", "Value (%)", "Based on", "How it is measured"])
-		for c in hw[1]:
-			c.font, c.fill = white, red
-		for m in out["summary"]["measures"]:
-			hw.append([m["part"], m["measure"], m["value"], m["based"], m["how"]])
 	for ch in out["summary"].get("charts", []):
 		ws.append([])
 		ws.append([ch["title"]])

@@ -56,7 +56,7 @@ export default function RolesPermissions({ roles = [], users = [], initialRole =
   const groups = useMemo(() => {
     const m = new Map()
     caps.forEach((c) => { if (!m.has(c.category)) m.set(c.category, []); m.get(c.category).push(c) })
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, list]) => ({ name, caps: list }))
+    return [...m.entries()].map(([name, list]) => ({ name, caps: list }))   // the server sends them in the menu's order
   }, [caps])
   const q = query.trim().toLowerCase()
   const current = q

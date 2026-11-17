@@ -74,16 +74,16 @@ export default function FhwDashboard() {
             {cards.map((c) => {
               const body = (
                 <>
-                  <div>
+                  <div className="w-full px-6 text-center">
                     <div className="text-xs font-semibold text-white">{c.label}</div>
                     <div className="text-2xl font-bold text-white">{c.value}</div>
                   </div>
-                  <div className="rounded-full bg-white/20 p-2"><c.icon className="h-4 w-4 text-white" aria-hidden="true" /></div>
+                  <div className="absolute right-3 top-3 rounded-full bg-white/20 p-1.5"><c.icon className="h-3.5 w-3.5 text-white" aria-hidden="true" /></div>
                 </>
               )
               return c.to
-                ? <Link key={c.label} to={c.to} className={`flex items-center justify-between rounded-xl bg-red-600 p-4 hover:bg-red-700 ${FOCUS}`}>{body}</Link>
-                : <div key={c.label} className="flex items-center justify-between rounded-xl bg-red-600 p-4">{body}</div>
+                ? <Link key={c.label} to={c.to} className={`relative flex items-center rounded-xl bg-red-600 p-4 hover:bg-red-700 ${FOCUS}`}>{body}</Link>
+                : <div key={c.label} className="relative flex items-center rounded-xl bg-red-600 p-4">{body}</div>
             })}
           </div>
 

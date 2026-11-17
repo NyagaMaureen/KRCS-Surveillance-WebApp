@@ -83,6 +83,35 @@ def write_answer(system, messages):
 	return _text(_call(system, merged))
 
 
+UNDERSTAND = """You prepare searches in KRCS public health guidance (Kenya Red Cross, Dadaab and Kalobeyei refugee camps).
+Read the question and reply with one line of search words: the disease or condition it is most likely about (use
+medical names too, e.g. diarrhoea and vomiting -> acute watery diarrhoea, cholera), what the person wants (e.g.
+immediate response, reporting, referral, case definition, treatment) and their level if it is clear (community or
+facility). Reply with the search words only."""
+
+
+def understand(question, history=None):
+	"""Claude's reading of the question as search words, to find the right passages. None if it fails."""
+	try:
+		turns = [m for m in (history or []) if m.get("role") == "user"][-2:]
+		context = "".join(f"Earlier question: {m['content'][:300]}\n" for m in turns)
+		text = _text(_call(UNDERSTAND, [{"role": "user", "content": f"{context}Question: {question}"}], max_tokens=80))
+		text = re.sub(r"\s+", " ", text).strip()
+		return text[:300] or None
+	except Exception as e:
+		frappe.log_error(title="Knowledge Base: Claude could not read the question", message=str(e)[:300])
+		return None
+
+
+def fix_answer(system, messages, previous, problems):
+	"""Second try when an answer failed the grounding check: Claude gets the exact sentences that failed."""
+	lines = "\n".join(f"- {p['kind'].replace('_', ' ')}: {p['detail']}" for p in problems[:8])
+	follow = (f"Your answer did not pass the check against the sources:\n{lines}\n\nRewrite it. Every sentence must end "
+		"with the number of the source it comes from, and use only numbers that appear in that source. Leave out "
+		"anything the sources do not say. If the sources do not answer the question, reply exactly: NOT_IN_SOURCES")
+	return write_answer(system, list(messages) + [{"role": "assistant", "content": previous}, {"role": "user", "content": follow}])
+
+
 # ---------- 2. trusted sources on the web ----------
 
 WEB_SYSTEM = """You answer public health questions for Kenya Red Cross staff and community health promoters working in
@@ -120,8 +149,13 @@ def _source_name(url, trusted):
 	return host
 
 
-def web_answer(question, trusted, language="English", level=None):
-	"""Answer from the trusted websites. trusted: [{source_name, website}]. Returns the kb_trusted.lookup shape or None."""
+RESEARCH_NOTE = ("These are research articles: turn what they found into plain, practical guidance, and say that it "
+	"comes from published research, not KRCS or WHO guidance.")
+
+
+def web_answer(question, trusted, language="English", level=None, research=False):
+	"""Answer from the trusted websites. trusted: [{source_name, website}]. research: the sites are PubMed (articles).
+	Returns the kb_trusted.lookup shape or None."""
 	domains = sorted({t["website"] for t in trusted if t.get("website")})
 	if not domains:
 		return None
@@ -129,6 +163,8 @@ def web_answer(question, trusted, language="English", level=None):
 		"max_uses": max(1, cint(_conf("kb_web_max_searches", 3))),
 		}
 	system = WEB_SYSTEM.format(language=language, level=LEVEL_NOTE.get(level, LEVEL_NOTE[None]))
+	if research:
+		system += "\n- " + RESEARCH_NOTE
 	resp = _call(system, [{"role": "user", "content": question}], tools=[tool], max_tokens=1500)
 
 	# text blocks before the last search are Claude's own narration ("I'll search for..."): keep what follows it

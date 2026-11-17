@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { rolePermissionsLink } from '../utils/links'
-import { Search, Plus, Pencil, Trash2, X, UserRound, UserPlus, AlertCircle, Loader2, Users, CheckCircle2, UserX, Ban, ShieldCheck } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, X, UserRound, UserPlus, AlertCircle, Loader2, Users, CheckCircle2, UserX, Ban, ShieldCheck, Building2, ArrowLeft } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { PageSizeSelect } from '../components/common/Pager'
 import RolesPermissions from '../components/settings/RolesPermissions'
-import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties, getReferralFacilities } from '../api/frappe'
+import HealthUnits from '../components/settings/HealthUnits'
+import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties, getReferralFacilities, getHealthUnits, getUserHealthUnits, saveHealthUnit } from '../api/frappe'
+import { useCapabilities } from '../context/CapabilitiesContext'
 
 const tabs = [
   { key: 'users', label: 'Users', icon: Users },
@@ -31,6 +33,11 @@ const labelCls = 'block text-sm font-medium text-gray-700 mb-1.5'
 const inputCls = 'w-full bg-white border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500'
 const req = <span className="text-red-700 ml-0.5">*</span>
 
+// Community Health Units (KRCS 17 Nov 2026): a CHP belongs to one CHU, a CHA heads one or more
+const CHP_ROLES = ['CHP', 'Community Health Promoter']
+const CHA_ROLES = ['CHA', 'Community Health Assistant']
+const unitKind = (role) => (CHA_ROLES.includes(role) ? 'cha' : CHP_ROLES.includes(role) ? 'chp' : null)
+
 const emptyForm = () => ({
   email: '',
   first_name: '',
@@ -40,13 +47,14 @@ const emptyForm = () => ({
   assigned_region: '',
   assigned_sub_county: '',
   assigned_facility: '',
+  health_units: [],
   account_status: 'Active',
   password: '',
 })
 
 export default function UserManagement() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = searchParams.get('tab') === 'roles' ? 'roles' : 'users'
+  const activeTab = ['roles', 'units'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'users'
   const roleParam = searchParams.get('role') || ''
   const [roleNotice, setRoleNotice] = useState('')
 
@@ -73,6 +81,13 @@ export default function UserManagement() {
   const [lastCreatedPassword, setLastCreatedPassword] = useState('')
   const [regionMap, setRegionMap] = useState({})
   const [userRolesMap, setUserRolesMap] = useState({})
+  const [userUnits, setUserUnits] = useState({})   // {user: [{id, name}]}
+  const [unitsBySub, setUnitsBySub] = useState({})   // CHUs per sub-county, loaded when a sub-county is chosen on the form
+  const { has } = useCapabilities()
+  const [newUnit, setNewUnit] = useState(null)   // name typed in "+ New unit" on the user form
+  const [newUnitError, setNewUnitError] = useState('')
+  const [savingUnit, setSavingUnit] = useState(false)
+  const kind = unitKind(form.primary_role)
 
   function updateForm(fields) {
     setForm((prev) => ({ ...prev, ...fields }))
@@ -94,6 +109,15 @@ export default function UserManagement() {
   useEffect(() => {
     getReferenceLabels().then((labels) => setRegionMap(labels.regions))
   }, [])
+
+  const unitSub = showUserModal && kind ? form.assigned_sub_county : ''
+  const unitOptions = unitsBySub[unitSub] || []
+  useEffect(() => {
+    if (!unitSub) return
+    let cancelled = false
+    getHealthUnits({ subCounty: unitSub }).then((list) => { if (!cancelled) setUnitsBySub((m) => ({ ...m, [unitSub]: list })) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [unitSub])
 
   function regionInfo(id) {
     if (!id) return { label: '—', unresolved: false }
@@ -155,6 +179,7 @@ export default function UserManagement() {
   }
 
   function openAddUser() {
+    setNewUnit(null)
     setEditingUser(null)
     setFormError('')
     setForm(emptyForm())
@@ -162,6 +187,7 @@ export default function UserManagement() {
   }
 
   function openEditUser(u) {
+    setNewUnit(null)
     setEditingUser(u)
     setFormError('')
     setForm({
@@ -173,6 +199,7 @@ export default function UserManagement() {
       assigned_region: u.assigned_region || '',
       assigned_sub_county: u.assigned_sub_county || '',
       assigned_facility: u.assigned_facility || '',
+      health_units: (userUnits[u.name] || []).map((x) => x.id),
       account_status: u.account_status || 'Active',
       password: '',
     })
@@ -200,6 +227,10 @@ export default function UserManagement() {
       setFormError('Choose the region and sub-county for this user.')
       return
     }
+    if (kind && !form.health_units.length) {
+      setFormError(`Choose the Community Health Unit for this ${kind === 'chp' ? 'CHP' : 'CHA'}.`)
+      return
+    }
     const phone = (form.mobile_no || '').replace(/\s+/g, '')
     if (phone && !/^\+?\d{9,15}$/.test(phone)) {
       setFormError('Enter a valid phone number, e.g. +254712345678')
@@ -207,10 +238,11 @@ export default function UserManagement() {
     }
     setSaving(true)
     try {
+      const data = { ...form, health_units: kind ? form.health_units : [] }   // only CHPs and CHAs have a CHU
       if (editingUser) {
-        await updateUser(editingUser.name, form)
+        await updateUser(editingUser.name, data)
       } else {
-        await createUser(form)
+        await createUser(data)
         setLastCreatedPassword(form.password)
       }
       setShowUserModal(false)
@@ -219,6 +251,25 @@ export default function UserManagement() {
       setFormError(e.message || 'Something went wrong saving the user.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // "+ New unit" on the user form: add a CHU in the chosen sub-county and select it, without leaving the form
+  async function addUnitFromForm() {
+    const name = (newUnit || '').trim()
+    if (!name) { setNewUnitError('Type the unit name.'); return }
+    setSavingUnit(true)
+    setNewUnitError('')
+    try {
+      const saved = await saveHealthUnit({ name, subCounty: form.assigned_sub_county, active: true })
+      const list = await getHealthUnits({ subCounty: form.assigned_sub_county })
+      setUnitsBySub((m) => ({ ...m, [form.assigned_sub_county]: list }))
+      updateForm({ health_units: kind === 'chp' ? [saved.id] : [...form.health_units, saved.id] })
+      setNewUnit(null)
+    } catch (e) {
+      setNewUnitError(e.message || 'Could not add the unit.')
+    } finally {
+      setSavingUnit(false)
     }
   }
 
@@ -256,6 +307,7 @@ export default function UserManagement() {
 
   async function loadUsers() {
     setUsers(await getUsers({ limit: 500 }))
+    setUserUnits(await getUserHealthUnits().catch(() => ({})))
   }
 
   async function loadRoles() {
@@ -278,13 +330,23 @@ export default function UserManagement() {
     <AppShell>
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-brand-navy">{activeTab === 'roles' ? 'Roles & Permissions' : 'Users'}</h2>
-          <p className="text-sm text-gray-400">{activeTab === 'roles' ? 'What each role can see and do' : 'Add and manage the people who use the system'}</p>
+          <h2 className="text-xl font-bold text-brand-navy">{activeTab === 'roles' ? 'Roles & Permissions' : activeTab === 'units' ? 'Community Health Units' : 'Users'}</h2>
+          <p className="text-sm text-gray-400">{activeTab === 'roles' ? 'What each role can see and do' : activeTab === 'units' ? 'Each CHP belongs to a Community Health Unit; each CHA heads one or more' : 'Add and manage the people who use the system'}</p>
         </div>
         <div className="flex gap-3">
           {activeTab === 'roles' && <button onClick={openRoleModal} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-500 flex items-center gap-2 hover:bg-gray-50">
             <Plus className="w-4 h-4" /> Add Role
           </button>}
+          {activeTab === 'units' && (
+            <button onClick={() => setSearchParams({ tab: 'users' })} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 flex items-center gap-2 hover:bg-gray-50">
+              <ArrowLeft className="w-4 h-4" /> Back to Users
+            </button>
+          )}
+          {activeTab === 'users' && (
+            <button onClick={() => setSearchParams({ tab: 'units' })} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 flex items-center gap-2 hover:bg-gray-50">
+              <Building2 className="w-4 h-4" /> Community Health Units
+            </button>
+          )}
           {activeTab === 'users' && (
             <button onClick={openAddUser} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add User
@@ -297,7 +359,9 @@ export default function UserManagement() {
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">{roleNotice}</div>
       )}
 
-      {activeTab === 'roles' ? (
+      {activeTab === 'units' ? (
+        <HealthUnits />
+      ) : activeTab === 'roles' ? (
         <RolesPermissions
           roles={roles}
           users={users}
@@ -346,6 +410,7 @@ export default function UserManagement() {
                   <th className="px-5 py-3 font-medium">Role</th>
                   <th className="px-5 py-3 font-medium">Region</th>
                   <th className="px-5 py-3 font-medium">Sub-county</th>
+                  <th className="px-5 py-3 font-medium">Health unit</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium">Last Login</th>
                   <th className="px-5 py-3 font-medium">Actions</th>
@@ -382,6 +447,7 @@ export default function UserManagement() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-gray-700">{u.assigned_sub_county ? (subCountyMap[u.assigned_sub_county] || u.assigned_sub_county) : '—'}</td>
+                    <td className="px-5 py-3 text-gray-700">{(userUnits[u.name] || []).map((x) => x.name).join(', ') || (unitKind(u.primary_role) ? <span className="text-amber-700">Not set</span> : '—')}</td>
                     <td className="px-5 py-3"><span className={['text-xs font-medium px-3 py-1 rounded-full', statusColor(u.account_status)].join(' ')}>{u.account_status || 'Active'}</span></td>
                     <td className="px-5 py-3 text-gray-500">{formatDate(u.last_login)}</td>
                     <td className="px-5 py-3">
@@ -394,7 +460,7 @@ export default function UserManagement() {
                 ))}
                 {!pagedUsers.length && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-gray-400">No users found</td>
+                    <td colSpan={9} className="px-5 py-10 text-center text-gray-400">No users found</td>
                   </tr>
                 )}
               </tbody>
@@ -502,12 +568,65 @@ export default function UserManagement() {
                       </div>
                       <div>
                         <label className={labelCls}>Sub-county <span className="text-red-600">*</span></label>
-                        <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value })} disabled={!form.assigned_region} className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`}>
+                        <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value, health_units: [] })} disabled={!form.assigned_region} className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`}>
                           <option value="">{form.assigned_region ? 'Select a sub-county' : 'Select a region first'}</option>
                           {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}
                         </select>
                         <p className="text-xs text-gray-500 mt-1.5">CHA / SCDSC: receives alerts for new signals in this sub-county.</p>
                       </div>
+                      {kind && (
+                        <div className="md:col-span-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <label className={labelCls}>{kind === 'chp' ? 'Community Health Unit' : 'Community Health Unit(s) this CHA heads'} <span className="text-red-600">*</span></label>
+                            {form.assigned_sub_county && has('manage_users') && newUnit === null && (
+                              <button type="button" onClick={() => { setNewUnit(''); setNewUnitError('') }} className="mb-1.5 inline-flex items-center gap-1 text-sm font-medium text-red-700 hover:underline">
+                                <Plus className="w-3.5 h-3.5" /> New unit
+                              </button>
+                            )}
+                          </div>
+                          {newUnit !== null && (
+                            <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                              <p className="text-xs text-gray-500 mb-2">New Community Health Unit in {subCounties.find((s) => s.name === form.assigned_sub_county)?.sub_county_name || 'this sub-county'}</p>
+                              <div className="flex gap-2">
+                                <input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addUnitFromForm() } }}
+                                  autoFocus placeholder="Unit name, e.g. Ifo Block A" aria-label="New unit name" className={`${inputCls} flex-1`} />
+                                <button type="button" onClick={addUnitFromForm} disabled={savingUnit} className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-lg px-4 text-sm font-semibold">
+                                  {savingUnit ? 'Adding…' : 'Add'}
+                                </button>
+                                <button type="button" onClick={() => setNewUnit(null)} className="border border-gray-200 bg-white rounded-lg px-4 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+                              </div>
+                              {newUnitError && <p className="mt-2 text-sm text-red-700">{newUnitError}</p>}
+                            </div>
+                          )}
+                          {!form.assigned_sub_county ? (
+                            <p className="text-sm text-gray-400">Select a sub-county first</p>
+                          ) : !unitOptions.length ? (
+                            newUnit === null && <p className="text-sm text-amber-700">No Community Health Units in this sub-county yet. Use + New unit to add one.</p>
+                          ) : kind === 'chp' ? (
+                            <select value={form.health_units[0] || ''} onChange={(e) => updateForm({ health_units: e.target.value ? [e.target.value] : [] })} className={inputCls}>
+                              <option value="">Select a Community Health Unit</option>
+                              {unitOptions.filter((o) => o.active || form.health_units.includes(o.id)).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                            </select>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {unitOptions.filter((o) => o.active || form.health_units.includes(o.id)).map((o) => {
+                                const on = form.health_units.includes(o.id)
+                                return (
+                                  <button key={o.id} type="button" aria-pressed={on}
+                                    onClick={() => updateForm({ health_units: on ? form.health_units.filter((x) => x !== o.id) : [...form.health_units, o.id] })}
+                                    className={['rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                                      on ? 'bg-red-50 border-red-500 text-red-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'].join(' ')}>
+                                    {on ? '✓ ' : ''}{o.name}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                          <p className="text-xs text-gray-500 mt-1.5">{kind === 'chp'
+                            ? "The CHU this CHP belongs to. Their CHU's CHA sees the signals they send."
+                            : 'Choose every CHU this CHA is in charge of. They see the signals from these CHUs, plus CBS and WhatsApp community reports in the sub-county.'}</p>
+                        </div>
+                      )}
                       {form.primary_role === 'Facility Health Worker' && (
                         <div>
                           <label className={labelCls}>Facility</label>

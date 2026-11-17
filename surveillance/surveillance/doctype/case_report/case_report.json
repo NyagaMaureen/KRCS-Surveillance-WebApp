@@ -36,6 +36,7 @@
   "classified_by",
   "classification_reason",
   "sub_county",
+  "community_health_unit",
   "review_outcome",
   "reviewed_by",
   "reviewed_on",
@@ -45,7 +46,10 @@
   "cb_sync",
   "sync_attempts",
   "sb_updates",
-  "updates"
+  "updates",
+  "extraction_details",
+  "sb_changes",
+  "changes"
  ],
  "fields": [
   {
@@ -239,6 +243,15 @@
    "reqd": 1
   },
   {
+   "description": "The CHU of the CHP who sent the report (set when it is submitted). CHAs see their CHU's reports.",
+   "fieldname": "community_health_unit",
+   "fieldtype": "Link",
+   "label": "Community Health Unit",
+   "options": "Community Health Unit",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
    "fieldname": "review_outcome",
    "fieldtype": "Select",
    "label": "Review Outcome",
@@ -307,12 +320,34 @@
    "no_copy": 1,
    "read_only": 1,
    "description": "Added later by the reporter (e.g. 'one more child sick'). Never changes the report's symptoms, counts or place."
+  },
+  {
+   "description": "WhatsApp free-text reports: what was filled in from the message and how sure. Additional Notes keep only the reporter's words.",
+   "fieldname": "extraction_details",
+   "fieldtype": "Small Text",
+   "label": "Filled in from the WhatsApp message",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "sb_changes",
+   "fieldtype": "Section Break",
+   "label": "Update history"
+  },
+  {
+   "description": "Every update made on Signals Captured: what changed, from what to what, by whom and when.",
+   "fieldname": "changes",
+   "fieldtype": "Table",
+   "label": "Update history",
+   "options": "Case Report Change",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-13 13:30:00.000000",
+ "modified": "2026-11-17 14:30:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",

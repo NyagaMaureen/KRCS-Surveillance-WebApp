@@ -47,15 +47,20 @@ def _in_app(users, subject, event):
 				"subject": subject}).insert(ignore_permissions=True)
 
 
-def sub_county_users(sub_county_name):
-	"""Enabled users assigned to this sub-county (the CHA and SCDSC)."""
+def sub_county_users(sub_county_name, event=None):
+	"""Enabled users assigned to this sub-county (the CHA and SCDSC). With an event, a CHA is told only when the event
+	has reports from their CHU(s) or from no CHU (KRCS 17 Nov 2026)."""
 	if not sub_county_name or not frappe.get_meta("User").has_field("assigned_sub_county"):
 		return []
 	ids = frappe.get_all("Sub County", filters={"sub_county_name": sub_county_name}, pluck="name")
 	if not ids:
 		return []
-	return frappe.get_all("User", filters={"assigned_sub_county": ["in", ids], "enabled": 1},
+	users = frappe.get_all("User", filters={"assigned_sub_county": ["in", ids], "enabled": 1},
 		fields=["name", "email", "mobile_no", "full_name"])
+	if event:
+		from surveillance.health_units import event_visible
+		users = [u for u in users if event_visible(event, u.name)]
+	return users
 
 
 def escalation_contacts(county):
@@ -97,7 +102,7 @@ def send_disease_changed(event_name, old_name, new_name):
 		if not frappe.db.exists("Surveillance Event", event_name):
 			return
 		doc = frappe.get_doc("Surveillance Event", event_name)
-		users = sub_county_users(doc.sub_county)
+		users = sub_county_users(doc.sub_county, event_name)
 		if not users:
 			return
 		subject = f"{event_name} is now {new_name} (was {old_name}), {doc.sub_county or 'location missing'}"
@@ -125,7 +130,7 @@ def on_left_queue(event, old_name, new_name, report):
 def send_left_queue(event_name, old_name, new_name, report):
 	try:
 		doc = frappe.db.get_value("Surveillance Event", event_name, ["sub_county", "county"], as_dict=True)
-		users = sub_county_users(doc.sub_county) if doc else []
+		users = sub_county_users(doc.sub_county, event_name) if doc else []
 		if not users:
 			return
 		subject = f"Resolved: {event_name} ({report}) is {new_name}, followed in Epi Trends"
@@ -167,7 +172,7 @@ def send_new_event(event_name):
 		if not frappe.db.exists("Surveillance Event", event):
 			return
 		doc = frappe.get_doc("Surveillance Event", event)
-		users = sub_county_users(doc.sub_county)
+		users = sub_county_users(doc.sub_county, event)
 		if not users:
 			return
 		from surveillance.events import related_events
@@ -276,7 +281,7 @@ def send_escalation(event_name, reason, escalated_by):
 			f"KRCS ESCALATION: {doc.disease_name or doc.disease}, {doc.sub_county}/{doc.county}. {doc.people or 0} cases, "
 			f"{doc.deaths or 0} deaths. Facility: {doc.nearest_facility or '-'}. By {officer.get('full_name') or ''}"
 			f"{', ' + officer['mobile_no'] if officer.get('mobile_no') else ''}. {_link(doc.name)}")
-		team = [u.name for u in sub_county_users(doc.sub_county)]
+		team = [u.name for u in sub_county_users(doc.sub_county, doc.name)]
 		_in_app(team, f"Escalated to County/MOH: {doc.title}", doc.name)
 		doc.append("actions", {"at": now_datetime(), "user": "Administrator", "action": "Escalation sent",
 			"note": f"Emailed {len([c for c in contacts if c.email])} County/National MOH contact(s)"

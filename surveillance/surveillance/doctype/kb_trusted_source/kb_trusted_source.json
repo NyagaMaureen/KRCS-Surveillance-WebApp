@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-11-06 12:00:00.000000",
- "modified": "2026-11-06 12:00:00.000000",
+ "modified": "2026-11-17 13:00:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "doctype": "DocType",
@@ -16,6 +16,7 @@
   "website",
   "kind",
   "enabled",
+  "allowed_roles",
   "notes"
  ],
  "fields": [
@@ -49,6 +50,12 @@
    "label": "Enabled",
    "default": "1",
    "in_list_view": 1
+  },
+  {
+   "fieldname": "allowed_roles",
+   "fieldtype": "Small Text",
+   "label": "Who can get answers from it",
+   "description": "One role per line. Empty means everyone (all staff and the public)."
   },
   {
    "fieldname": "notes",

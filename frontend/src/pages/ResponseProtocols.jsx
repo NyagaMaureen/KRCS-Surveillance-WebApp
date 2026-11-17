@@ -49,12 +49,12 @@ const isOverdue = (p) => p.status !== 'Retired' && !!p.reviewDate && String(p.re
 
 function SummaryCard({ label, value, Icon }) {
   return (
-    <div className="rounded-xl bg-red-600 p-5 flex items-start justify-between text-white">
-      <div className="flex flex-col gap-1.5">
+    <div className="relative rounded-xl bg-red-600 p-5 text-center text-white">
+      <div className="flex flex-col gap-1.5 px-6">
         <span className="text-[11px] font-bold uppercase tracking-wide">{label}</span>
         <span className="text-2xl font-bold">{value}</span>
       </div>
-      <span className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center">
+      <span className="absolute right-3 top-3 w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
         <Icon className="w-5 h-5 text-white" aria-hidden="true" />
       </span>
     </div>

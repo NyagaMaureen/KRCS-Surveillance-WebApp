@@ -103,6 +103,43 @@ def get_audit_logs(limit=1000, days=None):
                 "details": f"{'Alert engine raised' if doctype == 'Risk Alert' else 'Created'} {doctype} {display_name(doctype, r.name, title)}",
             })
 
+    # Signals Captured updates (KRCS 17 Nov 2026): one entry per update, with every field from -> to
+    edited = []
+    if frappe.db.table_exists("Case Report Change"):
+        cond = "and c.`at` >= %(since)s" if since else ""
+        rows = frappe.db.sql(f"""
+            select c.parent, c.`at`, c.`user`, c.field_label, c.old_value, c.new_value
+            from `tabCase Report Change` c
+            where c.parenttype = 'Case Report' {cond}
+            order by c.`at` desc, c.idx asc limit %(limit)s
+        """, {"since": since, "limit": limit * 5}, as_dict=True)
+        grouped = {}
+        for r in rows:
+            grouped.setdefault((r.parent, r.at, r.user), []).append(
+                {"field": r.field_label, "from": short(r.old_value), "to": short(r.new_value)})
+        for (parent, at, user), changes in grouped.items():
+            user = user or "Administrator"
+            edited.append((parent, user, frappe.utils.get_datetime(at)))
+            names = list(dict.fromkeys(c["field"] for c in changes))
+            summary = ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
+            results.append({
+                "name": f"edit-{parent}-{at}",
+                "timestamp": at,
+                "category": "Report",
+                "action": "Signal updated",
+                "user": user,
+                "role": user_role(user),
+                "details": f"Updated {summary} on Case Report {parent}",
+                "changes": changes,
+                "link": f"/reports/{parent}",
+            })
+
+    def same_edit(v):   # the Version Frappe saves for the same update: shown once, from the entry above
+        if v.ref_doctype != "Case Report":
+            return False
+        when = frappe.utils.get_datetime(v.creation)
+        return any(p == v.docname and u == v.owner and abs((when - at).total_seconds()) < 30 for p, u, at in edited)
+
     # Updates (Frappe Version log; needs Track Changes on the DocType)
     versions = frappe.get_all(
         "Version",
@@ -112,6 +149,8 @@ def get_audit_logs(limit=1000, days=None):
         limit_page_length=limit,
     )
     for v in versions:
+        if same_edit(v):
+            continue
         category = CATEGORY_MAP.get(v.ref_doctype, "Config")
         label = display_name(v.ref_doctype, v.docname)
         changes = []

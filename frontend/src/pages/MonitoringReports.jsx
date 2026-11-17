@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import {
-  Download, FileSpreadsheet, FileText, Image as ImageIcon, X, RefreshCw, Search, Info, LayoutGrid, Table2,
+  Download, FileSpreadsheet, FileText, Image as ImageIcon, X, RefreshCw, Search, LayoutGrid, Table2,
   ChevronLeft, ChevronRight, Radio, BellRing, ClipboardCheck, CircleDashed, Sparkles, Gauge, Plug, Server,
 } from 'lucide-react'
 import '../charts/chartSetup'
@@ -188,11 +188,8 @@ export default function MonitoringReports() {
           <FilterBar report={current} filters={filters} set={set} options={options} changed={changed} clear={() => setFilters(EMPTY)}
             search={view === 'detail'} q={q} setQ={setQ} />
 
-          {data && (
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3">
-              <p className="text-sm text-gray-900">
-                <span className="font-semibold">{data.scope}</span> · {data.period} · made {fmtWhen(data.generatedAt)} by {data.generatedBy}
-              </p>
+          {data?.canExport && (
+            <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
               {data.canExport && (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-semibold text-gray-900">Export</span>
@@ -293,43 +290,42 @@ function Loading({ error }) {
 
 // ---------- summary ----------
 
+// summary: a few plain sentences, the key numbers, at most two charts; the explanations fold away
 function Summary({ data, charts }) {
   const s = data.summary
-  const isAi = !!s.measures
   return (
     <>
-      {!isAi && (
-        <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-          {s.cards.map((c) => (
-            <div key={c.key} className="rounded-xl bg-red-600 p-4 text-white">
-              <p className="text-[11px] font-bold uppercase tracking-wide">{c.label}</p>
-              <p className="mt-1 text-2xl font-bold tabular-nums">{typeof c.value === 'number' ? c.value.toLocaleString() : c.value}</p>
-              {c.note && <p className="mt-0.5 text-xs">{c.note}</p>}
-            </div>
-          ))}
-        </div>
-      )}
-      {isAi && <AiMeasures measures={s.measures} />}
-      <div className="grid gap-5 lg:grid-cols-2">
-        {s.charts.map((c) => (
-          <section key={c.key} className="rounded-xl border border-gray-200 bg-white p-5">
-            <h4 className="text-sm font-bold text-gray-900">{c.title}</h4>
-            {c.note && <p className="mt-0.5 text-xs text-gray-900">{c.note}</p>}
-            <div className="relative mt-3" style={{ height: c.type === 'hbar' ? Math.max(260, c.labels.length * 34) : 280 }}>
-              <Chart chart={c} onRef={(inst) => { if (inst) charts.current[c.key] = { chart: c, inst }; else delete charts.current[c.key] }} />
-            </div>
-          </section>
-        ))}
-      </div>
-      {isAi && <ModelMetrics rows={s.modelMetrics} />}
-      {s.notes?.length > 0 && (
-        <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
-          <h4 className="flex items-center gap-2 text-sm font-bold text-gray-900"><Info className="h-4 w-4 text-red-600" aria-hidden="true" />How these are worked out</h4>
-          <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm text-gray-900">
-            {s.notes.map((n) => <li key={n}>{n}</li>)}
+      {s.inShort?.length > 0 && (
+        <section className="mb-5 rounded-xl border border-gray-200 bg-white p-5">
+          <h4 className="text-sm font-bold text-gray-900"> At a Glance</h4>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-900">
+            {s.inShort.map((line) => <li key={line}>{line}</li>)}
           </ul>
         </section>
       )}
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {s.cards.map((c) => (
+          <div key={c.key} className="rounded-xl bg-red-600 p-4 text-center text-white">
+            <p className="text-[11px] font-bold uppercase tracking-wide">{c.label}</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{typeof c.value === 'number' ? c.value.toLocaleString() : c.value}</p>
+            {c.note && <p className="mt-0.5 text-xs">{c.note}</p>}
+          </div>
+        ))}
+      </div>
+      {s.charts.length > 0 && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          {s.charts.map((c) => (
+            <section key={c.key} className="rounded-xl border border-gray-200 bg-white p-5">
+              <h4 className="text-sm font-bold text-gray-900">{c.title}</h4>
+              {c.note && <p className="mt-0.5 text-xs text-gray-900">{c.note}</p>}
+              <div className="relative mt-3" style={{ height: c.type === 'hbar' ? Math.max(240, c.labels.length * 34) : 260 }}>
+                <Chart chart={c} onRef={(inst) => { if (inst) charts.current[c.key] = { chart: c, inst }; else delete charts.current[c.key] }} />
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+      {s.measures && <AiMeasures measures={s.measures} />}
     </>
   )
 }
@@ -360,66 +356,32 @@ function Chart({ chart, onRef }) {
   return <Bar ref={onRef} data={{ labels, datasets }} options={opts} />
 }
 
-// R38: each AI value, what it is based on, and how it is obtained
+// AI Performance: every AI measure in one short table
 function AiMeasures({ measures }) {
   return (
-    <section className="mb-5 overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <div className="flex items-start gap-2 border-b border-gray-100 px-5 py-3">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-red-600" aria-hidden="true" />
-        <p className="text-xs text-gray-900">Each value compares what the AI suggested with what people decided in the end. Values fill in as officers make decisions, and the speech measure arrives from the AI server (MLflow).</p>
-      </div>
+    <section className="mt-5 overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <h4 className="px-5 pt-4 text-sm font-bold text-gray-900">All AI measures</h4>
+      <div className="pb-3" />
       <div className="overflow-x-auto">
         <table className="red-head w-full border-collapse text-sm">
           <thead>
             <tr className="text-left text-xs">
-              <th className="w-10 px-3 py-3">#</th><th className="px-3 py-3">AI part</th><th className="px-3 py-3">Measure</th>
-              <th className="px-3 py-3 text-right">Value</th><th className="px-3 py-3">Based on</th><th className="px-3 py-3">How it is obtained</th>
+              <th className="px-3 py-2">AI part</th><th className="px-3 py-2">Measure</th><th className="px-3 py-2 text-right">Value</th>
+              <th className="px-3 py-2">Based on</th>
             </tr>
           </thead>
           <tbody>
-            {measures.map((m, i) => (
+            {measures.map((m) => (
               <tr key={m.key} className="align-top">
-                <td className="px-3 py-3 tabular-nums text-gray-900">{i + 1}</td>
-                <td className="whitespace-nowrap px-3 py-3 font-semibold text-gray-900">{m.part}</td>
-                <td className="px-3 py-3 text-gray-900">{m.measure}{m.target != null && <span className="block text-xs">Target: {m.target}% or more</span>}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-right">
-                  {m.value == null
-                    ? <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-900">No data yet</span>
-                    : <span className="text-lg font-bold tabular-nums text-gray-900">{m.value}%</span>}
-                </td>
-                <td className="px-3 py-3 text-xs text-gray-900">{m.based}</td>
-                <td className="max-w-md px-3 py-3 text-xs text-gray-900">{m.how}</td>
+                <td className="whitespace-nowrap px-3 py-2 font-semibold text-gray-900">{m.part}</td>
+                <td className="px-3 py-2 text-gray-900">{m.measure}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-gray-900">{m.value == null ? <span className="font-normal">No data yet</span> : `${m.value}%`}</td>
+                <td className="px-3 py-2 text-xs text-gray-900">{m.based}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </section>
-  )
-}
-
-function ModelMetrics({ rows }) {
-  return (
-    <section className="mt-5 overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <h4 className="px-5 pt-4 text-sm font-bold text-gray-900">Model measures from MLflow</h4>
-      <p className="px-5 pb-3 text-xs text-gray-900">The latest value of each measure the AI server has sent.</p>
-      {!rows?.length ? <p className="px-5 pb-6 text-sm text-gray-900">Nothing sent by the AI server yet.</p> : (
-        <div className="overflow-x-auto">
-          <table className="red-head w-full border-collapse text-sm">
-            <thead><tr className="text-left text-xs"><th className="px-3 py-2">Model</th><th className="px-3 py-2">Measure</th><th className="px-3 py-2 text-right">Value</th><th className="px-3 py-2">Model version</th><th className="px-3 py-2">Test data</th><th className="px-3 py-2">MLflow run</th><th className="px-3 py-2">Recorded</th></tr></thead>
-            <tbody>
-              {rows.map((m) => (
-                <tr key={`${m.model}|${m.metric}`}>
-                  <td className="px-3 py-2 font-medium text-gray-900">{m.model}</td><td className="px-3 py-2 text-gray-900">{m.metric}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-900">{m.value}</td><td className="px-3 py-2 text-gray-900">{m.version || '—'}</td>
-                  <td className="px-3 py-2 text-gray-900">{m.dataset || '—'}</td><td className="px-3 py-2 font-mono text-xs text-gray-900">{m.run || '—'}</td>
-                  <td className="px-3 py-2 text-gray-900">{fmtWhen(m.recordedOn)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </section>
   )
 }
@@ -490,11 +452,11 @@ const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 function printReport(data, charts, w) {
   const s = data.summary
   const cards = s.cards.map((c) => `<div class="card"><b>${esc(c.label)}</b><span>${esc(c.value)}</span><i>${esc(c.note)}</i></div>`).join('')
-  const measures = s.measures ? `<h2>How each AI value is obtained</h2><table><tr><th>AI part</th><th>Measure</th><th>Value</th><th>Based on</th><th>How</th></tr>${
-    s.measures.map((m) => `<tr><td>${esc(m.part)}</td><td>${esc(m.measure)}</td><td>${m.value == null ? 'No data yet' : esc(m.value) + '%'}</td><td>${esc(m.based)}</td><td>${esc(m.how)}</td></tr>`).join('')}</table>` : ''
+  const measures = s.measures ? `<h2>All AI measures</h2><table><tr><th>AI part</th><th>Measure</th><th>Value</th><th>Based on</th></tr>${
+    s.measures.map((m) => `<tr><td>${esc(m.part)}</td><td>${esc(m.measure)}</td><td>${m.value == null ? 'No data yet' : esc(m.value) + '%'}</td><td>${esc(m.based)}</td></tr>`).join('')}</table>` : ''
   const images = Object.values(charts).filter((c) => c.inst?.canvas)
     .map((c) => `<figure><figcaption>${esc(c.chart.title)}</figcaption><img src="${c.inst.toBase64Image('image/png', 1)}" /></figure>`).join('')
-  const notes = s.notes?.length ? `<h2>How these are worked out</h2><ul>${s.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''
+  const short = s.inShort?.length ? `<h2>Key points</h2><ul>${s.inShort.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''
   const detail = (data.detail.tables || [{ title: 'Detail', columns: data.detail.columns, rows: data.detail.rows }]).map((tb) =>
     `<h2>${esc(tb.title === 'Details' ? 'Detail' : tb.title)} (${tb.rows.length} rows)</h2><table><tr><th>#</th>${tb.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr>${
       tb.rows.map((r, i) => `<tr><td>${i + 1}</td>${tb.columns.map((c) => `<td>${esc(r[c.key])}</td>`).join('')}</tr>`).join('')}</table>`).join('')
@@ -509,7 +471,7 @@ function printReport(data, charts, w) {
     td{border-bottom:1px solid #E5E7EB;padding:4px;vertical-align:top}tr{break-inside:avoid}
   </style></head><body><h1>${esc(data.title)}</h1>
   <p class="meta">${esc(data.scope)} · ${esc(data.period)} · made ${esc(fmtWhen(data.generatedAt))} by ${esc(data.generatedBy)} · Kenya Red Cross Society</p>
-  <div class="cards">${cards}</div>${measures}<h2>Charts</h2><div class="charts">${images || '<p>No chart data.</p>'}</div>${notes}${detail}</body></html>`)
+  ${short}<div class="cards">${cards}</div>${measures}<h2>Charts</h2><div class="charts">${images || '<p>No chart data.</p>'}</div>${detail}</body></html>`)
   w.document.close()
   w.focus()
   setTimeout(() => w.print(), 300)

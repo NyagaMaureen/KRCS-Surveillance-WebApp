@@ -1,0 +1,82 @@
+{
+ "doctype": "DocType",
+ "module": "Surveillance",
+ "engine": "InnoDB",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "creation": "2026-11-17 14:30:00.000000",
+ "modified": "2026-11-17 14:30:00.000000",
+ "links": [],
+ "states": [],
+ "actions": [],
+ "name": "Community Health Unit",
+ "autoname": "CHU-.#####",
+ "naming_rule": "Expression (old style)",
+ "title_field": "health_unit_name",
+ "show_title_field_in_link": 1,
+ "search_fields": "health_unit_name,sub_county",
+ "sort_field": "health_unit_name",
+ "sort_order": "ASC",
+ "track_changes": 1,
+ "fields": [
+  {
+   "fieldname": "health_unit_name",
+   "fieldtype": "Data",
+   "label": "Community Health Unit",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sub_county",
+   "fieldtype": "Link",
+   "label": "Sub-county",
+   "options": "Sub County",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "fetch_from": "sub_county.region",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Active",
+   "default": "1"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "share": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "HQ Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "field_order": [
+  "health_unit_name",
+  "sub_county",
+  "region",
+  "is_active"
+ ]
+}
