@@ -27,3 +27,4 @@ surveillance.patches.fhw_workspace_setup
 surveillance.patches.fhw_epi_trends_access
 surveillance.patches.cha_workspace_setup
 surveillance.patches.map_permission_defaults
+surveillance.patches.monitoring_reports_setup

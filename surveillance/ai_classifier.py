@@ -108,6 +108,13 @@ def _answers(reports, cases):
 				answers[i] = fresh[n]
 				cache.set_value(_case_key(reports[i].name, cases[i]["symptoms"], cases[i]["age_group"]),
 					fresh[n], expires_in_sec=CACHE_SECONDS)
+	if ask_idx and fresh:   # Monitoring Reports R38: keep what the model said, to compare with the officer's final disease
+		try:
+			from surveillance.monitoring import log_predictions
+			log_predictions([(reports[i].name, _case_key(reports[i].name, cases[i]["symptoms"], cases[i]["age_group"]),
+				cases[i], fresh[n]) for n, i in enumerate(ask_idx)])
+		except Exception:  # noqa: BLE001 - logging never breaks the page
+			frappe.log_error(title="AI prediction log failed")
 	return answers, error
 
 
@@ -286,7 +293,8 @@ def get_report_candidates(report):
 					if c["key"] == key:
 						c["probability"] = t["probability"]
 		elif not key and t["probability"] >= MIN_MODEL_SHARE:
-			others.append({"disease": t["disease"], "probability": t["probability"], "why": _model_why(t, known)})
+			others.append({"disease": t["disease"], "probability": t["probability"], "why": _model_why(t, known),
+				"key": _disease_by_name(t["disease"], labels["disease"])})   # so the officer can choose it from its card
 	# signs the reporter already answered No to: not asked again; where the model wanted them, they count against
 	checked_no = sorted(labels["symptom"].get(i, i) for i in absent_of(cr))
 	if checked_no:
@@ -299,12 +307,18 @@ def get_report_candidates(report):
 	# definitions first, possible, the model's priority diseases, then the ruled-out possibles (always shown, so the
 	# officer sees every disease the reporter was asked about and why it is less likely)
 	more = [c["name"] for c in cands[SHOW_CANDIDATES:]]
+	more_choices = [{"key": c["key"], "name": c["name"]} for c in cands[SHOW_CANDIDATES:]]
 	cands = cands[:SHOW_CANDIDATES] + unlikely
 	sig = frappe.db.get_value("Surveillance Signal", {"source": "Field", "ref": cr.name}, ["event"], as_dict=True)
 	ev = frappe.db.get_value("Surveillance Event", sig.event, ["name", "status", "title"], as_dict=True) if sig and sig.event else None
+	try:   # Monitoring Reports R38: the possible diseases the officer saw, to compare with the final disease
+		from surveillance.monitoring import log_suggestions
+		log_suggestions(report, cands)
+	except Exception:  # noqa: BLE001 - logging never breaks the page
+		frappe.log_error(title="Suggestion log failed")
 	return {
 		"checkedNo": checked_no,
-		"candidates": cands, "moreCandidates": more,
+		"candidates": cands, "moreCandidates": more, "moreChoices": more_choices,
 		"event": {"id": ev.name, "status": ev.status, "title": ev.title} if ev else None,
 		"current": cr.suspected_disease or None, "decidedBy": cr.classified_by or None,
 		"modelOther": others[:4], "modelNote": None if tops else _why_not(error),
@@ -353,3 +367,18 @@ def get_model_hint(symptoms=None, age_group=None):
 		out.append({"key": key if key in labels["disease"] else None, "name": name, "probability": t["probability"],
 			"priority": bool(key and key in labels["disease"]), "why": {"for": w["for"], "ask": w["ask"]}})
 	return {"suggestions": out, "error": _err}   # the same diseases AI triage shows the officer
+
+
+def _disease_by_name(group, names):
+	"""A common illness the model names (e.g. "Typhoid") -> the app's disease with the same name, so the officer can
+	choose it from its card. Same name only (ignoring "Suspected" and brackets); None when the app has no such disease,
+	and the card then opens the full disease list instead."""
+	import re
+
+	def norm(s):
+		s = re.sub(r"\([^)]*\)", "", (s or "").lower()).replace("suspected ", "")
+		return re.sub(r"[^a-z0-9]+", " ", s).strip()
+	g = norm(group)
+	if not g:
+		return None
+	return next((k for k, n in names.items() if norm(n) == g or norm(k) == g), None)

@@ -274,6 +274,11 @@ def add_to_report(report, symptoms=None, age_group=None, animal_exposure=None, a
 	from surveillance.capabilities import require_capability
 	require_capability("act_on_events")
 	doc = frappe.get_doc("Case Report", report)
+	try:   # Monitoring Reports R38: what the voice notes offer before anything is added
+		from surveillance.monitoring import voice_offered
+		offered = voice_offered(report)
+	except Exception:  # noqa: BLE001
+		offered = None
 	names = frappe.parse_json(symptoms) if isinstance(symptoms, str) else (symptoms or [])
 	by_name = {_norm(s.symptom_name or s.name): s.name for s in frappe.get_all("Symptom", fields=["name", "symptom_name"])}
 	have = {r.symptom for r in doc.symptoms}
@@ -298,8 +303,19 @@ def add_to_report(report, symptoms=None, age_group=None, animal_exposure=None, a
 		changes.append(f"people sick {cint(doc.affected_count) or '-'} to {n}")
 		doc.affected_count = n
 	if not (added or changes):
+		_voice_review(report, offered, [])
 		return {"added": [], "changes": [], "report": doc.name}
 	doc.save(ignore_permissions=True)   # the capability is the permission (as for the officer's disease choice)
 	what = ", ".join(added + changes)
+	_voice_review(report, offered, added + changes)
 	doc.add_comment("Comment", f"Added from the voice note by {get_fullname(frappe.session.user)}: {what}.")
 	return {"added": added, "changes": changes, "report": doc.name, "suspected_disease": doc.suspected_disease}
+
+
+def _voice_review(report, offered, accepted):
+	"""Monitoring Reports R38: details offered from the voice notes against those the officer accepted. Never breaks saving."""
+	try:
+		from surveillance.monitoring import log_voice_review
+		log_voice_review(report, offered, accepted)
+	except Exception:  # noqa: BLE001
+		pass

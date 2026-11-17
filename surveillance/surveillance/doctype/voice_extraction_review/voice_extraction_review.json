@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-16 12:00:00.000000",
+ "modified": "2026-11-16 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Voice Extraction Review",
+ "description": "Details picked from voice notes that an officer accepted (Monitoring Reports R38).",
+ "field_order": [
+  "case_report",
+  "reviewed_by",
+  "reviewed_on",
+  "offered",
+  "accepted",
+  "offered_items",
+  "accepted_items"
+ ],
+ "fields": [
+  {
+   "fieldname": "case_report",
+   "fieldtype": "Link",
+   "label": "Case report",
+   "options": "Case Report",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed by",
+   "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed on",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "offered",
+   "fieldtype": "Int",
+   "label": "Details offered",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "accepted",
+   "fieldtype": "Int",
+   "label": "Details accepted",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "offered_items",
+   "fieldtype": "Small Text",
+   "label": "Offered"
+  },
+  {
+   "fieldname": "accepted_items",
+   "fieldtype": "Small Text",
+   "label": "Accepted"
+  }
+ ],
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "in_create": 1,
+ "track_changes": 0,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

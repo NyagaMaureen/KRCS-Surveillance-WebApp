@@ -1409,3 +1409,29 @@ export async function getHqSurveillance(f) { return callMethod(`${HQ}get_surveil
 export async function getHqPerformance(f) { return callMethod(`${HQ}get_performance?${hqQuery(f)}`) }
 export async function getHqStatus() { return callMethod(`${HQ}get_status`) }
 export async function getHqFilterOptions() { return callMethod(`${HQ}get_filter_options`) }
+// ---------- Monitoring Reports (SRS D.5): surveillance.monitoring ----------
+const MON = '/api/method/surveillance.monitoring.'
+export async function listMonitoringReports() { return callMethod(`${MON}list_reports`) }
+export async function getMonitoringReport(report, filters) { return callMethodPost(`${MON}get_report`, { report, filters }) }
+export async function logMonitoringExport(report, format, filters, rows) { return callMethodPost(`${MON}log_export`, { report, format, filters, rows }) }
+// Excel or CSV made on the server (needs Export Monitoring Reports); saved under the name the server gives
+export async function downloadMonitoringExport(report, format, filters, table) {
+  const res = await fetch(`${BASE}${MON}export_report`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken() },
+    body: JSON.stringify({ report, format, filters, table }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(extractErrorMessage(data))
+  }
+  const name = ((res.headers.get('Content-Disposition') || '').match(/filename="?([^";]+)"?/) || [])[1] || `${report}.${format}`
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}

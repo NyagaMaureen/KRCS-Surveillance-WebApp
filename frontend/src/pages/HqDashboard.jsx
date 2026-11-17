@@ -450,17 +450,6 @@ function SurveillanceTab({ filters, stamp }) {
 
 // ---------- System Performance ----------
 
-// one measure for every AI part: how often its output matched what people decided in the end
-const AI_METRICS = [
-  { model: 'Disease classifier', measure: 'Agrees with the officer\'s final disease (concordance)' },
-  { model: 'Risk engine', measure: 'High-risk events later confirmed or escalated (precision)' },
-  { model: 'Risk engine', measure: 'Confirmed events that were scored high risk (recall)' },
-  { model: 'Voice notes', measure: 'Details officers did not have to correct' },
-  { model: 'Speech to text', measure: 'Word error rate on test recordings (from MLflow)' },
-  { model: 'KRCS Data Assistant', measure: 'Questions answered from approved content', key: 'answerRate' },
-  { model: 'KRCS Data Assistant', measure: 'Answers rated helpful by users', key: 'helpfulRate' },
-]
-
 function PerformanceTab({ filters, stamp }) {
   const { data, error } = useTabData(getHqPerformance, filters, stamp)
   const comp = useMemo(() => data?.completeness?.facilities || [], [data])
@@ -478,19 +467,21 @@ function PerformanceTab({ filters, stamp }) {
           {data.dataQuality ? <HBar series={data.dataQuality} color={NAVY} label="Issues" /> : <Empty>You do not have access to Data Quality.</Empty>}
         </Panel>
         <Panel title="Signals submitted by hour of day" icon={Clock}><VBar series={data.hours} color={NAVY} /></Panel>
-        <Panel title="AI performance" icon={Sparkles} note="How often each AI part agreed with what people decided" height={null}>
+        {/* the Monitoring Reports R38 measures for the same period and area; how each is obtained is in that report */}
+        <Panel title="AI performance" icon={Sparkles} note="How often each AI part agreed with what people decided. How each is measured: Monitoring Reports, R38." height={null}>
           <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
-            {AI_METRICS.map((m) => {
-              const v = m.key ? data.ai?.[m.key] : null
-              return (
-                <li key={m.measure} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                  <div className="min-w-0"><p className="text-sm font-semibold text-gray-900">{m.model}</p><p className="text-xs text-gray-900">{m.measure}</p></div>
-                  {v !== null && v !== undefined
-                    ? <span className="shrink-0 text-lg font-bold text-gray-900">{v}%</span>
-                    : <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-900">Planned</span>}
-                </li>
-              )
-            })}
+            {(data.aiMeasures || []).map((m) => (
+              <li key={m.key} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">{m.part}</p>
+                  <p className="text-xs text-gray-900">{m.measure}</p>
+                  <p className="text-[11px] text-gray-600">{m.based}</p>
+                </div>
+                {m.value !== null && m.value !== undefined
+                  ? <span className="shrink-0 text-lg font-bold text-gray-900">{m.value}%</span>
+                  : <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-900">No data yet</span>}
+              </li>
+            ))}
           </ul>
         </Panel>
         <Panel title="MOH 505 reporting completeness by facility" icon={CheckCheck} height={null} className="xl:col-span-2"

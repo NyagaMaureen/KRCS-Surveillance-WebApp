@@ -171,6 +171,14 @@ CAPABILITIES += [
 	 "description": "See the Data tab in Settings", "grants": {}},
 	{"key": "settings_security", "name": "Settings: Security", "category": "Settings",
 	 "description": "See the Security tab in Settings", "grants": {}},
+	# Monitoring Reports (SRS D.5, KRCS 16 Nov 2026)
+	{"key": "view_monitoring_reports", "name": "View Monitoring Reports", "category": "Monitoring Reports",
+	 "description": "Open Monitoring Reports (R34 to R40b) for the user's own area: HQ their region or national; officers, FHWs and CHAs their sub-county",
+	 "grants": {}},
+	{"key": "export_monitoring_reports", "name": "Export Monitoring Reports", "category": "Monitoring Reports",
+	 "description": "Export Monitoring Reports as Excel, CSV, PDF or JPEG (every export is recorded in the Audit Log)", "grants": {}},
+	{"key": "push_model_metrics", "name": "Send AI Model Measures", "category": "Monitoring Reports",
+	 "description": "For the AI server's user only: send model measures from MLflow (e.g. speech-to-text word error rate)", "grants": {}},
 ]
 CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 

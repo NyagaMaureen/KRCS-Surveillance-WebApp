@@ -343,7 +343,11 @@ function ReportDiseaseChoice({ reportId, onDecided, onError }) {
   async function choose(key) {
     setSaving(true)
     try {
-      onDecided(await setSuspectedDisease(reportId, key))
+      const r = await setSuspectedDisease(reportId, key)
+      // show the new choice on the cards straight away (they were still marking the previous one as Chosen)
+      setCands((c) => (c ? { ...c, current: r.suspected_disease || key || null, decidedBy: key ? 'Officer' : 'Rules' } : c))
+      getReportCandidates(reportId).then(setCands).catch(() => {})
+      onDecided(r)
     } catch (e) {
       onError(e.message || 'Could not save the disease')
     } finally {

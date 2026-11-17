@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-16 12:00:00.000000",
+ "modified": "2026-11-16 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Report Run Log",
+ "description": "Who generated or exported a Monitoring Report, with which filters (SRS R46).",
+ "field_order": [
+  "report",
+  "report_title",
+  "action",
+  "format",
+  "filters",
+  "scope",
+  "rows",
+  "user",
+  "at"
+ ],
+ "fields": [
+  {
+   "fieldname": "report",
+   "fieldtype": "Data",
+   "label": "Report",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "report_title",
+   "fieldtype": "Data",
+   "label": "Report title"
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "label": "Action",
+   "options": "Viewed\nExported",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "format",
+   "fieldtype": "Data",
+   "label": "Format",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "filters",
+   "fieldtype": "Small Text",
+   "label": "Filters"
+  },
+  {
+   "fieldname": "scope",
+   "fieldtype": "Data",
+   "label": "Area"
+  },
+  {
+   "fieldname": "rows",
+   "fieldtype": "Int",
+   "label": "Rows"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "at",
+   "fieldtype": "Datetime",
+   "label": "At",
+   "in_list_view": 1,
+   "search_index": 1
+  }
+ ],
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "in_create": 1,
+ "track_changes": 0,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

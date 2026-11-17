@@ -362,6 +362,16 @@ def _dq_top(f):
 	return {"labels": [dq["kinds"][k] for k, _ in top], "data": [n for _, n in top]}
 
 
+def _ai_measures(f):
+	"""The AI measures of Monitoring Reports R38 (monitoring.ai_measures), for the dashboard's AI performance panel."""
+	try:
+		from surveillance.monitoring import ai_measures
+		return ai_measures(frappe._dict(f, disease=None))
+	except Exception:
+		frappe.log_error(title="Dashboard: AI measures failed", message=frappe.get_traceback())
+		return []
+
+
 @frappe.whitelist()
 def get_performance(region=None, sub_county=None, from_date=None, to_date=None, channel=None, status=None, category=None):
 	require_capability(VIEW)
@@ -402,8 +412,9 @@ def get_performance(region=None, sub_county=None, from_date=None, to_date=None, 
 		"dataQuality": _dq_top(f),
 		"hours": {"labels": [f"{h:02d}:00" for h in range(24)], "data": hours},
 		"completeness": analytics._completeness(weeks, subs),
-		# AI performance: what can be measured now; the other measures show "Collecting data"
+		# AI performance: the Monitoring Reports R38 measures for the same period and area
 		"ai": {"answerRate": rate, "helpfulRate": helpful},
+		"aiMeasures": _ai_measures(f),
 	}
 
 
@@ -434,7 +445,7 @@ def get_status():
 			{"key": "field", "label": "Field reports", "last": _latest("Case Report", "creation")},
 			{"key": "whatsapp", "label": "WhatsApp", "last": _latest("Case Report", "creation", {"channel": "WhatsApp"})},
 			# CBS arrives as signals and as weekly counts (hourly sync): the newest of the two
-			{"key": "cbs", "label": "KRCS CBS", "last": max(filter(None, [_latest("Surveillance Signal", "creation", {"source": "CBS"}),
+			{"key": "cbs", "label": "CBS", "last": max(filter(None, [_latest("Surveillance Signal", "creation", {"source": "CBS"}),
 				_latest("Weekly Count", "modified", {"source": "CBS"})]), default=None)},
 			# MOH 505 weeks can be loaded by upload or from KHIS files: when the newest week row was saved
 			{"key": "moh505", "label": "MOH 505", "last": _latest("IDSR Facility Week", "modified"),

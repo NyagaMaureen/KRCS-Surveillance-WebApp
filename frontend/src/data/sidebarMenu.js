@@ -12,7 +12,7 @@ export const SIDEBAR_MENU = [
   ]},
   { section: 'DATA AND INSIGHTS', items: [
     { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: null },
-    { label: 'Monitoring Reports', icon: 'FileBarChart', soon: true },
+    { label: 'Monitoring Reports', icon: 'FileBarChart', page: 'monitoring-reports', requiresCapability: 'view_monitoring_reports' },
     { label: 'Data Quality', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
   ]},
   { section: 'DATA MANAGEMENT', items: [

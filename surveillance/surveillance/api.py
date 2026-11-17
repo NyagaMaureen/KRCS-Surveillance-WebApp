@@ -190,6 +190,28 @@ def get_audit_logs(limit=1000, days=None):
                 "link": f"/epi-trends/{n.parent}",
             })
 
+    # Monitoring Reports generated and exported (SRS R46)
+    if frappe.db.table_exists("Report Run Log"):
+        runs = frappe.get_all(
+            "Report Run Log",
+            filters=since_filter("at"),
+            fields=["name", "report", "report_title", "action", "format", "scope", "rows", "user", "at"],
+            order_by="at desc",
+            limit_page_length=limit,
+        )
+        for g in runs:
+            exported = g.action == "Exported"
+            results.append({
+                "name": f"report-{g.name}",
+                "timestamp": g.at,
+                "category": "Report",
+                "action": f"Report exported ({g.format})" if exported else "Report viewed",
+                "user": g.user,
+                "role": user_role(g.user),
+                "details": f"{g.report_title or g.report} · {g.scope or ''} · {g.rows or 0} rows",
+                "link": f"/monitoring-reports?report={g.report}",
+            })
+
     # Logins and logouts
     logins = frappe.get_all(
         "Activity Log",

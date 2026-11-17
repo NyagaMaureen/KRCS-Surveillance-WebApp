@@ -41,6 +41,7 @@ import HqDashboard from '../pages/HqDashboard'
 import MyProfile from '../pages/MyProfile'
 import NotificationSettings from '../pages/NotificationSettings'
 import ChangePassword from '../pages/ChangePassword'
+import MonitoringReports from '../pages/MonitoringReports'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 // One URL, a different page per workspace (CHP gets the simple version)
@@ -86,6 +87,7 @@ const rawRoutes = [
   { path: '/chatbot-query-log', name: 'chatbot-query-log', element: ChatbotQueryLog },
   { path: '/my-tasks', name: 'my-tasks', element: MyTasks },
   { path: '/data-quality', name: 'data-quality', element: DataQuality },
+  { path: '/monitoring-reports', name: 'monitoring-reports', element: MonitoringReports },
   { path: '/follow-ups', name: 'follow-ups', element: FollowUps },
   { path: '/referrals', name: 'referrals', element: byWorkspace({ full: Referrals, fhw: FacilityReferrals }) },
   { path: '/feedback', name: 'feedback', element: Feedback },

@@ -1,0 +1,118 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-16 12:00:00.000000",
+ "modified": "2026-11-16 16:30:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "AI Prediction",
+ "description": "Disease suggestions for a report: the list shown to the officer, or the AI model's own answer (Monitoring Reports R38).",
+ "field_order": [
+  "kind",
+  "case_report",
+  "predicted_on",
+  "case_key",
+  "model_version",
+  "age_group",
+  "top_group",
+  "top_probability",
+  "predicted_disease",
+  "top3_diseases",
+  "suggested",
+  "suggested_sources"
+ ],
+ "fields": [
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "Model\nShown to officer",
+   "default": "Model",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "case_report",
+   "fieldtype": "Link",
+   "label": "Case report",
+   "options": "Case Report",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "predicted_on",
+   "fieldtype": "Datetime",
+   "label": "Predicted on",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "case_key",
+   "fieldtype": "Data",
+   "label": "Case key",
+   "search_index": 1
+  },
+  {
+   "fieldname": "model_version",
+   "fieldtype": "Data",
+   "label": "Model version"
+  },
+  {
+   "fieldname": "age_group",
+   "fieldtype": "Data",
+   "label": "Age group"
+  },
+  {
+   "fieldname": "top_group",
+   "fieldtype": "Data",
+   "label": "Model's top group"
+  },
+  {
+   "fieldname": "top_probability",
+   "fieldtype": "Float",
+   "label": "Top probability"
+  },
+  {
+   "fieldname": "predicted_disease",
+   "fieldtype": "Data",
+   "label": "Points to disease",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "top3_diseases",
+   "fieldtype": "Small Text",
+   "label": "Top 3 diseases"
+  },
+  {
+   "fieldname": "suggested",
+   "fieldtype": "Small Text",
+   "label": "Suggestions shown (in order)"
+  },
+  {
+   "fieldname": "suggested_sources",
+   "fieldtype": "Small Text",
+   "label": "Where each came from"
+  }
+ ],
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "in_create": 1,
+ "track_changes": 0,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

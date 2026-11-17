@@ -66,8 +66,8 @@ function subtitle(c) {
   return `Matches the case definition${c.probability ? ` · AI model also ${pct(c.probability)}` : ''}`
 }
 
-function OtherDisease({ options, saving, hasCurrent, hasCards, onChoose }) {
-  const [open, setOpen] = useState(false)
+// the full disease list; also opened from a common-illness card the app has no disease for
+function OtherDisease({ options, saving, hasCurrent, hasCards, onChoose, open, setOpen }) {
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="mt-1 text-xs font-medium text-red-700 hover:underline">
@@ -102,6 +102,18 @@ export default function DiseaseChoices({ cands, current, saving, onChoose, optio
   const modelOnly = list.length > 0 && list.every((c) => c.source === 'Model')
   const best = modelOnly ? list.reduce((a, c) => ((c.probability || 0) > (a.probability || 0) ? c : a), list[0]) : null
   const lean = best && others[0] && others[0].probability > (best.probability || 0)
+  const moreChoices = (cands && cands.moreChoices) || []
+  const [pickOpen, setPickOpen] = useState(false)
+  const chooseBtn = (key) => {
+    const on = current === key
+    return (
+      <button type="button" disabled={saving || on} onClick={() => onChoose(key)}
+        className={['shrink-0 inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors',
+          on ? 'border-red-200 bg-white text-red-700' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'].join(' ')}>
+        {on && <Check className="w-3.5 h-3.5" aria-hidden="true" />}{on ? 'Chosen' : 'Choose'}
+      </button>
+    )
+  }
   return (
     <div className="mb-4">
       {title && list.length > 0 && <div className="text-xs font-medium text-gray-400 mb-2">Which is it? Choose the disease to investigate</div>}
@@ -147,21 +159,40 @@ export default function DiseaseChoices({ cands, current, saving, onChoose, optio
           })}
         </div>
       )}
-      {more.length > 0 && <p className="mt-1.5 text-xs text-gray-500">Also possible: {more.join(', ')}</p>}
+      {moreChoices.length > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <span>Also possible:</span>
+          {moreChoices.map((m) => (
+            <span key={m.key} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 py-0.5 pl-2.5 pr-0.5 text-gray-800">
+              {m.name}{canChoose && chooseBtn(m.key)}
+            </span>
+          ))}
+        </div>
+      ) : more.length > 0 && <p className="mt-1.5 text-xs text-gray-500">Also possible: {more.join(', ')}</p>}
       {others.length > 0 && (
         <div className={list.length ? 'mt-3' : ''}>
           <div className="text-xs font-medium text-gray-400 mb-1.5">{list.length ? 'Or a common illness (not a priority disease)' : 'The AI model sees a common illness (not a priority disease)'}</div>
           <div className="space-y-2">
             {others.map((o) => (
-              <div key={o.disease} className="rounded-xl bg-gray-50 px-3 py-2">
-                <div className="text-sm font-medium text-gray-800">{o.disease} <span className="text-xs font-normal text-gray-500">{`· estimate ${pct(o.probability)}`}</span></div>
+              <div key={o.disease} className={['rounded-xl px-3 py-2', o.key && current === o.key ? 'border border-red-300 bg-red-50/60' : 'bg-gray-50'].join(' ')}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm font-medium text-gray-800">{o.disease} <span className="text-xs font-normal text-gray-500">{`· estimate ${pct(o.probability)}`}</span></div>
+                  {/* every suggestion can be chosen: straight away when the app has that disease, else from the full list */}
+                  {canChoose && (o.key ? chooseBtn(o.key) : (
+                    <button type="button" disabled={saving} onClick={() => setPickOpen(true)}
+                      className="shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                      Choose from list
+                    </button>
+                  ))}
+                </div>
                 <Reasons why={o.why} kind="model" />
               </div>
             ))}
           </div>
         </div>
       )}
-      {canChoose && <OtherDisease options={options} saving={saving} hasCurrent={hasCurrent} hasCards={list.length > 0} onChoose={onChoose} />}
+      {canChoose && <OtherDisease options={options} saving={saving} hasCurrent={hasCurrent} hasCards={list.length > 0} onChoose={onChoose}
+        open={pickOpen} setOpen={setPickOpen} />}
     </div>
   )
 }
