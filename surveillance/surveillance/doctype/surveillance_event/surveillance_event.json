@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-14 12:00:00.000000",
- "modified": "2026-10-30 12:00:00.000000",
+ "modified": "2026-11-17 17:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "module": "Surveillance",
@@ -15,6 +15,7 @@
   "title",
   "status",
   "severity",
+  "pathway",
   "disease",
   "disease_name",
   "priority",
@@ -86,6 +87,14 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "default": "standard"
+  },
+  {
+   "description": "Referral: an officer confirmed a disease that is not a priority disease in AI triage (by phone with the reporter), so the patient is referred, followed up and the case closed, without field investigation.",
+   "fieldname": "pathway",
+   "fieldtype": "Select",
+   "label": "Pathway",
+   "options": "\nReferral",
+   "read_only": 1
   },
   {
    "fieldname": "disease",

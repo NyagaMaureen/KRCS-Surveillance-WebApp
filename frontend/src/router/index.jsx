@@ -35,6 +35,7 @@ import FeedbackInbox from '../pages/FeedbackInbox'
 import ChpDashboard from '../pages/ChpDashboard'
 import ChpSettings from '../pages/ChpSettings'
 import FacilityReferrals from '../pages/FacilityReferrals'
+import ReferralsOverview from '../pages/ReferralsOverview'
 import DataQuality from '../pages/DataQuality'
 import FullDashboard from '../pages/FullDashboard'
 import HqDashboard from '../pages/HqDashboard'
@@ -90,6 +91,7 @@ const rawRoutes = [
   { path: '/monitoring-reports', name: 'monitoring-reports', element: MonitoringReports },
   { path: '/follow-ups', name: 'follow-ups', element: FollowUps },
   { path: '/referrals', name: 'referrals', element: byWorkspace({ full: Referrals, fhw: FacilityReferrals }) },
+  { path: '/referrals-overview', name: 'referrals-overview', element: ReferralsOverview },
   { path: '/feedback', name: 'feedback', element: Feedback },
   { path: '/feedback-inbox', name: 'feedback-inbox', element: FeedbackInbox },
 ]

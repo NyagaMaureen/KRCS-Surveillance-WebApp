@@ -9,6 +9,8 @@ export const SIDEBAR_MENU = [
   { section: 'SURVEILLANCE AND RESPONSE', items: [
     { label: 'Signals Captured', icon: 'FileText', page: 'reports', requiresCapability: ['view_reports', 'view_own_reports'] },
     { label: 'Review Queue', icon: 'BellRing', page: 'alerts-signals', requiresCapability: 'view_review_queue' },
+    // every referral in the user's area, ongoing or done; cases ready to close are closed here (KRCS 17 Nov 2026)
+    { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals-overview', requiresCapability: 'view_review_queue' },
   ]},
   { section: 'DATA AND INSIGHTS', items: [
     { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: ['use_knowledge_base', 'manage_knowledge_base'] },
@@ -89,7 +91,7 @@ export const FHW_MENU = [
 export const CHA_MENU = [
   { section: 'OVERVIEW', items: [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
-    { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals', requiresCapability: 'receive_tasks' },
+    { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals-overview', requiresCapability: 'receive_tasks' },   // their unit(s)
     { label: 'My Tasks', icon: 'ClipboardCheck', page: 'my-tasks', requiresCapability: 'receive_tasks' },
   ]},
 ]
@@ -98,7 +100,7 @@ export const MENUS = { full: SIDEBAR_MENU, chp: CHP_MENU, officer: OFFICER_MENU,
 
 // Pages each workspace may open (menu pages plus their detail pages). 'full' = no restriction.
 export const WORKSPACE_PAGES = {
-  cha: ['login', 'dashboard', 'referrals', 'my-tasks', 'epi-trends', 'alert-detail', 'ai-data-assistant', 'feedback',
+  cha: ['login', 'dashboard', 'referrals', 'referrals-overview', 'my-tasks', 'epi-trends', 'alert-detail', 'ai-data-assistant', 'feedback',
     'help-center', 'settings'],
   fhw: ['login', 'dashboard', 'epi-trends', 'alert-detail', 'reports', 'report-detail', 'record-health-signal', 'referrals', 'my-tasks',
     'ai-data-assistant', 'feedback', 'help-center', 'settings'],
@@ -106,7 +108,7 @@ export const WORKSPACE_PAGES = {
     'ai-data-assistant', 'feedback', 'help-center', 'settings', 'my-tasks'],
   officer: ['login', 'dashboard', 'alerts-signals', 'alerts-signals-detail', 'epi-trends', 'alert-detail', 'surveillance-map',
     'response', 'event-lifecycle', 'data-quality', 'analytics', 'ai-data-assistant', 'feedback', 'help-center', 'settings',
-    'reports', 'report-detail', 'response-protocols', 'my-tasks', 'chatbot-query-log'],
+    'reports', 'report-detail', 'response-protocols', 'my-tasks', 'chatbot-query-log', 'referrals-overview'],
 }
 
 // ---------- menus follow permissions ----------

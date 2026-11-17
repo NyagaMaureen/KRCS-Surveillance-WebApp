@@ -297,7 +297,7 @@ function Summary({ data, charts }) {
     <>
       {s.inShort?.length > 0 && (
         <section className="mb-5 rounded-xl border border-gray-200 bg-white p-5">
-          <h4 className="text-sm font-bold text-gray-900"> At a Glance</h4>
+          <h4 className="text-sm font-bold text-gray-900">  At a Glance</h4>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-900">
             {s.inShort.map((line) => <li key={line}>{line}</li>)}
           </ul>

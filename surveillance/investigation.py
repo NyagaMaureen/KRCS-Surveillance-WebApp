@@ -292,7 +292,7 @@ def check_gate(doc, action):
 	if action == "confirm" and g["openInvestigationSteps"]:
 		frappe.throw(_("Record an outcome for every investigation step first. Missing steps: {0}").format(
 			", ".join(str(n) for n in g["openInvestigationSteps"])))
-	if action == "close" and g["openResponseSteps"]:
+	if action == "close" and g["openResponseSteps"] and doc.get("pathway") != "Referral":   # referral: no response steps
 		frappe.throw(_("Record an outcome for every response step first. Missing steps: {0}").format(
 			", ".join(str(n) for n in g["openResponseSteps"])))
 

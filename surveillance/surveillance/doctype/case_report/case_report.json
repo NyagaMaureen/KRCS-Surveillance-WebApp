@@ -48,6 +48,8 @@
   "sb_updates",
   "updates",
   "extraction_details",
+  "phone_answers",
+  "force_review",
   "sb_changes",
   "changes"
  ],
@@ -330,6 +332,24 @@
    "no_copy": 1
   },
   {
+   "description": "AI triage: what the reporter answered by phone ({symptom: {a: Yes / No / Didn't know, by, at}}).",
+   "fieldname": "phone_answers",
+   "fieldtype": "Long Text",
+   "label": "Answers by phone",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1
+  },
+  {
+   "description": "An officer sent this clear-cut report to the Review Queue for a closer look.",
+   "fieldname": "force_review",
+   "fieldtype": "Check",
+   "label": "Sent to the Review Queue by an officer",
+   "read_only": 1,
+   "default": "0",
+   "no_copy": 1
+  },
+  {
    "fieldname": "sb_changes",
    "fieldtype": "Section Break",
    "label": "Update history"
@@ -347,7 +367,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-17 14:30:00.000000",
+ "modified": "2026-11-17 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "Case Report",

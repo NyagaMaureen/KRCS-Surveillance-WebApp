@@ -18,6 +18,8 @@ import {
   getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
   setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext, mergeEvents, getCbsContact, getTrendCbsReports,
   getReportCandidates, getDiseaseOptions, setSuspectedDisease, retryTranscription,
+  getTriage, logTriageCall, answerByPhone, confirmTriageDisease, getReferralPeople, referPatient, getReferralState,
+  closeReferralCase, getReferralFacilities,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import ConsentQuestion, { consentOk, consentFields } from '../components/report/ConsentQuestion'
@@ -70,8 +72,19 @@ function computeSteps(event, inv) {
   const states = ['future', 'future', 'future', 'future', 'future', 'future']
   const mark = (upTo) => { for (let i = 0; i < upTo; i++) states[i] = 'done' }
   let current = 3
+  const field = (event.signals || []).filter((s) => s.source === 'Field')
+  const triaged = !field.length || field.some((s) => s.check?.status === 'Verified')   // disease confirmed by phone
 
-  if (status === 'New' || status === 'Verifying') {
+  if (event.pathway === 'Referral') {   // non-priority disease confirmed in AI triage: refer, follow up, close
+    mark(2)
+    states[2] = states[3] = states[4] = 'skipped'
+    states[5] = status === 'Closed' ? 'done' : 'current'
+    current = 6
+  } else if ((status === 'New' || status === 'Verifying') && !triaged) {
+    mark(1)
+    states[1] = 'current'
+    current = 2
+  } else if (status === 'New' || status === 'Verifying') {
     mark(2)
     states[2] = 'current'
     current = 3
@@ -116,7 +129,7 @@ function Tracker({ event, states, openStep, onSelect }) {
                 : state === 'current' ? 'bg-white text-gray-700 ring-1 ring-gray-300'
                   : 'bg-gray-100 text-gray-400'
           const text = isOpen ? 'text-red-700 font-semibold' : state === 'done' || state === 'current' ? 'text-gray-800' : 'text-gray-400'
-          const sub = state === 'discarded' ? 'Discarded' : s.n === 1 ? sources || 'Reports'
+          const sub = state === 'discarded' ? 'Discarded' : state === 'skipped' ? 'Not needed' : s.n === 1 ? sources || 'Reports'
             : state === 'current' && !isOpen ? 'Next step' : ''
           return (
             <li key={s.n} className="flex-1 relative">
@@ -499,6 +512,484 @@ function SignalMedia({ eventId, signalId, media, canAct, report, onChanged }) {
   )
 }
 
+// ---------- AI triage by phone (KRCS 17 Nov 2026, flow agreed with Allan; layout reviewed with Maureen) ----------
+// Left: the possible diseases for the whole event (every report combined), short rows with "Why / why not".
+// Right: one reporter at a time: call them (Reached / No answer), then their questions.
+// The disease is chosen once for the event; the call is the verification of the report. When the reports point to
+// different diseases the officer splits one off: the priority / higher-risk one is investigated first.
+const ANSWER_OPTIONS = ['Yes', 'No', "Didn't know"]
+const DOT = ['bg-emerald-500', 'bg-amber-400', 'bg-amber-400', 'bg-gray-300']
+const RISK_TONE = { 'Very high': 'bg-red-50 text-red-700', High: 'bg-red-50 text-red-700', Medium: 'bg-amber-50 text-amber-800', Low: 'bg-gray-100 text-gray-600' }
+
+function TriageDisease({ d, open, onToggle, chosen, canChoose, onChoose }) {
+  const details = d.against.length || d.ask.length || d.unknown?.length || d.rulesOut.length || d.record != null || d.ageFor || d.ageAgainst
+  return (
+    <li className="py-3">
+      <div className="flex items-start gap-3">
+        <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${DOT[d.rank] || DOT[3]}`} aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className={`text-sm font-semibold ${d.rank === 3 ? 'text-gray-600' : 'text-gray-900'}`}>{d.name}</span>
+            {d.priority && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">Priority</span>}
+          </div>
+          <p className="text-xs text-gray-500">{d.level}</p>
+          {d.support.length > 0 && (
+            <p className="mt-1 text-xs text-gray-700">{d.support.map((s) => `${s.who}: ${s.signs.join(', ').toLowerCase()}`).join(' · ')}</p>
+          )}
+          {details ? (
+            <button type="button" aria-expanded={open} onClick={onToggle} className={`mt-1 inline-flex items-center gap-0.5 text-xs font-medium text-gray-500 hover:text-gray-900 rounded ${FOCUS}`}>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? '' : '-rotate-90'}`} aria-hidden="true" /> Why / why not
+            </button>
+          ) : null}
+          {open && (
+            <div className="mt-1.5 space-y-0.5 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-700">
+              {d.against.length > 0 && <p><span className="text-gray-500">Less likely because of:</span> {d.against.join(', ')}</p>}
+              {d.ageFor && <p><span className="text-gray-500">Age ({d.ageFor}):</span> more common at this age in past clinic visits</p>}
+              {d.ageAgainst && <p><span className="text-gray-500">Age ({d.ageAgainst}):</span> less common at this age in past clinic visits, but still possible</p>}
+              {d.ask.length > 0 && <p><span className="text-gray-500">Still to ask:</span> {d.ask.join(', ')}</p>}
+              {d.unknown?.length > 0 && <p><span className="text-gray-500">Not known:</span> {d.unknown.join(', ')}</p>}
+              {d.rulesOut.length > 0 && <p><span className="text-gray-500">Rules it out if present:</span> {d.rulesOut.join(', ')}</p>}
+              {d.record != null && <p className="text-gray-500">In past clinic visits where it was suggested, it was correct about {d.record} times in 10.</p>}
+            </div>
+          )}
+        </div>
+        {chosen ? (
+          <span className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700"><Check className="w-3.5 h-3.5" aria-hidden="true" />Chosen</span>
+        ) : canChoose ? (
+          <button type="button" onClick={onChoose} className={`shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${FOCUS}`}>Choose</button>
+        ) : null}
+      </div>
+    </li>
+  )
+}
+
+function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, onCall, onAnswer, onChanged }) {
+  const rep = r.reporter || {}
+  const [mediaOpen, setMediaOpen] = useState(false)
+  const media = r.media || []
+  const photos = media.filter((m) => m.type === 'Photo').length
+  const voices = media.filter((m) => m.type === 'Voice Note').length
+  const lastReach = r.attempts.filter((a) => a.outcome === 'Reached').slice(-1)[0]
+  const misses = r.attempts.filter((a) => a.outcome === 'No answer')
+  return (
+    <div className="rounded-xl border border-gray-200">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-gray-100 p-4">
+        <div className="min-w-0 flex-1 basis-64">
+          <p className="text-sm font-semibold text-gray-900">
+            {rep.name}{rep.role && <span className="font-normal text-gray-500"> · {rep.role}</span>}{r.unit && <span className="font-normal text-gray-500"> · {r.unit}</span>}
+          </p>
+          <p className="mt-0.5 text-sm text-gray-700">
+            {[r.symptoms.join(', ') || null, r.people ? countLabel(r.people) : null, r.deaths ? `${r.deaths} ${r.deaths === 1 ? 'death' : 'deaths'}` : null, r.ages, r.place].filter(Boolean).join(' · ') || '—'}
+          </p>
+          {r.channel === 'WhatsApp' && r.notes && <p className="mt-1 text-sm text-gray-600 italic">“{r.notes}”</p>}
+          <p className="mt-0.5 text-xs text-gray-400">
+            <Link to={`/reports/${encodeURIComponent(r.ref)}`} className={`font-mono text-red-700 hover:underline rounded ${FOCUS}`}>{r.ref}</Link> · {r.channel || 'Field report'} · {relTime(r.date)}
+            {media.length > 0 && (
+              <button type="button" onClick={() => setMediaOpen((v) => !v)} className={`ml-2 inline-flex items-center gap-1 font-medium text-gray-600 hover:text-gray-900 rounded ${FOCUS}`}>
+                {voices > 0 && <><Mic className="w-3 h-3" aria-hidden="true" />{voices} voice note{voices > 1 ? 's' : ''}</>}
+                {voices > 0 && photos > 0 && ' · '}
+                {photos > 0 && <><Camera className="w-3 h-3" aria-hidden="true" />{photos} photo{photos > 1 ? 's' : ''}</>}
+              </button>
+            )}
+          </p>
+        </div>
+        <div className="shrink-0 sm:text-right">
+          {rep.phone ? (
+            <p className="inline-flex items-center gap-1.5 text-base font-semibold text-gray-900 tabular-nums select-all"><Phone className="w-4 h-4 text-red-600" aria-hidden="true" />{rep.phone}</p>
+          ) : <p className="text-sm text-gray-500">No phone number on the report</p>}
+          {r.reached ? (
+            <p className="text-xs text-emerald-700">Reached{lastReach ? ` ${relTime(lastReach.at)}${lastReach.by ? ` by ${lastReach.by}` : ''}` : ''}</p>
+          ) : misses.length ? (
+            <p className="text-xs text-amber-700">No answer · {misses.length} {misses.length === 1 ? 'attempt' : 'attempts'} recorded</p>
+          ) : <p className="text-xs text-gray-400">Not called yet</p>}
+          {canAct && open && !r.reached && (
+            <div className="mt-2 flex gap-2 sm:justify-end">
+              <button type="button" disabled={busy} onClick={() => onCall(r, 'reached')} className={`${BTN} ${PRIMARY} ${FOCUS} px-3 py-1.5`}>Reached</button>
+              <button type="button" disabled={busy} onClick={() => onCall(r, 'no_answer')} className={`${BTN} ${SECONDARY} ${FOCUS} px-3 py-1.5`}>No answer</button>
+            </div>
+          )}
+        </div>
+      </div>
+      {mediaOpen && (
+        <div className="border-b border-gray-100 p-4">
+          <SignalMedia eventId={eventId} signalId={r.signal} media={media} canAct={canAct} report={r.ref} onChanged={onChanged} />
+        </div>
+      )}
+      {r.tryCha?.length > 0 && (
+        <div className="m-4 mb-0 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+          <span>Still not reached. Try the CHA of {r.unit}: {r.tryCha.map((c) => `${c.name}${c.phone ? `, ${c.phone}` : ''}`).join('; ')}. The case waits until someone is reached.</span>
+        </div>
+      )}
+      {r.reached ? (
+        r.questions.length === 0 ? (
+          <p className="p-4 text-sm text-gray-600">No questions to ask {_firstName(rep.name)}: the reported signs are enough for the suggestions.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {r.questions.map((q) => (
+              <li key={q.symptom} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{q.name}?</p>
+                  <p className="text-xs text-gray-400">
+                    {[q.diseases.length ? `For: ${q.diseases.join(', ')}` : null, q.source === 'report' ? 'from the report' : null].filter(Boolean).join(' · ') || 'Answered by phone'}
+                  </p>
+                </div>
+                {canAnswer ? (
+                  <MiniSeg label={q.name} options={ANSWER_OPTIONS} value={q.source === 'phone' ? q.answer : null} disabled={busyKey === `${r.ref}:${q.symptom}`}
+                    onChange={(v) => onAnswer(r, q, v === q.answer && q.source === 'phone' ? '' : v)} />
+                ) : <span className="text-sm text-gray-700">{q.answer || '—'}</span>}
+              </li>
+            ))}
+          </ul>
+        )
+      ) : (
+        <p className="p-4 text-sm text-gray-500">Call {_firstName(rep.name)}. Once reached, the questions to ask appear here.</p>
+      )}
+    </div>
+  )
+}
+const _firstName = (n) => String(n || 'the reporter').split(' ')[0]
+
+function TriageRisk({ risk, event }) {
+  const [open, setOpen] = useState(false)
+  if (!risk) return null
+  return (
+    <div className="shrink-0">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 ${FOCUS}`}>
+        <span className="text-gray-500">Risk</span><span className="font-semibold tabular-nums text-gray-900">{risk.score}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${RISK_TONE[risk.level] || RISK_TONE.Low}`}>{risk.level}</span>
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="absolute right-6 sm:right-7 z-20 mt-2 w-[min(92vw,560px)] rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {(risk.parts || []).map((p) => (
+              <li key={p.key} className="text-sm">
+                <div className="flex justify-between gap-3"><span className="font-medium text-gray-900">{p.label}</span><span className="tabular-nums"><b>{p.points % 1 ? p.points.toFixed(1) : p.points}</b><span className="text-gray-400"> / {p.max}</span></span></div>
+                <p className="text-xs text-gray-500">{String(p.why || '').split(/;\s+/).filter(Boolean).join(' · ')}</p>
+              </li>
+            ))}
+          </ul>
+          {risk.action && <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm"><span className="text-xs text-gray-500">Recommended action: </span>{risk.action}</p>}
+          <div className="mt-3"><ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} /></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TriagePanel({ event, canAct, onConfirmed, onNext, onError, onChanged, onDiscard, onSplit, busy: pageBusy }) {
+  const [data, setData] = useState(null)
+  const [failed, setFailed] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [busyKey, setBusyKey] = useState('')
+  const [pick, setPick] = useState(null)
+  const [pending, setPending] = useState(null)   // {key, name}: waiting for the officer's confirmation
+  const [openRow, setOpenRow] = useState(null)
+  const [options, setOptions] = useState([])
+  const [other, setOther] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
+
+  const load = useCallback(() => getTriage(event.id).then(setData).catch((e) => setFailed(e.message || 'AI triage could not be loaded.')), [event.id])
+  useEffect(() => { load() }, [load])
+  useEffect(() => { getDiseaseOptions().then((o) => setOptions(o || [])).catch(() => {}) }, [])
+
+  const reports = data?.reports || []
+  const current = reports.find((r) => r.ref === pick) || reports.find((r) => !r.reached) || reports[0] || null
+  const open = ['New', 'Verifying'].includes(event.status)
+  const queue = new Set(data?.queueDiseases || [])
+
+  async function call(r, outcome) {
+    setBusy(true)
+    try {
+      setData(await logTriageCall(event.id, r.signal, outcome))
+      setPick(r.ref)
+      onChanged()
+    } catch (e) { onError(e.message || 'Could not save the call') } finally { setBusy(false) }
+  }
+  async function answer(r, q, value) {
+    setBusyKey(`${r.ref}:${q.symptom}`)
+    try {
+      setData(await answerByPhone(event.id, r.ref, q.symptom, value))
+    } catch (e) { onError(e.message || 'Could not save the answer') } finally { setBusyKey('') }
+  }
+  async function confirm() {
+    setBusy(true)
+    try {
+      const res = await confirmTriageDisease(event.id, pending.key)
+      setPending(null)
+      await load()
+      onConfirmed(res)
+    } catch (e) { onError(e.message || 'Could not save the disease') } finally { setBusy(false) }
+  }
+
+  if (failed) return <div className={card}><PanelHeader title="AI triage" /><p className="text-sm text-red-700">{failed}</p></div>
+  if (!data) return <div className={card}><PanelHeader title="AI triage" /><p className="text-sm text-gray-400">Loading the reports and suggestions...</p></div>
+
+  const reached = reports.filter((r) => r.reached)
+  const canChoose = data.canChoose && open && reached.length > 0
+  const conflict = data.conflict
+
+  return (
+    <div className={`${card} relative`}>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">AI triage</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Call each reporter and ask their questions, then choose one disease for the event. The call is the verification of the report.</p>
+        </div>
+        <TriageRisk risk={event.risk} event={event} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <section aria-label="Possible diseases" className="self-start lg:sticky lg:top-4 rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-900">Possible diseases</h3>
+          <p className="text-xs text-gray-500">
+            For the whole event{reports.length > 1 ? `, from all ${reports.length} reports` : ''}. Updates as you answer.
+            {!canChoose && open && ' Reach a reporter before choosing.'}
+          </p>
+          {conflict && open && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+              <div>
+                <p>The reports point to different diseases: {conflict.reports.map((x) => `${_firstName(x.name)}'s to ${x.disease}`).join(', ')}.
+                  Split {_firstName(conflict.split.name)}'s report into its own event: this one is investigated first, then come back to it.</p>
+                {canAct && (
+                  <button type="button" disabled={pageBusy} onClick={() => onSplit(conflict.split)} className={`mt-1 inline-flex items-center gap-1 font-semibold underline underline-offset-2 rounded ${FOCUS}`}>
+                    <Scissors className="w-3 h-3" aria-hidden="true" /> Split {conflict.split.ref} ({_firstName(conflict.split.name)}) into its own event
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {data.diseases.length ? (
+            <ul className="mt-1 divide-y divide-gray-100">
+              {data.diseases.map((d) => (
+                <TriageDisease key={d.key} d={d} open={openRow === d.key} onToggle={() => setOpenRow(openRow === d.key ? null : d.key)}
+                  chosen={data.current === d.key && data.confirmed} canChoose={canChoose} onChoose={() => setPending({ key: d.key, name: d.name })} />
+              ))}
+            </ul>
+          ) : <p className="mt-3 text-sm text-gray-500">No suggestions yet. Ask the reporter what they see, or choose from all diseases.</p>}
+          {canChoose && (other ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <select autoFocus defaultValue="" aria-label="Choose another disease" onChange={(e) => { const o = options.find((x) => x.key === e.target.value); if (o) setPending({ key: o.key, name: o.name }); setOther(false) }}
+                className="w-full sm:w-72 bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                <option value="" disabled>Select a disease...</option>
+                {options.map((o) => <option key={o.key} value={o.key}>{o.name}</option>)}
+              </select>
+              <button type="button" onClick={() => setOther(false)} className="text-xs font-medium text-gray-500 hover:text-gray-900">Cancel</button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setOther(true)} className="mt-2 text-xs font-medium text-red-700 hover:underline">None of these? Choose another disease</button>
+          ))}
+          {pending && (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50/50 p-3">
+              <p className="text-sm text-gray-900"><b>{pending.name}</b> for this event?</p>
+              <p className="text-xs text-gray-600 mt-1">
+                {queue.has(pending.key) ? 'A priority disease: the case continues to verification and investigation.'
+                  : 'Not a priority disease: refer the patient, follow up, then close. It is still counted in Epi Trends.'}
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button type="button" disabled={busy} onClick={confirm} className={`${BTN} ${PRIMARY} ${FOCUS} px-4 py-2`}>{busy ? 'Saving...' : 'Confirm'}</button>
+                <button type="button" disabled={busy} onClick={() => setPending(null)} className={`${BTN} ${SECONDARY} ${FOCUS} px-4 py-2`}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section aria-label="Reporters" className="min-w-0">
+          {reports.length > 1 && (
+            <div role="tablist" aria-label="Reporter" className="mb-3 flex flex-wrap gap-2">
+              {reports.map((r) => (
+                <button key={r.ref} type="button" role="tab" aria-selected={current?.ref === r.ref} onClick={() => setPick(r.ref)}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${current?.ref === r.ref ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'} ${FOCUS}`}>
+                  <span className={`flex h-4 w-4 items-center justify-center rounded-full ${r.reached ? 'bg-emerald-500 text-white' : r.noAnswer ? 'bg-amber-400 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                    {r.reached ? <Check className="h-3 w-3" aria-hidden="true" /> : <Phone className="h-2.5 w-2.5" aria-hidden="true" />}
+                  </span>
+                  {r.reporter?.name} <span className={current?.ref === r.ref ? 'text-white/60' : 'text-gray-400'}>{r.ref}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {current && (
+            <TriageReporter key={current.ref} r={current} eventId={event.id} canAct={canAct} open={open} busy={busy} busyKey={busyKey}
+              canAnswer={canAct && open && data.canChoose} onCall={call} onAnswer={answer} onChanged={() => { load(); onChanged() }} />
+          )}
+        </section>
+      </div>
+
+      <div className="mt-6 flex items-center justify-between gap-3 flex-wrap border-t border-gray-100 pt-4">
+        {canAct && open && !discarding ? (
+          <button type="button" disabled={pageBusy} onClick={() => setDiscarding(true)} className={`text-sm font-medium text-gray-500 hover:text-gray-900 underline underline-offset-2 rounded ${FOCUS}`}>
+            Duplicate, wrong number or not a real case? Discard with a reason
+          </button>
+        ) : <span />}
+        {data.pathway === 'Referral' ? (
+          <button type="button" onClick={() => onNext(6)} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Refer the patient →</button>
+        ) : data.confirmed ? (
+          <button type="button" onClick={() => onNext(3)} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Continue to verification →</button>
+        ) : <span className="text-sm text-gray-400">{reached.length ? 'Choose a disease to continue' : 'Call a reporter to begin'}</span>}
+      </div>
+      {canAct && open && discarding && <DiscardBox busy={pageBusy} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
+    </div>
+  )
+}
+
+// ---------- referral pathway (step 6 when a non-priority disease was confirmed in AI triage) ----------
+const URGENCY = ['Routine', 'Urgent', 'Emergency']
+const AGE_GROUPS = ['Under 1', '1-4 years', '5-14 years', '15+ years']
+const plusDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+
+function ReferralForm({ event, onSent, onError }) {
+  const [people, setPeople] = useState(null)
+  const [facilities, setFacilities] = useState(null)
+  const [f, setF] = useState({ assigned_to: '', facility: '', urgency: 'Routine', due_date: plusDays(1), people: event.people || 1,
+    age_group: '', sex: '', instructions: '', followup: true, followup_days: 14 })
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    getReferralPeople(event.id).then((p) => { setPeople(p); setF((x) => (x.assigned_to || !p.length ? x : { ...x, assigned_to: p[0].user })) }).catch(() => setPeople([]))
+    getReferralFacilities().then(setFacilities).catch(() => setFacilities([]))
+  }, [event.id])
+  const groups = useMemo(() => {
+    const out = []
+    for (const p of people || []) {
+      let g = out.find((x) => x.name === p.group)
+      if (!g) { g = { name: p.group, list: [] }; out.push(g) }
+      g.list.push(p)
+    }
+    return out
+  }, [people])
+  async function send() {
+    if (!f.assigned_to) { onError('Choose who refers the patient.'); return }
+    if (!f.facility.trim()) { onError('Choose the health facility.'); return }
+    setSaving(true)
+    try {
+      await referPatient(event.id, { assigned_to: f.assigned_to, facility: f.facility.trim(), urgency: f.urgency, due_date: f.due_date,
+        people: f.people, age_group: f.age_group, sex: f.sex, instructions: f.instructions,
+        followup_days: f.followup ? f.followup_days : 0 })
+      onSent()
+    } catch (e) { onError(e.message || 'Could not send the referral') } finally { setSaving(false) }
+  }
+  const L = 'block text-sm font-medium text-gray-700 mb-1.5'
+  return (
+    <div className="grid gap-4 md:grid-cols-2 max-w-3xl">
+      <div className="md:col-span-2">
+        <label className={L} htmlFor="ref-who">Who refers the patient</label>
+        <select id="ref-who" value={f.assigned_to} onChange={(e) => setF({ ...f, assigned_to: e.target.value })} className={INPUT} disabled={!people}>
+          {!people && <option>Loading...</option>}
+          {people && !people.length && <option value="">No CHP or CHA found for this area</option>}
+          {groups.map((g) => (
+            <optgroup key={g.name} label={g.name}>
+              {g.list.map((p) => <option key={p.user} value={p.user}>{p.name}{p.role ? ` · ${p.role}` : ''}{p.unit ? ` · ${p.unit}` : ''}{p.phone ? ` · ${p.phone}` : ''}</option>)}
+            </optgroup>
+          ))}
+        </select>
+        <p className="mt-1.5 text-xs text-gray-500">They get the referral on their Referrals page, with a notification.</p>
+      </div>
+      <div>
+        <label className={L} htmlFor="ref-fac">Health facility</label>
+        {facilities && facilities.length > 0 ? (
+          <select id="ref-fac" value={f.facility} onChange={(e) => setF({ ...f, facility: e.target.value })} className={INPUT}>
+            <option value="">Choose a facility</option>
+            {facilities.map((x) => <option key={x.name} value={x.name}>{x.name}{x.subCounty ? ` · ${x.subCounty}` : ''}</option>)}
+          </select>
+        ) : (
+          <input id="ref-fac" value={f.facility} onChange={(e) => setF({ ...f, facility: e.target.value })} placeholder="Facility name" className={INPUT} />
+        )}
+      </div>
+      <div>
+        <span className={L}>Urgency</span>
+        <Seg label="Urgency" options={URGENCY.map((u) => ({ value: u, label: u }))} value={f.urgency} onChange={(v) => setF({ ...f, urgency: v })} />
+      </div>
+      <div>
+        <label className={L} htmlFor="ref-people">Patients</label>
+        <input id="ref-people" type="number" min={1} value={f.people} onChange={(e) => setF({ ...f, people: e.target.value })} className={INPUT} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={L} htmlFor="ref-age">Age group</label>
+          <select id="ref-age" value={f.age_group} onChange={(e) => setF({ ...f, age_group: e.target.value })} className={INPUT}>
+            <option value="">—</option>{AGE_GROUPS.map((a) => <option key={a}>{a}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={L} htmlFor="ref-sex">Sex</label>
+          <select id="ref-sex" value={f.sex} onChange={(e) => setF({ ...f, sex: e.target.value })} className={INPUT}>
+            <option value="">—</option><option>Female</option><option>Male</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className={L} htmlFor="ref-due">Refer by</label>
+        <input id="ref-due" type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} className={INPUT} />
+      </div>
+      <div className="md:col-span-2">
+        <label className={L} htmlFor="ref-note">Instructions</label>
+        <textarea id="ref-note" rows={2} value={f.instructions} onChange={(e) => setF({ ...f, instructions: e.target.value })} placeholder="e.g. take the children to the facility today; give ORS on the way" className={INPUT} />
+      </div>
+      <div className="md:col-span-2 rounded-xl border border-gray-200 p-3">
+        <label className="flex flex-wrap items-center gap-2 text-sm text-gray-800">
+          <input type="checkbox" checked={f.followup} onChange={(e) => setF({ ...f, followup: e.target.checked })} className="h-4 w-4 rounded border-gray-300" />
+          Follow up after
+          <input type="number" min={1} max={30} value={f.followup_days} disabled={!f.followup} onChange={(e) => setF({ ...f, followup_days: e.target.value })}
+            aria-label="Follow-up after days" className="w-16 rounded-md border border-gray-300 px-2 py-0.5 text-sm disabled:opacity-50" /> days
+        </label>
+        <p className="ml-6 mt-1 text-xs text-gray-500">The same person checks on the patient: did they reach the facility, are they better, any new cases nearby?</p>
+      </div>
+      <div className="md:col-span-2">
+        <button type="button" disabled={saving} onClick={send} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{saving ? 'Sending...' : 'Send referral'}</button>
+      </div>
+    </div>
+  )
+}
+
+function ReferralPanel({ event, canAct, onToast, onClosed }) {
+  const tasksCtx = useEventTasks()
+  const [state, setState] = useState(null)
+  const [note, setNote] = useState('')
+  const [closing, setClosing] = useState(false)
+  const load = useCallback(() => getReferralState(event.id).then((s) => { setState(s); setNote((n) => n || s.summary || '') }).catch(() => setState({ ready: false, hasReferral: false })), [event.id])
+  const taskCount = tasksCtx?.tasks?.length
+  useEffect(() => { load() }, [load, taskCount])
+  const closed = event.status === 'Closed'
+  async function close() {
+    if (!note.trim()) { onToast('Add a closing summary.', true); return }
+    setClosing(true)
+    try {
+      await closeReferralCase(event.id, note.trim())
+      onToast('Case closed')
+      onClosed()
+    } catch (e) { onToast(e.message || 'Could not close the case', true) } finally { setClosing(false) }
+  }
+  return (
+    <div className={card}>
+      <PanelHeader title={closed ? 'Referral & close' : state?.hasReferral ? 'Referral & close' : 'Refer the patient'}
+        sub={`${event.diseaseName || 'This disease'} is not a priority disease: the patient is referred to a health facility, followed up, then the case is closed. Verification, investigation and the decision are not needed.`} />
+      {!state ? <p className="text-sm text-gray-400">Loading...</p> : closed ? (
+        <p className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 text-sm text-emerald-900">The case is closed. The referral and follow-up are listed under Tasks below.</p>
+      ) : !state.hasReferral ? (
+        canAct ? <ReferralForm event={event} onSent={() => { onToast('Referral sent'); tasksCtx?.reload(); load() }} onError={(m) => onToast(m, true)} />
+          : <p className="text-sm text-gray-600">An officer will refer the patient.</p>
+      ) : state.ready ? (
+        <div className="max-w-3xl">
+          <p className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 text-sm text-emerald-900">The referral{(tasksCtx?.tasks || []).some((t) => t.type === 'Follow-up') ? ' and follow-up are' : ' is'} done. Ready to close.</p>
+          {canAct && (
+            <>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="close-note">Closing summary</label>
+              <textarea id="close-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} className={INPUT} />
+              <button type="button" disabled={closing} onClick={close} className={`mt-3 ${BTN} ${PRIMARY} ${FOCUS}`}>{closing ? 'Closing...' : 'Close case'}</button>
+            </>
+          )}
+        </div>
+      ) : (
+        <p className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
+          Referral sent. The case is ready to close once the referral{(tasksCtx?.tasks || []).some((t) => t.type === 'Follow-up') ? ' and follow-up are' : ' is'} marked done. Progress is under Tasks below and on the Referrals page.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, onDiscard, onChanged }) {
   const [showAll, setShowAll] = useState(false)
   const [discarding, setDiscarding] = useState(false)
@@ -575,7 +1066,9 @@ function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, on
 
 function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVerify, canAct, canSplit, onCheck, onSplit, onAnswer, onProceed, onDecide, onDiscard }) {
   const [showAll, setShowAll] = useState(false)
-  const [tab, setTab] = useState('A')
+  // field reports are checked by phone in AI triage (the call is their verification), so only the situation is left
+  const triaged = signals.some((s) => s.source === 'Field')
+  const [tab, setTab] = useState(triaged ? 'B' : 'A')
   const [discarding, setDiscarding] = useState(false)
   const keyCheck = inv.gates?.keyCheck
   const keyFailed = !!keyCheck?.failed
@@ -602,7 +1095,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
   const open = event.status === 'New' || event.status === 'Verifying'
   const action = inv.suggestion?.action
   const fromTrend = signals.length === 0 && !!event.fromAlert
-  const reportsDone = fromTrend ? !!caseQ?.answer : checkedCount > 0
+  const reportsDone = triaged || (fromTrend ? !!caseQ?.answer : checkedCount > 0)
   const questionsDone = answered === questions.length
   const next = !reportsDone ? (fromTrend ? 'Answer the case definition question in A.' : 'Check at least one report in A.')
     : !questionsDone ? `Answer the ${questions.length - answered} remaining question(s) in B (Not sure is fine).`
@@ -610,13 +1103,13 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
 
   return (
     <div className={card}>
-      <PanelHeader title="Verification" sub="Check the reports, then answer questions about the situation. Then decide the next step." />
+      <PanelHeader title="Verification" sub={triaged ? "The reports were checked by phone in AI triage. Answer the questions about the situation, then decide the next step." : "Check the reports, then answer questions about the situation. Then decide the next step."} />
 
       <div role="tablist" aria-label="Verification steps" className="mb-6 flex gap-1 border-b border-gray-200 overflow-x-auto">
         {[
           { k: 'A', t: fromTrend ? 'Check the trend' : 'Check the reports', d: fromTrend ? (caseQ?.answer ? 1 : 0) : checkedCount, n: fromTrend ? 1 : signals.length },
           { k: 'B', t: 'About the situation', d: answered, n: questions.length },
-        ].map((x) => {
+        ].filter((x) => !(triaged && x.k === 'A')).map((x) => {
           const on = tab === x.k
           const done = x.n > 0 && x.d >= x.n
           return (
@@ -1874,7 +2367,7 @@ export default function EventDetail() {
 
   const status = event?.status
   useEffect(() => {
-    if (status && currentStep) setOpenStep(status === 'New' ? 1 : currentStep)
+    if (status && currentStep) setOpenStep(currentStep)
     // only re-open the current step when the status changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
@@ -2072,6 +2565,33 @@ export default function EventDetail() {
           />
         )
       case 2:
+        if (fieldReports.length > 0) {
+          return (
+            <TriagePanel
+              key={`${event.id}-${reportVersion}`}
+              event={event}
+              canAct={canAct}
+              busy={busy}
+              onChanged={refreshEvent}
+              onError={(m) => showToast(m, true)}
+              onNext={selectStep}
+              onDiscard={(reason) => runAction('discard', reason)}
+              onSplit={async (sp) => {
+                try {
+                  const res = await splitReport(event.id, sp.signal, `The reports point to different diseases: ${sp.ref} (${sp.disease}) is followed up on its own, after this one.`)
+                  showToast(`${sp.ref} moved to ${res.newEvent}. Come back to it after this one.`, false, 8000)
+                  setReportVersion((v) => v + 1)
+                  refreshEvent()
+                } catch (err) { showToast(err.message || 'Could not split the report', true) }
+              }}
+              onConfirmed={(r) => {
+                showToast(r.pathway === 'Referral' ? `${r.diseaseName} confirmed. Refer the patient next.` : `${r.diseaseName} confirmed. Continue to verification.`)
+                refreshEvent()
+                selectStep(r.pathway === 'Referral' ? 6 : 3)
+              }}
+            />
+          )
+        }
         return (
           <div className={card}>
             <PanelHeader title="AI analysis & risk assessment" sub="A quick check of how urgent this looks" />
@@ -2141,6 +2661,9 @@ export default function EventDetail() {
           />
         )
       case 6:
+        if (event.pathway === 'Referral') {
+          return <ReferralPanel event={event} canAct={canAct} onToast={showToast} onClosed={refreshEvent} />
+        }
         return (
           <ResponsePanel
             event={event}
@@ -2183,7 +2706,7 @@ export default function EventDetail() {
         </div>
       ) : event && inv && (
         <div className="flex flex-col gap-6">
-          <p className="text-sm text-gray-500 -mb-2">One reported event from the field. Work through the steps below: check the AI triage, verify with the reporter, investigate, then record a decision.</p>
+          <p className="text-sm text-gray-500 -mb-2">One reported event from the field. Work through the steps below: call the reporter in AI triage and choose the disease, then verify and investigate (priority diseases) or refer the patient (other diseases).</p>
           {event.mergedInto && (
             <div className="flex items-center gap-2 rounded-xl bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700">
               <Link2 className="w-4 h-4 shrink-0" aria-hidden="true" />

@@ -1483,3 +1483,36 @@ export async function downloadDashboardExcel({ title, meta, sheets, filename }) 
   a.remove()
   URL.revokeObjectURL(url)
 }
+
+// ---------- AI triage by phone, referral pathway, Referrals page (surveillance.triage, KRCS 17 Nov 2026) ----------
+const TRIAGE = '/api/method/surveillance.triage'
+export async function getTriage(event) {
+  return callMethod(`${TRIAGE}.get_triage?event=${encodeURIComponent(event)}`)
+}
+export async function logTriageCall(event, signal, outcome) {
+  return callMethodPost(`${TRIAGE}.log_call`, { event, signal, outcome })
+}
+export async function answerByPhone(event, report, symptom, value) {
+  return callMethodPost(`${TRIAGE}.answer`, { event, report, symptom, value: value || '' })
+}
+export async function confirmTriageDisease(event, disease) {
+  return callMethodPost(`${TRIAGE}.confirm_disease`, { event, disease })
+}
+export async function getReferralPeople(event) {
+  return (await callMethod(`${TRIAGE}.referral_people?event=${encodeURIComponent(event)}`)) || []
+}
+export async function referPatient(event, data) {
+  return callMethodPost(`${TRIAGE}.refer`, { event, ...data })
+}
+export async function getReferralState(event) {
+  return callMethod(`${TRIAGE}.get_referral_state?event=${encodeURIComponent(event)}`)
+}
+export async function closeReferralCase(event, note) {
+  return callMethodPost(`${TRIAGE}.close_case`, { event, note })
+}
+export async function getReferralsOverview() {
+  return (await callMethod(`${TRIAGE}.get_referrals`)) || { referrals: [], counts: {} }
+}
+export async function sendReportToQueue(report) {
+  return callMethodPost(`${TRIAGE}.send_to_queue`, { report })
+}

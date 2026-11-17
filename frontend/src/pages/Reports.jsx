@@ -65,11 +65,24 @@ export default function Reports() {
 
   const diseaseMap = useMemo(() => Object.fromEntries(diseaseOptions.map((d) => [d.key, d.name])), [diseaseOptions])
   const diseaseName = (key) => (key ? diseaseMap[key] || key : 'Unclassified illness')   // same wording as alerts and the reporter's screen
+  // KRCS 17 Nov 2026: the disease shows once an officer chose it in AI triage; clear-cut common illnesses show the case
+  // definition's disease; reports still in the Review Queue say "Being reviewed". Only for those who can see the disease.
+  const canSeeDisease = isChp || has('verify_suspected_disease') || has('see_suspected_disease')
+  const diseaseShown = (r) => {
+    if (r.classified_by === 'Officer' && r.suspected_disease) return { text: diseaseName(r.suspected_disease) }
+    if (r.status === 'Recorded' && r.suspected_disease) return { text: diseaseName(r.suspected_disease), note: 'by case definition' }
+    if (r.status === 'Closed') return { text: 'Not confirmed', muted: true }
+    return { text: 'Being reviewed', muted: true }
+  }
+  const DiseaseCell = ({ r }) => {
+    const d = diseaseShown(r)
+    return <span className={d.muted ? 'text-gray-400' : ''}>{d.text}{d.note && <span className="block text-xs text-gray-400">{d.note}</span>}</span>
+  }
 
   const visibleReports = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return reports
-    return reports.filter((r) => [r.reporter_name, r.location_name, r.symptom_tags, diseaseName(r.suspected_disease)]
+    return reports.filter((r) => [r.reporter_name, r.location_name, r.symptom_tags, canSeeDisease ? diseaseShown(r).text : '']
       .some((v) => (v || '').toLowerCase().includes(q)))
   }, [reports, search, diseaseMap])
 
@@ -246,7 +259,7 @@ export default function Reports() {
                 </span>
                 <span className={['text-xs font-medium px-2 py-1 rounded-full shrink-0', statusColor(r.status)].join(' ')}>{statusLabel(r.status)}</span>
               </div>
-              <div className="mt-1 text-sm text-gray-700">{diseaseName(r.suspected_disease)}</div>
+              {canSeeDisease && <div className="mt-1 text-sm text-gray-700"><DiseaseCell r={r} /></div>}
               <div className="mt-0.5 text-xs text-gray-500">{[placeLine(r), r.location_name].filter(Boolean).join(' · ') || '—'}</div>
               {r.community_health_unit && <div className="mt-0.5 text-xs text-gray-500">Health unit: {unitName(r.community_health_unit)}</div>}
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
@@ -268,7 +281,7 @@ export default function Reports() {
                 <th className="px-5 py-3 font-medium">Symptoms</th>
                 <th className="px-5 py-3 font-medium">Location</th>
                 <th className="px-5 py-3 font-medium">Health Unit</th>
-                <th className="px-5 py-3 font-medium">Suspected Disease</th>
+                {canSeeDisease && <th className="px-5 py-3 font-medium">Suspected Disease</th>}
                 <th className="px-5 py-3 font-medium">Channel</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Date</th>
@@ -299,7 +312,7 @@ export default function Reports() {
                     {placeLine(r) && r.location_name && <span className="block text-xs text-gray-400">{r.location_name}</span>}
                   </td>
                   <td className="px-5 py-3 text-gray-700">{r.community_health_unit ? unitName(r.community_health_unit) : <span className="text-gray-400">—</span>}</td>
-                  <td className="px-5 py-3 text-gray-700">{diseaseName(r.suspected_disease)}</td>
+                  {canSeeDisease && <td className="px-5 py-3 text-gray-700"><DiseaseCell r={r} /></td>}
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span></td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', statusColor(r.status)].join(' ')}>{statusLabel(r.status)}</span></td>
                   <td className="px-5 py-3 text-gray-500 whitespace-nowrap">

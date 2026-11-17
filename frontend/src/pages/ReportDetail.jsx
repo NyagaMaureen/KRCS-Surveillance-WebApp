@@ -1,10 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope, History } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getUnitOptions, getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getReportCandidates, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
+import { getUnitOptions, getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, getReportCandidates, sendReportToQueue, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
 import { parseReason } from '../components/risk/reasonParts'
-import DiseaseChoices from '../components/risk/DiseaseChoices'
 import VoicePicked from '../components/report/VoicePicked'
 import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
 import { useCapabilities } from '../context/CapabilitiesContext'
@@ -132,6 +131,7 @@ function UpdateHistory({ changes }) {
 
 export default function ReportDetail() {
   const { id } = useParams()
+  const navigate = useNavigate()
 
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -141,7 +141,6 @@ export default function ReportDetail() {
   const [editAttachments, setEditAttachments] = useState([])
   const [actionError, setActionError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [changingDisease, setChangingDisease] = useState(false)
   const [lightboxImage, setLightboxImage] = useState(null)
   const [uploading, setUploading] = useState({})
   const [uploadErrors, setUploadErrors] = useState({})
@@ -151,7 +150,6 @@ export default function ReportDetail() {
   const [subCounties, setSubCounties] = useState([])
   const [regions, setRegions] = useState([])
   const [diseaseOptions, setDiseaseOptions] = useState([])
-  const [savingDisease, setSavingDisease] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '', error: false })
   const toastTimerRef = useRef(null)
   const { has, workspace } = useCapabilities()
@@ -204,6 +202,30 @@ export default function ReportDetail() {
     return d ? d.name : ''
   }, [diseaseOptions, report])
 
+  // Signals Captured (KRCS 17 Nov 2026): the disease shows once an officer chose it in AI triage; clear-cut common
+  // illnesses show the case definition's disease; anything else in the queue is "Being reviewed".
+  const shownDisease = useMemo(() => {
+    if (!report) return { text: '' }
+    if (report.classified_by === 'Officer' && report.suspected_disease) return { text: diseaseName || report.suspected_disease }
+    if (report.status === 'Recorded' && report.suspected_disease) return { text: diseaseName || report.suspected_disease, note: 'By case definition (not reviewed by an officer)' }
+    if (report.status === 'Closed') return { text: 'Not confirmed', muted: true }
+    return { text: 'Being reviewed', muted: true }
+  }, [report, diseaseName])
+
+  const [sendingToQueue, setSendingToQueue] = useState(false)
+  async function sendToQueue() {
+    setSendingToQueue(true)
+    try {
+      const r = await sendReportToQueue(report.name)
+      showToast(`Sent to the Review Queue as ${r.event}`)
+      navigate(`/alerts-signals/${encodeURIComponent(r.event)}`)
+    } catch (e) {
+      showToast(e.message || 'Could not send it to the Review Queue', true)
+    } finally {
+      setSendingToQueue(false)
+    }
+  }
+
   const classificationLines = useMemo(() => {
     const reason = report?.classification_reason || ''
     const idx = reason.indexOf('\nRules view:')
@@ -219,21 +241,6 @@ export default function ReportDetail() {
     return () => { live = false }
   }, [report?.name, report?.suspected_disease, report?.classified_by]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleChangeDisease(key) {
-    setSavingDisease(true)
-    try {
-      const updated = await setSuspectedDisease(report.name, key)
-      setReport((prev) => ({ ...prev, ...updated }))
-      setChangingDisease(false)
-      showToast('Suspected disease updated')
-    } catch (e) {
-      showToast(e.message || 'Could not update suspected disease', true)
-    } finally {
-      setSavingDisease(false)
-    }
-  }
-
-  // an officer already chose the disease: show only that (the possible diseases open with "Change the disease")
   const officerChose = report?.classified_by === 'Officer' && !!report?.suspected_disease
 
   const categoryOptions = useMemo(() => withCurrentValue(CATEGORIES, report?.category), [report])
@@ -498,58 +505,36 @@ export default function ReportDetail() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2.5 mb-3">
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mb-3">
                       <Stethoscope className="w-5 h-5 text-red-700 shrink-0" />
-                      <span className={['text-lg font-bold', report.suspected_disease ? 'text-gray-900' : 'text-gray-400'].join(' ')}>
-                        {report.suspected_disease ? (diseaseName || report.suspected_disease) : 'Not classified'}
-                      </span>
+                      <span className={['text-lg font-bold', shownDisease.muted ? 'text-gray-400' : 'text-gray-900'].join(' ')}>{shownDisease.text}</span>
+                      {shownDisease.note && <span className="text-xs text-gray-500">{shownDisease.note}</span>}
                     </div>
 
                     {cands && cands.event && OPEN_EVENT.includes(cands.event.status) ? (
                       <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p className="text-sm text-gray-800">This report is being reviewed in Alerts &amp; Signals. The disease is decided there, with the investigation.</p>
+                        <p className="text-sm text-gray-800">This report is in the Review Queue. The disease is chosen in AI triage, after a phone call with the reporter.</p>
                         <Link to={`/alerts-signals/${encodeURIComponent(cands.event.id)}`} className="mt-1 inline-block text-sm font-medium text-red-700 hover:underline">
                           Open {cands.event.id} ({cands.event.status}) &rarr;
                         </Link>
                       </div>
-                    ) : officerChose && !changingDisease ? (
-                      has('verify_suspected_disease') ? (
-                        <button type="button" onClick={() => setChangingDisease(true)} className="mb-3 text-sm font-medium text-red-700 hover:underline">
-                          Change the disease
+                    ) : report.status === 'Recorded' && has('act_on_events') ? (
+                      <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p className="text-sm text-gray-800">A clear-cut common illness: counted in Epi Trends without an officer's review. Want a closer look?</p>
+                        <button type="button" disabled={sendingToQueue} onClick={sendToQueue} className="mt-2 inline-flex items-center gap-1.5 border border-gray-200 bg-white rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60">
+                          {sendingToQueue ? 'Sending...' : 'Send to Review Queue'}
                         </button>
-                      ) : null
-                    ) : has('verify_suspected_disease') && cands ? (
-                      <>
-                      {changingDisease && (
-                        <button type="button" onClick={() => setChangingDisease(false)} className="mb-2 text-sm font-medium text-gray-500 hover:text-gray-900">
-                          Keep {diseaseName || report.suspected_disease}
-                        </button>
-                      )}
-                      <DiseaseChoices
-                        cands={cands}
-                        current={report.classified_by === 'Officer' ? report.suspected_disease : null}
-                        saving={savingDisease}
-                        onChoose={handleChangeDisease}
-                        options={diseaseOptions}
-                        hasCurrent={!!report.suspected_disease}
-                      />
-                      </>
+                      </div>
                     ) : null}
 
-                    {report.classification_reason && (() => {
+                    {report.classification_reason && !shownDisease.muted && (() => {
                       const byPerson = report.classified_by === 'Officer'
                       const dec = parseReason(classificationLines.decision)
-                      const rules = classificationLines.rulesView ? parseReason(classificationLines.rulesView) : null
                       return (
                         <div className="mb-3">
                           {byPerson ? (
                             <>
                               <p className="text-sm text-gray-700">{classificationLines.decision}</p>
-                              {rules && changingDisease && (
-                                <p className="mt-1 text-xs text-gray-500">
-                                  The case definition suggested: {rules.head.replace(/^Suspected\s+/i, '')}{rules.signs ? ` (${rules.signs})` : ''}
-                                </p>
-                              )}
                             </>
                           ) : dec.signs ? (
                             <>
@@ -569,7 +554,7 @@ export default function ReportDetail() {
                       )
                     })()}
 
-                    {!officerChose && alsoConsistentWith(report.also_consistent_with).length > 0 && (
+                    {!officerChose && !shownDisease.muted && alsoConsistentWith(report.also_consistent_with).length > 0 && (
                       <div>
                         <div className="text-xs font-medium text-gray-400 mb-1.5">Also consistent with</div>
                         <div className="flex flex-wrap gap-1.5">

@@ -409,6 +409,9 @@ def _field_report_time(doc):
 
 def on_case_report(doc, method=None):
 	"""Keep the Field signal for a Case Report in step with the report."""
+	from surveillance.triage import held_by_triage
+	if held_by_triage(doc):
+		return   # AI triage is updating the report, or its event is on the referral pathway: the event stays as it is
 	if doc.review_outcome == NOT_OF_CONCERN and not doc.suspected_disease:
 		event = frappe.db.get_value("Surveillance Signal", f"Field-{doc.name}", "event")
 		if not (event and frappe.db.get_value("Surveillance Event", event, "status") in CLOSED):
@@ -424,6 +427,8 @@ def on_case_report(doc, method=None):
 		# a disease outside the queue goes straight to Epi Trends only when it is clear-cut, or an officer decided
 		if doc.classified_by != "Officer" and in_scope(UNCLASSIFIED, sub, "Field"):
 			doubt = review_doubt(doc)
+		if not doubt and doc.get("force_review") and doc.classified_by != "Officer":
+			doubt = "an officer sent it to the Review Queue for a closer look"
 		if not doubt:
 			name = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
 			remove_signal("Field", doc.name, note=f"Report {doc.name} set to {name}: not a Review Queue disease, "
@@ -635,7 +640,7 @@ def _report_media(report):
 
 FIELDS = ["name", "title", "disease", "disease_name", "priority", "severity", "status", "county", "sub_county",
 	"area", "region", "people", "deaths", "reports", "sources", "reason", "first_reported", "last_reported",
-	"linked_alert", "data_warning", "latitude", "longitude", "from_alert", "risk_score", "risk_breakdown"]
+	"linked_alert", "data_warning", "latitude", "longitude", "from_alert", "risk_score", "risk_breakdown", "pathway"]
 
 
 def _risk(d, detail):
@@ -692,6 +697,7 @@ def _shape(d, detail=False):
 		"fromAlert": d.get("from_alert") or None,
 		"risk": _risk(d, detail),
 		"lat": d.latitude, "lng": d.longitude,
+		"pathway": d.get("pathway") or None,   # Referral: non-priority disease confirmed in AI triage (triage.py)
 	}
 	if detail:
 		can_act = has_capability(ACT)
