@@ -389,6 +389,11 @@ export async function saveHealthUnit({ id, name, subCounty, active }) {
   })
 }
 
+// Health unit filters on Signals Captured and the Review Queue: { units: [{ id, name, subCounty, active }], options: [ids] }
+export async function getUnitOptions() {
+  return (await callMethod('/api/method/surveillance.health_units.get_unit_options')) || { units: [], options: [] }
+}
+
 export async function getUserHealthUnits() {
   return (await callMethod('/api/method/surveillance.health_units.get_user_units')) || {}
 }

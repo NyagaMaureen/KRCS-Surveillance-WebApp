@@ -699,8 +699,12 @@ def _shape(d, detail=False):
 			fields=["name", "source", "ref", "signal_date", "area", "disease", "people", "deaths", "reported", "reason",
 				"latitude", "longitude", "check_reached", "check_case_definition", "check_status", "checked_by", "checked_on"],
 			order_by="signal_date desc")]
-		from surveillance.health_units import filter_signals, visible_events
+		from surveillance.health_units import filter_signals, unit_name, units_for_reports, visible_events
 		out["signals"] = filter_signals(out["signals"])   # a CHA does not see other CHUs' reports
+		unit_of = units_for_reports([s["ref"] for s in out["signals"] if s["source"] == "Field"])
+		for s in out["signals"]:
+			s["unit"] = unit_name(unit_of.get(s["ref"])) if s["source"] == "Field" else None
+		out["units"] = list(dict.fromkeys(s["unit"] for s in out["signals"] if s.get("unit")))
 		out["timeline"] = [{"at": str(a.at), "user": a.user, "action": a.action, "note": a.note}
 			for a in sorted(d.actions or [], key=lambda a: a.at or now_datetime(), reverse=True)]
 		for sg in out["signals"]:
@@ -766,8 +770,11 @@ def get_events(status=None, disease=None, region=None, source=None, search=None,
 			shaped["relatedCount"] = 0
 		events.append(shaped)
 	chans = _channels_for([e["id"] for e in events])
+	from surveillance.health_units import units_for_events
+	units = units_for_events([e["id"] for e in events])   # Health unit column and filter (KRCS 17 Nov 2026)
 	for e in events:
 		e["channels"] = chans.get(e["id"], [])
+		e["units"] = units.get(e["id"], [])
 	from surveillance.event_tasks import counts_for_events
 	task_counts = counts_for_events([e["id"] for e in events])
 	for e in events:

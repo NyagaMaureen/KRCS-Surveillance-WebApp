@@ -235,3 +235,65 @@ def get_user_units():
 			as_dict=True):
 		out.setdefault(r.parent, []).append({"id": r.health_unit, "name": names.get(r.health_unit) or r.health_unit})
 	return out
+
+
+# ---------- showing the CHU on Signals Captured and the Review Queue (KRCS 17 Nov 2026) ----------
+
+def _names():
+	key = ("names",)
+	cache = _cache()
+	if key not in cache:
+		cache[key] = dict(frappe.get_all(DT, fields=["name", "health_unit_name"], as_list=True, limit_page_length=0)) \
+			if frappe.db.table_exists(DT) else {}
+	return cache[key]
+
+
+def units_for_reports(refs):
+	"""{report: CHU id} for Case Reports with a CHU."""
+	refs = [r for r in refs if r]
+	if not refs or not _ready():
+		return {}
+	return {name: unit for name, unit in frappe.get_all("Case Report", filters={"name": ["in", refs],
+		"community_health_unit": ["is", "set"]}, fields=["name", "community_health_unit"], as_list=True, limit_page_length=0)}
+
+
+def units_for_events(events, user=None):
+	"""{event: [{id, name}]}: the CHUs of the CHP reports in each event. A CHA sees only their own CHU(s)."""
+	if not events or not _ready():
+		return {}
+	sigs = frappe.get_all("Surveillance Signal", filters={"event": ["in", list(events)], "source": "Field"},
+		fields=["event", "ref"], order_by="signal_date asc", limit_page_length=0)
+	unit_of = units_for_reports([s.ref for s in sigs])
+	scope, names, out = cha_scope(user), _names(), {}
+	for s in sigs:
+		unit = unit_of.get(s.ref)
+		if not unit or (scope is not None and unit not in scope.units):
+			continue
+		row = out.setdefault(s.event, [])
+		if not any(u["id"] == unit for u in row):
+			row.append({"id": unit, "name": names.get(unit) or unit})
+	return out
+
+
+def unit_name(unit):
+	return _names().get(unit) or unit if unit else None
+
+
+@frappe.whitelist()
+def get_unit_options():
+	"""Units for the Health unit filters and to show names: every unit (id, name, sub-county), and which ones this user
+	can filter by (a CHA: the units they head; officers, FHWs and CHAs' areas: their sub-county; others: all)."""
+	if not frappe.db.table_exists(DT):
+		return {"units": [], "options": []}
+	rows = frappe.get_all(DT, fields=["name", "health_unit_name", "sub_county", "region", "is_active"],
+		order_by="health_unit_name asc", limit_page_length=0)
+	scope = cha_scope()
+	if scope is not None:
+		options = [r.name for r in rows if r.name in scope.units]
+	else:
+		from surveillance.user_scope import locked_area
+		area = locked_area()
+		sc = frappe.db.get_value("User", frappe.session.user, "assigned_sub_county") if area else None
+		options = [r.name for r in rows if not sc or r.sub_county == sc]
+	return {"units": [{"id": r.name, "name": r.health_unit_name, "subCounty": r.sub_county, "active": bool(r.is_active)} for r in rows],
+		"options": options}

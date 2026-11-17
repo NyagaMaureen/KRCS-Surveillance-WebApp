@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Pencil, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope, History } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getReportCandidates, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
+import { getUnitOptions, getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, setSuspectedDisease, getReportCandidates, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
 import { parseReason } from '../components/risk/reasonParts'
 import DiseaseChoices from '../components/risk/DiseaseChoices'
 import VoicePicked from '../components/report/VoicePicked'
@@ -157,6 +157,10 @@ export default function ReportDetail() {
   const { has, workspace } = useCapabilities()
   const isChp = workspace === 'chp'   // CHPs see their report without the suspected disease (KRCS 17 Nov 2026)
   const [reporterRole, setReporterRole] = useState('')
+  const [unitNames, setUnitNames] = useState({})
+  useEffect(() => {
+    getUnitOptions().then((u) => setUnitNames(Object.fromEntries(u.units.map((x) => [x.id, x.name])))).catch(() => {})
+  }, [])
   useEffect(() => {
     if (!report?.name) return
     let live = true
@@ -184,6 +188,7 @@ export default function ReportDetail() {
       { label: 'Location', value: report.location_name },
       { label: 'Region', value: regionMap[report.region] || report.region },
       { label: 'Sub-county', value: report.sub_county },
+      { label: 'Community Health Unit', value: report.community_health_unit ? (unitNames[report.community_health_unit] || report.community_health_unit) : '', empty: 'None (not from a CHP)' },
       { label: 'Category', value: report.category },
       { label: 'Onset Date', value: formatReadableDate(report.onset_date) },
       { label: 'Affected Persons', value: report.affected_count },
@@ -192,7 +197,7 @@ export default function ReportDetail() {
       { label: 'Animal Exposure', value: (ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === report.animal_exposure) || {}).label, empty: 'Not recorded' },
       { label: 'Number of Deaths', value: report.deaths_count === null || report.deaths_count === undefined ? '' : String(report.deaths_count), empty: 'Not recorded' },
     ]
-  }, [report, regionMap, reporterRole])
+  }, [report, regionMap, reporterRole, unitNames])
 
   const diseaseName = useMemo(() => {
     const d = diseaseOptions.find((o) => o.key === report?.suspected_disease)

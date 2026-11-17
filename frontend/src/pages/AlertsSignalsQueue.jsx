@@ -94,7 +94,7 @@ function StatusPill({ status }) {
 function SkeletonRows() {
   return [0, 1, 2, 3, 4].map((i) => (
     <tr key={i} className="animate-pulse border-t border-gray-100">
-      {[16, 24, 14, 20, 12, 14, 22].map((w, j) => (
+      {[16, 24, 14, 20, 18, 12, 14, 22].map((w, j) => (
         <td key={j} className="px-3 py-4"><div className="h-3 bg-gray-100 rounded" style={{ width: `${w * 4}px` }} /></td>
       ))}
     </tr>
@@ -111,6 +111,7 @@ export default function AlertsSignalsQueue() {
   const q = params.get('q') || ''
   const disease = params.get('disease') || ''
   const channel = params.get('channel') || ''
+  const unit = params.get('unit') || ''   // Community Health Unit (KRCS 17 Nov 2026)
   const sevFilter = SEVERITIES.some((s) => s.key === params.get('sev')) ? params.get('sev') : ''
   const overdueOnly = params.get('overdue') === '1'
 
@@ -200,22 +201,28 @@ export default function AlertsSignalsQueue() {
     if (statuses) list = list.filter((e) => statuses.includes(e.status))
     if (sevFilter) list = list.filter((e) => e.severity === sevFilter)
     if (channel) list = list.filter((e) => channelsOf(e).includes(channel))
+    if (unit) list = list.filter((e) => (e.units || []).some((u) => u.id === unit))
     if (overdueOnly) list = list.filter((e) => waitInfo(e)?.state === 'over')
     return sortEvents(list, sort)
-  }, [events, statuses, sevFilter, channel, overdueOnly, sort])
+  }, [events, statuses, sevFilter, channel, unit, overdueOnly, sort])
   const channelOptions = useMemo(() => [...new Set(events.flatMap(channelsOf))].sort(), [events])
+  const unitOptions = useMemo(() => {
+    const seen = new Map()
+    events.forEach((e) => (e.units || []).forEach((u) => seen.set(u.id, u.name)))
+    return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [events])
 
   const tabCount = (t) => (t.statuses ? events.filter((e) => t.statuses.includes(e.status)).length : events.length)
 
-  const filtersActive = !!(q || disease || channel || sevFilter || overdueOnly)
+  const filtersActive = !!(q || disease || channel || unit || sevFilter || overdueOnly)
   const clearFilters = () => {
     setSearchText('')
-    setParam({ q: '', disease: '', channel: '', sev: '', overdue: '' })
+    setParam({ q: '', disease: '', channel: '', unit: '', sev: '', overdue: '' })
   }
   const open = (ev) => navigate({ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: location.search })
 
   const [page, setPage] = useState(0)
-  useEffect(() => setPage(0), [tab, q, disease, channel, sevFilter, overdueOnly, sort])
+  useEffect(() => setPage(0), [tab, q, disease, channel, unit, sevFilter, overdueOnly, sort])
   const [PAGE, setPAGE] = useState(10)
   const lastPage = Math.max(0, Math.ceil(visibleEvents.length / PAGE) - 1)
   const pageRows = visibleEvents.slice(page * PAGE, page * PAGE + PAGE)
@@ -287,6 +294,10 @@ export default function AlertsSignalsQueue() {
               <option value="">All channels</option>
               {channelOptions.map((x) => <option key={x} value={x}>{x}</option>)}
             </select>
+            <select aria-label="Health unit" value={unit} onChange={(e) => setParam({ unit: e.target.value })} className={SELECT_SOFT}>
+              <option value="">All health units</option>
+              {unitOptions.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
             {filtersActive && (
               <button onClick={clearFilters} className={`inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 rounded ${FOCUS}`}>
                 <X className="w-4 h-4" aria-hidden="true" /> Clear
@@ -309,6 +320,7 @@ export default function AlertsSignalsQueue() {
                     <th className="px-3 py-2.5 font-medium">Event ID</th>
                     <th className="px-3 py-2.5 font-medium">Disease</th>
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Channel</th>
+                    <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Health unit</th>
                     <th className="px-3 py-2.5 font-medium hidden md:table-cell">Location</th>
                     <th className="px-3 py-2.5 font-medium">Risk</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
@@ -319,9 +331,9 @@ export default function AlertsSignalsQueue() {
                   {loading ? (
                     <SkeletonRows />
                   ) : error ? (
-                    <tr><td colSpan={8}><EmptyState title="Couldn't load the queue" body={error} action={<button onClick={() => load()} className={BTN_SECONDARY}>Try again</button>} /></td></tr>
+                    <tr><td colSpan={9}><EmptyState title="Couldn't load the queue" body={error} action={<button onClick={() => load()} className={BTN_SECONDARY}>Try again</button>} /></td></tr>
                   ) : visibleEvents.length === 0 ? (
-                    <tr><td colSpan={8}>
+                    <tr><td colSpan={9}>
                       <EmptyState title={filtersActive ? 'No events match your filters' : 'Nothing here'} body={filtersActive ? null : EMPTY_TEXT[tab]}
                         action={filtersActive && <button onClick={clearFilters} className={BTN_SECONDARY}>Clear filters</button>} />
                     </td></tr>
@@ -349,6 +361,9 @@ export default function AlertsSignalsQueue() {
                             )}
                           </td>
                           <td className="px-3 py-3.5 hidden lg:table-cell text-gray-500 whitespace-nowrap">{channelsOf(ev).join(', ') || '—'}</td>
+                          <td className="px-3 py-3.5 hidden lg:table-cell text-gray-500 whitespace-nowrap" title={(ev.units || []).map((u) => u.name).join(', ')}>
+                            {ev.units?.length ? `${ev.units[0].name}${ev.units.length > 1 ? ` +${ev.units.length - 1}` : ''}` : '—'}
+                          </td>
                           <td className="px-3 py-3.5 hidden md:table-cell text-gray-600">{place || <span className="text-amber-600">Location missing</span>}</td>
                           <td className="px-3 py-3.5 whitespace-nowrap">
                             <span className="inline-flex items-center gap-1.5 flex-nowrap">

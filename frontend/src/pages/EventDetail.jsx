@@ -1704,10 +1704,12 @@ function CbsContact({ signal: s, canAct }) {
 function ReporterContact({ signal: s, canAct }) {
   if (s.source === 'CBS') return <CbsContact signal={s} canAct={canAct} />
   if (s.source !== 'Field') return <span className="text-xs">Contact through {s.source} (ref {s.ref || '—'})</span>
-  if (!(canAct && s.reporter)) return '—'
+  const unit = s.unit && <span className="text-xs text-gray-500">Health unit: {s.unit}</span>   // the CHP's CHU
+  if (!(canAct && s.reporter)) return unit || '—'
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-gray-900">{s.reporter.name || '—'}</span>
+      {unit}
       {s.reporter.phone ? (
         <a href={`tel:${s.reporter.phone}`} className={`inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
           <Phone className="w-3 h-3" aria-hidden="true" /> Call {s.reporter.phone}
@@ -2277,6 +2279,9 @@ export default function EventDetail() {
                     </>
                   }
                 />
+              )}
+              {event.units?.length > 0 && (
+                <Field icon={Building2} label={event.units.length > 1 ? 'Health units' : 'Health unit'} value={event.units.join(', ')} />
               )}
             </dl>
             {mapOpen && <ReportsMap signals={signals} />}

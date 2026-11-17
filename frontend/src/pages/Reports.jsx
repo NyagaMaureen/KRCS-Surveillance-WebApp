@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Clock, Search as SearchIcon, CheckCircle, Search, Upload, Plus, Eye, Camera } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties } from '../api/frappe'
+import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties, getUnitOptions } from '../api/frappe'
 import { STATUSES, CHANNELS } from '../data/formOptions'
 
 const PAGE_SIZES = [10, 25, 50]
@@ -22,7 +22,7 @@ const timeText = (v) => {
 const EXPORT_FIELDS = [
   'name', 'creation', 'report_date', 'status', 'channel', 'signal_type', 'category',
   'reporter_name', 'phone_number', 'reported_by',
-  'region', 'sub_county', 'location_name', 'latitude', 'longitude',
+  'region', 'sub_county', 'community_health_unit', 'location_name', 'latitude', 'longitude',
   'onset_date', 'affected_count', 'deaths_count', 'age_group', 'animal_exposure',
   'symptom_tags', 'severity', 'additional_notes',
   'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with',
@@ -43,6 +43,9 @@ export default function Reports() {
   const [pageSize, setPageSize] = useState(10)
   const [channelFilter, setChannelFilter] = useState('')
   const [subCountyFilter, setSubCountyFilter] = useState('')
+  const [unitFilter, setUnitFilter] = useState('')
+  const [units, setUnits] = useState({ units: [], options: [] })   // Community Health Units: names and the filter list
+  const unitName = (id) => (units.units.find((u) => u.id === id) || {}).name || id || ''
   const [reporterText, setReporterText] = useState('')
   const [reporterFilter, setReporterFilter] = useState('')
   const [subCounties, setSubCounties] = useState([])
@@ -101,11 +104,12 @@ export default function Reports() {
     if (diseaseFilter) filters.suspected_disease = diseaseFilter
     if (channelFilter) filters.channel = channelFilter
     if (subCountyFilter) filters.sub_county = subCountyFilter
+    if (unitFilter) filters.community_health_unit = unitFilter
     if (reporterFilter) filters.reporter_name = ['like', `%${reporterFilter}%`]
     getCount('Case Report', filters).then(setTotalCount)
     const list = await getList(
       'Case Report',
-      ['name', 'reporter_name', 'symptom_tags', 'location_name', 'sub_county', 'region', 'channel', 'status', 'report_date', 'creation', 'age_group', 'animal_exposure', 'deaths_count', 'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with'],
+      ['name', 'reporter_name', 'symptom_tags', 'location_name', 'sub_county', 'region', 'channel', 'status', 'report_date', 'creation', 'age_group', 'animal_exposure', 'deaths_count', 'suspected_disease', 'classified_by', 'classification_reason', 'also_consistent_with', 'community_health_unit'],
       { limit: pageSize, start: p * pageSize, orderBy: 'creation desc', filters }
     )
     setReports(list)
@@ -129,6 +133,7 @@ export default function Reports() {
     if (diseaseFilter) filters.push(['Case Report', 'suspected_disease', '=', diseaseFilter])
     if (channelFilter) filters.push(['Case Report', 'channel', '=', channelFilter])
     if (subCountyFilter) filters.push(['Case Report', 'sub_county', '=', subCountyFilter])
+    if (unitFilter) filters.push(['Case Report', 'community_health_unit', '=', unitFilter])
     if (reporterFilter) filters.push(['Case Report', 'reporter_name', 'like', `%${reporterFilter}%`])
     exportExcel('Case Report', EXPORT_FIELDS, filters)
   }
@@ -147,6 +152,7 @@ export default function Reports() {
     getReferenceLabels().then((labels) => setRegions(labels.regions || {}))
     getDiseaseOptions().then(setDiseaseOptions)
     getSubCounties('').then(setSubCounties).catch(() => {})
+    getUnitOptions().then(setUnits).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -158,7 +164,7 @@ export default function Reports() {
     setPage(0)
     loadReports(0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, regionFilter, diseaseFilter, channelFilter, subCountyFilter, reporterFilter, pageSize])
+  }, [statusFilter, regionFilter, diseaseFilter, channelFilter, subCountyFilter, unitFilter, reporterFilter, pageSize])
 
   return (
     <AppShell>
@@ -216,6 +222,12 @@ export default function Reports() {
           <option value="">All Sub-counties</option>
           {subCounties.map((sc) => <option key={sc.name} value={sc.name}>{sc.sub_county_name || sc.name}</option>)}
         </select>
+        {!isChp && units.options.length > 0 && (
+          <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)} aria-label="Health unit" className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
+            <option value="">All Health Units</option>
+            {units.units.filter((u) => units.options.includes(u.id) && (!subCountyFilter || u.subCounty === subCountyFilter)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        )}
         {!isChp && (
           <input value={reporterText} onChange={(e) => setReporterText(e.target.value)} type="text" aria-label="Reporter" placeholder="Reporter name"
             className="w-full sm:w-40 bg-gray-50 rounded-lg px-3 py-2 text-sm focus:outline-none" />
@@ -236,6 +248,7 @@ export default function Reports() {
               </div>
               <div className="mt-1 text-sm text-gray-700">{diseaseName(r.suspected_disease)}</div>
               <div className="mt-0.5 text-xs text-gray-500">{[placeLine(r), r.location_name].filter(Boolean).join(' · ') || '—'}</div>
+              {r.community_health_unit && <div className="mt-0.5 text-xs text-gray-500">Health unit: {unitName(r.community_health_unit)}</div>}
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <span className={['text-xs font-medium px-2 py-0.5 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span>
                 {!isChp && r.reporter_name && <span className="text-xs text-gray-500">{r.reporter_name}</span>}
@@ -254,6 +267,7 @@ export default function Reports() {
                 {!isChp && <th className="px-5 py-3 font-medium">Reporter</th>}
                 <th className="px-5 py-3 font-medium">Symptoms</th>
                 <th className="px-5 py-3 font-medium">Location</th>
+                <th className="px-5 py-3 font-medium">Health Unit</th>
                 <th className="px-5 py-3 font-medium">Suspected Disease</th>
                 <th className="px-5 py-3 font-medium">Channel</th>
                 <th className="px-5 py-3 font-medium">Status</th>
@@ -284,6 +298,7 @@ export default function Reports() {
                     <span className="block">{placeLine(r) || r.location_name || '—'}</span>
                     {placeLine(r) && r.location_name && <span className="block text-xs text-gray-400">{r.location_name}</span>}
                   </td>
+                  <td className="px-5 py-3 text-gray-700">{r.community_health_unit ? unitName(r.community_health_unit) : <span className="text-gray-400">—</span>}</td>
                   <td className="px-5 py-3 text-gray-700">{diseaseName(r.suspected_disease)}</td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', channelColor(r.channel)].join(' ')}>{(r.channel || '').toUpperCase()}</span></td>
                   <td className="px-5 py-3"><span className={['text-xs font-medium px-2 py-1 rounded-full', statusColor(r.status)].join(' ')}>{statusLabel(r.status)}</span></td>
@@ -306,7 +321,7 @@ export default function Reports() {
               ))}
               {!reports.length && (
                 <tr>
-                  <td colSpan={10} className="px-5 py-10 text-center text-gray-400">No signals found</td>
+                  <td colSpan={11} className="px-5 py-10 text-center text-gray-400">No signals found</td>
                 </tr>
               )}
             </tbody>
