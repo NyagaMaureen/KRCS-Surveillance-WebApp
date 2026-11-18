@@ -608,7 +608,11 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		before = frappe.get_doc("Case Report", name)
 		file_url = before.attachments[0].file
 		frappe.db.set_value("Case Report Attachment", before.attachments[0].name, "transcript", "Mimi ni Amina wa Kakuma")
-		frappe.db.set_value("Case Report", name, {"latitude": 1.23456, "longitude": 38.76543})
+		frappe.db.set_value(
+			"Case Report",
+			name,
+			{"latitude": 1.23456, "longitude": 38.76543, "extraction_details": 'Message: "Mimi ni Amina wa Kakuma"'},
+		)
 		centre = frappe.db.get_value("Sub County", before.sub_county, ["latitude", "longitude"])
 		frappe.get_doc(
 			{
@@ -624,6 +628,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		doc = frappe.get_doc("Case Report", name)
 		self.assertEqual((doc.reporter_name, doc.phone_number, doc.location_name), ("Removed", "Removed", "Removed"))
 		self.assertFalse(doc.additional_notes)
+		self.assertFalse(doc.extraction_details)
 		self.assertEqual((doc.latitude, doc.longitude), (centre[0] or 0, centre[1] or 0))
 		self.assertFalse(doc.attachments[0].file)
 		self.assertFalse(doc.attachments[0].transcript)

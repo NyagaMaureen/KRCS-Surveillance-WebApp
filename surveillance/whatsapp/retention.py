@@ -18,6 +18,8 @@ IDENTIFYING = {
 	"phone_number": REMOVED,
 	"location_name": REMOVED,
 	"additional_notes": None,
+	# Quotes the reporter's message ("Message: ...") as well as what was filled in from it.
+	"extraction_details": None,
 }
 
 
