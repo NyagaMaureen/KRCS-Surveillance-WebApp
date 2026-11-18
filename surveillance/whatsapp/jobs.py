@@ -79,16 +79,18 @@ def extraction_client(st):
 
 def voice_transcriber(st):
 	"""ctx.transcribe when Transcribe Voice Notes is on: POST /transcribe on the speech service in the site config
-	(`stt_url`, `stt_token`), the one surveillance.transcription uses. The note stays on the report, attached as
-	usual, with this text on its row, so the background job doesn't transcribe it again."""
+	(`stt_url`, `stt_token`), the one surveillance.transcription uses. WhatsApp doesn't ask which language the note is
+	in, so it goes as a note marked "Both" does there: `stt_mixed_language`, default auto. The note stays on the
+	report, attached as usual, with this text on its row, so the background job doesn't transcribe it again."""
 	url = frappe.conf.get("stt_url")
 	if not st.voice_transcription or not url:
 		return None
 	client = TranscriptionClient(url, frappe.conf.get("stt_token"), timeout=cint(st.transcription_timeout) or 45)
+	language = frappe.conf.get("stt_mixed_language") or "auto"
 
 	def transcribe(inp):
 		content, mime = whatsapp_client(st).download_media(inp["media_id"])
-		return client.transcribe(content, mime or inp.get("mime_type"), inp.get("filename"))
+		return client.transcribe(content, mime or inp.get("mime_type"), inp.get("filename"), language)
 
 	return transcribe
 

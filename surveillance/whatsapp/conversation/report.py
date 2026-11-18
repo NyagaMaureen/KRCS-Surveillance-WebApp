@@ -45,8 +45,8 @@ from surveillance.whatsapp.messages import text
 
 def transcribed(s, inp, ctx):
 	"""The words of a voice note (AI/ML §6.3), which then go the way typed words do. None: the reporter is asked to type.
-	The menu language is not sent: someone reading Kiswahili menus may speak English or a mix, and the service picks
-	its model by the language it hears. The words are kept on the note in the draft, so they are saved on its row and
+	The menu language is not sent: someone reading Kiswahili menus may speak English or a mix, so the service detects
+	it (jobs.voice_transcriber). The words are kept on the note in the draft, so they are saved on its row and
 	the background transcription for officers skips it."""
 	transcribe = getattr(ctx, "transcribe", None)
 	if inp.get("kind") != "audio" or not transcribe:

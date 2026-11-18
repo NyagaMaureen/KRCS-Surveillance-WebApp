@@ -532,19 +532,21 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.wa.files["v1"] = (b"ogg bytes", "audio/ogg")
 		stt = {"stt_url": "http://stt.test/", "stt_token": "tok"}
 		with patch.dict(frappe.conf, stt), patch("surveillance.whatsapp.transcribe.requests.post") as post:
-			post.return_value.json.return_value = {"text": " watoto wanaharisha ", "language": "sw", "usable": True}
+			post.return_value.json.return_value = {"text": " watoto wanaharisha ", "language": "sw"}
 			heard = jobs.voice_transcriber(settings)({"media_id": "v1", "mime_type": "audio/ogg"})
 			self.assertEqual(heard, {"text": "watoto wanaharisha", "language": "sw"})
 			self.assertEqual(post.call_args.args[0], "http://stt.test/transcribe")
-			# the form upload surveillance.transcription sends too; no language: the service detects it
+			# the request surveillance.transcription sends; WhatsApp doesn't ask the language, so it is detected
 			self.assertEqual(post.call_args.kwargs["files"], {"file": ("voice-note", b"ogg bytes", "audio/ogg")})
+			self.assertEqual(post.call_args.kwargs["data"], {"language": "auto"})
 			self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer tok")
 			self.assertEqual(post.call_args.kwargs["timeout"], 7)
 
-			post.return_value.json.return_value = {"text": "maneno", "usable": False}
-			self.assertIsNone(jobs.voice_transcriber(settings)({"media_id": "v1"}))
-			post.return_value.json.return_value = {"text": "maneno", "language": "sw"}  # no verdict: trusted
-			self.assertEqual(jobs.voice_transcriber(settings)({"media_id": "v1"})["text"], "maneno")
+			post.return_value.json.return_value = {"text": "  ", "language": "sw"}
+			self.assertIsNone(jobs.voice_transcriber(settings)({"media_id": "v1"}))  # nothing heard
+			with patch.dict(frappe.conf, {"stt_mixed_language": "sw"}):
+				jobs.voice_transcriber(settings)({"media_id": "v1"})
+			self.assertEqual(post.call_args.kwargs["data"], {"language": "sw"})
 
 			settings.voice_transcription = 0
 			self.assertIsNone(jobs.voice_transcriber(settings))
