@@ -4,7 +4,8 @@ import { Search, RefreshCw, ShieldAlert, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { PageSizeSelect } from '../components/common/Pager'
 import { getReviewEvents, getDiseaseOptions } from '../api/frappe'
-import { statusLabel, parseDate } from '../data/eventHelpers'
+import { useCapabilities } from '../context/CapabilitiesContext'
+import { statusLabel, parseDate, relTime } from '../data/eventHelpers'
 import { RiskPill } from '../components/risk/RiskScore'
 import { FOCUS, BTN_SECONDARY, EmptyState } from '../components/surveillance/ui'
 
@@ -106,7 +107,11 @@ export default function AlertsSignalsQueue() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
 
-  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'new'
+  // the county MOH (MOH DDSR) sees the cases escalated to them first (KRCS 17 Nov 2026)
+  const { primaryRole } = useCapabilities()
+  const isMoh = primaryRole === 'MOH DDSR'
+  const defaultTab = isMoh ? 'escalated' : 'new'
+  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : defaultTab
   const sort = SORTS.some((s) => s.key === params.get('sort')) ? params.get('sort') : 'risk'
   const q = params.get('q') || ''
   const disease = params.get('disease') || ''
@@ -236,6 +241,10 @@ export default function AlertsSignalsQueue() {
     { key: 'closed', label: 'Closed this week', value: closedThisWeek },
     { key: 'overdue', label: 'Overdue', value: overdueCount },
   ]
+  if (isMoh) {   // county MOH: Escalated to MOH instead of Overdue (verification targets are KRCS's)
+    stats.splice(1, 0, { key: 'escalated', label: 'Escalated to MOH', value: tabCount(TABS.find((x) => x.key === 'escalated')) })
+    stats.pop()
+  }
   const card = 'bg-white rounded-xl border border-gray-100'
   const pageBtn = `h-9 px-4 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-white ${FOCUS}`
   const title = overdueOnly ? 'Overdue events' : tab === 'all' ? 'All events' : TABS.find((t) => t.key === tab).label
@@ -268,7 +277,7 @@ export default function AlertsSignalsQueue() {
               const alarm = key === 'overdue' && value > 0
               return (
                 <button key={key} aria-pressed={on}
-                  onClick={() => key === 'overdue' ? setParam({ overdue: overdueOnly ? '' : '1', tab: 'all' }) : setParam({ tab: key === 'new' ? '' : key, overdue: '' })}
+                  onClick={() => key === 'overdue' ? setParam({ overdue: overdueOnly ? '' : '1', tab: 'all' }) : setParam({ tab: key === defaultTab ? '' : key, overdue: '' })}
                   className={`rounded-xl text-center px-4 py-3 text-white ${on ? 'bg-red-700 ring-2 ring-red-300' : 'bg-red-600 hover:bg-red-700'} ${FOCUS}`}>
                   <span className="block text-[11px] font-bold uppercase tracking-wide">{label}{alarm && <span className="ml-1.5 rounded bg-white/25 px-1 normal-case">act now</span>}</span>
                   <span className="block text-2xl font-bold tabular-nums mt-1">{loading ? '–' : value}</span>
@@ -283,7 +292,7 @@ export default function AlertsSignalsQueue() {
               <input value={searchText} onChange={(e) => setSearchText(e.target.value)} type="text" aria-label="Search events" placeholder="Search by disease, place or ID"
                 className={`w-full h-9 bg-gray-50 border border-gray-100 rounded-lg pl-9 pr-3 text-sm ${FOCUS}`} />
             </div>
-            <select aria-label="Status" value={overdueOnly ? 'all' : tab} onChange={(e) => setParam({ tab: e.target.value === 'new' ? '' : e.target.value, overdue: '' })} className={SELECT_SOFT}>
+            <select aria-label="Status" value={overdueOnly ? 'all' : tab} onChange={(e) => setParam({ tab: e.target.value === defaultTab ? '' : e.target.value, overdue: '' })} className={SELECT_SOFT}>
               {TABS.map((t) => <option key={t.key} value={t.key}>{t.key === 'all' ? 'All statuses' : t.label}</option>)}
             </select>
             <select aria-label="Disease" value={disease} onChange={(e) => setParam({ disease: e.target.value })} className={SELECT_SOFT}>
@@ -375,7 +384,13 @@ export default function AlertsSignalsQueue() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-3.5"><StatusPill status={ev.status} /></td>
+                          <td className="px-3 py-3.5"><StatusPill status={ev.status} />
+                            {ev.escalation && (
+                              <span className="block text-xs text-gray-500 mt-1 whitespace-nowrap" title={ev.escalation.reason}>
+                                by {ev.escalation.by || '—'}{ev.escalation.on ? ` · ${relTime(ev.escalation.on)}` : ''}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-3.5 text-right whitespace-nowrap">
                             {['New', 'Verifying'].includes(ev.status) && (
                               <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: ev.status === 'New' ? '?step=2' : '?step=3' }} onClick={(e) => e.stopPropagation()}

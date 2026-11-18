@@ -63,6 +63,22 @@ def sub_county_users(sub_county_name, event=None):
 	return users
 
 
+MOH_ROLES = ("MOH DDSR",)
+
+
+def moh_users(region):
+	"""County MOH (MOH DDSR) users who see this escalation in the system: their assigned region (counties later), or
+	every region when none is assigned."""
+	users = frappe.get_all("Has Role", filters={"parenttype": "User", "role": ["in", list(MOH_ROLES)]}, pluck="parent")
+	out = []
+	for u in set(users):
+		row = frappe.db.get_value("User", u, ["enabled", "assigned_region"], as_dict=True) if frappe.get_meta("User").has_field("assigned_region") \
+			else frappe.db.get_value("User", u, ["enabled"], as_dict=True)
+		if row and row.enabled and (not row.get("assigned_region") or row.get("assigned_region") == region):
+			out.append(u)
+	return out
+
+
 def escalation_contacts(county):
 	"""Active National contacts, plus County contacts for this county (or with no county set)."""
 	rows = frappe.get_all("Escalation Contact", filters={"active": 1},
@@ -282,7 +298,7 @@ def send_escalation(event_name, reason, escalated_by):
 			f"{doc.deaths or 0} deaths. Facility: {doc.nearest_facility or '-'}. By {officer.get('full_name') or ''}"
 			f"{', ' + officer['mobile_no'] if officer.get('mobile_no') else ''}. {_link(doc.name)}")
 		team = [u.name for u in sub_county_users(doc.sub_county, doc.name)]
-		_in_app(team, f"Escalated to County/MOH: {doc.title}", doc.name)
+		_in_app(team + moh_users(doc.region), f"Escalated to County/MOH: {doc.title}", doc.name)
 		doc.append("actions", {"at": now_datetime(), "user": "Administrator", "action": "Escalation sent",
 			"note": f"Emailed {len([c for c in contacts if c.email])} County/National MOH contact(s)"
 				+ (": " + ", ".join(c.contact_name for c in contacts) if contacts else ". No active Escalation Contacts: add them in Settings.")})

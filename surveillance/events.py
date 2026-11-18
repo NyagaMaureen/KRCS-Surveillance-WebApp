@@ -640,7 +640,19 @@ def _report_media(report):
 
 FIELDS = ["name", "title", "disease", "disease_name", "priority", "severity", "status", "county", "sub_county",
 	"area", "region", "people", "deaths", "reports", "sources", "reason", "first_reported", "last_reported",
-	"linked_alert", "data_warning", "latitude", "longitude", "from_alert", "risk_score", "risk_breakdown", "pathway"]
+	"linked_alert", "data_warning", "latitude", "longitude", "from_alert", "risk_score", "risk_breakdown", "pathway",
+	"decision", "decided_by", "decided_on", "decision_reason", "nearest_facility"]
+
+
+def _escalation(d):
+	if d.get("status") != "Escalated" and d.get("decision") != "Escalated":
+		return None
+	by = d.get("decided_by")
+	role = frappe.db.get_value("User", by, "primary_role") if by else None
+	return {"by": frappe.utils.get_fullname(by) if by else None, "role": role or None,
+		"phone": frappe.db.get_value("User", by, "mobile_no") if by else None,
+		"on": str(d.get("decided_on") or ""), "reason": d.get("decision_reason") or "",
+		"facility": d.get("nearest_facility") or None}
 
 
 def _risk(d, detail):
@@ -698,10 +710,12 @@ def _shape(d, detail=False):
 		"risk": _risk(d, detail),
 		"lat": d.latitude, "lng": d.longitude,
 		"pathway": d.get("pathway") or None,   # Referral: non-priority disease confirmed in AI triage (triage.py)
+		"escalation": _escalation(d),   # who escalated to the county MOH, when and why (MOH DDSR Review Queue)
 	}
 	if detail:
 		can_act = has_capability(ACT)
-		out["signals"] = [_signal_shape(s, can_act) for s in frappe.get_all("Surveillance Signal", filters={"event": d.name},
+		# reporter names and phones: officers who act, and everyone on an escalated event (the county MOH calls them)
+		out["signals"] = [_signal_shape(s, can_act or d.status == "Escalated") for s in frappe.get_all("Surveillance Signal", filters={"event": d.name},
 			fields=["name", "source", "ref", "signal_date", "area", "disease", "people", "deaths", "reported", "reason",
 				"latitude", "longitude", "check_reached", "check_case_definition", "check_status", "checked_by", "checked_on"],
 			order_by="signal_date desc")]

@@ -90,7 +90,13 @@ function computeSteps(event, inv) {
     current = 3
   } else if (status === 'Investigating') {
     if (canConfirm) { mark(4); states[4] = 'current'; current = 5 } else { mark(3); states[3] = 'current'; current = 4 }
-  } else if (status === 'Confirmed' || status === 'Escalated') {
+  } else if (status === 'Escalated') {
+    // escalated to the county MOH (KRCS 17 Nov 2026): investigation, decision and response move to the MOH (later);
+    // for now those steps are greyed out
+    mark(3)
+    states[3] = states[4] = states[5] = 'moh'
+    current = 3
+  } else if (status === 'Confirmed') {
     mark(5)
     states[5] = 'current'
     current = 6
@@ -129,7 +135,7 @@ function Tracker({ event, states, openStep, onSelect }) {
                 : state === 'current' ? 'bg-white text-gray-700 ring-1 ring-gray-300'
                   : 'bg-gray-100 text-gray-400'
           const text = isOpen ? 'text-red-700 font-semibold' : state === 'done' || state === 'current' ? 'text-gray-800' : 'text-gray-400'
-          const sub = state === 'discarded' ? 'Discarded' : state === 'skipped' ? 'Not needed' : s.n === 1 ? sources || 'Reports'
+          const sub = state === 'discarded' ? 'Discarded' : state === 'skipped' ? 'Not needed' : state === 'moh' ? 'With county MOH' : s.n === 1 ? sources || 'Reports'
             : state === 'current' && !isOpen ? 'Next step' : ''
           return (
             <li key={s.n} className="flex-1 relative">
@@ -832,6 +838,27 @@ function TriagePanel({ event, canAct, onConfirmed, onNext, onError, onChanged, o
       </div>
       {canAct && open && discarding && <DiscardBox busy={pageBusy} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
     </div>
+  )
+}
+
+// ---------- escalated to the county MOH ----------
+function EscalationNotice({ esc }) {
+  return (
+    <section aria-label="Escalated to the county MOH" className="rounded-2xl border border-red-200 bg-red-50/60 px-6 py-5">
+      <div className="flex items-start gap-3">
+        <ShieldAlert className="w-5 h-5 mt-0.5 shrink-0 text-red-700" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900">
+            Escalated to the county MOH{esc.by ? ` by ${esc.by}` : ''}{esc.role ? ` (${esc.role})` : ''}{esc.on ? `, ${fmtDateTime(esc.on)}` : ''}
+          </p>
+          {esc.reason && <p className="mt-1 text-sm text-gray-800"><span className="text-gray-500">Reason:</span> {esc.reason}</p>}
+          <p className="mt-1 text-sm text-gray-700">
+            {[esc.facility ? `Nearest health facility: ${esc.facility}` : null, esc.phone ? `Escalated by ${esc.by}: ${esc.phone}` : null].filter(Boolean).join(' · ')}
+          </p>
+          <p className="mt-2 text-xs text-gray-500">Field investigation, the decision and the response are now with the county MOH.</p>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -2198,7 +2225,7 @@ function ReporterContact({ signal: s, canAct }) {
   if (s.source === 'CBS') return <CbsContact signal={s} canAct={canAct} />
   if (s.source !== 'Field') return <span className="text-xs">Contact through {s.source} (ref {s.ref || '—'})</span>
   const unit = s.unit && <span className="text-xs text-gray-500">Health unit: {s.unit}</span>   // the CHP's CHU
-  if (!(canAct && s.reporter)) return unit || '—'
+  if (!s.reporter) return unit || '—'   // the server sends contacts to officers who act and on escalated events
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-gray-900">{s.reporter.name || '—'}</span>
@@ -2546,7 +2573,7 @@ export default function EventDetail() {
   const canVerify = canAct && ['New', 'Verifying', 'Investigating'].includes(status)
   const canSplit = canAct && !['Closed', 'Discarded'].includes(status) && signals.length >= 2
   const fieldWithReporter = signals.filter((s) => s.source === 'Field' && s.reporter)
-  const singleReporter = canAct && fieldWithReporter.length === 1 ? fieldWithReporter[0].reporter : null
+  const singleReporter = fieldWithReporter.length === 1 ? fieldWithReporter[0].reporter : null
   const shown = openStep || currentStep || 3
 
   function renderPanel() {
@@ -2811,6 +2838,7 @@ export default function EventDetail() {
           </div>
 
           <EventTasksProvider eventId={event.id} eventStatus={event.status} onChanged={refreshEvent} onToast={showToast}>
+            {event.escalation && <EscalationNotice esc={event.escalation} />}
             <Tracker event={event} states={stepInfo.states} openStep={shown} onSelect={selectStep} />
 
             <DecisionNotice notice={notice} onClose={() => setNotice(null)} />

@@ -31,3 +31,4 @@ surveillance.patches.monitoring_reports_setup
 surveillance.patches.health_units_setup
 surveillance.patches.signals_update_no_delete
 surveillance.patches.whatsapp_notes_message_only
+surveillance.patches.moh_ddsr_setup
