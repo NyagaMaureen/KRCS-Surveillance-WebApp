@@ -291,7 +291,7 @@ function Loading({ error }) {
 // ---------- summary ----------
 
 // summary: a few plain sentences, the key numbers, at most two charts; the explanations fold away
-function Summary({ data, charts }) {
+export function Summary({ data, charts }) {
   const s = data.summary
   return (
     <>
@@ -330,7 +330,7 @@ function Summary({ data, charts }) {
   )
 }
 
-function Chart({ chart, onRef }) {
+export function Chart({ chart, onRef }) {
   const any = chart.series.some((s) => s.data.some((n) => n))
   if (!any) return <div className="flex h-full items-center justify-center text-sm text-gray-900">No data for these filters.</div>
   const many = chart.series.length > 1

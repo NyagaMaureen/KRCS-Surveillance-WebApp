@@ -186,7 +186,8 @@ doc_events = {
 	},
 	# WhatsApp: staff are matched by User.mobile_no; lists come from these DocTypes
 	"User": {
-		"validate": "surveillance.health_units.validate_user",   # CHP: one CHU, CHA: one or more (KRCS 17 Nov 2026)
+		"validate": ["surveillance.health_units.validate_user",   # CHP: one CHU, CHA: one or more (KRCS 17 Nov 2026)
+			"surveillance.system_admin.validate_user_roles"],   # only System Managers give System Manager (KRCS 18 Nov 2026)
 		"after_insert": "surveillance.whatsapp.data.clear_staff_cache",
 		"on_update": "surveillance.whatsapp.data.clear_staff_cache",
 		"on_trash": "surveillance.whatsapp.data.clear_staff_cache",
@@ -214,7 +215,7 @@ scheduler_events = {
 		"surveillance.kb_ops.daily_reconcile", "surveillance.context.import_weather",
 		"surveillance.event_tasks.daily_reminders"],
 	"hourly_long": ["surveillance.cbs_feed.hourly", "surveillance.risk.refresh_open", "surveillance.push.check_receipts",
-		"surveillance.transcription.retry_failed"],
+		"surveillance.transcription.retry_failed", "surveillance.system_admin.check_system"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }
 # scheduler_events = {

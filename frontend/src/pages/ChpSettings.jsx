@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { User, Mail, Phone, MapPin, Shield, Lock, CalendarDays, Activity, Pencil, Camera, FileText, CheckCircle2, ArrowRightLeft, Clock, Check } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getMyAccount, updateMyProfile, changeMyPassword, uploadFile } from '../api/frappe'
@@ -26,12 +27,24 @@ export default function ChpSettings() {
   const [editing, setEditing] = useState(false)
   const [phone, setPhone] = useState('')
   const [saving, setSaving] = useState(false)
-  const [pwOpen, setPwOpen] = useState(false)
+  // Change Password (account menu, top right) opens this page at the password form (KRCS 18 Nov 2026)
+  const { pathname } = useLocation()
+  const wantPassword = pathname.endsWith('/change-password')
+  const [pwOpen, setPwOpen] = useState(wantPassword)
   const [pw, setPw] = useState({ old: '', next: '', confirm: '' })
   const [toast, setToast] = useState({ text: '' })
   const fileRef = useRef(null)
+  const securityRef = useRef(null)
+  const pwFirst = useRef(null)
 
   useEffect(() => { getMyAccount().then(setAcc).catch((e) => setError(e.message || 'Could not load your account')) }, [])
+  const scrolled = useRef(false)
+  useEffect(() => {
+    if (!acc || !wantPassword || scrolled.current) return
+    scrolled.current = true
+    securityRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    pwFirst.current?.focus({ preventScroll: true })
+  }, [acc, wantPassword])
   const flash = (text, isError = false) => { setToast({ text, error: isError }); setTimeout(() => setToast({ text: '' }), 3000) }
 
   async function saveProfile() {
@@ -140,7 +153,7 @@ export default function ChpSettings() {
           )}
         </section>
 
-        <section className={`${CARD} p-5`}>
+        <section ref={securityRef} id="password" className={`${CARD} p-5 scroll-mt-24`}>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Security</h2>
           <div className="rounded-lg bg-gray-50 p-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -155,7 +168,7 @@ export default function ChpSettings() {
             </div>
             {pwOpen && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input type="password" autoComplete="current-password" aria-label="Current password" placeholder="Current password" value={pw.old} onChange={(e) => setPw({ ...pw, old: e.target.value })} className={INPUT} />
+                <input ref={pwFirst} type="password" autoComplete="current-password" aria-label="Current password" placeholder="Current password" value={pw.old} onChange={(e) => setPw({ ...pw, old: e.target.value })} className={INPUT} />
                 <input type="password" autoComplete="new-password" aria-label="New password" placeholder="New password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} className={INPUT} />
                 <input type="password" autoComplete="new-password" aria-label="Confirm new password" placeholder="Confirm new password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} className={INPUT} />
                 <div className="md:col-span-3 flex gap-2">

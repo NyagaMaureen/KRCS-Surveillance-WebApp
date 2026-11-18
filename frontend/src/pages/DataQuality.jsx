@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { MapPinOff, AlertTriangle, Clock, HelpCircle, Copy, Building2, Check, RotateCcw } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getDataQuality, dismissDataIssue } from '../api/frappe'
+import { useCapabilities } from '../context/CapabilitiesContext'
+import { pagesFor } from '../data/sidebarMenu'
 import { FOCUS, Toast, Skeleton } from '../components/chp/ui'
 
 // Data Quality: problems in reports from every source (Mobile, WhatsApp, Web, CBS, MOH 505), filtered by source,
@@ -27,7 +29,18 @@ function shortDate(d) {
   return Number.isNaN(x.getTime()) ? '—' : x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// the page an issue's link opens, to hide Open where the user cannot go (e.g. Data & AI Admin: no case pages)
+function linkPage(link) {
+  const [, first, id] = String(link || '').split('?')[0].split('/')
+  if (first === 'reports' && id) return 'report-detail'
+  if (first === 'alerts-signals' && id) return 'alerts-signals-detail'
+  return first
+}
+
 export default function DataQuality() {
+  const { workspace, has } = useCapabilities()
+  const allowed = pagesFor(workspace, has)
+  const canOpen = (link) => !!link && (!allowed || allowed.has(linkPage(link)))
   const [days, setDays] = useState(30)
   const [kind, setKind] = useState('')
   const [source, setSource] = useState('')
@@ -132,7 +145,7 @@ export default function DataQuality() {
                   <p className="mt-0.5 text-xs text-gray-600">{i.kindLabel} · {i.source || '—'} · {shortDate(i.at)}</p>
                   <p className="mt-1 text-xs text-gray-500">{i.detail}</p>
                   <div className="mt-2 flex items-center gap-3">
-                    <Link to={i.link} className={`text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>Open</Link>
+                    {canOpen(i.link) && <Link to={i.link} className={`text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>Open</Link>}
                     {data.canDismiss && <button type="button" onClick={() => dismiss(i)} className={`text-xs text-gray-600 underline underline-offset-2 ${FOCUS}`}>Mark checked</button>}
                   </div>
                 </li>
@@ -168,7 +181,7 @@ export default function DataQuality() {
                         <td className="whitespace-nowrap px-4 py-3 text-gray-900">{shortDate(i.at)}</td>
                         <td className="whitespace-nowrap px-4 py-3">
                           <div className="flex items-center justify-end gap-3">
-                            <Link to={i.link} className={`inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 ${FOCUS}`}>Open</Link>
+                            {canOpen(i.link) && <Link to={i.link} className={`inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 ${FOCUS}`}>Open</Link>}
                             {data.canDismiss && <button type="button" onClick={() => dismiss(i)} className={`text-xs font-medium text-gray-700 underline underline-offset-2 hover:text-gray-900 ${FOCUS}`}>Mark checked</button>}
                           </div>
                         </td>

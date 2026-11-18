@@ -1,10 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Wrench, Plus, Download, Upload, Check, Eye, EyeOff, Search, X, Lock, MessageSquare } from 'lucide-react'
+import { UserCircle, ShieldCheck, Pencil, Bell, SlidersHorizontal, Wand2, Database, Shield, Clock, MapPin, Plus, Check, Eye, EyeOff, Search, X, Lock, MessageSquare } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import { getCurrentUser, getMyProfile, getRegions, getRoles, updateDoc, getAlertThresholds, addDisease, saveAlertThresholds, searchIcd11, setIcd11 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { FeedbackList } from './FeedbackInbox'
+import SecurityPanel from '../components/settings/SecurityPanel'
+import DataPanel from '../components/settings/DataPanel'
 import RiskWeights from '../components/risk/RiskWeights'
 import RedFlagSymptoms from '../components/risk/RedFlagSymptoms'
 import { listFeedback } from '../api/frappe'
@@ -28,33 +30,10 @@ const PAGE_TITLES = {
   notifications: ['Notifications', 'Choose which notifications you get'],
   'ai-config': ['AI Risk Engine', 'How the risk score is worked out and which symptoms are red flags'],
   'alert-thresholds': ['Alert Thresholds', 'Case counts that raise alerts, and the regions under surveillance'],
-  data: ['Data and Database', 'Data retention, export and system maintenance'],
-  security: ['Security Settings', 'Sign-in and session rules'],
+  data: ['Data and Database', 'Database size, background jobs and backups'],
+  security: ['Security Settings', 'Password rules, sign-in limits and who is signed in'],
   feedback: ['Feedback Received', 'Feedback sent by users of the app and WhatsApp'],
 }
-
-const SESSION_TIMEOUT_OPTIONS = [
-  { value: '15-min', label: '15 min' },
-  { value: '30-min', label: '30 min' },
-  { value: '1-hour', label: '1 hour' },
-  { value: '4-hours', label: '4 hours' },
-  { value: 'never', label: 'Never' },
-]
-
-const PASSWORD_POLICY_OPTIONS = [
-  { value: 'basic', label: 'Basic (8+ characters)' },
-  { value: 'medium', label: 'Medium (8+ mixed)' },
-  { value: 'strong', label: 'Strong (12+ mixed)' },
-]
-
-const DATABASE_STATS = [
-  { label: 'Total Alerts', value: 20 },
-  { label: 'Total Reports', value: 50 },
-  { label: 'Active Cases', value: 10 },
-  { label: 'Registered Users', value: 8 },
-  { label: 'Database Size', value: '12.4 MB' },
-  { label: 'Last Backup', value: 'Today, 03:00 AM' },
-]
 
 const INITIAL_AI_FEATURES = [
   { key: 'disease-trend-analysis', label: 'Disease trend analysis', description: 'Allow AI to analyze and summarize disease trends', enabled: true },
@@ -182,25 +161,8 @@ export default function Settings({ only = '' }) {
   const [addingRegion, setAddingRegion] = useState(false)
   const [newRegionName, setNewRegionName] = useState('')
 
-  const [maintenance, setMaintenance] = useState({
-    autoBackup: true,
-    maintenanceMode: false,
-    lastBackup: 'Feb 17, 2026 02:00 AM',
-    lastBackupSize: '248 MB',
-  })
 
-  const [security, setSecurity] = useState({
-    twoFactorAuth: true,
-    sessionTimeout: '30-min',
-    passwordPolicy: 'strong',
-    ipWhitelist: false,
-    auditLogging: true,
-  })
 
-  const [dataRetention, setDataRetention] = useState('1-year')
-  const importInputRef = useRef(null)
-  const [importMessage, setImportMessage] = useState('')
-  const [importError, setImportError] = useState(false)
 
   const [user, setUser] = useState(null)
   const [regions, setRegions] = useState([])
@@ -433,50 +395,6 @@ export default function Settings({ only = '' }) {
     } catch (e) {
       setProfileError(e.message || 'Could not update your profile.')
     }
-  }
-
-  function exportDatabase() {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      dataRetention,
-      stats: DATABASE_STATS,
-      surveillanceRegions,
-      aiFeatures,
-      notificationPrefs,
-      diseaseThresholds,
-      outbreakMultiplier,
-    }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `kenya-red-cross-export-${Date.now()}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  function triggerImport() {
-    setImportMessage('')
-    importInputRef.current?.click()
-  }
-
-  function handleImport(event) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      const rows = String(reader.result).split(/\r?\n/).filter((line) => line.trim().length > 0)
-      const rowCount = Math.max(rows.length - 1, 0)
-      setImportError(false)
-      setImportMessage(`Imported ${rowCount} row${rowCount === 1 ? '' : 's'} from "${file.name}"`)
-    }
-    reader.onerror = () => {
-      setImportError(true)
-      setImportMessage(`Could not read "${file.name}"`)
-    }
-    reader.readAsText(file)
   }
 
   async function loadThresholds() {
@@ -1074,156 +992,9 @@ export default function Settings({ only = '' }) {
         </div>        </div>
       )}
 
-      {tabOpen('data') && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <Database className="w-7 h-7 text-gray-900" />
-              <h3 className="text-lg font-semibold text-gray-900">Data Management</h3>
-            </div>
+      {tabOpen('data') && <DataPanel notify={showToast} />}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <button
-                onClick={exportDatabase}
-                className="flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 py-8 text-sm text-gray-900 hover:border-red-200 hover:bg-red-50/40 transition-colors"
-              >
-                <Download className="w-6 h-6 text-gray-700" />
-                Export Full Database
-              </button>
-              <button
-                onClick={triggerImport}
-                className="flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 py-8 text-sm text-gray-900 hover:border-red-200 hover:bg-red-50/40 transition-colors"
-              >
-                <Upload className="w-6 h-6 text-gray-700" />
-                Import Data (CSV)
-              </button>
-              <input ref={importInputRef} type="file" accept=".csv" className="hidden" onChange={handleImport} />
-            </div>
-
-            {importMessage && <p className={['text-sm mt-4', importError ? 'text-red-700' : 'text-green-600'].join(' ')}>{importMessage}</p>}
-
-            <div className="border-t border-gray-100 mt-6 pt-4">
-              <p className="text-xs text-gray-400">Import, export, and manage surveillance data</p>
-            </div>
-
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-gray-900 mb-2">Data Retention</label>
-              <select value={dataRetention} onChange={(e) => setDataRetention(e.target.value)} className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-200">
-                <option value="6-months">6 months</option>
-                <option value="1-year">1 year</option>
-                <option value="2-years">2 years</option>
-                <option value="forever">Forever</option>
-              </select>
-              <p className="text-xs text-gray-400 mt-1.5">Closed cases older than this will be archived</p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <Database className="w-7 h-7 text-gray-900" />
-              <h3 className="text-lg font-semibold text-gray-900">Database Statistics</h3>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10">
-              {DATABASE_STATS.map((stat) => (
-                <div key={stat.label} className="flex items-center justify-between py-3 border-b border-gray-100">
-                  <span className="text-sm text-gray-500">{stat.label}</span>
-                  <span className="text-sm font-semibold text-gray-900">{stat.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tabOpen('data') && (
-        <div className="mt-6">
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <Wrench className="w-7 h-7 text-gray-900" />
-              <h3 className="text-lg font-semibold text-gray-900">System Maintenance</h3>
-            </div>
-
-            <div className="divide-y divide-gray-100">
-              <div className="flex items-center justify-between gap-6 py-5">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Auto-backup</p>
-                  <p className="text-sm text-gray-400 mt-0.5">Daily automated database backups</p>
-                </div>
-                <Toggle enabled={maintenance.autoBackup} onClick={() => setMaintenance({ ...maintenance, autoBackup: !maintenance.autoBackup })} />
-              </div>
-              <div className="flex items-center justify-between gap-6 py-5">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Maintenance mode</p>
-                  <p className="text-sm text-gray-400 mt-0.5">Show maintenance page to non-admin users</p>
-                </div>
-                <Toggle enabled={maintenance.maintenanceMode} onClick={() => setMaintenance({ ...maintenance, maintenanceMode: !maintenance.maintenanceMode })} />
-              </div>
-            </div>
-
-            <p className="text-sm text-gray-400 mt-4">Last backup: {maintenance.lastBackup} · Size: {maintenance.lastBackupSize}</p>
-          </div>
-        </div>
-      )}
-
-      {tabOpen('security') && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Shield className="w-7 h-7 text-gray-900" />
-            <h3 className="text-lg font-semibold text-gray-900">Security Settings</h3>
-          </div>
-
-          <div className="divide-y divide-gray-100">
-            <div className="flex items-center justify-between gap-6 py-5">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Two-Factor Authentication</p>
-                <p className="text-sm text-gray-400 mt-0.5">Require 2FA for all admin users</p>
-              </div>
-              <Toggle enabled={security.twoFactorAuth} onClick={() => setSecurity({ ...security, twoFactorAuth: !security.twoFactorAuth })} />
-            </div>
-
-            <div className="flex items-center justify-between gap-6 py-5">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Session Timeout</p>
-                <p className="text-sm text-gray-400 mt-0.5">Auto-logout after inactivity</p>
-              </div>
-              <select value={security.sessionTimeout} onChange={(e) => setSecurity({ ...security, sessionTimeout: e.target.value })} className="shrink-0 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-200">
-                {SESSION_TIMEOUT_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center justify-between gap-6 py-5">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Password Policy</p>
-                <p className="text-sm text-gray-400 mt-0.5">Minimum password complexity</p>
-              </div>
-              <select value={security.passwordPolicy} onChange={(e) => setSecurity({ ...security, passwordPolicy: e.target.value })} className="shrink-0 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-200">
-                {PASSWORD_POLICY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center justify-between gap-6 py-5">
-              <div>
-                <p className="text-sm font-medium text-gray-900">IP Whitelist</p>
-                <p className="text-sm text-gray-400 mt-0.5">Restrict access to specific IP ranges</p>
-              </div>
-              <Toggle enabled={security.ipWhitelist} onClick={() => setSecurity({ ...security, ipWhitelist: !security.ipWhitelist })} />
-            </div>
-
-            <div className="flex items-center justify-between gap-6 py-5">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Audit Logging</p>
-                <p className="text-sm text-gray-400 mt-0.5">Log all user actions for compliance</p>
-              </div>
-              <Toggle enabled={security.auditLogging} onClick={() => setSecurity({ ...security, auditLogging: !security.auditLogging })} />
-            </div>
-          </div>
-        </div>
-      )}
+      {tabOpen('security') && <SecurityPanel notify={showToast} />}
 
       {toast.show && (
         <div className="toast-in fixed bottom-6 right-6 bg-gray-900 text-white text-sm rounded-xl pl-3 pr-4 py-3 flex items-center gap-2.5 shadow-xl z-50">

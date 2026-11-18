@@ -57,6 +57,9 @@ def sub_county_users(sub_county_name, event=None):
 		return []
 	users = frappe.get_all("User", filters={"assigned_sub_county": ["in", ids], "enabled": 1},
 		fields=["name", "email", "mobile_no", "full_name"])
+	# Data & AI Administrators run the system and get no case alerts, whatever area is set on them (KRCS 18 Nov 2026)
+	from surveillance.user_scope import user_workspace
+	users = [u for u in users if user_workspace(u.name) != "dataai"]
 	if event:
 		from surveillance.health_units import event_visible
 		users = [u for u in users if event_visible(event, u.name)]
@@ -355,6 +358,9 @@ LINKS = {"Surveillance Event": "/alerts-signals/{}", "Case Report": "/reports/{}
 
 
 def _link_for(doctype, name):
+	if doctype == "DocType" and (name or "").startswith("System Alert:"):   # Data & AI Admin system alerts
+		from surveillance.system_admin import alert_link
+		return alert_link(name)
 	if doctype == "User Feedback":
 		from surveillance.capabilities import has_capability
 		return "/settings?tab=feedback" if has_capability("view_feedback") else "/feedback"

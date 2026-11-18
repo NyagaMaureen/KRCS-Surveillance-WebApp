@@ -500,7 +500,8 @@ def export_xlsx(title, meta=None, sheets=None):
 	import io
 	from openpyxl import Workbook
 	from openpyxl.styles import Font, PatternFill
-	_require_dashboard()
+	if not has_capability("dataai_workspace"):   # the Data & AI Admin dashboard downloads too (KRCS 18 Nov 2026)
+		_require_dashboard()
 	meta = frappe.parse_json(meta) if isinstance(meta, str) else (meta or [])
 	sheets = frappe.parse_json(sheets) if isinstance(sheets, str) else (sheets or [])
 	wb = Workbook()

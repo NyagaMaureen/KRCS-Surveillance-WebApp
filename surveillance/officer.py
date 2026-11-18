@@ -279,7 +279,8 @@ def get_data_quality(days=30):
 				s.signal_date, "CBS")
 
 	# open events flagged "confirm the number"
-	for e in frappe.get_all(EVENT, filters={**_scope(), "status": ["in", OPEN], "data_warning": ["is", "set"]},
+	from surveillance.events import _scope_filters
+	for e in frappe.get_all(EVENT, filters={**_scope_filters(check=False), "status": ["in", OPEN], "data_warning": ["is", "set"]},
 			fields=["name", "disease_name", "data_warning", "first_reported"]):
 		add("warning", e.name, f"{e.name}: {e.disease_name or 'event'}", e.data_warning, f"/alerts-signals/{e.name}", e.first_reported)
 

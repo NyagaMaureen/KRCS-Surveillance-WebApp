@@ -1516,3 +1516,14 @@ export async function getReferralsOverview() {
 export async function sendReportToQueue(report) {
   return callMethodPost(`${TRIAGE}.send_to_queue`, { report })
 }
+// ---------- Data & AI Admin workspace (KRCS 18 Nov 2026): surveillance.system_admin ----------
+const SYS = '/api/method/surveillance.system_admin.'
+const dates = (from, to) => `from_date=${encodeURIComponent(from || '')}&to_date=${encodeURIComponent(to || '')}`
+export async function getAdminOverview() { return callMethod(`${SYS}get_overview`) }
+export async function getAdminTab(report, from, to) { return callMethod(`${SYS}get_tab?report=${encodeURIComponent(report)}&${dates(from, to)}`) }
+export async function getAdminModels(from, to) { return callMethod(`${SYS}get_models?${dates(from, to)}`) }
+export async function getSecurity() { return callMethod(`${SYS}get_security`) }
+export async function saveSecurity(settings) { return callMethodPost(`${SYS}save_security`, { settings }) }
+export async function endSession(id) { return callMethodPost(`${SYS}end_session`, { id }) }
+export async function getDataOverview() { return callMethod(`${SYS}get_data_overview`) }
+export async function runBackup() { return callMethodPost(`${SYS}run_backup`, {}) }

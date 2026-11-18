@@ -566,10 +566,12 @@ def _user_region():
 	return None
 
 
-def _scope_filters():
+def _scope_filters(check=True):
 	"""Officers see their own region plus events with no location at all (location missing).
-	Events in places outside our Sub County list (e.g. other CBS counties) are for national users only."""
-	require_capability(VIEW)
+	Events in places outside our Sub County list (e.g. other CBS counties) are for national users only.
+	check=False: the caller has checked its own permission (Data Quality, which Data & AI Admins see without the queue)."""
+	if check:
+		require_capability(VIEW)
 	from surveillance.health_units import visible_events
 	vis = visible_events()   # CHAs: their sub-county, reports from their CHU(s) or from no CHU (KRCS 17 Nov 2026)
 	if vis is not None:

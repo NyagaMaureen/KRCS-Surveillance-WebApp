@@ -77,11 +77,12 @@ CAPABILITIES = [
 
 	# Users & Roles
 	{"key": "view_users", "name": "View Users", "category": "Users & Roles",
-	 "description": "View user accounts", "grants": {"User": ["read"]}},
+	 "description": "View user accounts", "grants": {"User": ["read"], "Surveillance Role": ["read"]}},
 	{"key": "manage_users", "name": "Manage Users", "category": "Users & Roles",
-	 "description": "Create and edit user accounts", "grants": {"User": ["read", "write", "create"]}},
+	 "description": "Create and edit user accounts", "grants": {"User": ["read", "write", "create"], "Surveillance Role": ["read"]}},
 	{"key": "manage_roles", "name": "Manage Roles & Permissions", "category": "Users & Roles",
-	 "description": "Change which capabilities each role has", "grants": {}},
+	 "description": "Change which capabilities each role has, and add roles",
+	 "grants": {"Role": ["read", "create"], "Surveillance Role": ["read", "write", "create"]}},
     {"key": "view_all_regions", "name": "View All Regions", "category": "Users & Roles",
 	 "description": "See events and dashboard figures for every region, even if the user has a region assigned",
 	 "grants": {}},
@@ -148,6 +149,9 @@ CAPABILITIES += [
 	{"key": "receive_referrals", "name": "Confirm Referrals to My Facility", "category": "Review Queue",
 	 "description": "See referrals CHPs make to the user's assigned facility and mark whether the people arrived",
 	 "grants": {}},
+	{"key": "dataai_workspace", "name": "Data & AI Admin Workspace", "category": "Workspaces",
+	 "description": "Data & AI Admin dashboard and menu: AI performance, integrations, system health, data quality, users, "
+	 "roles, security and settings. No case or patient data", "grants": {}},
 	{"key": "officer_workspace", "name": "Surveillance Officer Workspace", "category": "Workspaces",
 	 "description": "Officer dashboard and menu: Review Queue, Epi Trends, map, response, event lifecycle, data quality",
 	 "grants": {}},
@@ -240,10 +244,21 @@ CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 
 # Not given to Administrator / System Manager automatically: these change what the user sees
 # (a field worker's menu and dashboard), not what they are allowed to do.
-NOT_AUTO_FOR_ADMIN = {"chp_workspace", "officer_workspace", "fhw_workspace", "cha_workspace", "receive_tasks", "view_own_reports"}
+NOT_AUTO_FOR_ADMIN = {"chp_workspace", "officer_workspace", "fhw_workspace", "cha_workspace", "dataai_workspace", "receive_tasks",
+	"view_own_reports"}
 
 # Workspace for each workspace capability, checked in order. Users without one get the full app.
-WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_workspace", "fhw"), ("cha_workspace", "cha")]
+WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_workspace", "fhw"), ("cha_workspace", "cha"),
+	("dataai_workspace", "dataai")]
+
+# Data & AI Administrator (KRCS 18 Nov 2026): one role for the Data & AI Admin and ICT Admin designs. Runs the system
+# (AI, data, integrations, users, roles, security, settings) and sees no case or patient data. Set by data_ai_admin_setup.
+DATA_AI_CAPABILITIES = ["dataai_workspace", "view_users", "manage_users", "manage_roles", "view_audit_log",
+	"settings_security", "settings_data", "settings_ai_config", "settings_alert_thresholds", "manage_alert_thresholds",
+	"settings_notifications", "settings_system", "manage_reference_data", "manage_knowledge_base", "approve_knowledge_base",
+	"use_knowledge_base", "kb_national_scope", "view_chatbot_logs", "view_reporting_channels", "upload_facility_data",
+	"view_context_data", "manage_context_data", "view_data_quality", "view_monitoring_reports", "export_monitoring_reports",
+	"view_feedback", "view_all_regions"]   # national: the region set on the user (required by the form) does not limit it
 
 # Capabilities set for the CHP role by setup_chp_role (run once; adjust later in Roles & Permissions)
 CHP_CAPABILITIES = ["chp_workspace", "create_reports", "view_own_reports", "receive_tasks", "use_knowledge_base"]
@@ -284,6 +299,11 @@ def _managed_doctypes():
 	return {dt for c in CAPABILITIES for dt in c.get("grants", {})}
 
 
+# Fields at permission level 1 (KRCS 18 Nov 2026): a user's roles are level 1 on User, so whoever manages users
+# needs it to see and set roles without being a System Manager (Data & AI Administrator).
+LEVEL1_GRANTS = {"view_users": {"User": ["read"]}, "manage_users": {"User": ["read", "write"]}}
+
+
 def sync_role_permissions(role):
 	"""Rebuild this role's Frappe permissions on managed DocTypes from its capabilities."""
 	if role in RESERVED_ROLES:
@@ -313,6 +333,19 @@ def sync_role_permissions(role):
 				**{p: 1 for p in ptypes},
 			}).insert(ignore_permissions=True)
 
+		frappe.clear_cache(doctype=dt)
+
+	keys = set(frappe.get_all(ROLE_CAPABILITY, filters={"role": role}, pluck="capability"))
+	level1 = {}
+	for key, grants in LEVEL1_GRANTS.items():
+		if key in keys:
+			for dt, ptypes in grants.items():
+				level1.setdefault(dt, set()).update(ptypes)
+	for dt in {d for g in LEVEL1_GRANTS.values() for d in g}:
+		frappe.db.delete("Custom DocPerm", {"parent": dt, "role": role, "permlevel": 1, "if_owner": 0})
+		if level1.get(dt):
+			frappe.get_doc({"doctype": "Custom DocPerm", "parent": dt, "parenttype": "DocType", "parentfield": "permissions",
+				"role": role, "permlevel": 1, **{p: 1 for p in level1[dt]}}).insert(ignore_permissions=True)
 		frappe.clear_cache(doctype=dt)
 
 

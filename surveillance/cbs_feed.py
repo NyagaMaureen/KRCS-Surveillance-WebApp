@@ -177,6 +177,7 @@ def sync():
 		+ (f" | weeks {weeks[0]} to {weeks[-1]}" if weeks else "")
 		+ f" | {n_signals} recent signals for the Review Queue")
 	print(summary)
+	frappe.db.set_global("cbs_last_sync_ok", str(frappe.utils.now_datetime()))   # Integration Health: last good sync
 	if unmapped:
 		print("Events not mapped (add to diseases.py / Alert Threshold Config if needed):",
 			dict(sorted(unmapped.items(), key=lambda x: -x[1])))

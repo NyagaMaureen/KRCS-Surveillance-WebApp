@@ -81,7 +81,18 @@ def _require(report=None):
 		frappe.throw("Unknown report.")
 	if r.get("hq") and locked_area():
 		frappe.throw("This report is for HQ users.", frappe.PermissionError)
+	if not _report_allowed(r):
+		frappe.throw("This report is not part of your workspace.", frappe.PermissionError)
 	return r
+
+
+# Data & AI Administrators run the system and see no surveillance figures (KRCS 18 Nov 2026)
+SYSTEM_REPORTS = ("R37", "R38", "R40", "R40b")
+
+
+def _report_allowed(r):
+	from surveillance.user_scope import user_workspace
+	return r["key"] in SYSTEM_REPORTS or user_workspace() != "dataai"
 
 
 def _parse(filters):
@@ -876,23 +887,31 @@ def _r40(f):
 		failed = [r.creation for r in runs if r.status == "Failed"]
 		notes, late = [], False
 		if key == "cbs":
-			last = max(filter(None, [_latest("Surveillance Signal", "creation", {"source": "CBS"}),
-				_latest("Weekly Count", "modified", {"source": "CBS"})]), default=None)
+			# a sync that worked but brought nothing new still counts (KRCS 18 Nov 2026): cbs_feed records each good sync
+			last = max(filter(None, [frappe.db.get_global("cbs_last_sync_ok"),
+				_latest("Surveillance Signal", "creation", {"source": "CBS"}),
+				_latest("Weekly Count", "modified", {"source": "CBS"})]), default=None, key=get_datetime)
 		elif key == "moh505":
 			last = _latest("IDSR Facility Week", "modified")
 			week = _latest("IDSR Facility Week", "week_start")
 			if week:
-				late = (getdate(nowdate()) - getdate(week)).days > MOH505_LATE_DAYS
-				notes.append(f"newest week loaded: {_wlabel(week)} (starting {getdate(week).strftime('%-d %b')})")
+				ws = getdate(week)
+				ago = (getdate(nowdate()) - ws).days // 7
+				late = (getdate(nowdate()) - ws).days > MOH505_LATE_DAYS
+				span = f"{_wlabel(ws)} ({ws.strftime('%-d %b')} to {add_days(ws, 6).strftime('%-d %b %Y')})"
+				notes.append(f"Late: the newest week loaded is {span}, {ago} week{'' if ago == 1 else 's'} ago; a file is expected every week"
+					if late else f"Up to date: the newest week loaded is {span}")
+			else:
+				notes.append("No MOH 505 week has been loaded yet")
 			ups = frappe.get_all("IDSR Upload", filters={"creation": ["between", [f.start, f.end]]}, fields=["status", "creation"])
 			st = Counter(u.status for u in ups)
 			failed += [u.creation for u in ups if u.status == "Failed"]
 			if ups:
 				parts = [f"{st[s]} {label}" for s, label in [("Ingested", "loaded"), ("Ready", "uploaded but not loaded yet"),
-					("Failed", "failed"), ("Discarded", "discarded")] if st.get(s)]
-				notes.append(f"{len(ups)} files uploaded in the period: " + ", ".join(parts))
+					("Failed", "failed"), ("Discarded", "discarded (not loaded)")] if st.get(s)]
+				notes.append(f"{len(ups)} file{'' if len(ups) == 1 else 's'} uploaded in this period: " + ", ".join(parts))
 			else:
-				notes.append("no files uploaded in the period")
+				notes.append("No files uploaded in this period")
 		elif key == "whatsapp":
 			last = _latest("Case Report", "creation", {"channel": "WhatsApp"})
 		elif key == "push":
@@ -916,12 +935,20 @@ def _r40(f):
 			last = _latest("Weather Snapshot", "creation")
 		if every and last and (now - get_datetime(last)).total_seconds() > every * 3600:
 			late = True
-			notes.append(f"no new data for over {every} hours")
-		recent_problems = sum(1 for e in errs if get_datetime(e.creation) >= recent) + sum(1 for c in failed if get_datetime(c) >= recent)
+			notes.append(f"No new data for over {every} hours")
+		# a problem counts only if it came in the last 24 hours AND after the last good data: an error followed by a
+		# good sync is over (KRCS 18 Nov 2026)
+		since = max(recent, get_datetime(last)) if last else recent
+		recent_problems = sum(1 for e in errs if get_datetime(e.creation) > since) + sum(1 for c in failed if get_datetime(c) > since)
 		if errs:
 			kinds = Counter(e.method for e in errs)
-			notes.append("errors: " + ", ".join(f"{k} ({n})" for k, n in kinds.most_common(3))
-				+ ("" if recent_problems else " (none in the last 24 hours)"))
+			latest_err = max(get_datetime(e.creation) for e in errs)
+			what = ", ".join(f"{k} ({n})" for k, n in kinds.most_common(3))
+			if recent_problems:
+				notes.append(f"Errors: {what}; last at {_dt(latest_err)}, with no good data since")
+			else:
+				notes.append(f"Recovered: {what} in this period, last at {_dt(latest_err)}; working since"
+					+ (f" (last good data {_dt(last)})" if last else ""))
 		if not last and not errs and not failed:
 			status = "Not set up"
 		elif (late and recent_problems) or (not last and recent_problems):
@@ -931,7 +958,7 @@ def _r40(f):
 		else:
 			status = "OK"
 		rows.append({"integration": name, "status": status, "lastData": _dt(last) or "never", "errors": len(errs),
-			"lastError": _dt(max((e.creation for e in errs), default=None)), "failed": len(failed), "note": "; ".join(notes)})
+			"lastError": _dt(max((e.creation for e in errs), default=None)), "failed": len(failed), "note": ". ".join(n[:1].upper() + n[1:] for n in notes)})
 	per_day = Counter(getdate(c) for _n, c in all_errors)
 	days = [add_days(f.from_d, i) for i in range((f.to_d - f.from_d).days + 1)]
 	ok = sum(1 for r in rows if r["status"] == "OK")
@@ -1210,7 +1237,8 @@ def _options():
 def list_reports():
 	_require()
 	hq = not locked_area()
-	return {"reports": [{k: r[k] for k in ("key", "title", "description", "filters")} for r in REPORTS if hq or not r.get("hq")],
+	return {"reports": [{k: r[k] for k in ("key", "title", "description", "filters")} for r in REPORTS
+		if (hq or not r.get("hq")) and _report_allowed(r)],
 		"canExport": has_capability(EXPORT), "options": _options()}
 
 

@@ -96,6 +96,7 @@ export const CHA_MENU = [
   ]},
 ]
 
+// Data & AI Admin (KRCS 18 Nov 2026) has no menu of its own: the main menu, filtered by its permissions
 export const MENUS = { full: SIDEBAR_MENU, chp: CHP_MENU, officer: OFFICER_MENU, fhw: FHW_MENU, cha: CHA_MENU }
 
 // Pages each workspace may open (menu pages plus their detail pages). 'full' = no restriction.
@@ -106,6 +107,7 @@ export const WORKSPACE_PAGES = {
     'ai-data-assistant', 'feedback', 'help-center', 'settings'],
   chp: ['login', 'dashboard', 'reports', 'report-detail', 'record-health-signal', 'follow-ups', 'referrals',
     'ai-data-assistant', 'feedback', 'help-center', 'settings', 'my-tasks'],
+  dataai: ['login', 'dashboard', 'settings', 'help-center', 'feedback', 'ai-data-assistant'],
   officer: ['login', 'dashboard', 'alerts-signals', 'alerts-signals-detail', 'epi-trends', 'alert-detail', 'surveillance-map',
     'response', 'event-lifecycle', 'data-quality', 'analytics', 'ai-data-assistant', 'feedback', 'help-center', 'settings',
     'reports', 'report-detail', 'response-protocols', 'my-tasks', 'chatbot-query-log', 'referrals-overview'],
@@ -163,15 +165,27 @@ export function menuFor(workspace, has) {
       .filter((i) => !seen.has(itemKey(i)) && seen.add(itemKey(i)))
     return extra.length ? [...menu, { section: 'MORE', items: extra }] : menu
   }
-  const placed = SIDEBAR_MENU.map((g) => ({
+  // Same sections and order as the main menu for everyone (KRCS 18 Nov 2026): a workspace's own item takes the place
+  // of the main-menu item with the same name (e.g. a CHA's Referrals); items the permissions do not allow are left
+  // out, and a section with nothing left is dropped.
+  const ownByLabel = new Map(flatItems(base).map((i) => [i.label, i]))
+  const used = new Set()
+  const out = SIDEBAR_MENU.map((g) => ({
     ...g,
-    items: visibleItems(g.items.filter((i) => !own.has(i.page) && !skip.includes(i.page)), has),
+    items: visibleItems(g.items.map((i) => {
+      const mine = ownByLabel.get(i.label)
+      if (mine) used.add(i.label)
+      return mine || i
+    }).filter((i) => !skip.includes(i.page) && (ownByLabel.get(i.label) === i || !own.has(i.page))), has),
   }))
-  const out = menu.map((g) => {   // same section name: their own items first
-    const same = placed.find((p) => p.section === g.section)
-    return same ? { ...g, items: [...g.items, ...same.items] } : g
+  // own items with no main-menu counterpart stay in their own section
+  menu.forEach((g) => {
+    const extra = g.items.filter((i) => !used.has(i.label))
+    if (!extra.length) return
+    const same = out.find((x) => x.section === g.section)
+    if (same) same.items = [...same.items, ...extra]
+    else out.push({ ...g, items: extra })
   })
-  placed.forEach((p) => { if (!out.some((g) => g.section === p.section)) out.push(p) })
   return out.filter((g) => g.items.some((i) => !i.soon))
 }
 

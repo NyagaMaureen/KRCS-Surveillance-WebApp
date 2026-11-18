@@ -34,14 +34,13 @@ import Feedback from '../pages/Feedback'
 import FeedbackInbox from '../pages/FeedbackInbox'
 import ChpDashboard from '../pages/ChpDashboard'
 import ChpSettings from '../pages/ChpSettings'
+import DataAiDashboard from '../pages/DataAiDashboard'
 import FacilityReferrals from '../pages/FacilityReferrals'
 import ReferralsOverview from '../pages/ReferralsOverview'
 import DataQuality from '../pages/DataQuality'
 import FullDashboard from '../pages/FullDashboard'
 import HqDashboard from '../pages/HqDashboard'
-import MyProfile from '../pages/MyProfile'
 import NotificationSettings from '../pages/NotificationSettings'
-import ChangePassword from '../pages/ChangePassword'
 import MonitoringReports from '../pages/MonitoringReports'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
@@ -56,7 +55,7 @@ function byWorkspace(pages) {
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
-  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: FullDashboard, chp: ChpDashboard, officer: HqDashboard, fhw: HqDashboard, cha: HqDashboard }) },
+  { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: FullDashboard, chp: ChpDashboard, officer: HqDashboard, fhw: HqDashboard, cha: HqDashboard, dataai: DataAiDashboard }) },
   { path: '/surveillance-dashboard', name: 'surveillance-dashboard', element: SurveillanceDashboard },
   { path: '/ai-governance-dashboard', name: 'ai-governance-dashboard', element: AiGovernanceDashboard },
   { path: '/investigations', name: 'investigations', element: Investigations },
@@ -79,8 +78,9 @@ const rawRoutes = [
   { path: '/context-data', name: 'context-data', element: ContextData },
   { path: '/settings', name: 'settings', element: byWorkspace({ full: Settings, chp: ChpSettings }) },   // others: Settings, showing only what their permissions allow
   { path: '/help-center', name: 'help-center', element: HelpCenter },
-  { path: '/profile', name: 'profile', element: byWorkspace({ full: MyProfile, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings, cha: ChpSettings }) },
-  { path: '/change-password', name: 'change-password', element: byWorkspace({ full: ChangePassword, chp: ChpSettings, officer: ChpSettings, fhw: ChpSettings, cha: ChpSettings }) },
+  // one profile page for everyone (KRCS 18 Nov 2026); Change Password opens its password section
+  { path: '/profile', name: 'profile', element: ChpSettings },
+  { path: '/change-password', name: 'change-password', element: ChpSettings },
   { path: '/notifications', name: 'notifications', element: NotificationSettings },
   { path: '/audit-log', name: 'audit-log', element: AuditLog },
   { path: '/ai-data-assistant', name: 'ai-data-assistant', element: AiDataAssistant },
