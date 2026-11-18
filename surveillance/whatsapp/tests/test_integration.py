@@ -140,6 +140,16 @@ class TestWhatsAppIntegration(FrappeTestCase):
 				"primary_role": "CHP",
 			},
 		)
+		# A CHP belongs to one Community Health Unit in their sub-county (health_units.validate_user).
+		unit = frappe.db.get_value(
+			"Community Health Unit", {"health_unit_name": "WhatsApp Test Unit", "sub_county": cls.sub_county.name}
+		) or frappe.get_doc(
+			{"doctype": "Community Health Unit", "health_unit_name": "WhatsApp Test Unit", "sub_county": cls.sub_county.name}
+		).insert(ignore_permissions=True).name
+		user = frappe.get_doc("User", STAFF_USER)
+		if [r.health_unit for r in user.get("health_units") or []] != [unit]:
+			user.set("health_units", [{"health_unit": unit}])
+			user.save(ignore_permissions=True)
 		data.clear_staff_cache()
 		data.clear_catalog_cache()
 
@@ -582,6 +592,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 
 	def test_media_past_its_retention_period_is_removed_from_whatsapp_reports_only(self):
 		name = self.community_report()
+		status = frappe.db.get_value("Case Report", name, "status")
 		row = frappe.get_doc("Case Report", name).attachments[0]
 		file_url = row.file
 		self.assertTrue(frappe.db.exists("File", {"file_url": file_url}))
@@ -600,7 +611,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertFalse(row.file)
 		self.assertIn("retention period", row.text_content)
 		self.assertFalse(row.transcript)
-		self.assertEqual(frappe.get_doc("Case Report", name).status, "Submitted")
+		self.assertEqual(frappe.get_doc("Case Report", name).status, status)  # the report itself is left as it was
 
 	def test_anonymise_reporter_removes_identifiers_and_keeps_the_surveillance_figures(self):
 		frappe.db.delete("WhatsApp Consent Log", {"phone": PHONE, "event": "Data Removed"})
