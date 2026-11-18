@@ -144,6 +144,17 @@ def get_tab(report, from_date=None, to_date=None):
 	return res
 
 
+# measures shown on the dashboard, in this order (the rest stay in MLflow)
+KEY_MEASURES = [("accuracy", "Accuracy"), ("top3_accuracy", "Right disease in top 3"), ("macro_f1", "Macro F1"),
+	("weighted_f1", "Weighted F1"), ("priority_recall_top3", "Priority diseases found (top 3)"), ("wer", "Word error rate"),
+	("cer", "Character error rate"), ("symptoms_found", "Symptoms found")]
+PERCENT = {"accuracy", "top3_accuracy", "priority_recall_top3", "wer", "cer", "symptoms_found"}
+
+
+def _fmt_measure(key, value):
+	return f"{round(value * 100, 1)}%" if key in PERCENT and value <= 1 else round(value, 2)
+
+
 CLASSIFIER = "disease-classifier"   # the name push_model_metrics.py (AI server) sends the classifier's MLflow measures under
 STT_LANG = {"en": "English", "sw": "Kiswahili", "mixed": "English and Kiswahili"}
 
@@ -193,7 +204,10 @@ def get_models(from_date=None, to_date=None):
 			m["source"] = "MLflow and the AI server"
 	rows = sorted(models.values(), key=lambda m: (m["model"] != "Disease classifier", m["model"].lower()))
 	for m in rows:
-		m["measures"] = [{"metric": k, "value": v} for k, v in sorted(m["measures"].items())]
+		all_ = m["measures"]
+		# the headline measures only (MLflow sends ~100 for the classifier: per-disease recall etc.), as percentages
+		m["measures"] = [{"metric": label, "value": _fmt_measure(k, all_[k])} for k, label in KEY_MEASURES if k in all_]
+		m["more"] = max(0, len(all_) - len(m["measures"]))
 	return {"models": rows, "period": f"{from_d.strftime('%-d %b %Y')} to {to_d.strftime('%-d %b %Y')}"}
 
 

@@ -411,6 +411,7 @@ function AiTab({ range, stamp }) {
                       <td className="px-3 py-2.5 text-gray-900">{m.version || '—'}</td>
                       <td className="px-3 py-2.5 text-gray-900">
                         {m.measures.length ? m.measures.map((x) => `${x.metric} ${x.value}`).join(' · ') : '—'}
+                        {m.more > 0 && <span className="block text-[11px] text-gray-600">{m.more} more measures in MLflow</span>}
                         {m.note && <span className="block text-xs text-amber-800">{m.note}</span>}
                       </td>
                       <td className="px-3 py-2.5 tabular-nums text-gray-900">{m.used == null ? '—' : `${m.used.toLocaleString()} predictions`}</td>
