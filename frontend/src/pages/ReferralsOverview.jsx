@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Building2, Search, X } from 'lucide-react'
+import { Building2, Search, X, ArrowRightLeft, Users, MapPin, FileText, UserRound, UserCheck, CalendarDays, Clock, CheckCheck, ClipboardList } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getReferralsOverview, getReferralState, closeReferralCase } from '../api/frappe'
 import { PageSizeSelect } from '../components/common/Pager'
@@ -26,6 +25,98 @@ function FollowUp({ f }) {
   if (!f) return <span className="text-gray-400">—</span>
   if (f.state === 'done') return <span className="text-emerald-700">Done</span>
   return <span className={f.state === 'overdue' ? 'text-red-700' : 'text-gray-600'}>{f.state === 'overdue' ? 'Overdue' : 'Due'} {fmt(f.due)}</span>
+}
+
+// everything about one referral, in a window (KRCS 18 Nov 2026): grouped tiles with icons, not a list of text
+function Tile({ icon: Icon, label, children, tone = '' }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3.5">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-red-600 shadow-sm"><Icon className="h-4 w-4" aria-hidden="true" /></span>
+      <div className="min-w-0">
+        <p className="text-xs font-bold text-gray-900">{label}</p>
+        <div className={`mt-0.5 text-sm ${tone || 'text-gray-900'}`}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+const longDate = (v) => (v ? new Date(String(v).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
+
+function ReferralDetails({ row: r, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const label = r.overdue ? 'Overdue' : r.statusLabel
+  const patients = [r.people ? `${r.people} ${r.people === 1 ? 'person' : 'people'}` : null, r.patient?.ageGroup, r.patient?.sex].filter(Boolean).join(' · ')
+  const fu = r.followup
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div role="dialog" aria-modal="true" aria-label={`Referral ${r.ref}`} className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto shadow-xl">
+        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600"><ArrowRightLeft className="h-5 w-5" aria-hidden="true" /></span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-bold text-gray-900">Referral {r.ref}</h3>
+                <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${TONE[label] || 'bg-gray-100 text-gray-600'}`}>{label}</span>
+              </div>
+              <p className="text-sm text-gray-600">{r.disease || 'Disease not set'}{r.event ? ` · case ${r.event}` : ''}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Close"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          <section>
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Patient and place</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Tile icon={Users} label="Patients">{patients || '—'}</Tile>
+              <Tile icon={Building2} label="Health facility">{r.facility || '—'}</Tile>
+              <Tile icon={MapPin} label="Place">{[r.area, r.subCountyName].filter(Boolean).join(', ') || '—'}</Tile>
+              <Tile icon={FileText} label="Case">{r.event || 'Not linked to a case'}</Tile>
+            </div>
+            <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3.5">
+              <p className="text-xs font-bold text-gray-900">Why referred</p>
+              <p className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap">{r.reason || r.instructions || '—'}</p>
+            </div>
+          </section>
+
+          <section>
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">People and dates</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Tile icon={UserRound} label="Assigned to">{r.assignedToName || '—'}{r.unit && <span className="block text-xs text-gray-600">{r.unit}</span>}</Tile>
+              <Tile icon={UserCheck} label="Assigned by">{r.selfMade ? 'No one. The CHP referred the patient on their own' : (r.assignedBy || '—')}</Tile>
+              <Tile icon={CalendarDays} label="Referred on">{longDate(r.createdOn)}</Tile>
+              <Tile icon={Clock} label="Due" tone={r.overdue ? 'text-red-700 font-semibold' : ''}>{longDate(r.dueDate)}</Tile>
+            </div>
+          </section>
+
+          {/* outcome and follow-up at the bottom, in the same tiles (KRCS 18 Nov 2026) */}
+          <section>
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Outcome and follow-up</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Tile icon={CheckCheck} label="Referral outcome">
+                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONE[label] || 'bg-gray-100 text-gray-600'}`}>{label}</span>
+                <span className="mt-1 block whitespace-pre-wrap">{r.outcome || (r.state === 'ongoing' ? 'Waiting to hear if the patient reached the facility' : 'No note recorded')}</span>
+                {r.completedOn && <span className="mt-0.5 block text-xs text-gray-600">Updated {longDate(r.completedOn)}</span>}
+              </Tile>
+              <Tile icon={ClipboardList} label="Follow-up">
+                {!fu ? 'None planned'
+                  : fu.state === 'done' ? <span className="text-emerald-700 font-semibold">Done</span>
+                    : <span className={fu.state === 'overdue' ? 'text-red-700 font-semibold' : ''}>{fu.state === 'overdue' ? 'Overdue, was due' : 'Due'} {longDate(fu.due)}</span>}
+              </Tile>
+            </div>
+          </section>
+        </div>
+
+        <div className="flex justify-end px-6 py-4 bg-gray-50 border-t border-gray-100 rounded-b-2xl">
+          <button onClick={onClose} className="border border-gray-200 bg-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-gray-50">Close</button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function CloseBox({ row, onDone, onCancel }) {
@@ -80,6 +171,7 @@ export default function ReferralsOverview() {
   const [facility, setFacility] = useState('')
   const [mine, setMine] = useState(false)
   const [closing, setClosing] = useState(null)
+  const [viewing, setViewing] = useState(null)
   const [pageWanted, setPage] = useState(0)
   const [size, setSize] = useState(10)
 
@@ -181,9 +273,7 @@ export default function ReferralsOverview() {
                   <tr key={r.id} className="hover:bg-red-50/40 align-top">
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="font-medium text-gray-900">{r.ref}</span>
-                      {r.event ? (
-                        <Link to={`/alerts-signals/${encodeURIComponent(r.event)}`} className="block text-xs text-red-700 hover:underline">{r.event}</Link>
-                      ) : <span className="block text-xs text-gray-400">Recorded by the CHP</span>}
+                      <span className="block text-xs text-gray-500">{r.event || 'Not linked to a case'}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{r.disease || '—'}<span className="block text-xs text-gray-400">{[r.area, r.subCountyName].filter(Boolean).join(', ')}</span></td>
                     <td className="px-4 py-3 text-gray-700">{patients || '—'}</td>
@@ -194,12 +284,13 @@ export default function ReferralsOverview() {
                       {r.outcome && <span className="block mt-1 text-xs text-gray-500">{r.outcome}</span>}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap"><FollowUp f={r.followup} /></td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      {r.state === 'closed' ? <span className="text-xs text-gray-400">Closed</span>
-                        : r.canClose ? (
+                      {/* the referral's details here instead of the Review Queue (KRCS 18 Nov 2026) */}
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setViewing(r)} className="inline-block border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">View</button>
+                        {r.state !== 'closed' && r.canClose && (
                           <button onClick={() => setClosing(r)} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold">Close case</button>
-                        ) : r.event ? (
-                          <Link to={`/alerts-signals/${encodeURIComponent(r.event)}`} className="inline-block border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Open</Link>
-                        ) : null}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -221,6 +312,7 @@ export default function ReferralsOverview() {
         </div>
       </div>
       {closing && <CloseBox row={closing} onCancel={() => setClosing(null)} onDone={() => { setClosing(null); load() }} />}
+      {viewing && <ReferralDetails row={viewing} onClose={() => setViewing(null)} />}
     </AppShell>
   )
 }

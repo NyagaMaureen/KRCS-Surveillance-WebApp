@@ -70,7 +70,7 @@ FIELD_STAFF_ROLES = {"CHP", "Facility Health Worker"}
 
 def is_field_staff(user=None):
 	"""Only CHP / Facility Health Worker. Administrator (who has every role), System Managers and anyone who also
-	holds another surveillance role (HQ Admin, officers, ...) can still report for any area."""
+	holds another surveillance role (System Administrator, officers, ...) can still report for any area."""
 	user = user or frappe.session.user
 	if user == "Administrator":
 		return False

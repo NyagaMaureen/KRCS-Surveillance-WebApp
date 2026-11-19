@@ -1,6 +1,8 @@
 import { MENUS, flatItems } from '../data/sidebarMenu'
 
 import Login from '../pages/Login'
+import ResetPassword from '../pages/ResetPassword'
+import KbDocumentView from '../pages/KbDocumentView'
 import Analytics from '../pages/Analytics'
 import DataExplorer from '../pages/DataExplorer'
 import Reports from '../pages/Reports'
@@ -35,6 +37,7 @@ import FeedbackInbox from '../pages/FeedbackInbox'
 import ChpDashboard from '../pages/ChpDashboard'
 import ChpSettings from '../pages/ChpSettings'
 import DataAiDashboard from '../pages/DataAiDashboard'
+import MyChps from '../pages/MyChps'
 import FacilityReferrals from '../pages/FacilityReferrals'
 import ReferralsOverview from '../pages/ReferralsOverview'
 import DataQuality from '../pages/DataQuality'
@@ -55,6 +58,8 @@ function byWorkspace(pages) {
 
 const rawRoutes = [
   { path: '/login', name: 'login', element: Login },
+  { path: '/reset-password', name: 'reset-password', element: ResetPassword },   // public: the link in the reset email
+  { path: '/kb-document/:id', name: 'kb-document', element: KbDocumentView },   // Knowledge Base View (Word), own tab
   { path: '/dashboard', name: 'dashboard', element: byWorkspace({ full: FullDashboard, chp: ChpDashboard, officer: HqDashboard, fhw: HqDashboard, cha: HqDashboard, dataai: DataAiDashboard }) },
   { path: '/surveillance-dashboard', name: 'surveillance-dashboard', element: SurveillanceDashboard },
   { path: '/ai-governance-dashboard', name: 'ai-governance-dashboard', element: AiGovernanceDashboard },
@@ -92,6 +97,7 @@ const rawRoutes = [
   { path: '/follow-ups', name: 'follow-ups', element: FollowUps },
   { path: '/referrals', name: 'referrals', element: byWorkspace({ full: Referrals, fhw: FacilityReferrals }) },
   { path: '/referrals-overview', name: 'referrals-overview', element: ReferralsOverview },
+  { path: '/my-chps', name: 'my-chps', element: MyChps },
   { path: '/feedback', name: 'feedback', element: Feedback },
   { path: '/feedback-inbox', name: 'feedback-inbox', element: FeedbackInbox },
 ]

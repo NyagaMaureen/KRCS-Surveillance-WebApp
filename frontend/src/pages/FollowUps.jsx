@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
-import { ClipboardList, MapPin, CalendarDays } from 'lucide-react'
+import { ListTodo, CheckCircle2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getMyTasks } from '../api/frappe'
 import TaskUpdate from '../components/tasks/TaskUpdate'
 import { dueText, isOpen } from '../components/tasks/taskUi'
-import { FOCUS, CARD, BTN_SMALL, PageTitle, IconBubble, Badge, Skeleton, Toast, PRIORITY } from '../components/chp/ui'
+import { FOCUS, CARD, BTN_PRIMARY, BTN_SMALL, PageTitle, Badge, Skeleton, Toast, PRIORITY, GRID_TABLE, GRID_HEAD } from '../components/chp/ui'
 
+// two clearly different tabs (KRCS 18 Nov 2026): what is still to do, and what is finished, each with its count
 const TABS = [
-  { key: 'open', label: 'To do' },
-  { key: 'done', label: 'Done' },
+  { key: 'open', label: 'To do', icon: ListTodo, hint: 'Still to visit or check' },
+  { key: 'done', label: 'Done', icon: CheckCircle2, hint: 'Finished, with what you found' },
 ]
 
 export default function FollowUps() {
@@ -21,10 +22,16 @@ export default function FollowUps() {
   const [editing, setEditing] = useState(focus)
   const [toast, setToast] = useState('')
   const [goReferrals, setGoReferrals] = useState(false)
+  const [counts, setCounts] = useState({})
 
   const load = useCallback(() => {
     setError('')
-    return getMyTasks('mine', status, 'followups').then(setData).catch((e) => setError(e.message || 'Could not load follow-ups'))
+    return Promise.all([getMyTasks('mine', 'open', 'followups'), getMyTasks('mine', 'done', 'followups')])
+      .then(([open, done]) => {
+        setCounts({ open: open.tasks.length, done: done.tasks.length })
+        setData(status === 'open' ? open : done)
+      })
+      .catch((e) => setError(e.message || 'Could not load follow-ups'))
   }, [status])
   useEffect(() => { load() }, [load])
 
@@ -48,16 +55,27 @@ export default function FollowUps() {
     <AppShell>
       <PageTitle title="Community Follow-ups" subtitle="Visits and checks your surveillance officer has asked you to do. Record what you found when you finish." />
 
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-        <div role="tablist" aria-label="Follow-up status" className="flex rounded-lg border border-gray-200 p-0.5 bg-white">
-          {TABS.map((t) => (
-            <button key={t.key} role="tab" aria-selected={status === t.key}
-              onClick={() => setParams(t.key === 'open' ? {} : { status: t.key }, { replace: true })}
-              className={`h-8 px-4 rounded-md text-sm ${FOCUS} ${status === t.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:text-gray-900'}`}>
-              {t.label}
+      <div role="tablist" aria-label="Follow-up status" className="grid grid-cols-2 gap-3 mb-4 sm:max-w-xl">
+        {TABS.map((t) => {
+          const on = status === t.key
+          return (
+            <button key={t.key} type="button" role="tab" aria-selected={on}
+              onClick={() => { setData(null); setParams(t.key === 'open' ? {} : { status: t.key }, { replace: true }) }}
+              className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors ${FOCUS} ${on
+                ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}>
+              <t.icon className={`w-5 h-5 shrink-0 ${on ? 'text-red-600' : 'text-gray-400'}`} aria-hidden="true" />
+              <span className="min-w-0">
+                <span className="flex items-center gap-2 text-sm font-semibold">
+                  {t.label}
+                  <span className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${on ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{counts[t.key] ?? '…'}</span>
+                </span>
+                <span className="block text-xs text-gray-500">{t.hint}</span>
+              </span>
             </button>
-          ))}
-        </div>
+          )
+        })}
+      </div>
+      <div className="flex items-center justify-end gap-3 flex-wrap mb-3">
         {s && status === 'open' && (
           <p className="text-sm text-gray-500">
             {s.overdue > 0 && <span className="text-red-600 font-medium">{s.overdue} overdue · </span>}
@@ -74,49 +92,65 @@ export default function FollowUps() {
           <p className="text-sm text-gray-500 mt-1">{status === 'open' ? 'When an officer asks you to visit or check on someone, it appears here and you get a notification.' : ''}</p>
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {tasks.map((t) => {
-            const due = dueText(t)
-            const place = [t.area, t.subCounty].filter(Boolean).join(' · ')
-            const pr = PRIORITY[t.priority]
-            return (
-              <li key={t.id} id={`task-${t.id}`} className={`${CARD} p-5 ${focus === t.id ? 'ring-1 ring-amber-300' : ''}`}>
-                <div className="flex items-start gap-4">
-                  <IconBubble icon={ClipboardList} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <p className={`text-sm font-medium ${isOpen(t) ? 'text-gray-900' : 'text-gray-500'}`}>{t.title}</p>
-                      {isOpen(t) ? pr && <Badge tone={pr.tone}>{pr.label}</Badge> : <Badge tone={t.status === 'Done' ? 'green' : 'gray'}>{t.status}</Badge>}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-5 gap-y-1">
-                      {place && <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" aria-hidden="true" />{place}</span>}
-                      <span className={`inline-flex items-center gap-1 ${due.tone}`}><CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />{due.text}</span>
-                      {t.disease && <span>{t.disease}</span>}
-                    </p>
-                  </div>
-                </div>
-                {t.instructions && (
-                  <div className="mt-3">
-                    <p className="text-sm font-medium text-gray-900">Instructions</p>
-                    <p className="text-sm text-gray-600 mt-0.5 whitespace-pre-wrap">{t.instructions}</p>
-                  </div>
-                )}
-                {t.outcome && <p className="text-sm text-gray-700 mt-3"><span className="text-gray-400">What you found: </span>{t.outcome}</p>}
-                {isOpen(t) && (
-                  <div className="mt-3 flex justify-end">
-                    <button type="button" onClick={() => setEditing(editing === t.id ? null : t.id)} className={BTN_SMALL}>
-                      {editing === t.id ? 'Close' : 'Record outcome'}
-                    </button>
-                  </div>
-                )}
-                {editing === t.id && isOpen(t) && (
-                  <TaskUpdate task={t} onCancel={() => setEditing(null)} onError={flash}
-                    onSaved={() => { setEditing(null); flash('Saved. Your officer can see it.'); load() }} />
-                )}
-              </li>
-            )
-          })}
-        </ul>
+        // a table with grid lines and a serial number, like Signals Captured and Referrals (KRCS 18 Nov 2026);
+        // recording an outcome opens a row under the follow-up
+        <div className={`${CARD} overflow-x-auto`}>
+          <table className={GRID_TABLE}>
+            <thead>
+              <tr className={GRID_HEAD}>
+                <th className="px-4 py-3 w-10">#</th>
+                <th className="px-4 py-3">Follow-up</th>
+                <th className="px-4 py-3">Place</th>
+                <th className="px-4 py-3">Due</th>
+                <th className="px-4 py-3">{status === 'open' ? 'Priority' : 'Status'}</th>
+                {status === 'open' ? <th className="px-4 py-3 text-right">Action</th> : <th className="px-4 py-3">What you found</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((t, i) => {
+                const due = dueText(t)
+                const place = [t.area, t.subCounty].filter(Boolean).join(' · ')
+                const pr = PRIORITY[t.priority]
+                const open = isOpen(t)
+                const isEditing = editing === t.id && open
+                return (
+                  <Fragment key={t.id}>
+                    <tr id={`task-${t.id}`} className={`align-top hover:bg-red-50/40 ${focus === t.id ? 'bg-amber-50/60' : ''}`}>
+                      <td className="px-4 py-3 text-gray-500 tabular-nums">{i + 1}</td>
+                      <td className="px-4 py-3 min-w-[260px]">
+                        <p className="font-medium text-gray-900">{t.title}</p>
+                        {t.disease && <p className="text-xs text-gray-500 mt-0.5">{t.disease}</p>}
+                        {t.instructions && <p className="text-xs text-gray-700 mt-1 whitespace-pre-wrap">{t.instructions}</p>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-900">{place || '—'}</td>
+                      <td className={`px-4 py-3 whitespace-nowrap ${open ? due.tone : 'text-gray-900'}`}>{due.text}</td>
+                      <td className="px-4 py-3">
+                        {open ? (pr ? <Badge tone={pr.tone}>{pr.label}</Badge> : '—') : <Badge tone={t.status === 'Done' ? 'green' : 'gray'}>{t.status}</Badge>}
+                      </td>
+                      {status === 'open' ? (
+                        <td className="px-4 py-3 text-right">
+                          {open && (
+                            <button type="button" onClick={() => setEditing(isEditing ? null : t.id)} className={isEditing ? BTN_SMALL : `${BTN_PRIMARY} h-8 text-xs whitespace-nowrap`}>
+                              {isEditing ? 'Close' : 'Record outcome'}
+                            </button>
+                          )}
+                        </td>
+                      ) : <td className="px-4 py-3 text-gray-900 whitespace-pre-wrap">{t.outcome || '—'}</td>}
+                    </tr>
+                    {isEditing && (
+                      <tr>
+                        <td colSpan={6} className="px-4 pb-4 bg-gray-50/60">
+                          <TaskUpdate task={t} onCancel={() => setEditing(null)} onError={flash}
+                            onSaved={() => { setEditing(null); flash('Saved. Your officer can see it.'); load() }} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
       <Toast text={toast} />
     </AppShell>

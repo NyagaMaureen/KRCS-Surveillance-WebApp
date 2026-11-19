@@ -1,4 +1,4 @@
-"""HQ Admin dashboard, in tabs (KRCS Dashboard and Main Menu Re-Organization, 13 Nov 2026):
+"""System Administrator dashboard, in tabs (KRCS Dashboard and Main Menu Re-Organization, 13 Nov 2026):
 
   At a Glance              get_glance
   Surveillance & Response  get_surveillance
@@ -39,7 +39,7 @@ SIGNAL_TYPES = ["Suspected Outbreak", "Community Signal", "Facility Signal"]
 SEV_ORDER = {"critical": 0, "high": 1, "standard": 2}
 CHA_ROLES = ["CHA", "Community Health Assistant"]
 USER_ROLES = ["CHP", "Facility Health Worker", "Public Health Officer", "HIS Officer", "Surveillance Officer", "SCDSC",
-	"CDSC", "Public Health HQ", "MOH DDSR", "Data & AI Administrator", "HQ Admin"] + CHA_ROLES
+	"CDSC", "Public Health HQ", "MOH DDSR", "Data & AI Administrator", "System Administrator"] + CHA_ROLES
 
 
 # ---------- filters ----------

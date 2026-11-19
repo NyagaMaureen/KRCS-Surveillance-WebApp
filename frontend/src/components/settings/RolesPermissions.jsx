@@ -15,7 +15,7 @@ const LEVELS = [
   ['Facility', ['Public Health Officer', 'HIS Officer']],
   ['Sub-county and county', ['Surveillance Officer', 'SCDSC', 'CDSC']],
   ['National', ['Public Health HQ', 'MOH DDSR']],
-  ['System', ['Data & AI Administrator', 'HQ Admin']],
+  ['System', ['Data & AI Administrator', 'System Administrator']],
 ]
 
 export default function RolesPermissions({ roles = [], users = [], initialRole = '', onRoleChange }) {

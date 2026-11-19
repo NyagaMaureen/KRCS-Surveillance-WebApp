@@ -17,7 +17,7 @@ import SurveillanceMap from './SurveillanceMap'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { getHqGlance, getHqSurveillance, getHqPerformance, getHqStatus, getHqFilterOptions, currentUserFullName } from '../api/frappe'
 
-// HQ Admin dashboard (KRCS Dashboard re-organization, 13 Nov 2026): five tabs, each with cards and charts.
+// System Administrator dashboard (KRCS Dashboard re-organization, 13 Nov 2026): five tabs, each with cards and charts.
 // Layout from the design Elizabeth shared; colours are the app's (red cards, red and navy charts).
 // Data: surveillance.hq_dashboard
 

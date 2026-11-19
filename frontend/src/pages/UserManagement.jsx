@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { rolePermissionsLink } from '../utils/links'
-import { Search, Plus, Pencil, Trash2, X, UserRound, UserPlus, AlertCircle, Loader2, Users, CheckCircle2, UserX, Ban, ShieldCheck, Building2, ArrowLeft } from 'lucide-react'
+import { Search, Plus, Pencil, X, UserRound, UserPlus, AlertCircle, Loader2, Users, CheckCircle2, UserX, Ban, ShieldCheck, Building2, ArrowLeft } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { PageSizeSelect } from '../components/common/Pager'
 import RolesPermissions from '../components/settings/RolesPermissions'
 import HealthUnits from '../components/settings/HealthUnits'
-import { getUsers, createUser, updateUser, deleteUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties, getReferralFacilities, getHealthUnits, getUserHealthUnits, saveHealthUnit } from '../api/frappe'
+import { getUsers, createUser, updateUser, deactivateUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties, getReferralFacilities, getHealthUnits, getUserHealthUnits, saveHealthUnit, sendPasswordReset } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 const tabs = [
@@ -74,6 +74,7 @@ export default function UserManagement() {
   const [editingUser, setEditingUser] = useState(null)
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [resetNote, setResetNote] = useState({ busy: false, text: '', error: false })   // "Send password reset email"
   const [roleError, setRoleError] = useState('')
   const [newRole, setNewRole] = useState('')
 
@@ -206,7 +207,19 @@ export default function UserManagement() {
     setShowUserModal(true)
   }
 
+  async function sendReset() {
+    if (!editingUser) return
+    setResetNote({ busy: true, text: '', error: false })
+    try {
+      const r = await sendPasswordReset(editingUser.name)
+      setResetNote({ busy: false, text: r?.message || 'Password reset email sent', error: false })
+    } catch (e) {
+      setResetNote({ busy: false, text: e.message || 'Could not send the email', error: true })
+    }
+  }
+
   function closeUserModal() {
+    setResetNote({ busy: false, text: '', error: false })
     setShowUserModal(false)
   }
 
@@ -273,10 +286,17 @@ export default function UserManagement() {
     }
   }
 
-  async function removeUser(u) {
-    if (!confirm(`Remove ${u.full_name || u.name}?`)) return
-    await deleteUser(u.name)
-    await loadUsers()
+  // Users are never deleted, only deactivated: they can no longer log in and their records stay (KRCS 18 Nov 2026).
+  // Reactivate by setting the status back to Active in Edit user.
+  async function deactivate(u) {
+    const who = u.full_name || u.name
+    if (!confirm(`Deactivate ${who}? They will no longer be able to log in. Their reports and other records stay as they are. You can reactivate them later in Edit user.`)) return
+    try {
+      await deactivateUser(u.name)
+      await loadUsers()
+    } catch (e) {
+      alert(e.message || 'Could not deactivate this user')
+    }
   }
 
   function openRoleModal() {
@@ -453,7 +473,9 @@ export default function UserManagement() {
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
                         <button onClick={() => openEditUser(u)} className="text-gray-500 hover:text-gray-800"><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => removeUser(u)} className="text-red-700 hover:text-red-800"><Trash2 className="w-4 h-4" /></button>
+                        {(u.account_status || 'Active') === 'Active' && u.enabled !== 0 && (
+                          <button onClick={() => deactivate(u)} title="Deactivate" aria-label={`Deactivate ${u.full_name || u.name}`} className="text-red-700 hover:text-red-800"><Ban className="w-4 h-4" /></button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -509,6 +531,16 @@ export default function UserManagement() {
                       <div className="md:col-span-2">
                         <label className={labelCls}>Email{req}</label>
                         <input value={form.email} onChange={(e) => updateForm({ email: e.target.value })} disabled={!!editingUser} type="email" className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`} placeholder="name@krcs.org" />
+                        {/* the user gets an email with a link to choose a new password (KRCS 18 Nov 2026) */}
+                        {editingUser && has('manage_users') && (
+                          <div className="mt-2 flex flex-wrap items-center gap-3">
+                            <button type="button" onClick={sendReset} disabled={resetNote.busy}
+                              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-900 hover:bg-gray-50 disabled:opacity-60">
+                              {resetNote.busy ? 'Sending...' : 'Send password reset email'}
+                            </button>
+                            {resetNote.text && <span className={`text-sm ${resetNote.error ? 'text-red-700' : 'text-gray-900'}`}>{resetNote.text}</span>}
+                          </div>
+                        )}
                       </div>
                       <div className="md:col-span-2">
                         <label className={labelCls}>Phone number</label>

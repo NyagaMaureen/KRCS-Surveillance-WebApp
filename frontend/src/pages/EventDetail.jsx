@@ -491,14 +491,14 @@ function SignalMedia({ eventId, signalId, media, canAct, report, onChanged }) {
     <div className="space-y-3">
       {voices.map((m, i) => (
         <div key={m.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-          <div className="mb-2 text-xs font-medium text-gray-500">Voice note{voices.length > 1 ? ` ${i + 1}` : ''}</div>
+          <div className="mb-2 text-xs font-semibold text-gray-900">Voice note{voices.length > 1 ? ` ${i + 1}` : ''}</div>
           <audio controls preload="metadata" src={m.url} className="w-full max-w-md" aria-label="Voice note" />
           <VoiceTranscript m={m} canAct={canAct} retrying={retrying === m.id} onRetry={() => retry(m)} report={report} onAdded={onChanged} />
         </div>
       ))}
       {photos.length > 0 && (
         <div>
-          <div className="mb-2 text-xs font-medium text-gray-500">{photos.length === 1 ? 'Photo' : `${photos.length} photos`}</div>
+          <div className="mb-2 text-xs font-semibold text-gray-900">{photos.length === 1 ? 'Photo' : `${photos.length} photos`}</div>
           <div className="flex flex-wrap gap-2">
             {photos.map((m) => (
               <button key={m.id} type="button" onClick={() => setViewing(m)} className={`overflow-hidden rounded-lg border border-gray-100 ${FOCUS}`} aria-label="Open photo">
@@ -1017,6 +1017,27 @@ function ReferralPanel({ event, canAct, onToast, onClosed }) {
   )
 }
 
+const ANIMAL_LABEL = { 'Bite or scratch': 'Bitten or scratched', 'Handled sick or dead animal': 'Handled a sick or dead animal' }
+const fmtDay = (v) => { const d = parseDate(v); return d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : v }
+
+// The details of one report from its View report page, in the same order, kept short (KRCS 18 Nov 2026)
+function ReportFacts({ s }) {
+  const d = s.details || {}
+  const rows = [
+    ['Date of onset', d.onset && fmtDay(d.onset)],
+    ['Age group', d.ages],
+    ['Animal exposure', d.animal && (ANIMAL_LABEL[d.animal] || d.animal)],
+  ].filter(([, v]) => v)
+  if (!rows.length) return null
+  return (
+    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+      {rows.map(([k, v]) => (
+        <Fragment key={k}><dt className="font-semibold text-gray-900">{k}</dt><dd className="text-gray-900">{v}</dd></Fragment>
+      ))}
+    </dl>
+  )
+}
+
 function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, onDiscard, onChanged }) {
   const [showAll, setShowAll] = useState(false)
   const [discarding, setDiscarding] = useState(false)
@@ -1031,43 +1052,71 @@ function SignalCapturePanel({ event, signals, canAct, editable, busy, onNext, on
           <div className="border border-gray-100 rounded-xl overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="text-xs text-gray-400 border-b border-gray-100">
-                  <th className="px-3 py-2.5 font-medium">Report</th>
-                  <th className="px-3 py-2.5 font-medium">Where · what was reported</th>
-                  <th className="px-3 py-2.5 font-medium">Reporter</th>
+                <tr className="text-xs text-gray-900 border-b border-gray-100">
+                  <th className="px-3 py-2.5 font-bold">Report</th>
+                  <th className="px-3 py-2.5 font-bold">What was reported</th>
+                  <th className="px-3 py-2.5 font-bold">Where</th>
+                  <th className="px-3 py-2.5 font-bold">Reporter</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((s, i) => (
+                {rows.map((s, i) => {
+                  const d = s.details || {}
+                  const kind = [d.category, d.type].filter(Boolean).join(' · ')
+                  const hasMedia = (s.media || []).length > 0
+                  return (
                   <Fragment key={s.id || i}>
                   <tr className={`border-t border-gray-100 align-top ${checkStatus(s) === 'Not a case' ? 'bg-gray-50' : ''}`}>
                     <td className="px-3 py-3 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{s.channel || s.source}</div>
                       {s.source === 'Field' && s.ref ? (
-                        <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`font-mono text-xs text-red-700 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
+                        <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
                       ) : (
-                        <div className="font-mono text-xs text-gray-500">{s.ref || '—'}</div>
+                        <div className="text-sm font-semibold text-gray-900">{s.source === 'CBS' ? `CBS case ${s.ref || '—'}` : (s.ref || '—')}</div>
                       )}
-                      <div className="text-xs text-gray-400" title={fmtDateTime(s.date)}>{relTime(s.date)}</div>
+                      <div className="text-sm text-gray-900">{s.channel || s.source}</div>
+                      {kind && <div className="text-sm text-gray-900">{kind}</div>}
+                      <div className="text-sm text-gray-900" title={relTime(s.date)}>{fmtDateTime(s.date)}</div>
                     </td>
-                    <td className="px-3 py-3 text-sm text-gray-700 min-w-[200px]">
-                      <div>{s.area || '—'} · {countLabel(s.people, s.disease)}{s.deaths > 0 && <span className="text-red-700"> · {s.deaths} {s.deaths === 1 ? 'death' : 'deaths'}</span>}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{s.reported || '—'}</div>
+                    <td className="px-3 py-3 text-sm text-gray-900 min-w-[240px]">
+                      <div className="font-semibold text-gray-900">{countLabel(s.people, s.disease)}{s.deaths > 0 && <span className="text-red-700"> · {s.deaths} {s.deaths === 1 ? 'death' : 'deaths'}</span>}</div>
+                      <div className="mt-0.5 text-gray-900">{s.reported || '—'}</div>
+                      <ReportFacts s={s} />
+                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-900 min-w-[150px]">
+                      <div>{d.location || s.area || '—'}</div>
+                      {s.lat != null && s.lng != null && (Number(s.lat) || Number(s.lng)) ? (
+                        <>
+                          <div className="mt-1 tabular-nums">{Number(s.lat).toFixed(5)}, {Number(s.lng).toFixed(5)}</div>
+                          <a href={`https://www.google.com/maps?q=${s.lat},${s.lng}`} target="_blank" rel="noopener noreferrer"
+                            className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>View on map</a>
+                        </>
+                      ) : <div className="mt-1 text-gray-700">No GPS recorded</div>}
                     </td>
                     <td className="px-3 py-3 text-sm min-w-[150px]">
                       <ReporterContact signal={s} canAct={canAct} />
                     </td>
                   </tr>
-                  {(s.media || []).length > 0 && (
+                  {(d.notes || hasMedia) && (
                     <tr className="align-top">
-                      <td colSpan={3} className="px-3 pb-4">
-                        <SignalMedia eventId={event.id} signalId={s.id} media={s.media} canAct={canAct}
-                          report={s.source === 'Field' ? s.ref : null} onChanged={onChanged} />
+                      <td colSpan={4} className="px-3 pb-4">
+                        {d.notes && (
+                          <div className="mb-3 max-w-3xl">
+                            <div className="text-xs font-semibold text-gray-900">
+                              {d.channel === 'WhatsApp' ? 'WhatsApp message from community member' : 'Additional notes'}{s.ref ? ` (${s.ref})` : ''}
+                            </div>
+                            <p className="mt-0.5 whitespace-pre-line text-sm text-gray-900">{d.notes}</p>
+                          </div>
+                        )}
+                        {hasMedia && (
+                          <SignalMedia eventId={event.id} signalId={s.id} media={s.media} canAct={canAct}
+                            report={s.source === 'Field' ? s.ref : null} onChanged={onChanged} />
+                        )}
                       </td>
                     </tr>
                   )}
                   </Fragment>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -2195,28 +2244,28 @@ function TrendCbsReports({ eventId }) {
 function CbsContact({ signal: s, canAct }) {
   const [c, setC] = useState(null)
   const [loading, setLoading] = useState(false)
-  if (!canAct) return <span className="text-xs">CBS case {s.ref || '—'}</span>
+  if (!canAct) return <span className="text-sm text-gray-900">CBS case {s.ref || '—'}</span>
   if (!c) {
     return (
       <div className="flex flex-col gap-0.5">
-        <span className="text-xs text-gray-500">CBS case {s.ref || '—'}</span>
+        <span className="text-sm text-gray-900">CBS case {s.ref || '—'}</span>
         <button type="button" disabled={loading} onClick={() => { setLoading(true); getCbsContact(s.id).then(setC).catch((e) => setC({ available: false, why: e.message })).finally(() => setLoading(false)) }}
-          className={`inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+          className={`inline-flex items-center gap-1 text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
           <Phone className="w-3 h-3" aria-hidden="true" /> {loading ? 'Getting contact…' : 'Show volunteer contact'}
         </button>
       </div>
     )
   }
-  if (!c.available) return <span className="text-xs text-gray-500">{c.why}</span>
+  if (!c.available) return <span className="text-sm text-gray-900">{c.why}</span>
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-gray-900">{c.name || '—'} <span className="text-xs text-gray-400">· CBS volunteer</span></span>
+      <span className="text-gray-900">{c.name || '—'} <span className="text-sm text-gray-700">· CBS volunteer</span></span>
       {c.phone && (
-        <a href={`tel:${c.phone}`} className={`inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+        <a href={`tel:${c.phone}`} className={`inline-flex items-center gap-1 text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
           <Phone className="w-3 h-3" aria-hidden="true" /> Call {c.phone}
         </a>
       )}
-      {c.assignedTo?.length > 0 && <span className="text-xs text-gray-500">Covers: {c.assignedTo.join('; ')}</span>}
+      {c.assignedTo?.length > 0 && <span className="text-sm text-gray-900">Covers: {c.assignedTo.join('; ')}</span>}
     </div>
   )
 }
@@ -2224,18 +2273,18 @@ function CbsContact({ signal: s, canAct }) {
 function ReporterContact({ signal: s, canAct }) {
   if (s.source === 'CBS') return <CbsContact signal={s} canAct={canAct} />
   if (s.source !== 'Field') return <span className="text-xs">Contact through {s.source} (ref {s.ref || '—'})</span>
-  const unit = s.unit && <span className="text-xs text-gray-500">Health unit: {s.unit}</span>   // the CHP's CHU
+  const unit = s.unit && <span className="text-sm text-gray-900">Health unit: {s.unit}</span>   // the CHP's CHU
   if (!s.reporter) return unit || '—'   // the server sends contacts to officers who act and on escalated events
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-gray-900">{s.reporter.name || '—'}</span>
       {unit}
       {s.reporter.phone ? (
-        <a href={`tel:${s.reporter.phone}`} className={`inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
+        <a href={`tel:${s.reporter.phone}`} className={`inline-flex items-center gap-1 text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
           <Phone className="w-3 h-3" aria-hidden="true" /> Call {s.reporter.phone}
         </a>
       ) : (
-        <span className="text-xs text-gray-400">No phone on profile</span>
+        <span className="text-sm text-gray-700">No phone on profile</span>
       )}
     </div>
   )

@@ -97,11 +97,18 @@ def _referrals(fac, limit=500):
 
 
 @frappe.whitelist()
-def referral_facilities():
+def referral_facilities(mine=0):
 	"""Active facilities, for the CHP referral list and the FHW facility in User Management. New facilities added on
-	the MOH 505 Facility Reports page appear here straight away."""
-	return [{"name": f.name, "subCounty": f.sub_county_name or ""}
-		for f in frappe.get_all(FACILITY, filters={"is_active": 1}, fields=["name", "sub_county_name"], order_by="name asc")]
+	the MOH 505 Facility Reports page appear here straight away.
+	mine=1 (CHP New referral, KRCS 18 Nov 2026): only facilities in the user's own sub-county, when one is set."""
+	rows = frappe.get_all(FACILITY, filters={"is_active": 1}, fields=["name", "sub_county_name"], order_by="name asc")
+	if cint(mine):
+		sc = frappe.db.get_value("User", frappe.session.user, "assigned_sub_county") \
+			if frappe.get_meta("User").has_field("assigned_sub_county") else None
+		name = (frappe.db.get_value("Sub County", sc, "sub_county_name") or sc) if sc else None
+		if name:
+			rows = [f for f in rows if (f.sub_county_name or "").strip().lower() == name.strip().lower()]
+	return [{"name": f.name, "subCounty": f.sub_county_name or ""} for f in rows]
 
 
 def _facility_trend(fac):
@@ -244,3 +251,56 @@ def confirm_referral(task, arrived, note=None):
 		except Exception:
 			frappe.log_error(title="Referral confirmation notice failed", message=frappe.get_traceback())
 	return _referral(t, _report_summaries([t.case_report]))
+
+
+# ---------- telling the facility about a new referral (KRCS 19 Nov 2026) ----------
+# FHWs get no event alerts for now; they are told, in the app and by email, when a referral is made to their facility.
+
+def on_referral_created(doc, method=None):
+	"""Event Task after_insert: a referral to a facility tells that facility's FHWs (after the save is committed)."""
+	if doc.task_type == "Referral" and doc.facility:
+		frappe.enqueue("surveillance.fhw.send_referral_to_facility", task=doc.name, queue="short", enqueue_after_commit=True)
+
+
+def facility_users(facility):
+	if not facility or not frappe.get_meta("User").has_field("assigned_facility"):
+		return []
+	return frappe.get_all("User", filters={"assigned_facility": facility, "enabled": 1}, fields=["name", "email"])
+
+
+def send_referral_to_facility(task):
+	from frappe.utils import escape_html, get_url
+	from surveillance.notifications import _button, _rows
+	t = frappe.get_doc(TASK, task)
+	users = facility_users(t.facility)
+	if not users:
+		return
+	n = cint(t.people_referred) or 1
+	who = get_fullname(t.assigned_to) if t.assigned_to else ""
+	subject = f"New referral {ref_no(t)} to {t.facility}: {n} {'person' if n == 1 else 'people'}"
+	symptoms = frappe.db.get_value("Case Report", t.case_report, "symptom_tags") if t.case_report else None
+	phone = frappe.db.get_value("User", t.assigned_to, "mobile_no") if t.assigned_to else None
+	base = (frappe.conf.get("frontend_url") or (get_url() + "/surveillance")).rstrip("/")
+	html = (f'<p style="font-size:15px"><b>{escape_html(who or "A CHP")} referred {n} {"person" if n == 1 else "people"} to '
+		f'{escape_html(t.facility)}.</b> Please confirm in the app whether they arrived.</p>'
+		+ _rows([
+			("Referral", ref_no(t)),
+			("People referred", n),
+			("Reason", escape_html(t.reason or t.instructions or "")),
+			("Symptoms", escape_html(symptoms or "")),
+			("Suspected disease", escape_html(t.disease_name or "")),
+			("Place", escape_html(", ".join(x for x in [t.area, t.sub_county] if x))),
+			("Referred by", escape_html(", ".join(x for x in [who, phone] if x))),
+			("Date", frappe.utils.format_datetime(t.creation, "dd MMM yyyy HH:mm")),
+		])
+		+ _button(f"{base}/referrals", "Open Referrals"))
+	for u in users:
+		try:
+			frappe.get_doc({"doctype": "Notification Log", "for_user": u.name, "type": "Alert", "document_type": TASK,
+				"document_name": t.name, "subject": subject}).insert(ignore_permissions=True)
+		except Exception:
+			frappe.log_error(title="Referral notice failed", message=frappe.get_traceback())
+	emails = [u.email for u in users if u.email]
+	if emails:
+		frappe.sendmail(recipients=emails, subject=subject, message=html, reference_doctype=TASK, reference_name=t.name,
+			delayed=False)

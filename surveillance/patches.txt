@@ -33,3 +33,6 @@ surveillance.patches.signals_update_no_delete
 surveillance.patches.whatsapp_notes_message_only
 surveillance.patches.moh_ddsr_setup
 surveillance.patches.data_ai_admin_setup
+surveillance.patches.cha_my_chps
+surveillance.patches.rename_hq_admin
+surveillance.patches.chp_notification_cleanup #2026-11-19 fhw

@@ -7,9 +7,9 @@
   "home_page": null,
   "is_custom": 0,
   "modified": "2026-11-09 15:00:00.000000",
-  "name": "HQ Admin",
+  "name": "System Administrator",
   "restrict_to_domain": null,
-  "role_name": "HQ Admin",
+  "role_name": "System Administrator",
   "two_factor_auth": 0
  },
  {

@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { User, Mail, Phone, MapPin, Shield, Lock, CalendarDays, Activity, Pencil, Camera, FileText, CheckCircle2, ArrowRightLeft, Clock, Check } from 'lucide-react'
+import { User, Mail, Phone, MapPin, Shield, Lock, CalendarDays, Activity, Pencil, Camera, Building2, Eye, EyeOff } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getMyAccount, updateMyProfile, changeMyPassword, uploadFile } from '../api/frappe'
-import { useCapabilities } from '../context/CapabilitiesContext'
-import { CARD, INPUT, BTN_PRIMARY, BTN_SECONDARY, StatCard, Toast, Skeleton, shortWhen } from '../components/chp/ui'
-
-const STAT_ICONS = { reports: FileText, followups: CheckCircle2, referrals: ArrowRightLeft, onTime: Clock }
+import { getMyAccount, updateMyProfile, changeMyPassword, uploadFile, getPasswordRules } from '../api/frappe'
+import { CARD, INPUT, BTN_PRIMARY, BTN_SECONDARY, Toast, Skeleton, shortWhen } from '../components/chp/ui'
 
 function ReadField({ label, icon: Icon, value }) {
   return (
@@ -20,24 +17,49 @@ function ReadField({ label, icon: Icon, value }) {
   )
 }
 
+function EditField({ label, value, onChange, placeholder }) {
+  return (
+    <label className="block">
+      <span className="block text-sm font-medium text-gray-800 mb-1">{label}</span>
+      <input value={value || ''} onChange={(e) => onChange(e.target.value)} className={INPUT} placeholder={placeholder} />
+    </label>
+  )
+}
+
+// password box with an eye to show or hide what was typed (KRCS 18 Nov 2026)
+function PasswordInput({ label, value, onChange, autoComplete, inputRef }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <input ref={inputRef} type={show ? 'text' : 'password'} autoComplete={autoComplete} aria-label={label} placeholder={label}
+        value={value} onChange={(e) => onChange(e.target.value)} className={`${INPUT} pr-10`} />
+      <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-gray-500 hover:text-gray-900">
+        {show ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
+      </button>
+    </div>
+  )
+}
+
 export default function ChpSettings() {
-  const { workspace } = useCapabilities()
   const [acc, setAcc] = useState(null)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
-  const [phone, setPhone] = useState('')
+  const [form, setForm] = useState({ firstName: '', lastName: '', phone: '' })   // names and phone (KRCS 18 Nov 2026)
   const [saving, setSaving] = useState(false)
   // Change Password (account menu, top right) opens this page at the password form (KRCS 18 Nov 2026)
   const { pathname } = useLocation()
   const wantPassword = pathname.endsWith('/change-password')
   const [pwOpen, setPwOpen] = useState(wantPassword)
   const [pw, setPw] = useState({ old: '', next: '', confirm: '' })
+  const [rules, setRules] = useState(null)   // what the Security Settings ask of a new password
   const [toast, setToast] = useState({ text: '' })
   const fileRef = useRef(null)
   const securityRef = useRef(null)
   const pwFirst = useRef(null)
 
   useEffect(() => { getMyAccount().then(setAcc).catch((e) => setError(e.message || 'Could not load your account')) }, [])
+  useEffect(() => { getPasswordRules().then(setRules).catch(() => {}) }, [])
   const scrolled = useRef(false)
   useEffect(() => {
     if (!acc || !wantPassword || scrolled.current) return
@@ -46,11 +68,17 @@ export default function ChpSettings() {
     pwFirst.current?.focus({ preventScroll: true })
   }, [acc, wantPassword])
   const flash = (text, isError = false) => { setToast({ text, error: isError }); setTimeout(() => setToast({ text: '' }), 3000) }
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('krcs-password-changed')) { sessionStorage.removeItem('krcs-password-changed'); flash('Password changed') }
+    } catch { /* storage blocked */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function saveProfile() {
     setSaving(true)
     try {
-      setAcc(await updateMyProfile({ phone }))
+      setAcc(await updateMyProfile({ phone: form.phone, first_name: form.firstName, last_name: form.lastName }))
       setEditing(false)
       flash('Profile updated')
     } catch (e) {
@@ -81,9 +109,11 @@ export default function ChpSettings() {
     setSaving(true)
     try {
       await changeMyPassword(pw.old, pw.next)
-      setPw({ old: '', next: '', confirm: '' })
-      setPwOpen(false)
-      flash('Password changed')
+      // a new password starts a new session (and ends the others when the Security Settings say so): reload the
+      // page so it carries the new session
+      try { sessionStorage.setItem('krcs-password-changed', '1') } catch { /* the toast is a nicety */ }
+      window.location.assign('/surveillance/profile')
+      return
     } catch (e) {
       flash(e.message || 'Could not change the password', true)
     } finally {
@@ -116,40 +146,44 @@ export default function ChpSettings() {
             </div>
           </div>
           {!editing && (
-            <button type="button" onClick={() => { setPhone(acc.phone); setEditing(true) }}
+            <button type="button" onClick={() => { setForm({ firstName: acc.firstName, lastName: acc.lastName, phone: acc.phone }); setEditing(true) }}
               className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-white/70 text-sm font-medium hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white">
               <Pencil className="w-4 h-4" aria-hidden="true" /> Edit profile
             </button>
           )}
         </section>
 
-        {workspace === 'chp' && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {acc.stats.map((s) => <StatCard key={s.key} label={s.label} value={s.value} unit={s.unit} icon={STAT_ICONS[s.key]} hint={s.hint} />)}
-        </div>}
-
         <section className={`${CARD} p-5`}>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Personal information</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ReadField label="First name" icon={User} value={acc.firstName} />
-            <ReadField label="Last name" icon={User} value={acc.lastName} />
-            <ReadField label="Email address" icon={Mail} value={acc.email} />
             {editing ? (
-              <div>
-                <p className="text-sm font-medium text-gray-800 mb-1">Phone number</p>
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} className={INPUT} placeholder="+254 7..." />
-              </div>
-            ) : <ReadField label="Phone number" icon={Phone} value={acc.phone} />}
+              <>
+                <EditField label="First name" value={form.firstName} onChange={(v) => setForm({ ...form, firstName: v })} />
+                <EditField label="Last name" value={form.lastName} onChange={(v) => setForm({ ...form, lastName: v })} />
+              </>
+            ) : (
+              <>
+                <ReadField label="First name" icon={User} value={acc.firstName} />
+                <ReadField label="Last name" icon={User} value={acc.lastName} />
+              </>
+            )}
+            <ReadField label="Email address" icon={Mail} value={acc.email} />
+            {editing ? <EditField label="Phone number" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="+254 7..." />
+              : <ReadField label="Phone number" icon={Phone} value={acc.phone} />}
             <ReadField label="Location" icon={MapPin} value={place} />
+            {acc.healthUnits?.length > 0 && (
+              <ReadField label={acc.healthUnits.length > 1 ? 'Community Health Units' : 'Community Health Unit'} icon={Building2} value={acc.healthUnits.join(', ')} />
+            )}
             <ReadField label="Role" icon={Shield} value={acc.role === 'CHP' ? 'Community Health Promoter' : acc.role} />
           </div>
           {editing ? (
             <div className="flex items-center gap-2 mt-4">
               <button type="button" onClick={saveProfile} disabled={saving} className={BTN_PRIMARY}>{saving ? 'Saving…' : 'Save'}</button>
               <button type="button" onClick={() => setEditing(false)} className={BTN_SECONDARY}>Cancel</button>
-              <p className="text-xs text-gray-400 ml-2">Name, email, location and role are set by your administrator.</p>
+              <p className="text-xs text-gray-400 ml-2">Email, location and role are set by your administrator.</p>
             </div>
           ) : (
-            <p className="text-xs text-gray-400 mt-4">You can change your phone number and photo. Ask your administrator to change anything else.</p>
+            <p className="text-xs text-gray-400 mt-4">You can change your name, phone number and photo. Ask your administrator to change anything else.</p>
           )}
         </section>
 
@@ -168,9 +202,10 @@ export default function ChpSettings() {
             </div>
             {pwOpen && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input ref={pwFirst} type="password" autoComplete="current-password" aria-label="Current password" placeholder="Current password" value={pw.old} onChange={(e) => setPw({ ...pw, old: e.target.value })} className={INPUT} />
-                <input type="password" autoComplete="new-password" aria-label="New password" placeholder="New password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} className={INPUT} />
-                <input type="password" autoComplete="new-password" aria-label="Confirm new password" placeholder="Confirm new password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} className={INPUT} />
+                <PasswordInput inputRef={pwFirst} autoComplete="current-password" label="Current password" value={pw.old} onChange={(v) => setPw({ ...pw, old: v })} />
+                <PasswordInput autoComplete="new-password" label="New password" value={pw.next} onChange={(v) => setPw({ ...pw, next: v })} />
+                <PasswordInput autoComplete="new-password" label="Confirm new password" value={pw.confirm} onChange={(v) => setPw({ ...pw, confirm: v })} />
+                {rules && <p className="md:col-span-3 text-sm text-gray-700">{rules.hint}</p>}
                 <div className="md:col-span-3 flex gap-2">
                   <button type="button" onClick={savePassword} disabled={saving || !pw.old || !pw.next} className={BTN_PRIMARY}>{saving ? 'Saving…' : 'Change password'}</button>
                   <button type="button" onClick={() => { setPwOpen(false); setPw({ old: '', next: '', confirm: '' }) }} className={BTN_SECONDARY}>Cancel</button>

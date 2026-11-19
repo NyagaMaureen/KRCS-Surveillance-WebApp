@@ -1,7 +1,7 @@
 """Where a user's dashboard looks (KRCS, 16 Nov 2026).
 
 Surveillance Officers, Facility Health Workers and CHAs see the dashboard limited to their assigned sub-county
-(User.assigned_sub_county, required when the user is created). HQ Admin and other full-menu roles see every place
+(User.assigned_sub_county, required when the user is created). System Administrator and other full-menu roles see every place
 they are allowed to (their region, or national with View All Regions).
 """
 import frappe

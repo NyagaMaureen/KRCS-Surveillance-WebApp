@@ -45,8 +45,8 @@
   "docstatus": 0,
   "doctype": "Surveillance Role",
   "modified": "2026-11-09 15:00:00.000000",
-  "name": "HQ Admin",
-  "role": "HQ Admin"
+  "name": "System Administrator",
+  "role": "System Administrator"
  },
  {
   "docstatus": 0,

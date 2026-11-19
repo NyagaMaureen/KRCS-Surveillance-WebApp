@@ -47,6 +47,10 @@ def _in_app(users, subject, event):
 				"subject": subject}).insert(ignore_permissions=True)
 
 
+NO_EVENT_ALERTS = ("chp", "fhw", "dataai")   # workspaces that never get event alerts
+NO_EVENT_ALERT_ROLES = ("CHP", "Facility Health Worker")   # the same by main role, if a workspace is not set up
+
+
 def sub_county_users(sub_county_name, event=None):
 	"""Enabled users assigned to this sub-county (the CHA and SCDSC). With an event, a CHA is told only when the event
 	has reports from their CHU(s) or from no CHU (KRCS 17 Nov 2026)."""
@@ -57,9 +61,12 @@ def sub_county_users(sub_county_name, event=None):
 		return []
 	users = frappe.get_all("User", filters={"assigned_sub_county": ["in", ids], "enabled": 1},
 		fields=["name", "email", "mobile_no", "full_name"])
-	# Data & AI Administrators run the system and get no case alerts, whatever area is set on them (KRCS 18 Nov 2026)
+	# Event alerts (new signal, disease changed, resolved in Epi Trends, escalation copy) go to the officers and CHAs.
+	# CHPs hear about their tasks and referrals, never about suspected diseases; FHWs, for now, only about referrals to
+	# their facility (surveillance.fhw); Data & AI Administrators run the system and get no case alerts (KRCS 19 Nov 2026)
 	from surveillance.user_scope import user_workspace
-	users = [u for u in users if user_workspace(u.name) != "dataai"]
+	users = [u for u in users if user_workspace(u.name) not in NO_EVENT_ALERTS
+		and frappe.db.get_value("User", u.name, "primary_role") not in NO_EVENT_ALERT_ROLES]
 	if event:
 		from surveillance.health_units import event_visible
 		users = [u for u in users if event_visible(event, u.name)]
@@ -104,6 +111,89 @@ def _button(url, label):
 
 def _fmt(dt):
 	return get_datetime(dt).strftime("%d %b %Y %H:%M") if dt else ""
+
+
+def _suspected(name):
+	"""Disease names in alerts always read "Suspected ..." (KRCS 18 Nov 2026)."""
+	name = (name or "").strip()
+	if not name or name.lower().startswith("suspected ") or _not_a_disease(name):
+		return name   # "Unclassified illness" and unusual events are not suspected diseases
+	return f"Suspected {name}"
+
+
+def _not_a_disease(name):
+	"""Unclassified illness and the unusual events (Unusual Death of People, Unusual Illness of Animals, Unusual Event /
+	Emergency ...): named as they are, never "Suspected ..."."""
+	name = (name or "").lower()
+	return name.startswith("unusual") or any(w in name for w in ("unclassified", "unknown"))
+
+
+def _is_unusual(doc):
+	return (doc.disease or "").startswith("unusual") or (doc.disease_name or "").lower().startswith("unusual")
+
+
+def _counted(doc):
+	"""What the event counts: animals for the animal events, else people (as on the event page)."""
+	return "animal" if "animal" in (doc.disease or "").lower() or "animal" in (doc.disease_name or "").lower() else "person"
+
+
+def _affected(doc):
+	n = doc.people or 0
+	return f"{n} {'animal' if n == 1 else 'animals'}" if _counted(doc) == "animal" else _people(n)
+
+
+def _cases_label(doc):
+	return "Cases (animals affected)" if _counted(doc) == "animal" else "Cases (people affected)"
+
+
+def _disease_label(doc):
+	return "Event type" if _is_unusual(doc) else "Disease"
+
+
+def _gps(doc):
+	"""GPS numbers with a View on map link (KRCS 18 Nov 2026)."""
+	if not (doc.latitude and doc.longitude):
+		return ""
+	return (f'{doc.latitude:.5f}, {doc.longitude:.5f} &nbsp;<a href="https://www.google.com/maps/search/?api=1&query='
+		f'{doc.latitude},{doc.longitude}" style="color:#b91c1c;font-weight:700">View on map</a>')
+
+
+CHANNEL_LABEL = {"Mobile": "Mobile app", "Web": "Web form"}
+ANIMAL_LABEL = {"Bite or scratch": "Bitten or scratched", "Handled sick or dead animal": "Handled a sick or dead animal"}
+
+
+def _report_details(event):
+	"""Earliest date of onset, the age groups, any animal exposure and the reporting channels across the event's reports
+	(both alert emails)."""
+	onset, ages, animals, channels = None, [], [], []
+	for s in frappe.get_all("Surveillance Signal", filters={"event": event}, fields=["source", "ref"], order_by="signal_date asc"):
+		if s.source == "Field" and s.ref and frappe.db.exists("Case Report", s.ref):
+			cr = frappe.db.get_value("Case Report", s.ref, ["onset_date", "age_group", "age_groups", "animal_exposure", "channel"], as_dict=True)
+			if cr.onset_date and (not onset or cr.onset_date < onset):
+				onset = cr.onset_date
+			for a in [x.strip() for x in (cr.age_groups or cr.age_group or "").replace("\n", ",").split(",")]:
+				if a and a not in ages:
+					ages.append(a)
+			if cr.animal_exposure and cr.animal_exposure != "None":   # shown only when someone recorded an exposure
+				a = ANIMAL_LABEL.get(cr.animal_exposure, cr.animal_exposure)
+				if a not in animals:
+					animals.append(a)
+			label = CHANNEL_LABEL.get(cr.channel, cr.channel) if cr.channel else None
+		else:
+			label = s.source
+		if label and label not in channels:
+			channels.append(label)
+	return frappe._dict(onset=onset.strftime("%d %b %Y") if onset else "", ages=", ".join(ages),
+		animals=", ".join(animals), channels=", ".join(channels))
+
+
+def _dates(doc):
+	"""One "Date reported" when the event has a single report time; first and last reported when reports came in over
+	time (KRCS 18 Nov 2026)."""
+	first, last = _fmt(doc.first_reported), _fmt(doc.last_reported)
+	if not last or first == last:
+		return [("Date reported", first)]
+	return [("First reported", first), ("Last reported", last)]
 
 
 # ---------- 1b. disease changed / left the Review Queue ----------
@@ -197,29 +287,38 @@ def send_new_event(event_name):
 		from surveillance.events import related_events
 		related = related_events(doc.disease, doc.sub_county, doc.first_reported, exclude=doc.name)
 		related_ids = ", ".join(r["id"] for r in related)
-		subject = (f"New signal: {doc.disease_name or doc.disease}, {doc.sub_county or 'location missing'} ({doc.severity or 'standard'})"
+		disease = _suspected(doc.disease_name or doc.disease) or "Disease not yet assigned"
+		subject = (f"New signal: {disease}, {doc.sub_county or 'location missing'}, {_affected(doc)} affected"
 			+ (f" · related to {related_ids}" if related else ""))
+		signs, reporters = _report_lines(doc.name)
+		det = _report_details(doc.name)
+		# same arrangement as the escalation email; severity left out (KRCS 18 Nov 2026)
 		html = (
-			f'<p style="font-size:15px">A new signal needs verification in the Review Queue.</p>'
-			+ (f'<p style="font-size:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px">'
-				f'<b>Related to {escape_html(related_ids)}</b>: another open {escape_html(doc.disease_name or doc.disease)} '
+			f'<p style="font-size:15px"><b>A new signal needs verification in the Review Queue.</b></p>'
+			+ (f'<p style="font-size:14px"><b>Related to {escape_html(related_ids)}</b>: another open {escape_html(disease)} '
 				f'event in {escape_html(doc.sub_county)} in the last 7 days. This may be the same outbreak.</p>' if related else "")
 			+ _rows([
-				("Disease", escape_html(doc.disease_name or doc.disease)),
-				("Severity", escape_html((doc.severity or "standard").title())),
-				("Location", escape_html(", ".join(x for x in [doc.area, doc.sub_county, doc.county] if x))),
-				("Reports", doc.reports or 0),
-				("People affected", doc.people or 0),
+				(_disease_label(doc), escape_html(disease)),
+				("Signs and symptoms", "<br>".join(escape_html(x) for x in signs) or "Not recorded"),
+				(_cases_label(doc), doc.people or 0),
 				("Deaths", doc.deaths or 0),
-				("First reported", _fmt(doc.first_reported)),
+				("Reports", doc.reports or 0),
+				("Date of onset", det.onset),
+				("Affected age group", escape_html(det.ages)),
+				("Animal exposure", escape_html(det.animals)),
+				("Reporting channel", escape_html(det.channels)),
+			] + _dates(doc) + [
+				("Location", escape_html(", ".join(x for x in [doc.area, doc.county] if x))),
+				("GPS", _gps(doc)),
+				("Reporter contacts", "<br>".join(escape_html(x) for x in reporters)),
 				("Why flagged", escape_html(doc.reason or "")),
-				("Related events", escape_html(related_ids)),
+				("Event ID", doc.name),
 			])
 			+ _button(_link(doc.name), "Open and verify")
 		)
 		_send([u.email for u in users], subject, html, doc.name,
 			[u.mobile_no for u in users if u.mobile_no],
-			f"KRCS: new {doc.disease_name or doc.disease} signal, {doc.sub_county}. {doc.people or 0} people."
+			f"KRCS: new {disease} signal, {doc.sub_county}. {_affected(doc)}."
 			+ (f" Related to {related_ids}." if related else "") + f" Verify: {_link(doc.name)}")
 		_in_app([u.name for u in users], subject, doc.name)
 		frappe.db.commit()
@@ -247,14 +346,26 @@ def _report_lines(event):
 			cr = frappe.db.get_value("Case Report", s.ref, ["reporter_name", "phone_number", "reported_by"], as_dict=True)
 			name = cr.reporter_name or (get_fullname(cr.reported_by) if cr.reported_by else "")
 			phone = cr.phone_number or (frappe.db.get_value("User", cr.reported_by, "mobile_no") if cr.reported_by else "")
-			contacts.append(f"{s.ref}: {name or 'CHP'}{', ' + phone if phone else ''} ({s.area or 'area not given'}, {_people(s.people)} people)")
+			contacts.append(f"{s.ref}: {name or 'CHP'}{', ' + phone if phone else ''} ({s.area or 'area not given'}, {_people(s.people)})")
 		else:
-			contacts.append(f"CBS case {s.ref} ({s.area or 'area not given'}, {_people(s.people)} people), contact through CBS")
+			contacts.append(f"CBS case {s.ref} ({s.area or 'area not given'}, {_people(s.people)}), contact through CBS")
 	return signs, contacts
 
 def _strip_suspected(name):
 	name = (name or "").strip()
 	return name[10:] if name.lower().startswith("suspected ") else name
+
+
+def _event_phrase(doc):
+	"""Start of the escalation sentence: "A suspected Measles event", "An unclassified illness event" or
+	"An event with no disease assigned yet" (KRCS 18 Nov 2026)."""
+	name = _strip_suspected(doc.disease_name or doc.disease)
+	if not name:
+		return "An event with no disease assigned yet"
+	if _not_a_disease(name):   # "An unclassified illness event", "An unusual death of people event", "An unusual event / emergency"
+		low = name.lower()
+		return f"An {low}" if "event" in low else f"An {low} event"
+	return f"A suspected {name} event"
 
 
 def _people(n):
@@ -268,21 +379,26 @@ def send_escalation(event_name, reason, escalated_by):
 		contacts = escalation_contacts(doc.county)
 		signs, reporters = _report_lines(event)
 		officer = frappe.db.get_value("User", escalated_by, ["full_name", "email", "mobile_no"], as_dict=True) or {}
-		gps = (f'<a href="https://www.google.com/maps/search/?api=1&query={doc.latitude},{doc.longitude}">'
-			f'{doc.latitude:.5f}, {doc.longitude:.5f}</a>') if doc.latitude and doc.longitude else ""
+		gps = _gps(doc)
+		disease = _suspected(doc.disease_name or doc.disease) or "Disease not yet assigned"
+		deaths = doc.deaths or 0
 		verified = frappe.db.count("Surveillance Signal", {"event": event, "check_status": "Verified"})
-		subject = f"ESCALATION: {doc.disease_name or doc.disease}, {doc.sub_county}, {doc.county} ({doc.people or 0} cases, {doc.deaths or 0} deaths)"
+		det = _report_details(event)
+		subject = (f"ESCALATION: {disease}, {doc.sub_county}, {doc.county} ({doc.people or 0} case{'' if (doc.people or 0) == 1 else 's'}, "
+			f"{deaths} death{'' if deaths == 1 else 's'})")
 		html = (
-			f'<p style="font-size:15px"><b>A suspected {escape_html(_strip_suspected(doc.disease_name or doc.disease))} event has been escalated '
+			f'<p style="font-size:15px"><b>{escape_html(_event_phrase(doc))} has been escalated '
 			f'to County and National MOH by the sub-county surveillance team.</b></p>'
 			+ _rows([
-				("Disease", escape_html(doc.disease_name or doc.disease)),
+				(_disease_label(doc), escape_html(disease)),
 				("Signs and symptoms", "<br>".join(escape_html(x) for x in signs) or "Not recorded"),
-				("Cases (people affected)", doc.people or 0),
+				(_cases_label(doc), doc.people or 0),
 				("Deaths", doc.deaths or 0),
 				("Reports", f"{doc.reports or 0} ({verified} verified by phone or visit)"),
-				("First reported", _fmt(doc.first_reported)),
-				("Last reported", _fmt(doc.last_reported)),
+				("Date of onset", det.onset),
+				("Affected age group", escape_html(det.ages)),
+				("Animal exposure", escape_html(det.animals)),
+			] + _dates(doc) + [
 				("Location", escape_html(", ".join(x for x in [doc.area, doc.sub_county, doc.county] if x))),
 				("GPS", gps),
 				("Nearest health facility", escape_html(doc.nearest_facility or "")),
@@ -297,7 +413,7 @@ def send_escalation(event_name, reason, escalated_by):
 		)
 		_send([c.email for c in contacts], subject, html, doc.name,
 			[c.phone for c in contacts if c.phone],
-			f"KRCS ESCALATION: {doc.disease_name or doc.disease}, {doc.sub_county}/{doc.county}. {doc.people or 0} cases, "
+			f"KRCS ESCALATION: {disease}, {doc.sub_county}/{doc.county}. {doc.people or 0} cases, "
 			f"{doc.deaths or 0} deaths. Facility: {doc.nearest_facility or '-'}. By {officer.get('full_name') or ''}"
 			f"{', ' + officer['mobile_no'] if officer.get('mobile_no') else ''}. {_link(doc.name)}")
 		team = [u.name for u in sub_county_users(doc.sub_county, doc.name)]

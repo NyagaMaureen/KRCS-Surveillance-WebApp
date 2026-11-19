@@ -103,6 +103,11 @@ def _name(doctype, value, field):
 	return frappe.db.get_value(doctype, value, field) if value else None
 
 
+def _units(user):
+	from surveillance.health_units import unit_name, units_of
+	return [unit_name(u) for u in units_of(user)]
+
+
 @frappe.whitelist()
 def get_my_account():
 	user = frappe.session.user
@@ -114,6 +119,7 @@ def get_my_account():
 		"role": u.get("primary_role") or "User", "status": u.get("account_status") or ("Active" if u.enabled else "Disabled"),
 		"region": _name("Region", u.get("assigned_region"), "region_name"),
 		"subCounty": _name("Sub County", u.get("assigned_sub_county"), "sub_county_name"),
+		"healthUnits": _units(user),   # Community Health Unit(s) on the profile (KRCS 18 Nov 2026)
 		"joined": str(u.creation)[:10], "lastLogin": str(u.last_login) if u.last_login else None,
 		"lastPasswordReset": str(u.last_password_reset_date) if u.get("last_password_reset_date") else None,
 		"permissions": [{"key": k, "name": CAPABILITY_MAP[k]["name"], "description": CAPABILITY_MAP[k]["description"]}
@@ -123,8 +129,9 @@ def get_my_account():
 
 
 @frappe.whitelist(methods=["POST"])
-def update_my_profile(phone=None, photo=None):
-	"""Users may change only their own phone number and photo. Everything else is managed by an admin."""
+def update_my_profile(phone=None, photo=None, first_name=None, last_name=None):
+	"""Users may change their own name, phone number and photo (names added KRCS 18 Nov 2026). Everything else is
+	managed by an admin."""
 	user = frappe.session.user
 	if user == "Guest":
 		frappe.throw(_("Please log in."), frappe.PermissionError)
@@ -137,6 +144,13 @@ def update_my_profile(phone=None, photo=None):
 		u.mobile_no = phone
 	if photo is not None:
 		u.user_image = photo or None
+	if first_name is not None:
+		first_name = first_name.strip()
+		if not first_name:
+			frappe.throw(_("Enter your first name."))
+		u.first_name = first_name[:140]
+	if last_name is not None:
+		u.last_name = last_name.strip()[:140]
 	u.flags.ignore_permissions = True
 	u.save()
 	return get_my_account()

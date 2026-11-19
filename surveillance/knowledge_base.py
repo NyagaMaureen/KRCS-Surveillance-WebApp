@@ -1641,3 +1641,34 @@ def sync_all_payloads():
 	for name in names:
 		_sync_access(frappe.get_doc(DOCTYPE, name))
 	return len(names)
+
+
+# ---------- reading and downloading a document (KRCS 18 Nov 2026) ----------
+# Knowledge Base > Documents: View and Download on each row. Managers and approvers open any document; anyone else
+# only what the assistant would show them (approved, in date, for their role and area, sensitive only if allowed).
+
+INLINE_TYPES = {"pdf": "application/pdf", "txt": "text/plain; charset=utf-8", "md": "text/plain; charset=utf-8"}
+
+
+def _readable(name):
+	doc = frappe.get_doc(DOCTYPE, name)
+	if not doc.file:
+		frappe.throw(_("This document has no file."), frappe.DoesNotExistError)
+	if not (has_capability(CAPABILITY) or has_capability(APPROVE_CAPABILITY)):
+		if not _visible(_access_payload(doc), _access_context()):
+			frappe.throw(_("This document is not available to you."), frappe.PermissionError)
+	return doc, frappe.get_doc("File", {"file_url": doc.file})
+
+
+@frappe.whitelist()
+def open_document(name, download=0):
+	"""The file itself: PDF and text open in the browser (View), every type downloads (Download)."""
+	doc, f = _readable(name)
+	ext = (doc.extension or "").lower()
+	inline = not cint(download) and ext in INLINE_TYPES
+	frappe.response.filename = doc.title or f.file_name   # the name it was uploaded with
+	frappe.response.filecontent = f.get_content()
+	frappe.response.type = "download"
+	frappe.response.display_content_as = "inline" if inline else "attachment"
+	if ext in INLINE_TYPES:
+		frappe.response.content_type = INLINE_TYPES[ext]

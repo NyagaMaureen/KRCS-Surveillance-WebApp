@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowRightLeft, Building2, CalendarDays, Plus, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getMyTasks, createReferral, getMyReferableReports, updateEventTask, getReferralFacilities } from '../api/frappe'
 import { isOpen } from '../components/tasks/taskUi'
 import {
-  FOCUS, CARD, INPUT, TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, BTN_SMALL, PageTitle, IconBubble, Badge, Skeleton, Toast,
+  FOCUS, CARD, INPUT, TEXTAREA, BTN_PRIMARY, BTN_SECONDARY, BTN_SMALL, PageTitle, Badge, Skeleton, Toast, GRID_TABLE, GRID_HEAD,
   REFERRAL_TONE, shortWhen,
 } from '../components/chp/ui'
 import { patientLabel } from './ChpDashboard'
@@ -49,40 +49,62 @@ export default function Referrals() {
           <p className="text-sm text-gray-500 mt-1">When you send a patient to a facility, record it here. Referrals your officer asks you to make also appear here.</p>
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {tasks.map((t) => (
-            <li key={t.id} id={`task-${t.id}`} className={`${CARD} p-5 ${focus === t.id ? 'ring-1 ring-amber-300' : ''}`}>
-              <div className="flex items-start gap-4">
-                <IconBubble icon={ArrowRightLeft} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{t.people ? `${t.people} ${t.people === 1 ? 'person' : 'people'} referred` : patientLabel(t)}</p>
-                      <p className="text-xs text-gray-400">{[t.ref, t.selfMade ? '' : `asked by ${t.assignedBy}`].filter(Boolean).join(' · ')}</p>
-                    </div>
-                    <Badge tone={REFERRAL_TONE[t.statusLabel]}>{t.statusLabel}</Badge>
-                  </div>
-                  {(t.reason || t.instructions) && <p className="text-sm text-gray-600 mt-2">{t.reason || t.instructions}</p>}
-                  <p className="text-xs text-gray-500 mt-2 flex flex-wrap gap-x-5 gap-y-1">
-                    <span className="inline-flex items-center gap-1"><Building2 className="w-3.5 h-3.5" aria-hidden="true" />{t.facility || '—'}</span>
-                    <span className="inline-flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />{shortWhen(t.createdOn)}</span>
-                  </p>
-                  {t.outcome && <p className="text-sm text-gray-700 mt-2"><span className="text-gray-400">Note: </span>{t.outcome}</p>}
-                </div>
-              </div>
-              {isOpen(t) && (
-                updating === t.id ? (
-                  <ReferralUpdate task={t} onCancel={() => setUpdating(null)} onError={(m) => flash(m, true)}
-                    onSaved={() => { setUpdating(null); flash('Referral updated'); load() }} />
-                ) : (
-                  <div className="mt-3 flex justify-end">
-                    <button type="button" onClick={() => setUpdating(t.id)} className={BTN_SMALL}>Update status</button>
-                  </div>
+        // a table with grid lines and a serial number, like Signals Captured and Follow-ups (KRCS 18 Nov 2026);
+        // updating opens a row under the referral
+        <div className={`${CARD} overflow-x-auto`}>
+          <table className={GRID_TABLE}>
+            <thead>
+              <tr className={GRID_HEAD}>
+                <th className="px-4 py-3 w-10">#</th>
+                <th className="px-4 py-3">Referral</th>
+                <th className="px-4 py-3">Facility</th>
+                <th className="px-4 py-3">Why</th>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((t, i) => {
+                const open = isOpen(t)
+                const isUpdating = updating === t.id && open
+                return (
+                  <Fragment key={t.id}>
+                    <tr id={`task-${t.id}`} className={`align-top hover:bg-red-50/40 ${focus === t.id ? 'bg-amber-50/60' : ''}`}>
+                      <td className="px-4 py-3 text-gray-500 tabular-nums">{i + 1}</td>
+                      <td className="px-4 py-3 min-w-[180px]">
+                        <p className="font-medium text-gray-900">{t.people ? `${t.people} ${t.people === 1 ? 'person' : 'people'} referred` : patientLabel(t)}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{[t.ref, t.selfMade ? '' : `asked by ${t.assignedBy}`].filter(Boolean).join(' · ')}</p>
+                      </td>
+                      <td className="px-4 py-3 text-gray-900">{t.facility || '—'}</td>
+                      <td className="px-4 py-3 min-w-[220px] text-gray-900">
+                        <p className="whitespace-pre-wrap">{t.reason || t.instructions || '—'}</p>
+                        {t.outcome && <p className="text-xs text-gray-600 mt-1">Note: {t.outcome}</p>}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-gray-900">{shortWhen(t.createdOn)}</td>
+                      <td className="px-4 py-3"><Badge tone={REFERRAL_TONE[t.statusLabel]}>{t.statusLabel}</Badge></td>
+                      <td className="px-4 py-3 text-right">
+                        {open && (
+                          <button type="button" onClick={() => setUpdating(isUpdating ? null : t.id)} className={isUpdating ? BTN_SMALL : `${BTN_PRIMARY} h-8 text-xs whitespace-nowrap`}>
+                            {isUpdating ? 'Close' : 'Update status'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {isUpdating && (
+                      <tr>
+                        <td colSpan={7} className="px-4 pb-4 bg-gray-50/60">
+                          <ReferralUpdate task={t} onCancel={() => setUpdating(null)} onError={(m) => flash(m, true)}
+                            onSaved={() => { setUpdating(null); flash('Referral updated'); load() }} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 )
-              )}
-            </li>
-          ))}
-        </ul>
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {adding && <NewReferral onClose={() => setAdding(false)} onSaved={() => { setAdding(false); flash('Referral recorded'); load() }} onError={(m) => flash(m, true)} />}
@@ -162,7 +184,7 @@ function NewReferral({ onClose, onSaved, onError }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/30 p-0 sm:p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="New referral" onClick={(e) => e.stopPropagation()}
-        className="bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] overflow-y-auto">
+        className="bg-white w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">New referral</h2>
           <button type="button" onClick={onClose} aria-label="Close" className={`text-gray-400 hover:text-gray-700 rounded ${FOCUS}`}><X className="w-5 h-5" /></button>
@@ -176,13 +198,16 @@ function NewReferral({ onClose, onSaved, onError }) {
               {(reports || []).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_160px] gap-3">
+          {/* the picked report's details, as on View report (no suspected disease for CHPs) - KRCS 19 Nov 2026 */}
+          <ReportFacts report={(reports || []).find((r) => r.id === form.caseReport)} />
+          {/* labels on one line so the two boxes line up (KRCS 18 Nov 2026) */}
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_190px] gap-4 items-start">
             <label className="block">
               <span className="block text-sm font-medium text-gray-800 mb-1">Health facility</span>
               <FacilityPick value={form.facility} onChange={(v) => set({ facility: v })} />
             </label>
             <label className="block">
-              <span className="block text-sm font-medium text-gray-800 mb-1">Number of people referred</span>
+              <span className="block text-sm font-medium text-gray-800 mb-1 whitespace-nowrap">People referred</span>
               <input type="number" min="1" step="1" inputMode="numeric" value={form.people} onChange={(e) => set({ people: e.target.value })} className={INPUT} />
             </label>
           </div>
@@ -201,21 +226,57 @@ function NewReferral({ onClose, onSaved, onError }) {
   )
 }
 
-// the facility list (so the facility's FHW sees the referral), with 'Other' for a facility not on it
+const CHANNEL = { Mobile: 'Mobile app', Web: 'Web form' }
+const ANIMAL = { 'Bite or scratch': 'Bitten or scratched', 'Handled sick or dead animal': 'Handled a sick or dead animal' }
+const day = (v, time) => {
+  if (!v) return null
+  const d = new Date(String(v).replace(' ', 'T'))
+  if (isNaN(d)) return v
+  return d.toLocaleString('en-GB', time ? { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function ReportFacts({ report }) {
+  const d = report?.details
+  if (!d) return null
+  const cells = [
+    ['Signal ID', report.id],
+    ['Date reported', day(d.reported, true)],
+    ['Reporting channel', CHANNEL[d.channel] || d.channel],
+    ['Number of people affected', String(d.people)],
+    ['Number of deaths', String(d.deaths)],
+    ['Symptoms reported', d.symptoms],
+    ['Date of onset', day(d.onset)],
+    ['Affected age group', d.ages],
+    ['Animal exposure', d.animal && (ANIMAL[d.animal] || d.animal)],
+    ['Location', d.location],
+    ['Community Health Unit', d.chu],
+  ].filter(([, v]) => v)
+  return (
+    <div className="rounded-xl border border-gray-200 p-4">
+      <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3">
+        {cells.map(([k, v]) => (
+          <div key={k}><dt className="text-xs font-bold text-gray-900">{k}</dt><dd className="mt-0.5 text-sm text-gray-900">{v}</dd></div>
+        ))}
+      </dl>
+      {d.notes && (
+        <div className="mt-3">
+          <div className="text-xs font-bold text-gray-900">{d.channel === 'WhatsApp' ? 'WhatsApp message from community member' : 'Additional notes'}</div>
+          <p className="mt-0.5 whitespace-pre-line text-sm text-gray-900">{d.notes}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// the facility list only, so the facility's FHW sees the referral (no typed-in facilities for now, KRCS 18 Nov 2026);
+// only the facilities in the CHP's own sub-county
 function FacilityPick({ value, onChange }) {
   const [list, setList] = useState(null)
-  const [other, setOther] = useState(false)
-  useEffect(() => { getReferralFacilities().then(setList).catch(() => setList([])) }, [])
-  const known = (list || []).some((f) => f.name === value)
+  useEffect(() => { getReferralFacilities(true).then(setList).catch(() => setList([])) }, [])
   return (
-    <>
-      <select value={other ? '__other__' : known ? value : ''} className={INPUT}
-        onChange={(e) => { const v = e.target.value; if (v === '__other__') { setOther(true); onChange('') } else { setOther(false); onChange(v) } }}>
-        <option value="">{list === null ? 'Loading…' : 'Select a facility'}</option>
-        {(list || []).map((f) => <option key={f.name} value={f.name}>{f.name}{f.subCounty ? ` · ${f.subCounty}` : ''}</option>)}
-        <option value="__other__">Other (type the name)</option>
-      </select>
-      {other && <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Facility name" className={`${INPUT} mt-2`} />}
-    </>
+    <select value={value} className={INPUT} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{list === null ? 'Loading…' : list.length ? 'Select a facility' : 'No facilities in your sub-county yet'}</option>
+      {(list || []).map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
+    </select>
   )
 }

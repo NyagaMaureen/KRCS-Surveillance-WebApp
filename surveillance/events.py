@@ -618,12 +618,25 @@ def _signal_shape(s, can_act):
 		"reporter": None}
 	if s.source == "Field" and s.ref:
 		out["media"] = _report_media(s.ref)
+		out["details"] = _report_details(s.ref)
 	if s.source == "Field" and can_act and frappe.db.exists("Case Report", s.ref):
 		cr = frappe.db.get_value("Case Report", s.ref, ["reporter_name", "phone_number", "reported_by"], as_dict=True)
 		phone = cr.phone_number or (frappe.db.get_value("User", cr.reported_by, "mobile_no") if cr.reported_by else None)
 		out["reporter"] = {"name": cr.reporter_name or (frappe.utils.get_fullname(cr.reported_by) if cr.reported_by else None),
 			"phone": phone or None}
 	return out
+
+
+def _report_details(report):
+	"""What the Signal captured step shows for a field report, from its View report page (KRCS 18 Nov 2026)."""
+	cr = frappe.db.get_value("Case Report", report, ["category", "signal_type", "onset_date", "age_group", "age_groups",
+		"animal_exposure", "additional_notes", "location_name", "channel"], as_dict=True)
+	if not cr:
+		return None
+	return {"category": cr.category or None, "type": cr.signal_type or None,
+		"onset": str(cr.onset_date) if cr.onset_date else None, "ages": cr.age_groups or cr.age_group or None,
+		"animal": cr.animal_exposure if cr.animal_exposure and cr.animal_exposure != "None" else None,
+		"notes": cr.additional_notes or None, "location": cr.location_name or None, "channel": cr.channel or None}
 
 
 def _report_media(report):

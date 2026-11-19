@@ -83,6 +83,9 @@ CAPABILITIES = [
 	{"key": "manage_roles", "name": "Manage Roles & Permissions", "category": "Users & Roles",
 	 "description": "Change which capabilities each role has, and add roles",
 	 "grants": {"Role": ["read", "create"], "Surveillance Role": ["read", "write", "create"]}},
+	{"key": "view_my_chps", "name": "View CHPs in My CHU", "category": "Users & Roles",
+	 "description": "CHAs: see the CHPs in the Community Health Unit(s) they head, with their phone and recent activity",
+	 "grants": {}},
     {"key": "view_all_regions", "name": "View All Regions", "category": "Users & Roles",
 	 "description": "See events and dashboard figures for every region, even if the user has a region assigned",
 	 "grants": {}},
@@ -224,6 +227,7 @@ MENU_LABELS = {
 	"manage_reference_data": ("Data and Database", "Manage Regions & Symptoms"),
 	"view_users": ("Users and Roles", "View Users"), "manage_users": ("Users and Roles", "Manage Users"),
 	"manage_roles": ("Users and Roles", "Manage Roles & Permissions"), "view_all_regions": ("Users and Roles", "View All Regions"),
+	"view_my_chps": ("Users and Roles", "View CHPs in My CHU"),
 	"view_audit_log": ("Audit Log", "View Audit Log"),
 	"settings_security": ("Security Settings", "Security Settings"),
 	"view_feedback": ("Feedback Received", "View Feedback Received"),
@@ -245,7 +249,7 @@ CAPABILITY_MAP = {c["key"]: c for c in CAPABILITIES}
 # Not given to Administrator / System Manager automatically: these change what the user sees
 # (a field worker's menu and dashboard), not what they are allowed to do.
 NOT_AUTO_FOR_ADMIN = {"chp_workspace", "officer_workspace", "fhw_workspace", "cha_workspace", "dataai_workspace", "receive_tasks",
-	"view_own_reports"}
+	"view_own_reports", "view_my_chps"}
 
 # Workspace for each workspace capability, checked in order. Users without one get the full app.
 WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_workspace", "fhw"), ("cha_workspace", "cha"),
@@ -266,7 +270,7 @@ CHP_CAPABILITIES = ["chp_workspace", "create_reports", "view_own_reports", "rece
 # Applied on migrate ONLY to roles that have no capabilities yet, so fresh environments
 # (staging, production, KRCS handover) come preconfigured. Add your other roles here.
 DEFAULT_ROLE_CAPABILITIES = {
-	"HQ Admin": [c["key"] for c in CAPABILITIES],
+	"System Administrator": [c["key"] for c in CAPABILITIES if c["key"] not in NOT_AUTO_FOR_ADMIN],   # no workspace: the full app
 }
 
 

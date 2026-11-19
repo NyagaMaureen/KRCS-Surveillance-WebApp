@@ -2,9 +2,9 @@ import { useCapabilities } from '../context/CapabilitiesContext'
 import HqDashboard from './HqDashboard'
 import Dashboard from './Dashboard'
 
-// HQ Admin sees the dashboard in tabs (KRCS, Nov 2026); other roles on the full menu keep the current dashboard.
+// System Administrator sees the dashboard in tabs (KRCS, Nov 2026); other roles on the full menu keep the current dashboard.
 // To give another role the tabbed dashboard, add it here.
-const TABBED_DASHBOARD_ROLES = ['HQ Admin', 'Administrator', 'System Manager', 'MOH DDSR']
+const TABBED_DASHBOARD_ROLES = ['System Administrator', 'Administrator', 'System Manager', 'MOH DDSR']
 
 export default function FullDashboard() {
   const { primaryRole, loading } = useCapabilities()

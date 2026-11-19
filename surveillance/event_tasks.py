@@ -360,10 +360,20 @@ def get_my_referable_reports():
 	user = frappe.session.user
 	rows = frappe.get_all("Case Report", filters={"creation": [">=", add_days(nowdate(), -60)]},
 		or_filters={"reported_by": user, "owner": user},
-		fields=["name", "location_name", "symptom_tags", "suspected_disease", "creation"],
+		fields=["name", "location_name", "symptom_tags", "creation", "report_date", "channel", "affected_count",
+			"deaths_count", "onset_date", "age_group", "age_groups", "animal_exposure", "additional_notes",
+			"community_health_unit"],
 		order_by="creation desc", limit_page_length=50)
+	# the report's details are shown in New referral once it is picked (KRCS 19 Nov 2026); no suspected disease
 	return [{"id": r.name, "label": f"{r.name} · {r.location_name or 'no place'} · {(r.symptom_tags or '')[:40]}",
-		"date": str(r.creation)[:10]} for r in rows]
+		"date": str(r.creation)[:10],
+		"details": {"reported": str(r.report_date or r.creation), "channel": r.channel, "people": cint(r.affected_count),
+			"deaths": cint(r.deaths_count), "symptoms": r.symptom_tags or "", "onset": str(r.onset_date) if r.onset_date else None,
+			"ages": r.age_groups or r.age_group or None,
+			"animal": r.animal_exposure if r.animal_exposure and r.animal_exposure != "None" else None,
+			"location": r.location_name, "chu": (frappe.db.get_value("Community Health Unit", r.community_health_unit, "health_unit_name") or r.community_health_unit)
+				if r.community_health_unit else None,
+			"notes": r.additional_notes or None}} for r in rows]
 
 
 @frappe.whitelist(methods=["POST"])
@@ -519,14 +529,23 @@ def _in_app(user, subject, task):
 		"document_type": DOCTYPE, "document_name": task, "subject": subject}).insert(ignore_permissions=True)
 
 
+def _no_disease(user):
+	"""CHPs are told about their tasks without naming the suspected disease (KRCS 19 Nov 2026)."""
+	from surveillance.user_scope import user_workspace
+	return user_workspace(user) == "chp"
+
+
 def send_assigned(task, count=1):
 	t = frappe.get_doc(DOCTYPE, task)
 	what = f"{cint(count)} follow-up check-ins" if cint(count) > 1 else f"{t.task_type}: {t.title}"
-	subject = f"New task: {what} ({t.disease_name or 'event'}, {t.sub_county or 'location not set'})"
+	hide = _no_disease(t.assigned_to)
+	where = t.sub_county or "location not set"
+	subject = f"New task: {what} ({where})" if hide else f"New task: {what} ({t.disease_name or 'event'}, {where})"
 	_in_app(t.assigned_to, subject, t.name)
 	_email(t.assigned_to, subject, [
 		("Task", escape_html(t.title)), ("Type", t.task_type), ("Due", str(t.due_date)),
-		("Disease", escape_html(t.disease_name or "")), ("Place", escape_html(", ".join(x for x in [t.area, t.sub_county] if x))),
+		("Disease", "" if hide else escape_html(t.disease_name or "")),
+		("Place", escape_html(", ".join(x for x in [t.area, t.sub_county] if x))),
 		("Refer to", escape_html(t.facility or "")), ("Urgency", t.urgency or ""),
 		("Instructions", escape_html(t.instructions or "")), ("Assigned by", escape_html(get_fullname(t.assigned_by) or "")),
 	], t.name)
@@ -560,7 +579,9 @@ def daily_reminders():
 		if t.reminded_on and getdate(t.reminded_on) == today:
 			continue
 		due_today = getdate(t.due_date) == today
-		subject = f"{'Due today' if due_today else 'Overdue'}: {t.title} ({t.disease_name or ''}, {t.sub_county or ''})"
+		when = "Due today" if due_today else "Overdue"
+		subject = (f"{when}: {t.title} ({t.sub_county or ''})" if _no_disease(t.assigned_to)
+			else f"{when}: {t.title} ({t.disease_name or ''}, {t.sub_county or ''})")
 		try:
 			_in_app(t.assigned_to, subject, t.name)
 			if due_today:

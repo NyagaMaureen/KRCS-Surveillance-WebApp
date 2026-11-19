@@ -65,7 +65,7 @@
    "email": 1
   },
   {
-   "role": "HQ Admin",
+   "role": "System Administrator",
    "read": 1,
    "write": 1,
    "create": 1,

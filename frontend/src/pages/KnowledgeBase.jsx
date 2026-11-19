@@ -19,6 +19,8 @@ import {
   Loader2,
   AlertTriangle,
   CopyPlus,
+  Eye,
+  Download,
 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import Pager from '../components/common/Pager'
@@ -27,7 +29,7 @@ import { KB_CATEGORIES, KB_WORKSPACE_LIMIT_BYTES } from '../data/mockKnowledgeBa
 import {
   uploadFile, getKbDocuments, createKbDocument, reindexKbDocument, deleteKbDocument, updateKbDocument,
   setKbApproval, getRoles, getDiseaseOptions, getRegions, searchKnowledgeBase, getKbHealth, runKbReconcile, getSubCounties,
-  getTrustedSources, saveTrustedSource, deleteTrustedSource,
+  getTrustedSources, saveTrustedSource, deleteTrustedSource, kbDocumentUrl,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
@@ -1196,6 +1198,13 @@ export default function KnowledgeBase() {
     changeApproval(doc, 'Retired', 'Document retired')
   }
 
+  function viewDocument(doc) {
+    const ext = String(doc.extension || '').toLowerCase()
+    // a new browser tab: PDFs and text in the browser's own viewer, Word drawn as it looks in Word (KRCS 19 Nov 2026)
+    if (['pdf', 'txt', 'md'].includes(ext)) window.open(kbDocumentUrl(doc.id), '_blank', 'noopener')
+    else window.open(`/surveillance/kb-document/${encodeURIComponent(doc.id)}?title=${encodeURIComponent(doc.name || '')}`, '_blank', 'noopener')
+  }
+
   function menuItems(doc) {
     const a = approvalKey(doc)
     const items = []
@@ -1369,6 +1378,15 @@ export default function KnowledgeBase() {
                                   <Check className="w-3.5 h-3.5" /> Approve
                                 </button>
                               )}
+                              {/* read online and download (KRCS 18 Nov 2026) */}
+                              <button type="button" onClick={() => viewDocument(doc)} title="Read the document"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50">
+                                <Eye className="w-3.5 h-3.5" /> View
+                              </button>
+                              <a href={kbDocumentUrl(doc.id, true)} title="Download the file"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50">
+                                <Download className="w-3.5 h-3.5" /> Download
+                              </a>
                               <RowMenu items={menuItems(doc)} />
                             </div>
                           </td>

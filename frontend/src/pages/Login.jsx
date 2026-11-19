@@ -1,127 +1,105 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import { login } from '../api/frappe'
+import { login, requestPasswordReset } from '../api/frappe'
+import { AuthLayout, PasswordField, AUTH_INPUT, AUTH_BUTTON, nextPath } from '../components/auth/AuthLayout'
 
+// Login, and "Forgot password?" on the same page (KRCS 18 Nov 2026): the reset email links to the app's own
+// "Choose a new password" page. An expired password is changed right here, then the person is signed in.
 export default function Login() {
+  const [mode, setMode] = useState('login')   // login | forgot
   const [usr, setUsr] = useState('')
   const [pwd, setPwd] = useState('')
   const [error, setError] = useState('')
-  const [showPwd, setShowPwd] = useState(false)
+  const [sent, setSent] = useState('')
   const [loading, setLoading] = useState(false)
+  const justReset = new URLSearchParams(window.location.search).get('reset') === '1'   // back from "Choose a new password"
 
   async function handleLogin(e) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const ok = await login(usr, pwd)
-      if (ok) {
+      const r = await login(usr, pwd)
+      if (r.ok) {
         // Full page load: the CSRF token and capabilities come with the page, and the guest ones are now stale.
-        window.location.assign('/surveillance/dashboard')
+        window.location.assign(nextPath())
+      } else if (r.expiredKey) {
+        const next = new URLSearchParams(window.location.search).get('next')
+        window.location.assign(`/surveillance/reset-password?key=${encodeURIComponent(r.expiredKey)}&expired=1${next ? `&next=${encodeURIComponent(next)}` : ''}`)
       } else {
-        setError('Invalid email or password. Please try again.')
+        setError(r.message)
       }
+    } catch {
+      setError('Could not reach the server. Check your connection and try again.')
     } finally {
       setLoading(false)
     }
   }
 
-  return (
-    <div className="bg-white min-h-screen w-full flex items-center justify-center">
-      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-[1fr_1.5px_1fr] overflow-hidden">
-        <div className="p-10 md:p-14 flex flex-col justify-center">
-          <div className="mb-10">
-            <img src="/assets/surveillance/images/newlogo.svg" alt="Kenya Red Cross" className="h-10 w-auto object-contain" />
+  async function handleForgot(e) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const r = await requestPasswordReset(usr.trim())
+      setSent(r?.message || 'If this email is linked to an account, a password reset link is on its way. It can take a few minutes to arrive, so check your spam folder too.')
+    } catch (err) {
+      setError(err.message || 'Could not send the email. Try again in a few minutes.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function switchTo(m) {
+    setMode(m)
+    setError('')
+    setSent('')
+  }
+
+  if (mode === 'forgot') {
+    return (
+      <AuthLayout title="Reset your password" subtitle="Enter the email you use to log in. We'll send you a link to reset your password.">
+        {sent ? (
+          <div>
+            <p className="text-sm text-gray-900 mb-6">{sent}</p>
+            <button type="button" onClick={() => switchTo('login')} className={AUTH_BUTTON}>Back to login</button>
           </div>
-          <h1 className="text-3xl font-extrabold text-brand-navy mb-1">Welcome Back!</h1>
-          <p className="text-gray-400 mb-8">Login to your account</p>
-
-          <form onSubmit={handleLogin}>
-            <label className="block text-sm font-semibold text-gray-800 mb-1">Username or Email</label>
-            <input
-              value={usr}
-              onChange={(e) => setUsr(e.target.value)}
-              type="text"
-              required
-              className="w-full bg-gray-100 rounded-lg px-4 py-3 mb-5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
-              placeholder="Enter your username or email"
-            />
-
-            <label className="block text-sm font-semibold text-gray-800 mb-1">Password</label>
-            <div className="relative mb-6">
-              <input
-                value={pwd}
-                onChange={(e) => setPwd(e.target.value)}
-                type={showPwd ? 'text' : 'password'}
-                required
-                className="w-full bg-gray-100 rounded-lg px-4 py-3 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
-                placeholder="Enter your password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPwd(!showPwd)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer transition-colors"
-                aria-label={showPwd ? 'Hide password' : 'Show password'}
-              >
-                {!showPwd ? (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    className="w-5 h-5"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"
-                    />
-                    <circle cx="12" cy="12" r="2.5" />
-                  </svg>
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    className="w-5 h-5"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M3 12c2.2 2.7 5.2 4 9 4s6.8-1.3 9-4"
-                    />
-                    <path strokeLinecap="round" d="M7 10.5 5.5 9" />
-                    <path strokeLinecap="round" d="M12 9.5V8" />
-                    <path strokeLinecap="round" d="M17 10.5 18.5 9" />
-                    <path strokeLinecap="round" strokeWidth="2" d="M4 4l16 16" />
-                  </svg>
-                )}
-              </button>
-            </div>
-
+        ) : (
+          <form onSubmit={handleForgot}>
+            <label className="block text-sm font-semibold text-gray-800 mb-1">Email</label>
+            <input value={usr} onChange={(e) => setUsr(e.target.value)} type="email" required autoFocus autoComplete="email"
+              className={`${AUTH_INPUT} mb-6`} placeholder="Enter the email you sign in with" />
             {error && <p className="text-red-700 text-sm mb-4">{error}</p>}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg py-3 mb-4 flex items-center justify-center gap-2 transition-colors"
-            >
+            <button type="submit" disabled={loading} className={`${AUTH_BUTTON} mb-4`}>
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {loading ? 'Logging in...' : 'Login'}
+              {loading ? 'Sending...' : 'Send reset link'}
             </button>
-            <p className="text-center text-sm text-gray-600">Forgot Password? <a href="#" className="text-red-700 font-medium">Reset</a></p>
+            <p className="text-center text-sm text-gray-600">
+              Remembered it? <button type="button" onClick={() => switchTo('login')} className="text-red-700 font-medium hover:underline">Back to login</button>
+            </p>
           </form>
-        </div>
+        )}
+      </AuthLayout>
+    )
+  }
 
-        <div className="hidden md:block bg-gray-300"></div>
-
-        <div className="hidden md:flex items-center justify-center bg-white p-10">
-          <img src="/assets/surveillance/images/crest.svg" alt="" className="w-80 h-80 object-contain" />
-        </div>
-      </div>
-    </div>
+  return (
+    <AuthLayout title="Welcome Back!" subtitle="Login to your account">
+      <form onSubmit={handleLogin}>
+        {justReset && !error && <p className="mb-5 text-sm font-semibold text-green-800">Your password has been changed. Log in with your new password.</p>}
+        <label className="block text-sm font-semibold text-gray-800 mb-1">Username or Email</label>
+        <input value={usr} onChange={(e) => setUsr(e.target.value)} type="text" required autoComplete="username"
+          className={`${AUTH_INPUT} mb-5`} placeholder="Enter your username or email" />
+        <PasswordField label="Password" value={pwd} onChange={setPwd} placeholder="Enter your password" autoComplete="current-password" />
+        {error && <p className="text-red-700 text-sm mb-4">{error}</p>}
+        <button type="submit" disabled={loading} className={`${AUTH_BUTTON} mb-4`}>
+          {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+          {loading ? 'Logging in...' : 'Login'}
+        </button>
+        <p className="text-center text-sm text-gray-600">
+          Forgot Password? <button type="button" onClick={() => switchTo('forgot')} className="text-red-700 font-medium hover:underline">Reset</button>
+        </p>
+      </form>
+    </AuthLayout>
   )
 }

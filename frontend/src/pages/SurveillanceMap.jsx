@@ -263,13 +263,7 @@ export default function SurveillanceMap() {
           <Filter className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
-        <div className="relative basis-[calc(50%-0.375rem)] sm:basis-auto">
-          <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} className={selectCls}>
-            <option value="">Severity Level</option>
-            {SEVERITIES.map((s) => <option key={s} value={s}>{cap(s)}</option>)}
-          </select>
-          <Filter className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-        </div>
+        {/* Severity Level filter removed for everyone (KRCS 18 Nov 2026); the legend below still shows the colours */}
 
         <div className="relative basis-[calc(50%-0.375rem)] sm:basis-auto">
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setWaitingOnly(false) }} className={selectCls} aria-label="Status">
@@ -330,23 +324,13 @@ export default function SurveillanceMap() {
               ].join(' ')}
             >
               {SEVERITIES.map((s) => {
-                const active = severityFilter === s
+                // a colour key only, not a filter (KRCS 18 Nov 2026)
                 return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSeverityFilter(active ? '' : s)}
-                    aria-pressed={active}
-                    className={[
-                      'flex items-center gap-2 rounded-md px-2 py-1 text-sm text-gray-900 hover:bg-gray-50',
-                      active ? 'bg-gray-100 font-medium' : '',
-                      severityFilter && !active ? 'opacity-50' : '',
-                    ].join(' ')}
-                  >
+                  <span key={s} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-gray-900">
                     <span className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ backgroundColor: SEVERITY_COLORS[s] }} />
                     {cap(s)}
                     <span className="text-xs text-gray-400">{severityCounts[s]}</span>
-                  </button>
+                  </span>
                 )
               })}
             </div>

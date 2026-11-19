@@ -1,22 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, Stethoscope, History } from 'lucide-react'
+import { ArrowLeft, Pencil, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, History } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getUnitOptions, getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, getReportCandidates, sendReportToQueue, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
-import { parseReason } from '../components/risk/reasonParts'
 import VoicePicked from '../components/report/VoicePicked'
 import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
 import { useCapabilities } from '../context/CapabilitiesContext'
-
-const CLASSIFIED_BY_BADGES = {
-  Rules: { label: 'Case definition', className: 'bg-blue-50 text-blue-600' },
-  Officer: { label: 'Officer verified', className: 'bg-emerald-50 text-emerald-600' },
-  Model: { label: 'AI model', className: 'bg-purple-50 text-purple-600' },
-}
-
-function alsoConsistentWith(value) {
-  return (value || '').split(',').map((s) => s.trim()).filter(Boolean)
-}
 
 function withCurrentValue(list, value) {
   return value && !list.includes(value) ? [...list, value] : list
@@ -46,7 +35,7 @@ function fileNameFromUrl(url) {
   return (url || '').split('/').pop() || 'File'
 }
 
-function SupportingInfoItem({ item, onOpenImage, onRemove, picked, report, canAdd, onAdded }) {
+function SupportingInfoItem({ item, onOpenImage, onRemove, picked, report, canAdd, onAdded, noTranscript = false }) {
   return (
     <div className="relative bg-gray-50 rounded-lg p-3">
       {onRemove && (
@@ -66,13 +55,13 @@ function SupportingInfoItem({ item, onOpenImage, onRemove, picked, report, canAd
       {item.attachment_type === 'Voice Note' && (
         <>
           <audio controls preload="metadata" src={item.file} className="w-full max-w-full" />
-          {item.transcript_status === 'Done' && item.transcript && (
+          {!noTranscript && item.transcript_status === 'Done' && item.transcript && (
             <details className="mt-2">
               <summary className="cursor-pointer text-sm font-medium text-red-700 hover:underline">View transcript</summary>
               <p className="mt-1 text-sm leading-6 text-gray-700 whitespace-pre-wrap">{item.transcript}</p>
             </details>
           )}
-          {picked && <VoicePicked picked={picked} report={report} canAdd={canAdd} onAdded={onAdded} />}
+          {!noTranscript && picked && <VoicePicked picked={picked} report={report} canAdd={canAdd} onAdded={onAdded} />}
         </>
       )}
       {item.attachment_type === 'Text Note' && (
@@ -84,6 +73,16 @@ function SupportingInfoItem({ item, onOpenImage, onRemove, picked, report, canAd
           <span className="truncate">{fileNameFromUrl(item.file)}</span>
         </a>
       )}
+    </div>
+  )
+}
+
+// one field of the report: label above, value below (three per row; wide = the full row)
+function Cell({ label, wide = false, span = false, children }) {
+  return (
+    <div className={wide ? 'sm:col-span-2 lg:col-span-3' : span ? 'sm:col-span-2' : ''}>
+      <dt className="text-xs font-bold text-gray-900 mb-1">{label}</dt>
+      <dd className="text-sm text-gray-900">{children}</dd>
     </div>
   )
 }
@@ -178,24 +177,10 @@ export default function ReportDetail() {
     Attachment: useRef(null),
   }
 
-  const detailFields = useMemo(() => {
-    if (!report) return []
-    return [
-      { label: 'Reporter', value: [report.reporter_name || report.reported_by, reporterRole].filter(Boolean).join(' \u00b7 ') },
-      { label: 'Phone Number', value: report.phone_number },
-      { label: 'Location', value: report.location_name },
-      { label: 'Region', value: regionMap[report.region] || report.region },
-      { label: 'Sub-county', value: report.sub_county },
-      { label: 'Community Health Unit', value: report.community_health_unit ? (unitNames[report.community_health_unit] || report.community_health_unit) : '', empty: 'None (not from a CHP)' },
-      { label: 'Category', value: report.category },
-      { label: 'Onset Date', value: formatReadableDate(report.onset_date) },
-      { label: 'Affected Persons', value: report.affected_count },
-      { label: 'Created at', value: formatDateTime(report.creation) },
-      { label: 'Age Groups', value: report.age_groups || (AGE_GROUPS.find((g) => g.value === report.age_group) || {}).label, empty: 'Not recorded' },
-      { label: 'Animal Exposure', value: (ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === report.animal_exposure) || {}).label, empty: 'Not recorded' },
-      { label: 'Number of Deaths', value: report.deaths_count === null || report.deaths_count === undefined ? '' : String(report.deaths_count), empty: 'Not recorded' },
-    ]
-  }, [report, regionMap, reporterRole, unitNames])
+  // Supporting evidence: photos, voice notes and files; written notes and transcriptions go under Additional notes
+  const evidence = (report?.attachments || []).filter((a) => a.attachment_type !== 'Text Note')
+  const textNotes = (report?.attachments || []).filter((a) => a.attachment_type === 'Text Note' && a.text_content)
+  const voiceNotes = (report?.attachments || []).filter((a) => a.attachment_type === 'Voice Note')
 
   const diseaseName = useMemo(() => {
     const d = diseaseOptions.find((o) => o.key === report?.suspected_disease)
@@ -226,13 +211,6 @@ export default function ReportDetail() {
     }
   }
 
-  const classificationLines = useMemo(() => {
-    const reason = report?.classification_reason || ''
-    const idx = reason.indexOf('\nRules view:')
-    if (idx === -1) return { decision: reason, rulesView: '' }
-    return { decision: reason.slice(0, idx), rulesView: reason.slice(idx + 1).replace(/^Rules view:\s*/, '') }
-  }, [report])
-
   const [cands, setCands] = useState(null)
   useEffect(() => {
     if (!report?.name || !has('verify_suspected_disease')) return
@@ -240,8 +218,6 @@ export default function ReportDetail() {
     getReportCandidates(report.name).then((c) => live && setCands(c)).catch(() => live && setCands(null))
     return () => { live = false }
   }, [report?.name, report?.suspected_disease, report?.classified_by]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const officerChose = report?.classified_by === 'Officer' && !!report?.suspected_disease
 
   const categoryOptions = useMemo(() => withCurrentValue(CATEGORIES, report?.category), [report])
   const attachments = report?.attachments || []
@@ -401,195 +377,185 @@ export default function ReportDetail() {
 
               {mode === 'view' ? (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-5 mb-8">
-                    {detailFields.map((f) => (
-                      <div key={f.label}>
-                        <div className="text-xs font-medium text-gray-400 mb-1">{f.label}</div>
-                        <div className="text-sm font-medium text-gray-900">{f.value || f.empty || '—'}</div>
-                      </div>
-                    ))}
-                    <div>
-                      <div className="text-xs font-medium text-gray-400 mb-1">Channel</div>
-                      <span className={['inline-block text-xs font-semibold px-2.5 py-1 rounded-full', channelColor(report.channel)].join(' ')}>{(report.channel || '—').toUpperCase()}</span>
-                    </div>
-                  </div>
-                  <div className="mb-6 rounded-xl border border-red-100 bg-red-50/60 p-4">
-                    <div className="text-sm font-semibold text-gray-900 mb-2">Symptoms</div>
-                    {symptomTags(report.symptom_tags).length ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {symptomTags(report.symptom_tags).map((s) => (
-                          <span key={s} className="bg-white border border-red-200 text-red-800 text-sm font-semibold px-3 py-1 rounded-full">{s}</span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400">
-                        {report.animal_exposure && report.animal_exposure !== 'None' ? 'No symptoms recorded' : '—'}
-                      </span>
-                    )}
-                    {report.absent_symptom_tags && (
-                      <p className="mt-2 text-sm text-gray-700"><span className="text-gray-500">Checked, not present:</span> {report.absent_symptom_tags}</p>
-                    )}
-                    {report.animal_exposure && report.animal_exposure !== 'None' && (
-                      <div className="flex justify-between border-t border-gray-100 mt-4 pt-3 text-sm">
-                        <span className="text-gray-400">Animal exposure</span>
-                        <span className="font-medium text-gray-900">{report.animal_exposure}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mb-8 text-sm">
-                    {report.latitude != null && report.longitude != null && (Number(report.latitude) || Number(report.longitude)) ? (
-                      <a
-                        href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-red-700 font-semibold hover:underline"
-                      >
-                        Open in Maps ({Number(report.latitude).toFixed(5)}, {Number(report.longitude).toFixed(5)})
-                      </a>
-                    ) : (
-                      <span className="text-gray-400">No GPS recorded</span>
-                    )}
-                  </div>
-
-                  {attachments.length > 0 && (
-                  <div className="pt-6 border-t border-gray-100 mb-8">
-                    <div className="text-xs font-medium text-gray-400 mb-2">Voice notes and photos</div>
-                    {attachments.length ? (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        
-                        {attachments.some((a) => a.attachment_type === 'Voice Note') && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1.5">Voice notes</div>
-                            <div className="flex flex-col gap-2 max-w-md">
-                              {attachments.filter((a) => a.attachment_type === 'Voice Note').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} report={report?.name} canAdd={canAddVoice} onAdded={reloadReport} />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {attachments.some((a) => a.attachment_type === 'Photo') && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1.5">Photos</div>
-                            <div className="flex flex-wrap gap-3">
-                              {attachments.filter((a) => a.attachment_type === 'Photo').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} report={report?.name} canAdd={canAddVoice} onAdded={reloadReport} />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {attachments.some((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note') && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1.5">Other</div>
-                            <div className="flex flex-wrap gap-3">
-                              {attachments.filter((a) => a.attachment_type !== 'Photo' && a.attachment_type !== 'Voice Note').map((item, i) => (
-                                <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} picked={voicePicked[item.name]} report={report?.name} canAdd={canAddVoice} onAdded={reloadReport} />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                  )}
-
-                  {!isChp && <div className="pt-6 border-t border-gray-100 mb-8">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-gray-900">Suspected Disease</h3>
-                        {report.classified_by && CLASSIFIED_BY_BADGES[report.classified_by] && (
-                          <span className={['text-xs font-semibold px-2.5 py-1 rounded-full', CLASSIFIED_BY_BADGES[report.classified_by].className].join(' ')}>
-                            {CLASSIFIED_BY_BADGES[report.classified_by].label}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mb-3">
-                      <Stethoscope className="w-5 h-5 text-red-700 shrink-0" />
-                      <span className={['text-lg font-bold', shownDisease.muted ? 'text-gray-400' : 'text-gray-900'].join(' ')}>{shownDisease.text}</span>
-                      {shownDisease.note && <span className="text-xs text-gray-500">{shownDisease.note}</span>}
-                    </div>
-
-                    {cands && cands.event && OPEN_EVENT.includes(cands.event.status) ? (
-                      <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p className="text-sm text-gray-800">This report is in the Review Queue. The disease is chosen in AI triage, after a phone call with the reporter.</p>
-                        <Link to={`/alerts-signals/${encodeURIComponent(cands.event.id)}`} className="mt-1 inline-block text-sm font-medium text-red-700 hover:underline">
-                          Open {cands.event.id} ({cands.event.status}) &rarr;
-                        </Link>
-                      </div>
-                    ) : report.status === 'Recorded' && has('act_on_events') ? (
-                      <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p className="text-sm text-gray-800">A clear-cut common illness: counted in Epi Trends without an officer's review. Want a closer look?</p>
-                        <button type="button" disabled={sendingToQueue} onClick={sendToQueue} className="mt-2 inline-flex items-center gap-1.5 border border-gray-200 bg-white rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60">
-                          {sendingToQueue ? 'Sending...' : 'Send to Review Queue'}
-                        </button>
-                      </div>
-                    ) : null}
-
-                    {report.classification_reason && !shownDisease.muted && (() => {
-                      const byPerson = report.classified_by === 'Officer'
-                      const dec = parseReason(classificationLines.decision)
-                      return (
-                        <div className="mb-3">
-                          {byPerson ? (
-                            <>
-                              <p className="text-sm text-gray-700">{classificationLines.decision}</p>
-                            </>
-                          ) : dec.signs ? (
-                            <>
-                              <p className="text-sm text-gray-700"><span className="text-gray-400">Matched:</span> {dec.signs}</p>
-                              {dec.note && <p className="mt-1 text-xs text-gray-500">{dec.note}</p>}
-                              {dec.definition && (
-                                <details className="mt-1.5 text-sm">
-                                  <summary className="cursor-pointer text-xs font-medium text-gray-500 hover:text-gray-900">{dec.source || 'Official'} definition</summary>
-                                  <p className="mt-1.5 text-sm text-gray-600 leading-relaxed">{dec.definition}</p>
-                                </details>
-                              )}
-                            </>
-                          ) : (
-                            <p className="text-sm text-gray-700">{classificationLines.decision}</p>
-                          )}
-                        </div>
-                      )
-                    })()}
-
-                    {!officerChose && !shownDisease.muted && alsoConsistentWith(report.also_consistent_with).length > 0 && (
-                      <div>
-                        <div className="text-xs font-medium text-gray-400 mb-1.5">Also consistent with</div>
+                  {/* every report in the same order, three per row (Elizabeth, KRCS 18 Nov 2026) */}
+                  <dl className="mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6">
+                    <Cell label="Signal ID"><span className="font-semibold">{report.name}</span></Cell>
+                    <Cell label="Signal category">{report.category || '—'}</Cell>
+                    <Cell label="Signal type">{report.signal_type || '—'}</Cell>
+                    <Cell label="Status"><span className={['inline-block text-xs font-semibold px-2.5 py-1 rounded-full', statusColor(report.status)].join(' ')}>{statusLabel(report.status)}</span></Cell>
+                    <Cell label="Number of people affected">{report.affected_count ?? '—'}</Cell>
+                    <Cell label="Number of deaths">{report.deaths_count === null || report.deaths_count === undefined ? 'None' : report.deaths_count}</Cell>
+                    <Cell label="Symptoms reported">
+                      {symptomTags(report.symptom_tags).length ? (
                         <div className="flex flex-wrap gap-1.5">
-                          {alsoConsistentWith(report.also_consistent_with).map((d) => (
-                            <span key={d} className="bg-gray-100 text-gray-600 text-xs font-medium px-2.5 py-1 rounded-full">{d}</span>
+                          {symptomTags(report.symptom_tags).map((t) => (
+                            <span key={t} className="bg-white border border-red-200 text-red-800 text-xs font-semibold px-2.5 py-1 rounded-full">{t}</span>
                           ))}
                         </div>
-                      </div>
+                      ) : 'None'}
+                      {report.absent_symptom_tags && <p className="mt-2 text-xs text-gray-600">Checked, not present: {report.absent_symptom_tags}</p>}
+                    </Cell>
+                    <Cell label="Date of onset">{report.onset_date ? formatReadableDate(report.onset_date) : '—'}</Cell>
+                    <Cell label="Affected age group">{report.age_groups || (AGE_GROUPS.find((g) => g.value === report.age_group) || {}).label || '—'}</Cell>
+                    {/* nothing ticked when reporting = None (KRCS 18 Nov 2026) */}
+                    <Cell label="Animal exposure">{!report.animal_exposure || report.animal_exposure === 'None' ? 'None' : (ANIMAL_EXPOSURE_OPTIONS.find((o) => o.value === report.animal_exposure) || {}).label || report.animal_exposure}</Cell>
+                    <Cell label="Reporting channel"><span className={['inline-block text-xs font-semibold px-2.5 py-1 rounded-full', channelColor(report.channel)].join(' ')}>{(report.channel || '—').toUpperCase()}</span></Cell>
+                    {!isChp && (
+                      <Cell label="Assigned suspected disease">
+                        <span className={shownDisease.muted ? 'text-gray-500' : 'font-semibold'}>{shownDisease.text}</span>
+                        {shownDisease.note && <span className="block text-xs text-gray-500">{shownDisease.note}</span>}
+                        {cands && cands.event && OPEN_EVENT.includes(cands.event.status) ? (
+                          <Link to={`/alerts-signals/${encodeURIComponent(cands.event.id)}`} className="mt-1 inline-block text-xs font-semibold text-red-700 hover:underline">
+                            In the Review Queue: open {cands.event.id} &rarr;
+                          </Link>
+                        ) : report.status === 'Recorded' && has('act_on_events') ? (
+                          <button type="button" disabled={sendingToQueue} onClick={sendToQueue}
+                            className="mt-2 inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60">
+                            {sendingToQueue ? 'Sending...' : 'Send to Review Queue'}
+                          </button>
+                        ) : null}
+                      </Cell>
                     )}
-                  </div>}
+                    <Cell label="Supporting evidence">
+                      {evidence.length ? (
+                        <div className="flex flex-col gap-2">
+                          {evidence.filter((a) => a.attachment_type === 'Photo').length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {evidence.filter((a) => a.attachment_type === 'Photo').map((item) => (
+                                <SupportingInfoItem key={item.name || item.file} item={item} onOpenImage={setLightboxImage} />
+                              ))}
+                            </div>
+                          )}
+                          {evidence.filter((a) => a.attachment_type !== 'Photo').map((item) => (
+                            <SupportingInfoItem key={item.name || item.file} item={item} onOpenImage={setLightboxImage} noTranscript />
+                          ))}
+                        </div>
+                      ) : 'None'}
+                    </Cell>
+                    {/* two columns wide when a voice note transcription sits under the notes, so it is easy to read */}
+                    <Cell label={report.channel === 'WhatsApp' ? 'WhatsApp message from community member' : 'Additional notes'}
+                      span={voiceNotes.some((v) => v.transcript_status === 'Done' && v.transcript)}>
+                      <p className="whitespace-pre-line leading-relaxed">{report.additional_notes || 'None'}</p>
+                      {textNotes.map((t) => <p key={t.name || t.text_content} className="mt-2 whitespace-pre-line leading-relaxed">{t.text_content}</p>)}
+                      {/* what the voice notes said, under the notes (KRCS 18 Nov 2026) */}
+                      {voiceNotes.filter((v) => v.transcript_status === 'Done' && v.transcript).map((v, i, list) => (
+                        <div key={v.name || v.file} className="mt-3 rounded-lg bg-gray-50 p-3">
+                          <p className="text-xs font-semibold text-gray-700">Voice note transcription{list.length > 1 ? ` ${i + 1}` : ''}</p>
+                          <p className="mt-1 whitespace-pre-wrap leading-relaxed">{v.transcript}</p>
+                          {voicePicked[v.name] && <VoicePicked picked={voicePicked[v.name]} report={report?.name} canAdd={canAddVoice} onAdded={reloadReport} />}
+                        </div>
+                      ))}
+                    </Cell>
+                    <Cell label="Location">{report.location_name || '—'}</Cell>
+                    <Cell label="Community Health Unit">{report.community_health_unit ? (unitNames[report.community_health_unit] || report.community_health_unit) : 'None (not from a CHP)'}</Cell>
+                    <Cell label="Sub-county">{report.sub_county || '—'}</Cell>
+                    <Cell label="Region / County">{regionMap[report.region] || report.region || '—'}</Cell>
+                    <Cell label="GPS coordinates">
+                      {report.latitude != null && report.longitude != null && (Number(report.latitude) || Number(report.longitude)) ? (
+                        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="tabular-nums">{Number(report.latitude).toFixed(5)}, {Number(report.longitude).toFixed(5)}</span>
+                          <a href={`https://www.google.com/maps?q=${report.latitude},${report.longitude}`} target="_blank" rel="noopener noreferrer"
+                            className="font-semibold text-red-700 hover:underline">View on map</a>
+                        </span>
+                      ) : 'No GPS recorded'}
+                    </Cell>
+                    <Cell label="Reported by">
+                      <span className="block">{[report.reporter_name || report.reported_by, reporterRole].filter(Boolean).join(' \u00b7 ') || '—'}</span>
+                      {report.phone_number && <span className="block text-gray-700">{report.phone_number}</span>}
+                    </Cell>
+                    <Cell label="Date reported">{formatDateTime(report.creation)}</Cell>
 
-                  <div className="pt-6 border-t border-gray-100 mb-8">
-                    <div className="text-xs font-medium text-gray-400 mb-2">Additional Notes</div>
-                    <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-4 leading-relaxed whitespace-pre-line">{report.additional_notes || 'No additional notes provided.'}</p>
-                  </div>
+                  </dl>
 
                   {!isChp && <UpdateHistory changes={report.changes} />}
 
                 </>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mb-6">
+                  {/* the fields that can be updated, in the same order as the report view (KRCS 18 Nov 2026) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-5 mb-6">
                     <div>
-                      <label className="block text-sm font-semibold mb-1">Location</label>
-                      <input value={editForm.location_name} onChange={(e) => setEditForm({ ...editForm, location_name: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Location name" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-1">Region</label>
-                      <select value={editForm.region} onChange={(e) => setEditForm({ ...editForm, region: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100">
-                        <option value="">Select a region...</option>
-                        {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
+                      <label className="block text-sm font-bold mb-1">Signal category</label>
+                      <select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100">
+                        <option value="">Select category...</option>
+                        {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold mb-1">Sub-county <span className="text-red-700">*</span></label>
+                      <label className="block text-sm font-bold mb-1">Status</label>
+                      <input type="text" value={statusLabel(editForm.status)} disabled readOnly className="w-full bg-gray-100 text-gray-500 rounded-lg px-4 py-2.5 text-sm cursor-not-allowed" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-1">Date of onset</label>
+                      <input type="date" value={editForm.onset_date} onChange={(e) => setEditForm({ ...editForm, onset_date: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" />
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-3">
+                      <div className="text-sm font-bold mb-2">Supporting evidence</div>
+
+                      {editAttachments.length > 0 && (
+                        <div className="flex flex-wrap gap-3 mb-4">
+                          {editAttachments.map((item, i) => (
+                            <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} onRemove={() => removeAttachment(i)} />
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="text-xs font-medium text-gray-400 mb-2">Add Supporting Info</div>
+                      <div className="flex gap-3 mb-2">
+                        {ATTACHMENT_TYPES.map(({ type, icon: Icon, accept }) => (
+                          <div key={type} className="flex flex-col items-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (type === 'Text Note') { setShowTextNote((prev) => !prev); return }
+                                fileInputRefs[type].current && fileInputRefs[type].current.click()
+                              }}
+                              disabled={uploading[type]}
+                              className="w-12 h-12 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-60"
+                            >
+                              {uploading[type] ? <Loader2 className="w-5 h-5 animate-spin text-red-700" /> : <Icon className="w-5 h-5 text-gray-500" />}
+                            </button>
+                            <span className="text-[11px] text-gray-500 mt-1 text-center">{type}</span>
+                            {uploadErrors[type] && <span className="text-[10px] text-red-700 mt-0.5 text-center max-w-[80px]">{uploadErrors[type]}</span>}
+                            {accept !== null && (
+                              <input
+                                ref={fileInputRefs[type]}
+                                type="file"
+                                accept={accept}
+                                className="hidden"
+                                onChange={(e) => handleFileSelected(type, e)}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {showTextNote && (
+                        <div className="mt-2 bg-gray-50 rounded-lg p-3">
+                          <textarea
+                            value={textNoteValue}
+                            onChange={(e) => setTextNoteValue(e.target.value)}
+                            rows={3}
+                            className="w-full bg-white rounded-lg px-3 py-2 text-sm border border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow"
+                            placeholder="Type a note..."
+                          ></textarea>
+                          <div className="flex justify-end gap-2 mt-2">
+                            <button type="button" onClick={() => { setShowTextNote(false); setTextNoteValue('') }} className="text-xs font-semibold text-gray-500 px-3 py-1.5 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                            <button type="button" onClick={confirmTextNote} className="text-xs font-semibold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors">Add Note</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-3">
+                      <label className="block text-sm font-bold mb-1">{report.channel === 'WhatsApp' ? 'WhatsApp message from community member' : 'Additional notes'}</label>
+                      <textarea value={editForm.additional_notes} onChange={(e) => setEditForm({ ...editForm, additional_notes: e.target.value })} rows={4} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Describe the situation..."></textarea>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-1">Location</label>
+                      <input value={editForm.location_name} onChange={(e) => setEditForm({ ...editForm, location_name: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Location name" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-1">Sub-county <span className="text-red-700">*</span></label>
                       <select
                         value={editForm.sub_county}
                         onChange={(e) => setEditForm({ ...editForm, sub_county: e.target.value })}
@@ -601,11 +567,18 @@ export default function ReportDetail() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold mb-1">Latitude</label>
+                      <label className="block text-sm font-bold mb-1">Region / County</label>
+                      <select value={editForm.region} onChange={(e) => setEditForm({ ...editForm, region: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100">
+                        <option value="">Select a region...</option>
+                        {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-1">GPS latitude</label>
                       <input type="number" step="any" value={editForm.latitude ?? ''} onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value === '' ? null : Number(e.target.value) })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Latitude" />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold mb-1">Longitude</label>
+                      <label className="block text-sm font-bold mb-1">GPS longitude</label>
                       <input type="number" step="any" value={editForm.longitude ?? ''} onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value === '' ? null : Number(e.target.value) })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Longitude" />
                       <button
                         type="button"
@@ -620,85 +593,9 @@ export default function ReportDetail() {
                       </button>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold mb-1">Status</label>
-                      <input type="text" value={statusLabel(editForm.status)} disabled readOnly className="w-full bg-gray-100 text-gray-500 rounded-lg px-4 py-2.5 text-sm cursor-not-allowed" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-1">Category</label>
-                      <select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100">
-                        <option value="">Select category...</option>
-                        {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-1">Onset Date</label>
-                      <input type="date" value={editForm.onset_date} onChange={(e) => setEditForm({ ...editForm, onset_date: e.target.value })} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-1">Reported By</label>
+                      <label className="block text-sm font-bold mb-1">Reported by</label>
                       <input value={report.reporter_name || report.reported_by || ''} readOnly disabled className="w-full bg-gray-100 rounded-lg px-4 py-2.5 text-sm text-gray-500 cursor-not-allowed" />
                     </div>
-                  </div>
-
-                  <label className="block text-sm font-semibold mb-1">Additional Notes</label>
-                  <textarea value={editForm.additional_notes} onChange={(e) => setEditForm({ ...editForm, additional_notes: e.target.value })} rows={4} className="w-full bg-gray-50 rounded-lg px-4 py-2.5 mb-6 text-sm focus:outline-none focus:ring-2 focus:ring-red-100" placeholder="Describe the situation..."></textarea>
-
-                  <div className="mb-6">
-                    <div className="text-sm font-semibold mb-2">Supporting Information</div>
-
-                    {editAttachments.length > 0 && (
-                      <div className="flex flex-wrap gap-3 mb-4">
-                        {editAttachments.map((item, i) => (
-                          <SupportingInfoItem key={i} item={item} onOpenImage={setLightboxImage} onRemove={() => removeAttachment(i)} />
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="text-xs font-medium text-gray-400 mb-2">Add Supporting Info</div>
-                    <div className="flex gap-3 mb-2">
-                      {ATTACHMENT_TYPES.map(({ type, icon: Icon, accept }) => (
-                        <div key={type} className="flex flex-col items-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (type === 'Text Note') { setShowTextNote((prev) => !prev); return }
-                              fileInputRefs[type].current && fileInputRefs[type].current.click()
-                            }}
-                            disabled={uploading[type]}
-                            className="w-12 h-12 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-60"
-                          >
-                            {uploading[type] ? <Loader2 className="w-5 h-5 animate-spin text-red-700" /> : <Icon className="w-5 h-5 text-gray-500" />}
-                          </button>
-                          <span className="text-[11px] text-gray-500 mt-1 text-center">{type}</span>
-                          {uploadErrors[type] && <span className="text-[10px] text-red-700 mt-0.5 text-center max-w-[80px]">{uploadErrors[type]}</span>}
-                          {accept !== null && (
-                            <input
-                              ref={fileInputRefs[type]}
-                              type="file"
-                              accept={accept}
-                              className="hidden"
-                              onChange={(e) => handleFileSelected(type, e)}
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {showTextNote && (
-                      <div className="mt-2 bg-gray-50 rounded-lg p-3">
-                        <textarea
-                          value={textNoteValue}
-                          onChange={(e) => setTextNoteValue(e.target.value)}
-                          rows={3}
-                          className="w-full bg-white rounded-lg px-3 py-2 text-sm border border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-100 transition-shadow"
-                          placeholder="Type a note..."
-                        ></textarea>
-                        <div className="flex justify-end gap-2 mt-2">
-                          <button type="button" onClick={() => { setShowTextNote(false); setTextNoteValue('') }} className="text-xs font-semibold text-gray-500 px-3 py-1.5 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                          <button type="button" onClick={confirmTextNote} className="text-xs font-semibold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors">Add Note</button>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex justify-end gap-3">

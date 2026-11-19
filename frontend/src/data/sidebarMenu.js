@@ -1,4 +1,4 @@
-// Full app menu (HQ Admin and other admins): "KRCS Main Menu Re-Organization" (13 Nov 2026), as a flat list with
+// Full app menu (System Administrator and other admins): "KRCS Main Menu Re-Organization" (13 Nov 2026), as a flat list with
 // the document's groups as headings (flat list, KRCS 16 Nov 2026). soon: shown as "Soon" with no link (not built yet).
 // query / hash open one tab or section of a page. Items may also have children (a group that opens and closes).
 export const SIDEBAR_MENU = [
@@ -15,7 +15,7 @@ export const SIDEBAR_MENU = [
   { section: 'DATA AND INSIGHTS', items: [
     { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: ['use_knowledge_base', 'manage_knowledge_base'] },
     { label: 'Monitoring Reports', icon: 'FileBarChart', page: 'monitoring-reports', requiresCapability: 'view_monitoring_reports' },
-    { label: 'Data Quality', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
+    { label: 'Data Quality Monitoring', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
   ]},
   { section: 'DATA MANAGEMENT', items: [
     { label: 'Response Protocols', icon: 'Layers', page: 'response-protocols', requiresCapability: 'view_response_protocols' },
@@ -33,6 +33,7 @@ export const SIDEBAR_MENU = [
   { section: 'SECURITY', items: [
     { label: 'Users', icon: 'Users', page: 'user-management', query: 'tab=users', requiresCapability: 'view_users' },
     { label: 'Roles & Permissions', icon: 'KeyRound', page: 'user-management', query: 'tab=roles', requiresCapability: 'view_users' },
+    { label: 'CHPs in my CHU', icon: 'UsersRound', page: 'my-chps', requiresCapability: 'view_my_chps' },   // CHAs (KRCS 18 Nov 2026)
     { label: 'Audit Log', icon: 'ClipboardList', page: 'audit-log', requiresCapability: 'view_audit_log' },
     { label: 'Security Settings', icon: 'Lock', page: 'settings', query: 'tab=security', requiresCapability: 'settings_security' },
   ]},
@@ -46,27 +47,16 @@ export const SIDEBAR_MENU = [
   ]},
 ]
 
-// CHP workspace menu (Figma "CHP" screens). Only these pages are reachable for CHPs.
+// CHP: the main menu like everyone else (KRCS 18 Nov 2026). Their own Referrals page takes the place of Referrals,
+// with Follow-ups under it; the rest (Signals Captured, Data Assistant, Help Center) comes from the main
+// menu and their permissions. Profile and password are in the account menu, top right.
 export const CHP_MENU = [
   { section: 'OVERVIEW', items: [
     { label: 'Dashboard', icon: 'LayoutGrid', page: 'dashboard', requiresCapability: null },
   ]},
-  { section: 'REPORTING', items: [
-    { label: 'Signals Captured', icon: 'FileText', page: 'reports', requiresCapability: 'view_own_reports' },
-  ]},
-  { section: 'MY WORK', items: [
-    { label: 'Follow-ups', icon: 'ClipboardList', page: 'follow-ups', requiresCapability: 'receive_tasks' },
+  { section: 'SURVEILLANCE AND RESPONSE', items: [
     { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals', requiresCapability: 'receive_tasks' },
-  ]},
-  { section: 'KNOWLEDGE ASSISTANT', items: [
-    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: ['use_knowledge_base', 'manage_knowledge_base'] },
-  ]},
-  { section: 'SUPPORT', items: [
-    { label: 'Feedback', icon: 'MessageSquareWarning', page: 'feedback', requiresCapability: null },
-    { label: 'Help Center', icon: 'HelpCircle', page: 'help-center', requiresCapability: null },
-  ]},
-  { section: 'SYSTEM', items: [
-    { label: 'Settings', icon: 'Settings', page: 'settings', requiresCapability: null },
+    { label: 'Follow-ups', icon: 'ClipboardList', page: 'follow-ups', requiresCapability: 'receive_tasks' },   // under Referrals (KRCS 18 Nov 2026)
   ]},
 ]
 
@@ -114,9 +104,9 @@ export const WORKSPACE_PAGES = {
 }
 
 // ---------- menus follow permissions ----------
-// A workspace (CHP, officer) has its own short menu. When an admin gives a user an extra permission in Roles &
-// Permissions (e.g. Knowledge Base for an officer), the page it opens is added to their menu under "MORE" and the
-// page becomes reachable, so the menu always matches what the user is allowed to do.
+// Every workspace shows the main menu's sections in the main menu's order (KRCS 18 Nov 2026). When an admin gives a
+// user an extra permission in Roles & Permissions (e.g. Knowledge Base for an officer), the page it opens appears in
+// its usual place and becomes reachable, so the menu always matches what the user is allowed to do.
 
 // pages that open from a menu page (details, forms)
 const LINKED_PAGES = {
@@ -135,8 +125,6 @@ const NOT_ADDED = { chp: ['my-tasks'], officer: ['data-explorer'] }   // officer
 // Every linkable item of a menu, children included (groups themselves have no page)
 export const flatItems = (menu) => menu.flatMap((g) => g.items.flatMap((i) => i.children || [i])).filter((i) => i.page)
 
-const itemKey = (i) => `${i.page}?${i.query || ''}#${i.hash || ''}`
-
 function visibleItems(items, has) {
   return items.flatMap((item) => {
     if (item.children) {
@@ -149,26 +137,19 @@ function visibleItems(items, has) {
 
 /** The menu this user sees.
  * full: the whole menu, filtered by permission.
- * chp: the CHP menu, plus pages extra permissions add (under MORE).
- * officer, fhw, cha: their own items (Dashboard, Referrals, My Tasks) plus every full-menu page their permissions
- * allow, each in the same section as in the full menu (e.g. Data Quality under DATA AND INSIGHTS). */
+ * chp, officer, fhw, cha: the main menu filtered by permission, with their own items in place of the main-menu ones
+ * (same name, or the one named in replaces), e.g. a CHP's Follow-ups where My Tasks is. */
 export function menuFor(workspace, has) {
   const base = MENUS[workspace] || SIDEBAR_MENU
   const menu = base.map((g) => ({ ...g, items: visibleItems(g.items, has) })).filter((g) => g.items.length > 0)
   if (base === SIDEBAR_MENU) return menu
   const own = new Set(flatItems(base).map((i) => i.page))
   const skip = NOT_ADDED[workspace] || []
-  if (workspace === 'chp') {
-    const seen = new Set()
-    const extra = flatItems(SIDEBAR_MENU)
-      .filter((i) => i.requiresCapability && !own.has(i.page) && !skip.includes(i.page) && has(i.requiresCapability))
-      .filter((i) => !seen.has(itemKey(i)) && seen.add(itemKey(i)))
-    return extra.length ? [...menu, { section: 'MORE', items: extra }] : menu
-  }
   // Same sections and order as the main menu for everyone (KRCS 18 Nov 2026): a workspace's own item takes the place
   // of the main-menu item with the same name (e.g. a CHA's Referrals); items the permissions do not allow are left
   // out, and a section with nothing left is dropped.
-  const ownByLabel = new Map(flatItems(base).map((i) => [i.label, i]))
+  const ownByLabel = new Map(flatItems(base).map((i) => [i.replaces || i.label, i]))   // replaces: takes another item's place
+  const ownItems = new Set(ownByLabel.values())
   const used = new Set()
   const out = SIDEBAR_MENU.map((g) => ({
     ...g,
@@ -176,11 +157,11 @@ export function menuFor(workspace, has) {
       const mine = ownByLabel.get(i.label)
       if (mine) used.add(i.label)
       return mine || i
-    }).filter((i) => !skip.includes(i.page) && (ownByLabel.get(i.label) === i || !own.has(i.page))), has),
+    }).filter((i) => !skip.includes(i.page) && (ownItems.has(i) || !own.has(i.page))), has),
   }))
   // own items with no main-menu counterpart stay in their own section
   menu.forEach((g) => {
-    const extra = g.items.filter((i) => !used.has(i.label))
+    const extra = g.items.filter((i) => !used.has(i.replaces || i.label))
     if (!extra.length) return
     const same = out.find((x) => x.section === g.section)
     if (same) same.items = [...same.items, ...extra]

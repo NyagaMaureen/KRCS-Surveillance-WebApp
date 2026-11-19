@@ -82,7 +82,7 @@ export default function DataQuality() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-brand-navy">Data Quality</h2>
+        <h2 className="text-xl font-bold text-brand-navy">Data Quality Monitoring</h2>
         <p className="text-sm text-gray-500">Problems in the data from every source: missing places, late or duplicate reports, unmatched diseases and facilities not reporting.</p>
       </div>
 

@@ -11,7 +11,14 @@ export const csrfToken = () => window.FRAPPE_CSRF_TOKEN || ''
 export const currentUserFullName = () => (getCookie('full_name') || 'User').replace(/^"|"$/g, '')
 export const currentUserId = () => (getCookie('user_id') || '').replace(/^"|"$/g, '')
 
+/** Server messages can carry HTML (e.g. Frappe's password feedback): show them as plain text. */
+const plainText = (v) => String(v || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+
 function extractErrorMessage(data) {
+  return plainText(rawErrorMessage(data)) || 'Request failed'
+}
+
+function rawErrorMessage(data) {
   if (data && typeof data._server_messages === 'string') {
     try {
       const messages = JSON.parse(data._server_messages)
@@ -131,13 +138,66 @@ export async function saveAlertThresholds(thresholds, outbreakMultiplier, priori
   })
 }
 
+/** Signs in. Returns { ok } or { ok: false, message } or, when the password has expired, { expiredKey }
+ *  (the key for choosing a new one right away). KRCS 18 Nov 2026 */
 export async function login(usr, pwd) {
   const res = await fetch(`${BASE}/api/method/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `usr=${encodeURIComponent(usr)}&pwd=${encodeURIComponent(pwd)}`,
   })
-  return res.ok
+  const data = await res.json().catch(() => ({}))
+  if (res.ok && data.message === 'Password Reset' && data.redirect_to) {
+    const key = new URL(data.redirect_to, window.location.origin).searchParams.get('key')
+    return { ok: false, expiredKey: key }
+  }
+  if (res.ok) return { ok: true }
+  const message = loginError(extractErrorMessage(data), res.status)
+  if (message.startsWith('Invalid')) {   // a deactivated account gives the same answer as a wrong password: ask why
+    try {
+      const why = await callMethodPost('/api/method/surveillance.account.login_problem', { usr, pwd })
+      if (why?.deactivated) return { ok: false, message: 'Your account has been deactivated. Contact your administrator.' }
+    } catch { /* keep the usual message */ }
+  }
+  return { ok: false, message }
+}
+
+function loginError(raw, status) {
+  const text = String(raw || '')
+  const locked = text.match(/locked.*?(\d+)\s*seconds/i)
+  if (locked) {
+    const secs = Number(locked[1])
+    const wait = secs >= 3600 ? `${Math.round(secs / 3600)} hour${secs >= 7200 ? 's' : ''}` : secs >= 60 ? `${Math.round(secs / 60)} minute${secs >= 120 ? 's' : ''}` : `${secs} seconds`
+    return `Too many wrong passwords. This account is locked for ${wait}. Try again after that, or reset your password.`
+  }
+  if (/disabled/i.test(text)) return 'Your account has been deactivated. Contact your administrator.'
+  if (status === 429) return 'Too many attempts. Wait a few minutes and try again.'
+  return 'Invalid email or password. Please try again.'
+}
+
+export async function requestPasswordReset(email) {
+  return callMethodPost('/api/method/surveillance.account.request_password_reset', { email })
+}
+
+export async function sendPasswordReset(user) {
+  return callMethodPost('/api/method/surveillance.account.send_password_reset', { user })
+}
+
+export async function getPasswordRules() {
+  return callMethod('/api/method/surveillance.account.password_rules')
+}
+
+/** Saves a new password with a reset key (email link or expired password). The person then logs in with it. */
+export async function resetPassword(key, newPassword) {
+  const res = await fetch(`${BASE}/api/method/surveillance.account.reset_password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken() },
+    body: JSON.stringify({ new_password: newPassword, key }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (res.status === 410) throw Object.assign(new Error(typeof data.message === 'string' ? data.message : 'This link has expired or was already used.'), { linkInvalid: true })
+  if (!res.ok) throw new Error(passwordError(extractErrorMessage(data)))
+  return data.message
 }
 
 
@@ -371,8 +431,9 @@ export async function deleteDoc(doctype, name) {
 }
 
 
-export async function deleteUser(name) {
-  return deleteDoc('User', name)
+/** Users are never deleted, only deactivated: they cannot log in and their records stay (KRCS 18 Nov 2026). */
+export async function deactivateUser(name) {
+  return callMethodPost('/api/method/surveillance.account.deactivate_user', { user: name })
 }
 
 // Community Health Units (surveillance.health_units): a CHP belongs to one, a CHA heads one or more
@@ -980,6 +1041,11 @@ async function kbRequest(method, params = {}, httpMethod = 'GET') {
   return data.message
 }
 
+/** Knowledge Base document file: View (PDF, text) opens it in the browser, Download saves it (KRCS 18 Nov 2026). */
+export function kbDocumentUrl(name, download = false) {
+  return `${BASE}/api/method/surveillance.knowledge_base.open_document?name=${encodeURIComponent(name)}${download ? '&download=1' : ''}`
+}
+
 export const getKbDocuments = () => kbRequest('list_documents')
 
 export const createKbDocument = ({ file_url, category, applied_to, diseases, version, language, regions, review_date, expiry_date, effective_from, audience_class, sensitivity, supersedes, authority, conflicts_with, sub_counties }) =>
@@ -1324,9 +1390,21 @@ export async function updateMyProfile(changes) {
 }
 
 export async function changeMyPassword(oldPassword, newPassword) {
-  return callMethodPost('/api/method/frappe.core.doctype.user.user.update_password', {
-    old_password: oldPassword, new_password: newPassword, logout_all_sessions: 0,
-  })
+  try {
+    return await callMethodPost('/api/method/surveillance.account.change_password', {
+      old_password: oldPassword, new_password: newPassword,
+    })
+  } catch (e) {
+    throw new Error(passwordError(e.message))
+  }
+}
+
+/** Frappe's password strength feedback ("This is a very common password.") as a clear sentence. */
+function passwordError(msg) {
+  const text = plainText(msg)
+  if (/incorrect|invalid login|not correct/i.test(text)) return 'Your current password is not correct.'
+  if (/link|expired|used before/i.test(text)) return text
+  return /password|common|guess|repeat|sequence|year|date|name|word/i.test(text) ? `Choose a stronger password. ${text}` : text
 }
 
 // ---------- Feedback ----------
@@ -1406,8 +1484,8 @@ export async function saveRedFlags(symptoms) {
 
 // Facility Health Worker workspace (surveillance.fhw)
 const FHW = '/api/method/surveillance.fhw.'
-export async function getReferralFacilities() {
-  return (await callMethod(`${FHW}referral_facilities`)) || []
+export async function getReferralFacilities(mine = false) {   // mine: only the user's sub-county (CHP New referral)
+  return (await callMethod(`${FHW}referral_facilities${mine ? '?mine=1' : ''}`)) || []
 }
 export async function getFhwDashboard() {
   return callMethod(`${FHW}get_dashboard`)
@@ -1423,7 +1501,7 @@ export async function getReferralReport(task) {
   return callMethod(`${FHW}referral_report?task=${encodeURIComponent(task)}`)
 }
 
-// ---------- HQ Admin dashboard (tabs) ----------
+// ---------- System Administrator dashboard (tabs) ----------
 const HQ = '/api/method/surveillance.hq_dashboard.'
 function hqQuery(f = {}) {
   const qs = new URLSearchParams()
@@ -1527,3 +1605,5 @@ export async function saveSecurity(settings) { return callMethodPost(`${SYS}save
 export async function endSession(id) { return callMethodPost(`${SYS}end_session`, { id }) }
 export async function getDataOverview() { return callMethod(`${SYS}get_data_overview`) }
 export async function runBackup() { return callMethodPost(`${SYS}run_backup`, {}) }
+// CHPs in my CHU (CHA, KRCS 18 Nov 2026)
+export async function getMyChps() { return callMethod('/api/method/surveillance.health_units.get_my_chps') }

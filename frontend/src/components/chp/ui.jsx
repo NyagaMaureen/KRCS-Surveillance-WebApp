@@ -9,6 +9,9 @@ export const TEXTAREA = `w-full bg-white border border-gray-200 rounded-lg px-3 
 export const BTN_PRIMARY = `inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium disabled:opacity-50 ${FOCUS}`
 export const BTN_SECONDARY = `inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm font-medium text-gray-700 disabled:opacity-50 ${FOCUS}`
 export const BTN_SMALL = `inline-flex items-center h-8 px-3 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-xs font-medium text-gray-700 ${FOCUS}`
+// tables with grid lines, like Signals Captured (KRCS 16 and 18 Nov 2026)
+export const GRID_TABLE = 'w-full text-sm border-collapse [&_th]:border [&_td]:border [&_th]:border-gray-200 [&_td]:border-gray-200'
+export const GRID_HEAD = 'text-left text-gray-900 text-xs [&_th]:font-bold [&_th]:border-b-2 [&_th]:border-b-red-600'
 
 export function PageTitle({ title, subtitle, action }) {
   return (

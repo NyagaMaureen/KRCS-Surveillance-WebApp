@@ -101,7 +101,7 @@ after_migrate = [
 
 # Fixtures: shipped with the app and installed on every site on migrate
 SURVEILLANCE_ROLES = [
-	"HQ Admin", "Public Health HQ", "CHP", "CDSC", "MOH DDSR",
+	"System Administrator", "Public Health HQ", "CHP", "CDSC", "MOH DDSR",
 	"Surveillance Officer", "Public Health Officer", "HIS Officer", "Facility Health Worker", "Data & AI Administrator",
 	"Knowledge Base Client", "WhatsApp Bot",
 ]
@@ -179,6 +179,9 @@ doc_events = {
 	"Notification Log": {
 		"after_insert": "surveillance.push.on_notification",
 	},
+	"Event Task": {
+		"after_insert": "surveillance.fhw.on_referral_created",   # the facility's FHWs are told (KRCS 19 Nov 2026)
+	},
 	"Case Report": {
 		"validate": ["surveillance.case_report_rules.validate_complete", "surveillance.health_units.set_report_unit"],
 		"on_update": ["surveillance.events.on_case_report", "surveillance.transcription.on_case_report"],
@@ -187,9 +190,11 @@ doc_events = {
 	# WhatsApp: staff are matched by User.mobile_no; lists come from these DocTypes
 	"User": {
 		"validate": ["surveillance.health_units.validate_user",   # CHP: one CHU, CHA: one or more (KRCS 17 Nov 2026)
-			"surveillance.system_admin.validate_user_roles"],   # only System Managers give System Manager (KRCS 18 Nov 2026)
+			"surveillance.system_admin.validate_user_roles",   # only System Managers give System Manager (KRCS 18 Nov 2026)
+			"surveillance.account.user_status_rules"],   # Inactive / Suspended cannot log in (KRCS 18 Nov 2026)
 		"after_insert": "surveillance.whatsapp.data.clear_staff_cache",
-		"on_update": "surveillance.whatsapp.data.clear_staff_cache",
+		"on_update": ["surveillance.whatsapp.data.clear_staff_cache",
+			"surveillance.account.end_sessions_when_disabled"],   # a deactivated user is signed out everywhere
 		"on_trash": "surveillance.whatsapp.data.clear_staff_cache",
 	},
 	"Region": WHATSAPP_CATALOG,

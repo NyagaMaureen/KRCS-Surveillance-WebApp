@@ -297,3 +297,31 @@ def get_unit_options():
 		options = [r.name for r in rows if not sc or r.sub_county == sc]
 	return {"units": [{"id": r.name, "name": r.health_unit_name, "subCounty": r.sub_county, "active": bool(r.is_active)} for r in rows],
 		"options": options}
+
+
+# ---------- CHPs in my CHU (CHA, KRCS 18 Nov 2026) ----------
+
+@frappe.whitelist()
+def get_my_chps():
+	"""The CHPs in the Community Health Unit(s) the CHA heads: contact details and what they did this month."""
+	require_capability("view_my_chps")
+	from frappe.utils import get_first_day, nowdate
+	units = units_of(frappe.session.user)
+	if not units:
+		return {"units": [], "chps": []}
+	names = _names()
+	rows = frappe.db.sql(f"""select distinct u.name, u.full_name, u.mobile_no, u.enabled, u.last_login, uh.health_unit
+		from `tab{CHILD}` uh join `tabUser` u on u.name = uh.parent
+		join `tabHas Role` hr on hr.parent = u.name and hr.parenttype = 'User'
+		where uh.parenttype = 'User' and uh.parentfield = 'health_units' and uh.health_unit in %(units)s
+		and hr.role in %(roles)s order by u.full_name""", {"units": units, "roles": list(CHP_ROLES)}, as_dict=True)
+	month = get_first_day(nowdate())
+	out = {}
+	for r in rows:
+		x = out.setdefault(r.name, {"id": r.name, "name": r.full_name or r.name, "phone": r.mobile_no or "",
+			"active": bool(r.enabled), "lastLogin": str(r.last_login)[:16] if r.last_login else None, "units": []})
+		x["units"].append(names.get(r.health_unit) or r.health_unit)
+	for x in out.values():
+		x["reportsThisMonth"] = frappe.db.count("Case Report", {"reported_by": x["id"], "creation": [">=", month]})
+		x["openTasks"] = frappe.db.count("Event Task", {"assigned_to": x["id"], "status": ["in", ["Assigned", "In progress", "Blocked"]]})
+	return {"units": [names.get(u) or u for u in units], "chps": list(out.values())}

@@ -333,9 +333,9 @@ def _feedback(ref, doc, action, note):
 	reporter = frappe.db.get_value("Case Report", ref, "reported_by") or frappe.db.get_value("Case Report", ref, "owner")
 	if not reporter or reporter in ("Administrator", "Guest") or not frappe.db.exists("User", reporter):
 		return
-	outcome = ("was checked and closed: no further action needed" if action in ("discard", "close_unconfirmed")
+	outcome = ("was checked and closed" if action in ("discard", "close_unconfirmed")
 		else "was investigated and the response is complete")
-	subject = f"Your report {ref} ({doc.disease_name or doc.disease}) {outcome}. Thank you for reporting."
+	subject = f"Your report {ref} {outcome}. Thank you for reporting."   # no disease named (KRCS 19 Nov 2026)
 	frappe.get_doc({"doctype": "Notification Log", "for_user": reporter, "type": "Alert",
 		"document_type": "Case Report", "document_name": ref, "subject": subject}).insert(ignore_permissions=True)
 	# officer notes are not sent: they may hold details the reporter should not receive by email
