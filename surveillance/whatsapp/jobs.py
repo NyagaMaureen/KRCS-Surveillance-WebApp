@@ -12,7 +12,9 @@ from types import SimpleNamespace
 
 import frappe
 from frappe.utils import cint, now_datetime
+from frappe.utils.password import get_encryption_key
 
+from surveillance import chatbot_log
 from surveillance.whatsapp import data, sessions
 from surveillance.whatsapp.chatbot import ChatbotClient
 from surveillance.whatsapp.client import MediaTooLarge, WhatsAppClient
@@ -20,6 +22,8 @@ from surveillance.whatsapp.content import T
 from surveillance.whatsapp.conversation import MEDIA_TYPES, AttrDict, format_phone, handle
 from surveillance.whatsapp.extract import ExtractionClient
 from surveillance.whatsapp.messages import text, validate
+from surveillance.whatsapp.redact import redact
+from surveillance.whatsapp.transcribe import TranscriptionClient
 
 INBOX = "whatsapp:inbox:{}"
 LOCK = "whatsapp:lock:{}"
@@ -38,6 +42,7 @@ ESCALATION_REASONS = {
 	"ambiguous": "Question could mean several things",
 	"missing_capability": "Asker lacks access to this answer",
 	"count_disease_unknown": "Disease in the question not recognised",
+	"privacy_request": "Privacy request: pass to the Data Protection Officer",
 }
 
 
@@ -70,6 +75,40 @@ def extraction_client(st):
 		return None
 	token_field = "extraction_token" if st.extraction_url else "chatbot_token"
 	return ExtractionClient(url, st.get_password(token_field, raise_exception=False), timeout=8)
+
+
+def voice_transcriber(st):
+	"""ctx.transcribe when Transcribe Voice Notes is on: POST /transcribe on the speech service in the site config
+	(`stt_url`, `stt_token`), the one surveillance.transcription uses. WhatsApp doesn't ask which language the note is
+	in, so it goes as a note marked "Both" does there: `stt_mixed_language`, default auto. The note stays on the
+	report, attached as usual, with this text on its row, so the background job doesn't transcribe it again."""
+	url = frappe.conf.get("stt_url")
+	if not st.voice_transcription or not url:
+		return None
+	client = TranscriptionClient(url, frappe.conf.get("stt_token"), timeout=cint(st.transcription_timeout) or 45)
+	language = frappe.conf.get("stt_mixed_language") or "auto"
+
+	def transcribe(inp):
+		content, mime = whatsapp_client(st).download_media(inp["media_id"])
+		return client.transcribe(content, mime or inp.get("mime_type"), inp.get("filename"), language)
+
+	return transcribe
+
+
+def record_privacy(phone, event, version, language=None, message_id=None):
+	"""Committed at once: the person is treated as having agreed, or having withdrawn, right after this."""
+	frappe.get_doc(
+		{
+			"doctype": "WhatsApp Consent Log",
+			"phone": phone,
+			"event": event,
+			"notice_version": version,
+			"language": language,
+			"message_id": message_id,
+			"recorded_on": now_datetime(),
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()  # nosemgrep
 
 
 def numbers(value):
@@ -144,6 +183,9 @@ def make_context(st):
 		now=time.time,
 		chatbot=chatbot_client(st),
 		extractor=extraction_client(st),
+		transcribe=voice_transcriber(st),
+		pseudonym_key=get_encryption_key(),
+		on_privacy=record_privacy,
 		on_submit=on_submit,
 		on_extract=log_extraction,
 		on_report_stats=log_report_stats,
@@ -253,6 +295,9 @@ def attach_media(report, media):
 			).insert(ignore_permissions=True)
 			kind = ATTACHMENT_TYPES.get(m.get("kind"), "Attachment")
 			row = {"attachment_type": kind, "file": f.file_url, "text_content": m.get("caption")}
+			if m.get("transcript"):  # read in the conversation: surveillance.transcription skips rows with a status
+				row.update({"transcript": m["transcript"], "transcript_status": "Done",
+					"transcript_language": m.get("transcript_language"), "transcribed_on": frappe.utils.now_datetime()})
 			if m.get("consent"):  # answered in the bot (RConsent)
 				row.update({"people_shown": m.get("people_shown") or 0, "consent": m["consent"],
 					"consent_recorded_on": frappe.utils.now_datetime()})
@@ -331,38 +376,35 @@ def notify_desk(report, phone, reporter_role=None, danger_signs=None):
 
 
 def log_chatbot(request, response, session):
-	"""One line per question in logs/whatsapp.log, until Frappe has a Chatbot Query Log DocType
-	(agents/chatbot/docs/frappe_interface.md §5). Contains personal data: keep the logs private."""
-	protocol = response.get("protocol")
-	logger().info(
-		"[chatbot] "
-		+ json.dumps(
-			{
-				"request_id": response.get("request_id") or request["request_id"],
-				"user": request["user_ref"],
-				"roles": request["roles"],
-				"region": request["location"],
-				"language": request["language"],
-				"channel": "WhatsApp",
-				"question": request["message"],
-				"selected": request["selected_protocol_id"],
-				"route": response.get("route"),
-				"outcome": response.get("outcome"),
-				"reason": response.get("reason"),
-				"protocol": f"{protocol['protocol_id']}:{protocol['language']}:{protocol['source_version']}"
-				if protocol
-				else None,
-				"document": ((response.get("documents") or [{}])[0]).get("id"),
-				"latency_ms": response.get("latency_ms"),
-				"trace": response.get("trace"),
-			},
-			default=str,
-		)
+	"""One Chatbot Query Log record per question, the source of the SRS acceptance metrics. The question is redacted
+	and a community member's number is a pseudonym. Read access needs view_chatbot_logs."""
+	chatbot_log.log_conversation(
+		request,
+		response,
+		channel="WhatsApp",
+		user=(session.staff or {}).get("user"),
+		escalated_to=_escalation_target(),
 	)
+
+
+def _escalation_target():
+	st = data.settings()
+	to = numbers(st.escalation_numbers) or numbers(st.notify_numbers)
+	return ", ".join(to) if to else "WhatsApp escalation desk (no number set)"
 
 
 def on_escalate(question, session, request, reason, error=None, response=None):
 	staff = session.staff or {}
+	if error:  # the service never answered, so log_chatbot wrote nothing
+		chatbot_log.log_conversation(
+			request, None, channel="WhatsApp", user=staff.get("user"), error=error, escalated_to=_escalation_target()
+		)
+	else:
+		chatbot_log.update(
+			chatbot_log.find_by_correlation(request.get("request_id")),
+			escalated_to_human=1,
+			escalated_to=_escalation_target(),
+		)
 	if staff:
 		who = staff.get("full_name") + (f" ({staff['role']})" if staff.get("role") else "")
 	else:
@@ -375,7 +417,7 @@ def on_escalate(question, session, request, reason, error=None, response=None):
 				"user": request["user_ref"],
 				"reason": reason,
 				"error": error,
-				"question": question,
+				"question": redact(question),
 			}
 		)
 	)
