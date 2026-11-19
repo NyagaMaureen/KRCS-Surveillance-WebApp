@@ -956,6 +956,17 @@ class TestConversation(FrappeTestCase):
 		self.assertEqual(req["capabilities"], [])
 		self.assertEqual(h.s.state, "ask")  # the next message is another question
 
+	def test_registered_chp_asking_from_the_welcome_screen_gets_chp_roles(self):
+		chatbot = FakeChatbot()
+		h = Harness(self, STAFF, chatbot=chatbot)
+		h.say("hi")
+		h.tap("Ask a question")
+		h.say("What should I do if I suspect cholera?")
+		req = chatbot.calls[-1]
+		self.assertEqual(req["roles"], ["CHP"])
+		self.assertEqual(req["location"], "reg-dadaab")
+		self.assertEqual(req["user_ref"], "ahmed.abdi@krcs.test")
+
 	def test_community_asks_as_guest_and_is_escalated(self):
 		chatbot = FakeChatbot()
 		h = Harness(self, PUBLIC, chatbot=chatbot)
