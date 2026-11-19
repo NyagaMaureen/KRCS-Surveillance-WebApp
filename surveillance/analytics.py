@@ -278,7 +278,7 @@ def _summary(weeks, today):
 	start, prev_start = add_days(today, -7 * weeks), add_days(today, -14 * weeks)
 	cur_reports = len(_reports(start))
 	prev_reports = len(_reports(prev_start, start))
-	open_now = frappe.db.count("Surveillance Event", _event_filters(status=["in", ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]]))
+	open_now = frappe.db.count("Surveillance Event", _event_filters(status=["in", ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]]))
 	open_new = frappe.db.count("Surveillance Event", _event_filters(creation=[">=", start]))
 	open_prev = frappe.db.count("Surveillance Event", _event_filters(creation=["between", [prev_start, start]]))
 

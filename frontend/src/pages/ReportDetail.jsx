@@ -87,7 +87,7 @@ function Cell({ label, wide = false, span = false, children }) {
   )
 }
 
-const OPEN_EVENT = ['New', 'Verifying', 'Investigating', 'Confirmed', 'Escalated']
+const OPEN_EVENT = ['New', 'Verifying', 'Verified', 'Investigating', 'Confirmed', 'Escalated']
 
 // Every update made on Signals Captured: when, who, and each field from -> to (Case Report Change rows)
 function UpdateHistory({ changes }) {

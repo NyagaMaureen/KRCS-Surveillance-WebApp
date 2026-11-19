@@ -15,6 +15,9 @@ from frappe.permissions import setup_custom_perms
 ROLE_CAPABILITY = "Role Capability"
 RESERVED_ROLES = {"Administrator", "System Manager", "Guest", "All"}
 
+# What working on an event step needs (the same as Act on Events gives)
+STEP_GRANTS = {"Surveillance Event": ["read", "write"], "Surveillance Signal": ["read"], "Event Task": ["read", "write", "create"]}
+
 # key -> definition. "grants" = Frappe permissions this capability gives on each DocType.
 # Grants on DocTypes that don't exist yet are skipped and applied automatically once the DocType exists.
 CAPABILITIES = [
@@ -54,8 +57,31 @@ CAPABILITIES = [
 	 "description": "See reported events for your region",
 	 "grants": {"Surveillance Event": ["read"], "Surveillance Signal": ["read"]}},
 	{"key": "act_on_events", "name": "Act on Events", "category": "Review Queue",
-	 "description": "Verify, discard, escalate and close events",
+	 "description": "Merge related events, act on alerts and CBS cases, send reports to the queue and plan response "
+	 "actions. What a user does on an event's steps is set by the Step boxes",
 	 "grants": {"Surveillance Event": ["read", "write"], "Event Task": ["read", "write", "create"]}},
+	# The event steps (KRCS 19 Nov 2026): each box shows that step on an event and lets the user work on it
+	{"key": "step_signal", "name": "Step 1: Signal Captured", "category": "Review Queue",
+	 "description": "See the reports behind an event; discard a known false alarm and add what was picked from a voice note",
+	 "grants": STEP_GRANTS},
+	{"key": "step_verification", "name": "Step 2: Verification", "category": "Review Queue",
+	 "description": "Call the reporter, check the symptoms, answer the verification questions and Confirm and save",
+	 "grants": STEP_GRANTS},
+	{"key": "ai_triage", "name": "Step 3: AI Triage", "category": "Review Queue",
+	 "description": "See the possible diseases and the risk score, choose the disease and answer its questions. Without it "
+	 "the user never sees diseases or the risk score, and steps 4 to 6 stay hidden (CHAs)", "grants": STEP_GRANTS},
+	{"key": "step_investigation", "name": "Step 4: Field Investigation", "category": "Review Queue",
+	 "description": "Work through the protocol's investigation steps, findings and evidence", "grants": STEP_GRANTS},
+	{"key": "step_decision", "name": "Step 5: Decision", "category": "Review Queue",
+	 "description": "Confirm the outbreak, find no event, or escalate", "grants": STEP_GRANTS},
+	{"key": "step_response", "name": "Step 6: Response & Close", "category": "Review Queue",
+	 "description": "Response steps, referrals and follow-ups for non-priority diseases, and closing the event",
+	 "grants": STEP_GRANTS},
+	{"key": "view_event_tasks", "name": "See Event Tasks", "category": "Review Queue",
+	 "description": "See the Tasks section on an event (field visits, referrals, samples, follow-ups)",
+	 "grants": {"Event Task": ["read"]}},
+	{"key": "assign_event_tasks", "name": "Assign Event Tasks", "category": "Review Queue",
+	 "description": "Assign tasks on an event, and change or remove them", "grants": {"Event Task": ["read", "write", "create"]}},
 	{"key": "view_all_tasks", "name": "View All Tasks", "category": "Review Queue",
 	 "description": "See every task assigned in your region and whether it was completed (e.g. SCDSC)",
 	 "grants": {"Event Task": ["read"]}},
@@ -190,6 +216,7 @@ CAPABILITIES += [
 
 # Roles & Permissions: headings and names follow the main menu, in the menu's order (KRCS 17 Nov 2026).
 # Only what people see changes; the keys (and every check in the code) stay the same.
+STEPS_TAB = "Event Steps & Tasks"   # the event page's steps and Tasks section (KRCS 19 Nov 2026)
 MENU_LABELS = {
 	"view_analytics": ("Dashboard", "View Dashboard"), "view_alerts": ("Dashboard", "View Epidemiological Trends"),
 	"view_surveillance_map": ("Dashboard", "View Surveillance Map"), "export_data": ("Dashboard", "Export Data"),
@@ -199,6 +226,10 @@ MENU_LABELS = {
 	"verify_suspected_disease": ("Signals Captured", "Verify Suspected Disease"),
 	"see_suspected_disease": ("Signals Captured", "See Suspected Disease After Reporting"),
 	"view_review_queue": ("Review Queue", "View Review Queue"), "act_on_events": ("Review Queue", "Act on Events"),
+	"step_signal": (STEPS_TAB, "Step 1: Signal Captured"), "step_verification": (STEPS_TAB, "Step 2: Verification"),
+	"ai_triage": (STEPS_TAB, "Step 3: AI Triage"), "step_investigation": (STEPS_TAB, "Step 4: Field Investigation"),
+	"step_decision": (STEPS_TAB, "Step 5: Decision"), "step_response": (STEPS_TAB, "Step 6: Response & Close"),
+	"view_event_tasks": (STEPS_TAB, "See Event Tasks"), "assign_event_tasks": (STEPS_TAB, "Assign Event Tasks"),
 	"view_all_tasks": ("Review Queue", "View All Tasks"), "receive_tasks": ("Review Queue", "Receive Tasks"),
 	"receive_referrals": ("Review Queue", "Confirm Referrals to My Facility"),
 	"investigate_alerts": ("Review Queue", "Investigate Alerts"),
@@ -234,7 +265,7 @@ MENU_LABELS = {
 	"settings_notifications": ("Notifications and System", "Notification Settings"),
 	"settings_system": ("Notifications and System", "System Settings"),
 }
-CATEGORY_ORDER = ["Dashboard", "Signals Captured", "Review Queue", "KRCS Data Assistant", "Monitoring Reports", "Data Quality",
+CATEGORY_ORDER = ["Dashboard", "Signals Captured", "Review Queue", STEPS_TAB, "KRCS Data Assistant", "Monitoring Reports", "Data Quality",
 	"Response Protocols", "MOH 505 Facility Reports", "Context Data", "AI Risk Engine", "AI Knowledge Base",
 	"AI Assistant Query Log", "Alert Thresholds", "Reporting Channels", "Data and Database", "Users and Roles", "Audit Log",
 	"Security Settings", "Feedback Received", "Notifications and System", "Workspaces"]
@@ -467,7 +498,8 @@ def setup_chp_role(role="CHP"):
 	print(f"{role}: removed {sorted(before - set(CHP_CAPABILITIES)) or 'nothing'}; now {CHP_CAPABILITIES}")
 
 
-OFFICER_CAPABILITIES = ["officer_workspace", "view_review_queue", "act_on_events", "view_alerts", "investigate_alerts",
+OFFICER_CAPABILITIES = ["officer_workspace", "view_review_queue", "act_on_events", "step_signal", "step_verification",
+	"ai_triage", "step_investigation", "step_decision", "step_response", "view_event_tasks", "assign_event_tasks", "view_alerts", "investigate_alerts",
 	"view_surveillance_map", "view_response_protocols", "view_analytics", "view_reports", "verify_suspected_disease",
 	"view_data_quality", "use_knowledge_base"]
 

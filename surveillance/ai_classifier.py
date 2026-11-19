@@ -249,7 +249,8 @@ def get_report_candidates(report):
 	Up to SHOW_CANDIDATES are shown; the rest are listed by name. Also returns the model's plain-illness view and
 	the Review Queue event the report is on, so the Reports page can send officers there to decide."""
 	from surveillance.case_definitions import VERIFY_CAPABILITY, _labels, classify_detailed, get_definitions, possible_matches
-	require_capability(VERIFY_CAPABILITY)
+	if not frappe.flags.get("krcs_cha_questions"):   # set only by triage, for the CHA's symptom questions (no diseases sent)
+		require_capability(VERIFY_CAPABILITY)
 	cr = frappe.get_doc("Case Report", report)
 	labels = _labels()
 	item, case = _shape_report(cr, labels)

@@ -99,7 +99,8 @@ def retry_failed():
 def retry(name):
 	"""Officer: try a voice note again (button on the event)."""
 	from surveillance.capabilities import require_capability
-	require_capability("act_on_events")
+	from surveillance.events import require_step
+	require_step(1, 2)   # whoever works on Signal captured or Verification (KRCS 19 Nov 2026)
 	if not enabled():
 		frappe.throw("Speech-to-text is not set up on this site.")
 	if frappe.db.get_value(CHILD, name, "attachment_type") != "Voice Note":

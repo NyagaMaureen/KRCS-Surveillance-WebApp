@@ -10,7 +10,7 @@ import { FOCUS, CARD, Badge } from '../components/chp/ui'
 
 const ICONS = { new: FileText, priority: AlertTriangle, verify: ShieldCheck, investigating: Search }
 const SEVERITY = { critical: { label: 'Critical', tone: 'red' }, high: { label: 'High', tone: 'amber' }, standard: { label: 'Normal', tone: 'gray' } }
-const STATUS = { New: 'new', Verifying: 'verifying', Investigating: 'in the field', Confirmed: 'confirmed', Escalated: 'escalated' }
+const STATUS = { New: 'new', Verifying: 'verifying', Verified: 'verified', Investigating: 'in the field', Confirmed: 'confirmed', Escalated: 'escalated' }
 const GRID = '#F0F0F0'
 const TICK = '#666666'
 const tickFont = { family: CHART_FONT.family, size: 12 }

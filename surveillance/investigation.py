@@ -2,14 +2,16 @@
 
 Steps shown to the officer:
   1 Signal captured      reports grouped into the event (events.py)
-  2 AI triage            suspected disease and reason (case definitions)
-  3 Verification         Yes / No / Not sure questions from the disease's approved protocol
+  2 Verification         the CHA (or the officer) calls each reporter, checks the symptoms and answers the questions
+                         every event has (COMMON_QUESTIONS), then Confirm and save tells the officer. No diseases.
+  3 AI triage            the officer chooses the disease, then answers only that disease's own questions
+                         (KRCS 19 Nov 2026: steps 2 and 3 swapped, Yes / No answers only)
   4 Field investigation  protocol steps with phase "Investigation": Done / Not done / Not applicable,
                          field findings, photos, voice notes, files
   5 Decision             confirm, discard or escalate, with a reason (human sign-off)
   6 Response and close   protocol steps with phase "Response", closing summary, feedback to field reporters
 
-Statuses: New -> Verifying -> Investigating ("In the field") -> Confirmed / Escalated -> Closed   (Discarded at any open step)
+Statuses: New -> Verifying -> Verified (Confirm and save) -> Investigating ("In the field") -> Confirmed / Escalated -> Closed   (Discarded at any open step)
 
 The verification suggestion is rule-based and shows its reasons; it never decides. The officer decides.
 Every answer, step outcome, upload and decision is written to the event timeline.
@@ -20,7 +22,8 @@ from frappe.utils import cint, get_fullname, now_datetime
 
 from surveillance.capabilities import require_capability
 
-ANSWERS = ("Yes", "No", "Not sure")
+ANSWERS = ("Yes", "No")   # "Not sure" removed from the questions (KRCS 19 Nov 2026); old answers still show
+CHA, OFFICER = "CHA", "Officer"   # who asks a question: Verification (step 2) or AI triage (step 3)
 OUTCOMES = ("Done", "Not done", "Not applicable")
 KINDS = ("Key question", "Case definition", "Supports", "Red flag")
 # Key questions decide whether a signal goes to field investigation (agreed with KRCS, Allan, 28 Oct 2026):
@@ -89,6 +92,98 @@ def default_questions(proto, disease_name=None):
 	return [case_definition_question(proto.summary if proto else None, disease_name)] + COMMON_QUESTIONS
 
 
+def _norm(text):
+	return "".join(ch for ch in (text or "").lower() if ch.isalnum())
+
+
+COMMON_NORMS = {_norm(q) for q, _w, _k in COMMON_QUESTIONS}
+
+
+def stage_of(row):
+	"""CHA for the questions every event has (asked in Verification), Officer for the disease's own ones."""
+	return row.get("stage") or (CHA if _norm(row.get("question")) in COMMON_NORMS else OFFICER)
+
+
+def can_verify():
+	"""Verification (step 2): whoever has the Step 2 box in Roles & Permissions (the CHA, or an officer)."""
+	from surveillance.events import allowed_steps
+	return 2 in allowed_steps()
+
+
+def viewer_is_cha(user=None):
+	"""Signal captured and Verification only: no diseases, risk score or later steps (KRCS 19 Nov 2026). Set in Roles &
+	Permissions: anyone who works the Review Queue without "See AI Triage and Diseases" gets this view, whatever else
+	the role has (KRCS 19 Nov 2026: a CHA role with Act on Events still saw AI triage)."""
+	from surveillance.capabilities import get_user_capabilities
+	from surveillance.events import ACT
+	caps = get_user_capabilities(user)
+	return "ai_triage" not in caps and bool(caps & {"cha_workspace", "view_review_queue", ACT, "step_signal", "step_verification"})
+
+
+def officer_chose(doc):
+	"""The disease is chosen: an officer set it on the field reports in AI triage, or the event has no field reports
+	(CBS only, or opened from Epi Trends) so the disease comes with it."""
+	refs = frappe.get_all("Surveillance Signal", filters={"event": doc.name, "source": "Field"}, pluck="ref") if doc.name else []
+	if not refs:
+		return True
+	return bool(frappe.db.exists("Case Report", {"name": ["in", refs], "classified_by": "Officer"}))
+
+
+def verification_done(doc):
+	"""Step 2 is finished: Confirm and save was used, or (older events) the officer already chose the disease."""
+	return bool(doc.get("verification_on")) or (officer_chose(doc) and bool(
+		frappe.get_all("Surveillance Signal", filters={"event": doc.name, "source": "Field"}, limit=1)))
+
+
+def _renumber(doc):
+	rows = sorted(doc.get("verification") or [], key=lambda a: (0 if stage_of(a) == CHA else 1, cint(a.question_no)))
+	for i, a in enumerate(rows, 1):
+		a.question_no = i
+		a.idx = i
+
+
+def ensure_cha_questions(doc):
+	"""The questions every event has, asked by the CHA in Verification (marks matching older rows as CHA)."""
+	changed = False
+	rows = doc.get("verification") or []
+	for q, why, kind in COMMON_QUESTIONS:
+		row = next((a for a in rows if _norm(a.question) == _norm(q)), None)
+		if row:
+			if row.get("stage") != CHA:
+				row.stage = CHA
+				changed = True
+			continue
+		doc.append("verification", {"question_no": len(doc.get("verification") or []) + 1, "question": q, "why": why,
+			"kind": kind, "stage": CHA, "needed_to_start": 1 if kind in KEY_KINDS else 0,
+			"escalate_if_yes": 1 if kind == "Red flag" else 0})
+		changed = True
+	if changed:
+		_renumber(doc)
+	return changed
+
+
+def ensure_officer_questions(doc):
+	"""The chosen disease's own questions for the officer in AI triage, once the disease is chosen. Questions the
+	CHA already asked are not repeated."""
+	if any(stage_of(a) == OFFICER for a in (doc.get("verification") or [])) or not officer_chose(doc):
+		return False
+	proto = _protocol(doc)
+	rows = ([(q.question, q.why, q.kind, is_key(q), is_red(q)) for q in proto.verification_questions]
+		if proto and proto.get("verification_questions")
+		else [(q, w, k, k in KEY_KINDS, k == "Red flag") for q, w, k in default_questions(proto, doc.disease_name)])
+	asked = {_norm(a.question) for a in (doc.get("verification") or [])}
+	added = False
+	for q, why, kind, needed, red in rows:
+		if _norm(q) in asked or _norm(q) in COMMON_NORMS:
+			continue
+		doc.append("verification", {"question_no": 999, "question": q, "why": why, "kind": kind or "Supports", "stage": OFFICER,
+			"needed_to_start": 1 if needed else 0, "escalate_if_yes": 1 if red else 0})
+		added = True
+	if added:
+		_renumber(doc)
+	return added
+
+
 # ---------- setting up an event ----------
 
 def _protocol(doc):
@@ -99,19 +194,13 @@ def _protocol(doc):
 
 
 def ensure_investigation(doc):
-	"""Copy questions and steps from the approved protocol onto the event once, and answer the case-definition
-	question from the report checks. Returns True if changed."""
+	"""Copy the steps from the approved protocol once; the CHA's questions from the start and the disease's own
+	questions once the officer has chosen the disease; answer the case-definition question from the report checks.
+	Returns True if changed."""
 	from surveillance.protocols import _ensure_checklist
 	changed = _ensure_checklist(doc)
-	if not doc.get("verification"):
-		proto = _protocol(doc)
-		rows = ([(q.question, q.why, q.kind, is_key(q), is_red(q)) for q in proto.verification_questions]
-			if proto and proto.get("verification_questions")
-			else [(q, w, k, k in KEY_KINDS, k == "Red flag") for q, w, k in default_questions(proto, doc.disease_name)])
-		for i, (q, why, kind, needed, red) in enumerate(rows, 1):
-			doc.append("verification", {"question_no": i, "question": q, "why": why, "kind": kind or "Supports",
-				"needed_to_start": 1 if needed else 0, "escalate_if_yes": 1 if red else 0})
-		changed = True
+	changed = ensure_cha_questions(doc) or changed
+	changed = ensure_officer_questions(doc) or changed
 	return sync_case_definition(doc) or changed
 
 
@@ -145,10 +234,9 @@ def sync_case_definition(doc):
 		answer = "Yes"
 	elif done and all(c.check_status == "Not a case" for c in done):
 		answer = "No"
-	elif done:
-		answer = "Not sure"
 	else:
-		answer = None
+		# no reporter confirmed it either way (e.g. none reached): the officer answers it (KRCS 19 Nov 2026)
+		return False
 	if row.answer == answer:
 		return False
 	row.answer = answer
@@ -206,7 +294,7 @@ def suggestion(answers, notify_immediately=False, disease_name=""):
 				"text": f"Only {kc['yes']} of {kc['total']} key questions are Yes (at least {kc['needed']} needed). This does not meet the criteria for an event: discard the signal.",
 				"reasons": reasons}
 		return {"action": "gather", "level": "medium",
-			"text": f"{kc['yes']} of {kc['total']} key questions are Yes so far (at least {kc['needed']} needed). Find out the answers marked Not sure before deciding.",
+			"text": f"{kc['yes']} of {kc['total']} key questions are Yes so far (at least {kc['needed']} needed). Answer the rest before deciding.",
 			"reasons": reasons}
 	if cd == "No":
 		return {"action": "discard", "level": "low",
@@ -268,7 +356,7 @@ def gates(doc):
 		"openResponseSteps": resp_open,
 		"handedOverSteps": sorted(n for _, n in handed),
 		"keyCheck": key_check(doc.get("verification") or []),
-		"canStartInvestigation": doc.status == "Verifying" and not unanswered and key_check(doc.get("verification") or [])["met"],
+		"canStartInvestigation": doc.status in ("Verifying", "Verified") and not unanswered and key_check(doc.get("verification") or [])["met"],
 		"canConfirm": doc.status == "Investigating" and not inv_open,
 		"canClose": doc.status in ("Confirmed", "Escalated") and not resp_open,
 	}
@@ -279,7 +367,7 @@ def check_gate(doc, action):
 	ensure_investigation(doc)
 	g = gates(doc)
 	if action == "investigate" and g["unansweredQuestions"]:
-		frappe.throw(_("Check at least one report and answer all verification questions first (Not sure is an answer). Missing: {0}").format(
+		frappe.throw(_("Answer all the verification questions first. Missing: {0}").format(
 			", ".join(str(n) for n in g["unansweredQuestions"])))
 	if action == "investigate":
 		kc = key_check(doc.get("verification") or [])
@@ -311,7 +399,7 @@ def after_status(doc, action, note):
 		doc.closing_summary = doc.closed_by = doc.closed_on = None
 
 
-REPORT_STATUS = {"Verifying": "Investigating", "Investigating": "Investigating", "Confirmed": "Investigating",
+REPORT_STATUS = {"Verifying": "Investigating", "Verified": "Investigating", "Investigating": "Investigating", "Confirmed": "Investigating",
 	"Escalated": "Investigating", "Closed": "Closed", "Discarded": "Closed", "New": "Submitted"}
 
 
@@ -343,23 +431,54 @@ def _feedback(ref, doc, action, note):
 
 # ---------- API ----------
 
-def _load(event, act=False):
-	from surveillance.events import _check_access, ACT, VIEW
-	require_capability(ACT if act else VIEW)
+def _load(event, act=False, step=None):
+	"""step: the event step(s) the change belongs to; the user needs one of those boxes (Roles & Permissions)."""
+	from surveillance.events import _check_access, ACT, VIEW, require_step
+	if step:
+		require_step(*(step if isinstance(step, (tuple, list)) else (step,)))
+	else:
+		require_capability(ACT if act else VIEW)
 	doc = frappe.get_doc("Surveillance Event", event)
 	_check_access(doc)
 	return doc
 
 
+def _load_verify(event):
+	"""An event the user may verify (step 2): the CHA, or an officer who acts on events."""
+	from surveillance.events import _check_access, VIEW
+	require_capability(VIEW)
+	if not can_verify():
+		frappe.throw(_("You cannot verify this event."), frappe.PermissionError)
+	doc = frappe.get_doc("Surveillance Event", event)
+	_check_access(doc)
+	return doc
+
+
+def tasks_access():
+	"""The Tasks section on an event (Roles & Permissions): see it, and assign tasks."""
+	from surveillance.capabilities import has_capability
+	assign = has_capability("assign_event_tasks")
+	return {"see": assign or has_capability("view_event_tasks"), "assign": assign}
+
+
 def _shape(doc):
 	from surveillance.capabilities import has_capability
-	from surveillance.events import ACT
+	from surveillance.events import ACT, allowed_steps
 	from surveillance.protocols import _shape as protocol_shape
 	proto = frappe.get_doc("Response Protocol", doc.protocol) if doc.protocol and frappe.db.exists("Response Protocol", doc.protocol) else None
 	questions = [{"n": a.question_no, "question": a.question, "why": a.why, "kind": a.kind, "answer": a.answer or None,
+		"stage": stage_of(a),
 		"key": is_key(a), "redFlag": is_red(a), "neededToStart": is_key(a), "escalateIfYes": is_red(a),
 		"answeredBy": get_fullname(a.answered_by) if a.answered_by else None, "answeredOn": str(a.answered_on or "") or None}
 		for a in sorted(doc.get("verification") or [], key=lambda a: cint(a.question_no))]
+	verified = ({"by": get_fullname(doc.verification_by) if doc.get("verification_by") else None,
+		"on": str(doc.verification_on)} if doc.get("verification_on") else None)
+	if viewer_is_cha():   # Signal captured and Verification only: nothing about diseases (KRCS 19 Nov 2026)
+		return {"event": doc.name, "status": doc.status, "protocol": None, "notifyImmediately": False, "mustEscalate": False,
+			"questions": [q for q in questions if q["stage"] == CHA], "suggestion": None, "investigationSteps": [],
+			"responseSteps": [], "findings": "", "evidence": [], "gates": {}, "canAct": False, "isCha": True,
+			"canVerify": can_verify(), "verified": verified, "verificationDone": verification_done(doc), "locked": bool(doc.get("verification_on")) or officer_chose(doc),
+			"steps": allowed_steps(), "tasks": tasks_access()}
 
 	assignable = {(p.step or "").strip().lower() for p in (proto.get("steps") or []) if p.get("assignable")} if proto else set()
 
@@ -390,6 +509,8 @@ def _shape(doc):
 			if doc.closed_on else None),
 		"gates": gates(doc),
 		"canAct": has_capability(ACT),
+		"isCha": False, "canVerify": can_verify(), "verified": verified, "verificationDone": verification_done(doc),
+		"steps": allowed_steps(), "tasks": tasks_access(),
 	}
 
 
@@ -404,19 +525,28 @@ def get_investigation(event):
 
 @frappe.whitelist(methods=["POST"])
 def answer_question(event, question_no, answer, expected=None):
-	"""expected (optional): the answer the app last saw; a different answer on the server is refused with 409."""
-	doc = _load(event, act=True)
-	if doc.status not in ("New", "Verifying", "Investigating"):
+	"""expected (optional): the answer the app last saw; a different answer on the server is refused with 409.
+	The CHA answers the Verification questions; the disease's own questions are the officer's."""
+	doc = _load_verify(event)
+	if doc.status not in ("New", "Verifying", "Verified", "Investigating"):
 		frappe.throw(_("Verification answers can only change while the event is open for verification."))
 	if answer not in ANSWERS:
-		frappe.throw(_("Answer must be Yes, No or Not sure."))
+		frappe.throw(_("Answer Yes or No."))
 	ensure_investigation(doc)
 	row = next((a for a in doc.verification if cint(a.question_no) == cint(question_no)), None)
 	if not row:
 		frappe.throw(_("Question not found."))
+	if stage_of(row) != CHA:
+		from surveillance.events import require_step
+		require_step(3)
+	elif doc.get("verification_on"):
+		frappe.throw(_("The verification was confirmed and saved, so it can no longer change."))
+	elif viewer_is_cha() and officer_chose(doc):
+		frappe.throw(_("The surveillance officer has already taken this signal on, so the verification can no longer change."))
 	from surveillance.field_api import check_expected
 	check_expected(expected, row.answer, row.answered_by, row.answered_on)
-	if row.kind == "Case definition" and frappe.db.count("Surveillance Signal", {"event": doc.name}):
+	if row.kind == "Case definition" and frappe.db.count("Surveillance Signal", {"event": doc.name,
+			"check_status": ["in", ["Verified", "Not a case"]]}):
 		frappe.throw(_("This question is answered from the report checks. Check each report instead."))
 	if row.answer == answer:
 		return _shape(doc)
@@ -432,13 +562,15 @@ def answer_question(event, question_no, answer, expected=None):
 @frappe.whitelist(methods=["POST"])
 def set_step_outcome(event, step_no, outcome=None, reason=None, expected=None):
 	"""Record Done / Not done / Not applicable on one protocol step. Not done needs a reason. Empty outcome clears it."""
-	doc = _load(event, act=True)
+	doc = _load(event, step=(4, 6))
 	if doc.status in ("Discarded", "Closed"):
 		frappe.throw(_("Reopen the event to change its steps."))
 	ensure_investigation(doc)
 	row = next((s for s in doc.checklist if cint(s.step_no) == cint(step_no)), None)
 	if not row:
 		frappe.throw(_("Step not found."))
+	from surveillance.events import require_step
+	require_step(6 if (row.phase or "Investigation") == "Response" else 4)
 	from surveillance.field_api import check_expected
 	check_expected(expected, row.outcome, row.done_by, row.done_on)
 	outcome = outcome or None
@@ -463,7 +595,7 @@ def set_step_outcome(event, step_no, outcome=None, reason=None, expected=None):
 
 @frappe.whitelist(methods=["POST"])
 def save_findings(event, findings, expected=None):
-	doc = _load(event, act=True)
+	doc = _load(event, step=4)
 	from surveillance.field_api import check_expected
 	check_expected(expected, doc.findings, doc.modified_by, doc.modified)
 	findings = (findings or "").strip()
@@ -481,7 +613,7 @@ def add_evidence(event, attachment_type, file_url=None, text=None, people_shown=
 	"""Attach a photo, voice note, file (already uploaded as a private file) or a text note.
 	Photos and voice notes: people_shown (0/1) and, when 1, consent "Person agreed" / "Parent or guardian agreed".
 	client_ref (optional, from the app): a retry with the same reference does not attach it twice."""
-	doc = _load(event, act=True)
+	doc = _load(event, step=4)
 	if attachment_type not in EVIDENCE_TYPES:
 		frappe.throw(_("Unknown attachment type."))
 	ref = (client_ref or "").strip()[:64] or None
@@ -506,7 +638,7 @@ def add_evidence(event, attachment_type, file_url=None, text=None, people_shown=
 
 @frappe.whitelist(methods=["POST"])
 def remove_evidence(event, evidence_id):
-	doc = _load(event, act=True)
+	doc = _load(event, step=4)
 	row = next((e for e in (doc.get("evidence") or []) if e.name == evidence_id), None)
 	if not row:
 		frappe.throw(_("Attachment not found."))
@@ -554,8 +686,8 @@ def refresh_case_definition_questions():
 def check_report(event, signal, reached=None, meets_case_definition=None, note=None):
 	"""Verify ONE report: was its reporter reached, and does the case meet the case definition?
 	reached: Yes | No.  meets_case_definition: Yes | No | Not sure.  The note goes to the event timeline."""
-	doc = _load(event, act=True)
-	if doc.status not in ("New", "Verifying", "Investigating"):
+	doc = _load(event, step=2)
+	if doc.status not in ("New", "Verifying", "Verified", "Investigating"):
 		frappe.throw(_("Reports can only be checked while the event is being verified or investigated."))
 	sig = frappe.db.get_value("Surveillance Signal", signal, ["name", "event", "source", "ref"], as_dict=True)
 	if not sig or sig.event != doc.name:
@@ -584,7 +716,7 @@ def split_report(event, signal, reason):
 	"""Move one report out of an event into its own new event (e.g. it is in a different, distant area).
 	The officer's reason is kept on both timelines."""
 	from surveillance.events import OPEN, recompute_event
-	doc = _load(event, act=True)
+	doc = _load(event, step=(2, 3))
 	reason = (reason or "").strip()
 	if not reason:
 		frappe.throw(_("Say why this report is being split off."))

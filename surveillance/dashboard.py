@@ -14,7 +14,7 @@ from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
 from surveillance.capabilities import has_capability
 
 VIEW_EVENTS = "view_review_queue"
-OPEN = ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]
+OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
 WAITING = ["New", "Verifying"]
 ESCALATED_ACTION = "Escalated to county / MoH"
 SEVERITY_ORDER = {"critical": 0, "high": 1, "standard": 2}

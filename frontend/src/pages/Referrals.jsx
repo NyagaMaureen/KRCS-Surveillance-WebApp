@@ -226,7 +226,7 @@ function NewReferral({ onClose, onSaved, onError }) {
   )
 }
 
-const CHANNEL = { Mobile: 'Mobile app', Web: 'Web form' }
+const CHANNEL = { Mobile: 'Mobile app', Web: 'Web app' }
 const ANIMAL = { 'Bite or scratch': 'Bitten or scratched', 'Handled sick or dead animal': 'Handled a sick or dead animal' }
 const day = (v, time) => {
   if (!v) return null

@@ -60,7 +60,7 @@ def in_scope(disease, sub_county, source=None):
 		return source == "Field"
 	return sub_county.strip().lower() in subs
 
-OPEN = ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]
+OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
 CLOSED = ["Discarded", "Closed"]
 LEVELS = ["standard", "high", "critical"]   # same three levels as disease priority and Risk Alerts
 PRIORITY_SEVERITY = {"critical": "critical", "high": "high", "standard": "standard"}
@@ -69,14 +69,36 @@ SOURCE_ORDER = ["EMR", "Field", "CBS"]
 # action -> (allowed from, new status, note required). Gates (answers, steps) are in investigation.check_gate.
 ACTIONS = {
 	"start": (["New"], "Verifying", False),
-	"investigate": (["Verifying"], "Investigating", False),
+	"investigate": (["Verifying", "Verified"], "Investigating", False),
 	"confirm": (["Investigating"], "Confirmed", True),
-	"escalate": (["New", "Verifying", "Investigating", "Confirmed"], "Escalated", True),
-	"discard": (["New", "Verifying"], "Discarded", True),          # only at verification (KRCS, 28 Oct 2026)
+	"escalate": (["New", "Verifying", "Verified", "Investigating", "Confirmed"], "Escalated", True),
+	"discard": (["New", "Verifying", "Verified"], "Discarded", True),          # only at verification (KRCS, 28 Oct 2026)
 	"close": (["Confirmed", "Escalated"], "Closed", True),
 	"close_unconfirmed": (["Investigating"], "Closed", True),       # field investigation found no event
 	"reopen": (CLOSED, "Verifying", False),
 }
+# Which event step each action belongs to (Roles & Permissions, KRCS 19 Nov 2026): any one of them is enough
+ACTION_STEPS = {"start": (2,), "investigate": (3,), "confirm": (5,), "escalate": (3, 4, 5), "discard": (1, 2, 3),
+	"close": (6,), "close_unconfirmed": (4, 5), "reopen": (6,)}
+STEP_CAPS = {1: "step_signal", 2: "step_verification", 3: "ai_triage", 4: "step_investigation", 5: "step_decision",
+	6: "step_response"}
+
+
+def allowed_steps(user=None):
+	"""The event steps a user sees and works on, from the step boxes in Roles & Permissions. Steps 4 to 6 are about
+	the disease, so they need AI triage (step 3) too."""
+	from surveillance.capabilities import get_user_capabilities
+	caps = get_user_capabilities(user)
+	steps = [n for n, key in STEP_CAPS.items() if key in caps]
+	return steps if 3 in steps else [n for n in steps if n < 3]
+
+
+def require_step(*steps):
+	if not set(steps) & set(allowed_steps()):
+		frappe.throw(_("Your role cannot work on this step of the event. Ask your administrator to tick it in Roles & "
+			"Permissions."), frappe.PermissionError)
+
+
 ACTION_LABEL = {"start": "Verification started", "investigate": "Field investigation started",
 	"confirm": "Confirmed", "escalate": "Escalated to county / MoH", "discard": "Discarded",
 	"close": "Closed", "close_unconfirmed": "Closed: no event found", "reopen": "Reopened"}
@@ -203,7 +225,7 @@ def _close_if_empty(event, note):
 	doc = frappe.get_doc("Surveillance Event", event)
 	if doc.status not in OPEN or doc.get("from_alert") or frappe.db.count("Surveillance Signal", {"event": event}):
 		return False
-	doc.status = "Discarded" if doc.status in ("New", "Verifying") else "Closed"
+	doc.status = "Discarded" if doc.status in ("New", "Verifying", "Verified") else "Closed"
 	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": doc.status, "note": note})
 	doc.save(ignore_permissions=True)
 	return True
@@ -728,7 +750,7 @@ def _shape(d, detail=False):
 		"escalation": _escalation(d),   # who escalated to the county MOH, when and why (MOH DDSR Review Queue)
 	}
 	if detail:
-		can_act = has_capability(ACT)
+		can_act = has_capability(ACT) or 2 in allowed_steps()   # whoever verifies calls the reporter
 		# reporter names and phones: officers who act, and everyone on an escalated event (the county MOH calls them)
 		out["signals"] = [_signal_shape(s, can_act or d.status == "Escalated") for s in frappe.get_all("Surveillance Signal", filters={"event": d.name},
 			fields=["name", "source", "ref", "signal_date", "area", "disease", "people", "deaths", "reported", "reason",
@@ -746,12 +768,34 @@ def _shape(d, detail=False):
 			sg["channel"] = _signal_channel(sg)
 		out["channels"] = _channels_for([d.name]).get(d.name, [])
 		out["canAct"] = has_capability(ACT)
+		out["steps"] = allowed_steps()   # the event steps this user sees and works on (Roles & Permissions)
 		out["related"] = related_events(d.disease, d.sub_county, d.last_reported, exclude=d.name) if d.status in OPEN else []
 		vis = visible_events()
 		if vis is not None:
 			out["related"] = [r for r in out["related"] if r.get("id") in vis]
 		merged = next((a.note for a in (d.actions or []) if a.action == "Merged"), None)
 		out["mergedInto"] = merged.split(" ")[2] if merged and merged.startswith("Merged into ") else None
+	from surveillance.investigation import viewer_is_cha
+	if viewer_is_cha():
+		_for_cha(out)
+	return out
+
+
+CHA_TIMELINE = {"Call: reached", "Call: no answer", "Verification started", "Verification answer", "Verification confirmed",
+	"Verification updated", "Note", "Note added"}
+
+
+def _for_cha(out):
+	"""A CHA verifies the signal without being told the suspected disease (KRCS 19 Nov 2026): the title names the
+	place, and the disease, the reason it was flagged (it names the disease), the risk score, related events and the
+	timeline entries about diseases are left out."""
+	place = out.get("area") or out.get("subCounty") or "location unknown"
+	out.update({"title": f"Signal · {place}", "disease": None, "diseaseName": None, "priority": None, "reason": None,
+		"risk": None, "linkedAlert": None, "related": [], "relatedCount": 0, "escalation": None, "pathway": None})
+	for sg in out.get("signals") or []:
+		sg["disease"], sg["reason"] = None, None
+	if "timeline" in out:
+		out["timeline"] = [t for t in out["timeline"] if t["action"] in CHA_TIMELINE]
 	return out
 
 
@@ -831,9 +875,9 @@ def set_status(event, action, note=None, facility=None):
 	"""Officer action on an event: start, investigate, confirm, escalate, discard, close, reopen.
 	confirm / escalate / discard need a reason and close needs a closing summary (kept for audit)."""
 	from surveillance import investigation
-	require_capability(ACT)
 	if action not in ACTIONS:
 		frappe.throw(_("Unknown action: {0}").format(action))
+	require_step(*ACTION_STEPS[action])
 	allowed, new_status, needs_note = ACTIONS[action]
 	doc = frappe.get_doc("Surveillance Event", event)
 	_check_access(doc)
@@ -930,7 +974,7 @@ def get_map_events(status="open", disease=None, days=30):
 def add_note(event, note, client_ref=None):
 	"""Add an investigation note to an event without changing its status.
 	client_ref (optional, from the app): a retry with the same reference does not add the note twice."""
-	require_capability(ACT)
+	require_step(*STEP_CAPS)
 	note = (note or "").strip()
 	if not note:
 		frappe.throw(_("Please write a note."))

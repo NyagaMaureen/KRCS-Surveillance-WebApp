@@ -1573,6 +1573,10 @@ export async function logTriageCall(event, signal, outcome) {
 export async function answerByPhone(event, report, symptom, value) {
   return callMethodPost(`${TRIAGE}.answer`, { event, report, symptom, value: value || '' })
 }
+/** Verification (step 2) Confirm and save: by the CHA (or an officer); the officers are told (KRCS 19 Nov 2026). */
+export async function confirmVerification(event) {
+  return callMethodPost(`${TRIAGE}.confirm_verification`, { event })
+}
 export async function confirmTriageDisease(event, disease) {
   return callMethodPost(`${TRIAGE}.confirm_disease`, { event, disease })
 }

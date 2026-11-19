@@ -44,6 +44,8 @@
   "checklist",
   "sb_investigation",
   "verification",
+  "verification_by",
+  "verification_on",
   "findings",
   "evidence",
   "sb_decision",
@@ -73,7 +75,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "New\nVerifying\nInvestigating\nConfirmed\nEscalated\nDiscarded\nClosed",
+   "options": "New\nVerifying\nVerified\nInvestigating\nConfirmed\nEscalated\nDiscarded\nClosed",
    "default": "New",
    "in_list_view": 1,
    "in_standard_filter": 1,
@@ -253,6 +255,19 @@
    "fieldtype": "Table",
    "options": "Surveillance Event Answer",
    "label": "Verification answers"
+  },
+  {
+   "fieldname": "verification_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Verification Confirmed By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "verification_on",
+   "fieldtype": "Datetime",
+   "label": "Verification Confirmed On",
+   "read_only": 1
   },
   {
    "fieldname": "findings",

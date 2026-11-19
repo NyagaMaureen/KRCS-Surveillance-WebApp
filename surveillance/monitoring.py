@@ -293,7 +293,7 @@ def _r35(f):
 			_counter_chart("risk", "Events by risk level", "bar", Counter(_risk_level(e.risk_score) for e in events),
 				keys=["Very high", "High", "Medium", "Low"], label="Events"),
 			_counter_chart("status", "Events by status", "bar", Counter(e.status for e in events),
-				keys=["New", "Verifying", "Investigating", "Confirmed", "Escalated", "Discarded", "Closed"], label="Events"),
+				keys=["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated", "Discarded", "Closed"], label="Events"),
 			_chart("median_week", "Median hours to start verification, per week", "bar", [_wlabel(w) for w in f.weeks],
 				[{"label": "Median hours", "data": [round(median(per_week[w]), 1) if per_week.get(w) else None for w in f.weeks]}],
 				"Weeks with no verification started are empty"),

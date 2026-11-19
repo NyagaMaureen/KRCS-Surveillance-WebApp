@@ -36,3 +36,6 @@ surveillance.patches.data_ai_admin_setup
 surveillance.patches.cha_my_chps
 surveillance.patches.rename_hq_admin
 surveillance.patches.chp_notification_cleanup #2026-11-19 fhw
+surveillance.patches.ai_triage_capability
+surveillance.patches.event_step_permissions
+surveillance.patches.verified_status

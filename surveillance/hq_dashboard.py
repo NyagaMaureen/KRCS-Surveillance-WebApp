@@ -32,9 +32,9 @@ CHANNEL_LABEL = {"Mobile": "Mobile app", "EMR": "EMR (facility)"}
 STATUSES = ["Awaiting review", "Investigating", "Closed", "Recorded"]
 REPORT_STATUS = {"Submitted": "Awaiting review", "Linked": "Awaiting review", "Reviewed": "Recorded",
 	"Not for review": "Recorded", "Investigating": "Investigating", "Closed": "Closed", "Recorded": "Recorded"}
-EVENT_STATUS = {"New": "Awaiting review", "Verifying": "Awaiting review", "Investigating": "Investigating",
+EVENT_STATUS = {"New": "Awaiting review", "Verifying": "Awaiting review", "Verified": "Awaiting review", "Investigating": "Investigating",
 	"Confirmed": "Investigating", "Escalated": "Investigating", "Closed": "Closed", "Discarded": "Closed"}
-OPEN = ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]
+OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
 SIGNAL_TYPES = ["Suspected Outbreak", "Community Signal", "Facility Signal"]
 SEV_ORDER = {"critical": 0, "high": 1, "standard": 2}
 CHA_ROLES = ["CHA", "Community Health Assistant"]

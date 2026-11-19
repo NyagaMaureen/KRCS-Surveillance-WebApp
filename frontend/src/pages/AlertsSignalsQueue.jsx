@@ -24,6 +24,7 @@ const WAITING_STATUSES = ['New', 'Verifying']
 const TABS = [
   { key: 'new', label: 'To review', statuses: ['New'] },
   { key: 'verifying', label: 'Verifying', statuses: ['Verifying'] },
+  { key: 'verified', label: 'Verified', statuses: ['Verified'] },   // Confirm and save done: waiting for AI triage
   { key: 'investigating', label: 'In the field', statuses: ['Investigating'] },
   { key: 'confirmed', label: 'Confirmed', statuses: ['Confirmed'] },
   { key: 'escalated', label: 'Escalated', statuses: ['Escalated'] },
@@ -82,6 +83,7 @@ const SELECT_SOFT = `h-9 bg-white border border-gray-200 rounded-lg px-3 text-sm
 const STATUS_STYLE = {
   New: 'bg-red-600 text-white',
   Verifying: 'bg-gray-200 text-gray-700',
+  Verified: 'bg-emerald-100 text-emerald-800',
   Investigating: 'bg-gray-200 text-gray-700',
   Confirmed: 'bg-sky-100 text-sky-800',
   Escalated: 'bg-red-100 text-red-700',
@@ -108,9 +110,13 @@ export default function AlertsSignalsQueue() {
   const [params, setParams] = useSearchParams()
 
   // the county MOH (MOH DDSR) sees the cases escalated to them first (KRCS 17 Nov 2026)
-  const { primaryRole } = useCapabilities()
+  const { primaryRole, workspace, has } = useCapabilities()
   const isMoh = primaryRole === 'MOH DDSR'
-  const defaultTab = isMoh ? 'escalated' : 'new'
+  // the CHA verifies signals without being told the suspected disease (KRCS 19 Nov 2026)
+  // set in Roles & Permissions: working the queue without See AI Triage and Diseases gives the CHA view
+  const isCha = workspace === 'cha' || (has(['view_review_queue', 'act_on_events', 'step_signal', 'step_verification']) && !has('ai_triage'))
+  // officers start on Verified: the signals a CHA has checked, waiting for AI triage (KRCS 19 Nov 2026)
+  const defaultTab = isMoh ? 'escalated' : isCha ? 'new' : 'verified'
   const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : defaultTab
   const sort = SORTS.some((s) => s.key === params.get('sort')) ? params.get('sort') : 'risk'
   const q = params.get('q') || ''
@@ -208,8 +214,10 @@ export default function AlertsSignalsQueue() {
     if (channel) list = list.filter((e) => channelsOf(e).includes(channel))
     if (unit) list = list.filter((e) => (e.units || []).some((u) => u.id === unit))
     if (overdueOnly) list = list.filter((e) => waitInfo(e)?.state === 'over')
-    return sortEvents(list, sort)
-  }, [events, statuses, sevFilter, channel, unit, overdueOnly, sort])
+    const sorted = sortEvents(list, sort)
+    // officers: verified signals first in any list (they are waiting for AI triage)
+    return isCha ? sorted : [...sorted.filter((e) => e.status === 'Verified'), ...sorted.filter((e) => e.status !== 'Verified')]
+  }, [events, statuses, sevFilter, channel, unit, overdueOnly, sort, isCha])
   const channelOptions = useMemo(() => [...new Set(events.flatMap(channelsOf))].sort(), [events])
   const unitOptions = useMemo(() => {
     const seen = new Map()
@@ -224,7 +232,15 @@ export default function AlertsSignalsQueue() {
     setSearchText('')
     setParam({ q: '', disease: '', channel: '', unit: '', sev: '', overdue: '' })
   }
-  const open = (ev) => navigate({ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: location.search })
+  // View details opens on Signal captured (KRCS 19 Nov 2026); the queue's filters come along for the Back link
+  const detailsSearch = (step = 1) => {
+    const p = new URLSearchParams(location.search)
+    p.set('step', String(step))
+    return `?${p}`
+  }
+  // officers: a verified signal opens straight on AI triage (KRCS 19 Nov 2026)
+  const triageNext = (ev) => !isCha && ev.status === 'Verified'
+  const open = (ev) => navigate({ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: detailsSearch(triageNext(ev) ? 3 : 1) })
 
   const [page, setPage] = useState(0)
   useEffect(() => setPage(0), [tab, q, disease, channel, unit, sevFilter, overdueOnly, sort])
@@ -237,10 +253,15 @@ export default function AlertsSignalsQueue() {
     { key: 'all', label: 'All statuses', value: events.length },
     { key: 'new', label: 'To review', value: tabCount(TABS[0]) },
     { key: 'verifying', label: 'Verifying', value: tabCount(TABS[1]) },
-    { key: 'investigating', label: 'In the field', value: tabCount(TABS[2]) },
+    { key: 'verified', label: 'Verified', value: tabCount(TABS[2]) },
+    { key: 'investigating', label: 'In the field', value: tabCount(TABS[3]) },
     { key: 'closed', label: 'Closed this week', value: closedThisWeek },
     { key: 'overdue', label: 'Overdue', value: overdueCount },
   ]
+  if (!isCha && !isMoh) {   // officers: Verified card first, after All
+    const v = stats.findIndex((x) => x.key === 'verified')
+    stats.splice(1, 0, ...stats.splice(v, 1))
+  }
   if (isMoh) {   // county MOH: Escalated to MOH instead of Overdue (verification targets are KRCS's)
     stats.splice(1, 0, { key: 'escalated', label: 'Escalated to MOH', value: tabCount(TABS.find((x) => x.key === 'escalated')) })
     stats.pop()
@@ -254,8 +275,10 @@ export default function AlertsSignalsQueue() {
       <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
         <div className="w-full max-w-none">
           <h1 className="text-xl font-semibold text-brand-navy">Review Queue</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Individual reports of priority diseases from CHPs and CBS. Each one needs an officer to verify it, investigate if needed, and record a decision.</p>
-          <Link to="/epi-trends" className={`inline-block text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2 mt-1 rounded ${FOCUS}`}>Looking for diseases rising over several weeks? See Epi Trends</Link>
+          <p className="text-sm text-gray-500 mt-0.5">{isCha
+            ? 'Signals from CHPs and CBS in your area. Call the reporter, check the symptoms and answer the questions, then Confirm and save so the surveillance officer can take it on.'
+            : 'Individual reports of priority diseases from CHPs and CBS. Each one needs an officer to verify it, investigate if needed, and record a decision.'}</p>
+          {!isCha && <Link to="/epi-trends" className={`inline-block text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2 mt-1 rounded ${FOCUS}`}>Looking for diseases rising over several weeks? See Epi Trends</Link>}
         </div>
         {!forbidden && (
           <button onClick={() => load()} disabled={loading} className={`h-9 inline-flex items-center gap-1.5 px-3.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium ${FOCUS}`}>
@@ -271,7 +294,7 @@ export default function AlertsSignalsQueue() {
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
             {stats.map(({ key, label, value }) => {
               const on = key === 'overdue' ? overdueOnly : tab === key && !overdueOnly
               const alarm = key === 'overdue' && value > 0
@@ -289,16 +312,18 @@ export default function AlertsSignalsQueue() {
           <div className={`${card} p-3 flex items-center gap-2 flex-wrap`}>
             <div className="relative flex-1 min-w-[200px]">
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
-              <input value={searchText} onChange={(e) => setSearchText(e.target.value)} type="text" aria-label="Search events" placeholder="Search by disease, place or ID"
+              <input value={searchText} onChange={(e) => setSearchText(e.target.value)} type="text" aria-label="Search events" placeholder={isCha ? 'Search by place or ID' : 'Search by disease, place or ID'}
                 className={`w-full h-9 bg-gray-50 border border-gray-100 rounded-lg pl-9 pr-3 text-sm ${FOCUS}`} />
             </div>
             <select aria-label="Status" value={overdueOnly ? 'all' : tab} onChange={(e) => setParam({ tab: e.target.value === defaultTab ? '' : e.target.value, overdue: '' })} className={SELECT_SOFT}>
               {TABS.map((t) => <option key={t.key} value={t.key}>{t.key === 'all' ? 'All statuses' : t.label}</option>)}
             </select>
-            <select aria-label="Disease" value={disease} onChange={(e) => setParam({ disease: e.target.value })} className={SELECT_SOFT}>
-              <option value="">All diseases</option>
-              {diseases.filter((d) => d.active || d.key === 'unclassified-illness').map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
-            </select>
+            {!isCha && (
+              <select aria-label="Disease" value={disease} onChange={(e) => setParam({ disease: e.target.value })} className={SELECT_SOFT}>
+                <option value="">All diseases</option>
+                {diseases.filter((d) => d.active || d.key === 'unclassified-illness').map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
+              </select>
+            )}
             <select aria-label="Channel" value={channel} onChange={(e) => setParam({ channel: e.target.value })} className={SELECT_SOFT}>
               <option value="">All channels</option>
               {channelOptions.map((x) => <option key={x} value={x}>{x}</option>)}
@@ -327,11 +352,11 @@ export default function AlertsSignalsQueue() {
                   <tr className="text-left text-xs text-gray-900">
                     <th className="px-3 py-2.5 font-medium w-10 text-gray-900">#</th>
                     <th className="px-3 py-2.5 font-medium">Event ID</th>
-                    <th className="px-3 py-2.5 font-medium">Disease</th>
+                    <th className="px-3 py-2.5 font-medium">{isCha ? 'Signal' : 'Disease'}</th>
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Channel</th>
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Health unit</th>
                     <th className="px-3 py-2.5 font-medium hidden md:table-cell">Location</th>
-                    <th className="px-3 py-2.5 font-medium">Risk</th>
+                    <th className="px-3 py-2.5 font-medium">{isCha ? 'Waiting' : 'Risk'}</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
                     <th className="px-3 py-2.5 font-medium rounded-r-lg"><span className="sr-only">Actions</span></th>
                   </tr>
@@ -376,7 +401,7 @@ export default function AlertsSignalsQueue() {
                           <td className="px-3 py-3.5 hidden md:table-cell text-gray-600">{place || <span className="text-amber-600">Location missing</span>}</td>
                           <td className="px-3 py-3.5 whitespace-nowrap">
                             <span className="inline-flex items-center gap-1.5 flex-nowrap">
-                              <RiskPill risk={ev.risk} severity={ev.severity} />
+                              {!isCha && <RiskPill risk={ev.risk} severity={ev.severity} />}
                             </span>
                             {w && w.state !== 'ok' && (
                               <span className={`block text-xs mt-1 ${w.state === 'over' ? 'text-red-700' : 'text-amber-600'}`} title={`Target: start verification within ${w.target} h`}>
@@ -392,16 +417,25 @@ export default function AlertsSignalsQueue() {
                             )}
                           </td>
                           <td className="px-3 py-3.5 text-right whitespace-nowrap">
-                            {['New', 'Verifying'].includes(ev.status) && (
-                              <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: ev.status === 'New' ? '?step=2' : '?step=3' }} onClick={(e) => e.stopPropagation()}
-                                className={`mr-3 text-xs font-medium text-red-700 hover:text-red-800 hover:underline rounded ${FOCUS}`}>
-                                {ev.status === 'New' ? 'Start verification' : 'Continue verification'}
+                            {triageNext(ev) ? (
+                              <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: detailsSearch(3) }} onClick={(e) => e.stopPropagation()}
+                                className={`inline-flex items-center h-8 px-3 rounded-lg bg-red-600 text-xs font-semibold text-white hover:bg-red-700 ${FOCUS}`}>
+                                Proceed to AI triage
                               </Link>
+                            ) : (
+                              <>
+                                {!isCha && ['New', 'Verifying'].includes(ev.status) && (
+                                  <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: ev.status === 'New' ? '?step=2' : '' }} onClick={(e) => e.stopPropagation()}
+                                    className={`mr-3 text-xs font-medium text-red-700 hover:text-red-800 hover:underline rounded ${FOCUS}`}>
+                                    {ev.status === 'New' ? 'Start verification' : 'Continue'}
+                                  </Link>
+                                )}
+                                <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: detailsSearch() }} onClick={(e) => e.stopPropagation()}
+                                  className={`inline-flex items-center h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-white ${FOCUS}`}>
+                                  View details
+                                </Link>
+                              </>
                             )}
-                            <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: location.search }} onClick={(e) => e.stopPropagation()}
-                              className={`inline-flex items-center h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-white ${FOCUS}`}>
-                              View details
-                            </Link>
                           </td>
                         </tr>
                       )

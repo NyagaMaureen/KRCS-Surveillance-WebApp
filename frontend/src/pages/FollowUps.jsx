@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
-import { ListTodo, CheckCircle2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getMyTasks } from '../api/frappe'
 import TaskUpdate from '../components/tasks/TaskUpdate'
@@ -9,8 +8,8 @@ import { FOCUS, CARD, BTN_PRIMARY, BTN_SMALL, PageTitle, Badge, Skeleton, Toast,
 
 // two clearly different tabs (KRCS 18 Nov 2026): what is still to do, and what is finished, each with its count
 const TABS = [
-  { key: 'open', label: 'To do', icon: ListTodo, hint: 'Still to visit or check' },
-  { key: 'done', label: 'Done', icon: CheckCircle2, hint: 'Finished, with what you found' },
+  { key: 'open', label: 'To do', hint: 'Still to visit or check' },
+  { key: 'done', label: 'Done', hint: 'Finished, with what you found' },
 ]
 
 export default function FollowUps() {
@@ -55,22 +54,15 @@ export default function FollowUps() {
     <AppShell>
       <PageTitle title="Community Follow-ups" subtitle="Visits and checks your surveillance officer has asked you to do. Record what you found when you finish." />
 
-      <div role="tablist" aria-label="Follow-up status" className="grid grid-cols-2 gap-3 mb-4 sm:max-w-xl">
+      {/* plain tabs with their counts (KRCS 19 Nov 2026: the coloured boxes looked generic) */}
+      <div role="tablist" aria-label="Follow-up status" className="mb-4 flex gap-6 border-b border-gray-200">
         {TABS.map((t) => {
           const on = status === t.key
           return (
-            <button key={t.key} type="button" role="tab" aria-selected={on}
+            <button key={t.key} type="button" role="tab" aria-selected={on} title={t.hint}
               onClick={() => { setData(null); setParams(t.key === 'open' ? {} : { status: t.key }, { replace: true }) }}
-              className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors ${FOCUS} ${on
-                ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}>
-              <t.icon className={`w-5 h-5 shrink-0 ${on ? 'text-red-600' : 'text-gray-400'}`} aria-hidden="true" />
-              <span className="min-w-0">
-                <span className="flex items-center gap-2 text-sm font-semibold">
-                  {t.label}
-                  <span className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${on ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{counts[t.key] ?? '…'}</span>
-                </span>
-                <span className="block text-xs text-gray-500">{t.hint}</span>
-              </span>
+              className={`-mb-px border-b-2 px-1 pb-2.5 text-sm font-semibold ${FOCUS} ${on ? 'border-red-600 text-gray-900' : 'border-transparent text-gray-600 hover:text-gray-900'}`}>
+              {t.label} ({counts[t.key] ?? '…'})
             </button>
           )
         })}

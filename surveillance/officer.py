@@ -10,7 +10,7 @@ from frappe.utils import add_days, cint, get_datetime, get_fullname, getdate, no
 from surveillance.capabilities import has_capability, require_capability
 
 EVENT = "Surveillance Event"
-OPEN = ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]
+OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
 SEV_ORDER = {"critical": 0, "high": 1, "standard": 2}
 
 
@@ -135,7 +135,7 @@ def _followups_open(names):
 
 
 def _stage(e, monitoring):
-	return {"New": "Signal detected", "Verifying": "Verification", "Investigating": "Investigation",
+	return {"New": "Signal detected", "Verifying": "Verification", "Verified": "AI triage", "Investigating": "Investigation",
 		"Confirmed": "Response", "Escalated": "Response"}.get(e.status) or (
 		"Monitoring" if e.name in monitoring else "Closed")
 

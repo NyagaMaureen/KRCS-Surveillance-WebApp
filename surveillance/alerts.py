@@ -52,7 +52,7 @@ MATRIX = {
 STATUSES = ["Pending", "Investigating", "Confirmed", "Resolved", "Rejected"]
 STATUS_LABELS = {"Pending": "New", "Investigating": "Under investigation", "Confirmed": "Confirmed",
 	"Resolved": "Resolved", "Rejected": "Dismissed"}
-EVENT_OPEN = ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]
+EVENT_OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
 CLOSED = {"Resolved", "Rejected"}
 RESPONSE = {
 	"critical": "Verify within 24 hours and notify the county surveillance team.",

@@ -32,7 +32,8 @@ function rowsFor(p) {
   return { todo, same, deathCheck: p.death && !r.deaths, places: p.places || [], location: r.location }
 }
 
-export default function VoicePicked({ picked, report, canAdd, onAdded }) {
+// plain: no coloured box, for the column beside the voice note on the event page (KRCS 19 Nov 2026)
+export default function VoicePicked({ picked, report, canAdd, onAdded, plain = false }) {
   const [chosen, setChosen] = useState({})
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -56,7 +57,7 @@ export default function VoicePicked({ picked, report, canAdd, onAdded }) {
         people: selected.some((x) => x.key === 'people') ? picked.people : null,
       })
       const done = [...(r.added || []), ...(r.changes || [])]
-      setResult({ ok: true, text: done.length ? `Updated the report: ${done.join(', ')}. Classification, AI triage and the risk score were worked out again.` : 'Nothing changed: the report already has these.' })
+      setResult({ ok: true, text: done.length ? `Updated the report: ${done.join(', ')}.` : 'Nothing changed: the report already has these.' })
       if (done.length && onAdded) onAdded()
     } catch (e) {
       setResult({ ok: false, text: e.message || 'Could not update the report.' })
@@ -65,8 +66,8 @@ export default function VoicePicked({ picked, report, canAdd, onAdded }) {
   }
 
   return (
-    <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-3 sm:px-4">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-900">
+    <div className={plain ? '' : 'mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-3 sm:px-4'}>
+      <div className={`flex items-center gap-1.5 text-xs ${plain ? 'font-bold text-gray-900' : 'font-semibold text-blue-900'}`}>
         <Mic className="w-3.5 h-3.5" aria-hidden="true" />
         Picked from the voice note
       </div>
@@ -115,7 +116,7 @@ export default function VoicePicked({ picked, report, canAdd, onAdded }) {
       {result && <p role="status" className={`mt-2 text-xs ${result.ok ? 'text-green-800' : 'text-red-700'}`}>{result.text}</p>}
 
       {(same.length > 0 || deathCheck || places.length > 0) && (
-        <div className={`${todo.length > 0 ? 'mt-3 border-t border-blue-100 pt-2.5' : 'mt-2'}`}>
+        <div className={`${todo.length > 0 ? `mt-3 border-t ${plain ? 'border-gray-200' : 'border-blue-100'} pt-2.5` : 'mt-2'}`}>
           {same.length > 0 && (
             <>
               {todo.length > 0 && (

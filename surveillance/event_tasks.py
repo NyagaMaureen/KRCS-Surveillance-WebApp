@@ -47,9 +47,14 @@ RECEIVE = "receive_tasks"
 
 # ---------- helpers ----------
 
-def _event(event, act=True):
-	from surveillance.events import _check_access
-	require_capability(ACT if act else "view_review_queue")
+def _event(event, act=True, step6=False):
+	"""act: assigning, changing or removing tasks (Assign Event Tasks); otherwise seeing them (See Event Tasks).
+	step6: referrals and follow-ups are part of Step 6 (Response & Close), so that box is enough for them."""
+	from surveillance.events import _check_access, allowed_steps
+	from surveillance.investigation import tasks_access
+	access = tasks_access()
+	if not ((access["assign"] if act else access["see"]) or (step6 and 6 in allowed_steps())):
+		frappe.throw(_("You do not have permission to perform this action."), frappe.PermissionError)
 	doc = frappe.get_doc("Surveillance Event", event)
 	_check_access(doc)
 	return doc
@@ -121,7 +126,7 @@ def get_assignees(event):
 	"""People an officer can assign to: the reporting CHP(s) first, then users in the event's sub-county,
 	then users in the event's region."""
 	from surveillance.notifications import sub_county_users
-	doc = _event(event)
+	doc = _event(event, step6=True)   # also for referrals and follow-ups in Step 6
 	out, seen = [], set()
 
 	def add(user, group):
@@ -143,9 +148,9 @@ def get_assignees(event):
 
 @frappe.whitelist()
 def get_event_tasks(event):
-	doc = _event(event, act=False)
+	doc = _event(event, act=False, step6=True)
 	rows = frappe.get_all(DOCTYPE, filters={"event": doc.name}, fields=FIELDS, order_by="due_date asc, creation asc")
-	return {"tasks": [_shape(t) for t in rows], "canAssign": has_capability(ACT),
+	return {"tasks": [_shape(t) for t in rows], "canAssign": has_capability("assign_event_tasks"),
 		"followupDays": FOLLOWUP_DAYS, "eventStatus": doc.status}
 
 
@@ -184,7 +189,7 @@ def create_task(event, task_type, title, assigned_to, due_date, instructions=Non
 @frappe.whitelist(methods=["POST"])
 def create_followups(event, assigned_to, days=None, instructions=None):
 	"""Follow-up check-ins after an event closes (default days 7, 14 and 21 from today)."""
-	doc = _event(event)
+	doc = _event(event, step6=True)
 	day_list = [cint(d) for d in str(days or ",".join(map(str, FOLLOWUP_DAYS))).split(",") if cint(d) > 0]
 	if not day_list:
 		frappe.throw(_("Choose at least one follow-up day."))
@@ -204,7 +209,7 @@ def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None
 	change the due date, reassign, or update on someone's behalf."""
 	t = frappe.get_doc(DOCTYPE, task)
 	is_assignee = t.assigned_to == frappe.session.user
-	is_officer = has_capability(ACT)
+	is_officer = has_capability("assign_event_tasks")
 	if is_officer and t.event:
 		from surveillance.events import _check_access
 		_check_access(frappe.get_doc("Surveillance Event", t.event))

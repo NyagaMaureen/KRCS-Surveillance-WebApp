@@ -10,6 +10,10 @@ event. The call is the verification of the report (Allan: no separate verificati
     CHA) with an optional follow-up; when they are done the case is ready to close and the officer closes it.
     The case is still counted in Epi Trends (an officer chose the disease).
 A reporter who cannot be reached: the case waits (Allan); after 3 attempts the page suggests the unit's CHA.
+
+KRCS 19 Nov 2026: the calls and the symptom questions moved to Verification (step 2), done by the CHA (or an officer)
+before the disease is chosen. The CHA sees no diseases. Confirm and save (confirm_verification) tells the officers,
+who then choose the disease here in AI triage (step 3). Answers are Yes / No.
 Clear-cut common illnesses (e.g. malaria) still skip the queue; an officer can send one to it (send_to_queue).
 """
 import json
@@ -21,7 +25,7 @@ from frappe.utils import add_days, cint, get_datetime, get_fullname, getdate, no
 from surveillance.capabilities import has_capability, require_capability
 
 CALL_REACHED, CALL_NO_ANSWER = "Call: reached", "Call: no answer"
-ANSWERS = ("Yes", "No", "Didn't know")
+ANSWERS = ("Yes", "No")   # "Didn't know" removed (KRCS 19 Nov 2026); older answers still show
 TRY_CHA_AFTER = 3
 VERIFY = "verify_suspected_disease"
 
@@ -51,9 +55,29 @@ def _save_report(cr):
 
 # ---------- helpers ----------
 
-def _load(event, act=False):
+def _load(event, act=False, step=None):
 	from surveillance.investigation import _load as load
-	return load(event, act)
+	return load(event, act, step)
+
+
+def _load_verify(event):
+	from surveillance.investigation import _load_verify as load
+	return load(event)
+
+
+def _check_unlocked(doc):
+	"""Verification answers stay as they were once Confirm and save is used (done once, KRCS 19 Nov 2026), or once
+	the officer has chosen the disease (a CHA cannot change them)."""
+	from surveillance.investigation import officer_chose
+	if doc.get("verification_on"):
+		frappe.throw(_("The verification was confirmed and saved, so it can no longer change."))
+	if _is_cha() and officer_chose(doc):
+		frappe.throw(_("The surveillance officer has already taken this signal on, so the verification can no longer change."))
+
+
+def _is_cha():
+	from surveillance.investigation import viewer_is_cha
+	return viewer_is_cha()
 
 
 def _field_signals(event):
@@ -111,6 +135,46 @@ def _unit_cha(unit):
 	return out
 
 
+RELATED_ASKS = 6   # most extra signs asked from related case definitions
+
+
+def _related_signs(cr, labels):
+	"""Signs worth asking that tell apart the diseases this report could be, straight from the case definitions
+	(KRCS 19 Nov 2026: a report that already meets one definition asked nothing else):
+	  - for a definition that is met: the signs that would rule it out (cholera: bloody stool)
+	  - for one that shares a reported sign but is not met: its missing signs (dysentery: bloody stool)
+	Priority order (Match Order), age groups respected, at most RELATED_ASKS. [(symptom id, disease name)]"""
+	from surveillance.case_definitions import _ages, absent_of, get_definitions, matches
+	have = {r.symptom for r in cr.symptoms if r.symptom}
+	if not have:
+		return []
+	skip = have | absent_of(cr)
+	age = cr.get("age_groups") or cr.get("age_group")
+	out, seen = [], set()
+	for d in get_definitions():
+		if d["ages"] and age and not (_ages(age) & d["ages"]):
+			continue
+		if matches(d, have, age, cr.get("animal_exposure")):
+			signs = sorted(d["excluded_symptoms"])
+		elif (d["required_symptoms"] | d["any_of_symptoms"]) & have and not (d["excluded_symptoms"] & have):
+			signs = sorted(d["required_symptoms"] - have)
+			if d["any_of_symptoms"] and not (d["any_of_symptoms"] & have):
+				signs += sorted(d["any_of_symptoms"])
+		else:
+			continue
+		name = labels["disease"].get(d["disease"], d["disease"])
+		for sid in signs:
+			if sid in skip:
+				continue
+			if "infant" in labels["symptom"].get(sid, "").lower() and age and "under 1" not in _ages(age):
+				continue   # e.g. bulging soft spot: only asked when babies are affected
+			if sid not in seen and len(seen) >= RELATED_ASKS:
+				continue
+			seen.add(sid)
+			out.append((sid, name))
+	return out
+
+
 def _questions(cr, cands, labels):
 	"""One list of questions for this report: the signs every suggested disease asks about, plus the ones already
 	answered by phone (kept on the list so the officer sees the answer). [{symptom, name, diseases, answer, source}]"""
@@ -121,6 +185,9 @@ def _questions(cr, cands, labels):
 	present = {r.symptom for r in cr.symptoms if r.symptom}
 	order, diseases = [], {}
 	for sid in answers:
+		if sid not in order:
+			order.append(sid)
+	for sid in sorted(absent):   # signs the reporter already said No to: shown answered, not asked again
 		if sid not in order:
 			order.append(sid)
 	for c in (cands.get("candidates") or []) + (cands.get("modelOther") or []):
@@ -134,6 +201,12 @@ def _questions(cr, cands, labels):
 			label = c.get("name") or c.get("disease")
 			if label and label not in diseases[sid]:
 				diseases[sid].append(label)
+	for sid, label in _related_signs(cr, labels):
+		if sid not in order:
+			order.append(sid)
+		diseases.setdefault(sid, [])
+		if label not in diseases[sid]:
+			diseases[sid].append(label)
 	out = []
 	for sid in order:
 		a = answers.get(sid) or {}
@@ -152,13 +225,16 @@ def _report_entry(doc, sig, calls, labels, with_candidates=True):
 	from surveillance.health_units import unit_name
 	cr = frappe.get_doc("Case Report", sig.ref)
 	cands = {}
-	if with_candidates and has_capability(VERIFY):
+	if with_candidates and (has_capability(VERIFY) or _is_cha()):   # the CHA gets the questions, never the diseases
 		from surveillance.ai_classifier import get_report_candidates
+		frappe.flags.krcs_cha_questions = True   # the CHA gets the symptoms to ask; the diseases are removed in get_triage
 		try:
 			cands = get_report_candidates(cr.name)
 		except Exception:  # noqa: BLE001 - the AI server may be down; the case definitions still work
 			frappe.log_error(title=f"Triage suggestions failed for {cr.name}")
 			cands = {}
+		finally:
+			frappe.flags.krcs_cha_questions = False
 	attempts = calls.get(sig.name, [])
 	unit = cr.get("community_health_unit")
 	no_answer = sum(1 for a in attempts if a["outcome"] == "No answer")
@@ -173,9 +249,10 @@ def _report_entry(doc, sig, calls, labels, with_candidates=True):
 		"reached": sig.check_reached == "Yes",
 		"attempts": attempts, "noAnswer": no_answer,
 		"tryCha": _unit_cha(unit) if no_answer >= TRY_CHA_AFTER and sig.check_reached != "Yes" else [],
-		"questions": _questions(cr, cands, labels) if cands else [],
+		"questions": _questions(cr, cands or {}, labels),
 		"candidates": cands or None,
 		"current": cr.suspected_disease or None, "decidedBy": cr.classified_by or None,
+		"triesLeft": max(0, TRY_CHA_AFTER - no_answer) if sig.check_reached != "Yes" else 0,
 	}
 
 
@@ -281,6 +358,22 @@ def get_triage(event):
 	labels = _labels()
 	calls = _calls(doc)
 	reports = [_report_entry(doc, s, calls, labels) for s in _field_signals(doc.name) if frappe.db.exists("Case Report", s.ref)]
+	from surveillance.events import allowed_steps
+	from surveillance.investigation import can_verify, officer_chose, verification_done
+	# Verification can no longer change: Confirm and save is done once (KRCS 19 Nov 2026)
+	locked = bool(doc.get("verification_on")) or officer_chose(doc) or doc.status not in ("New", "Verifying")
+	verified = {"by": get_fullname(doc.verification_by) if doc.get("verification_by") else None,
+		"on": str(doc.verification_on)} if doc.get("verification_on") else None
+	if _is_cha():   # Verification only: the symptoms to ask, never the diseases (KRCS 19 Nov 2026)
+		for r in reports:
+			r["candidates"], r["current"], r["decidedBy"] = None, None, None
+			for q in r["questions"]:
+				q["diseases"] = []
+		return {"event": doc.name, "status": doc.status, "pathway": None, "disease": None, "diseaseName": None,
+			"reports": reports, "reachedAny": any(r["reached"] for r in reports), "confirmed": False, "queueDiseases": [],
+			"diseases": [], "conflict": None, "current": None, "canAct": False, "canChoose": False,
+			"canVerify": can_verify(), "isCha": True, "verified": verified, "verificationDone": verification_done(doc), "locked": locked,
+			"tryChaAfter": TRY_CHA_AFTER}
 	queue = _queue_diseases()
 	diseases, conflict = _event_diseases(reports, queue)
 	return {
@@ -291,7 +384,9 @@ def get_triage(event):
 		"queueDiseases": sorted(queue),
 		"diseases": diseases, "conflict": conflict,
 		"current": next((r["current"] for r in reports if r["decidedBy"] == "Officer"), None),
-		"canAct": has_capability("act_on_events"), "canChoose": has_capability(VERIFY) and has_capability("act_on_events"),
+		"canAct": has_capability("act_on_events"), "canChoose": has_capability(VERIFY) and 3 in allowed_steps(),
+		"canVerify": can_verify(), "isCha": False, "verified": verified,
+		"verificationDone": verification_done(doc), "locked": locked,
 		"tryChaAfter": TRY_CHA_AFTER,
 	}
 
@@ -299,11 +394,12 @@ def get_triage(event):
 @frappe.whitelist(methods=["POST"])
 def log_call(event, signal, outcome):
 	"""One call attempt to a report's reporter: outcome 'reached' or 'no_answer'. Reached counts as reaching the
-	reporter for verification; every attempt goes on the event timeline (who, when)."""
-	doc = _load(event, act=True)
+	reporter for verification; every attempt goes on the event timeline (who, when). By the CHA or an officer."""
+	doc = _load_verify(event)
 	from surveillance.events import OPEN
 	if doc.status not in OPEN:
 		frappe.throw(_("This event is closed."))
+	_check_unlocked(doc)
 	sig = frappe.db.get_value("Surveillance Signal", signal, ["name", "event", "source", "ref"], as_dict=True)
 	if not sig or sig.event != doc.name or sig.source != "Field":
 		frappe.throw(_("This report is not part of this event."))
@@ -326,19 +422,22 @@ def log_call(event, signal, outcome):
 
 @frappe.whitelist(methods=["POST"])
 def answer(event, report, symptom, value=None):
-	"""What the reporter said about one sign. Yes adds it to the report, No records it as checked and not present,
-	Didn't know is kept as asked. Saved on the report (Update history: 'Asked by phone') and the case definitions are
-	run again, so the suggestions change straight away."""
+	"""What the reporter said about one sign, in Verification (the CHA or an officer). Yes adds it to the report, No
+	records it as checked and not present, empty clears the answer. Saved on the report (Update history: 'Asked by
+	phone') and the case definitions are run again, so the officer's suggestions change straight away. The questions
+	can be answered before the call is recorded (KRCS 19 Nov 2026). A new sign the reporter mentions is added the same
+	way."""
 	from surveillance.case_definitions import absent_of
-	doc = _load(event, act=True)
-	require_capability(VERIFY)
+	from surveillance.events import OPEN
+	doc = _load_verify(event)
+	if doc.status not in OPEN:
+		frappe.throw(_("This event is closed."))
+	_check_unlocked(doc)
 	sig = f"Field-{report}"
 	if frappe.db.get_value("Surveillance Signal", sig, "event") != doc.name:
 		frappe.throw(_("This report is not part of this event."))
-	if frappe.db.get_value("Surveillance Signal", sig, "check_reached") != "Yes":
-		frappe.throw(_("Mark the reporter as reached before recording their answers."))
 	if value not in ANSWERS + ("", None):
-		frappe.throw(_("Answer Yes, No or Didn't know."))
+		frappe.throw(_("Answer Yes or No."))
 	if not frappe.db.exists("Symptom", symptom):
 		frappe.throw(_("Unknown sign."))
 	cr = frappe.get_doc("Case Report", report)
@@ -374,15 +473,15 @@ def confirm_disease(event, disease):
 	"""The officer's disease for the whole event, after talking to the reporter(s). Saved on every field report.
 	Priority disease: the event continues to verification. Otherwise: the referral pathway (refer, follow up, close)."""
 	from surveillance.events import OPEN, _relabel_event, recompute_event
-	doc = _load(event, act=True)
+	doc = _load(event, step=3)
 	require_capability(VERIFY)
-	if doc.status not in ("New", "Verifying"):
+	if doc.status not in ("New", "Verifying", "Verified"):
 		frappe.throw(_("The disease is chosen in AI triage, before the field investigation."))
 	if not disease or not frappe.db.exists("Alert Threshold Config", disease):
 		frappe.throw(_("Choose a disease."))
 	sigs = _field_signals(doc.name)
-	if sigs and not any(s.check_reached == "Yes" for s in sigs):
-		frappe.throw(_("Reach at least one reporter by phone first. The call is the verification of the report."))
+	if sigs and not doc.get("verification_on") and not any(s.check_reached == "Yes" for s in sigs):
+		frappe.throw(_("Verification is not finished yet: the CHA (or you) must call the reporter and use Confirm and save first."))
 	labels = _labels()
 	disease_name = labels["disease"].get(disease, disease)
 	who, today = get_fullname(frappe.session.user), frappe.utils.format_date(nowdate())
@@ -415,7 +514,9 @@ def confirm_disease(event, disease):
 			doc.status = "Verifying"
 		doc.pathway = None
 		doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Disease confirmed by phone",
-			"note": f"{disease_name}: a priority disease, so it continues to verification and investigation."})
+			"note": f"{disease_name}: a priority disease. Answer its own questions, then start the field investigation."})
+		from surveillance.investigation import ensure_investigation
+		ensure_investigation(doc)   # the disease's own questions, without the ones the CHA already asked
 	else:
 		doc.pathway, doc.status = "Referral", "Confirmed"
 		doc.decision, doc.decision_reason = "Confirmed", f"{disease_name}, confirmed by phone with the reporter in AI triage."
@@ -430,6 +531,51 @@ def confirm_disease(event, disease):
 		"disease": disease, "diseaseName": disease_name}
 
 
+@frappe.whitelist(methods=["POST"])
+def confirm_verification(event):
+	"""Confirm and save (Verification, step 2): every reporter was reached or did not answer after 3 tries, and the
+	questions every event has are answered. Done once (KRCS 19 Nov 2026): the event becomes Verified and the answers
+	can no longer change. When the person confirming cannot do AI triage (the CHA), the sub-county officers are
+	emailed and the event waits for them in AI triage."""
+	from surveillance.events import OPEN
+	from surveillance.investigation import CHA, ensure_investigation, officer_chose, stage_of
+	doc = _load_verify(event)
+	if doc.status not in OPEN or doc.status not in ("New", "Verifying"):
+		frappe.throw(_("Verification is already finished for this event."))
+	if doc.get("verification_on"):
+		frappe.throw(_("The verification was already confirmed and saved."))
+	if officer_chose(doc) and _field_signals(doc.name):
+		frappe.throw(_("The officer has already chosen the disease. Verification can no longer change."))
+	ensure_investigation(doc)
+	calls = _calls(doc)
+	waiting = []
+	for s in _field_signals(doc.name):
+		if s.check_reached == "Yes":
+			continue
+		misses = sum(1 for a in calls.get(s.name, []) if a["outcome"] == "No answer")
+		if misses < TRY_CHA_AFTER:
+			waiting.append(s.ref)
+	if waiting:
+		frappe.throw(_("Call the reporter of {0}: mark them Reached, or No answer after {1} tries.").format(
+			", ".join(waiting), TRY_CHA_AFTER))
+	open_q = [a.question_no for a in doc.get("verification") or [] if stage_of(a) == CHA and not a.answer]
+	if open_q:
+		frappe.throw(_("Answer every question about the signal first."))
+	doc.verification_by, doc.verification_on = frappe.session.user, now_datetime()
+	doc.status = "Verified"
+	reached = sum(1 for s in _field_signals(doc.name) if s.check_reached == "Yes")
+	total = len(_field_signals(doc.name))
+	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user,
+		"action": "Verification confirmed",
+		"note": f"{reached} of {total} reporter(s) reached" if total else "Questions answered"})
+	doc.save(ignore_permissions=True)
+	from surveillance.events import allowed_steps
+	if 3 not in allowed_steps():   # the CHA (or anyone without AI triage): the officers take it from here
+		from surveillance import notifications
+		notifications.on_verified(doc.name)
+	return get_triage(doc.name)
+
+
 # ---------- referral pathway ----------
 
 @frappe.whitelist()
@@ -437,7 +583,7 @@ def referral_people(event):
 	"""Who can refer the patient: the reporting CHP(s) first, then the other CHPs in their unit(s), then the unit's
 	CHA, then other CHPs and CHAs in the sub-county."""
 	from surveillance.health_units import CHA_ROLES, CHP_ROLES, CHILD, unit_name, units_of
-	doc = _load(event, act=True)
+	doc = _load(event, step=6)
 	out, seen = [], set()
 
 	def add(user, group):
@@ -482,7 +628,7 @@ def refer(event, assigned_to, facility, due_date=None, urgency=None, instruction
 	"""Referral pathway: the CHP (or CHA) refers the patient to a facility; optionally one follow-up after N days.
 	Both are tasks for that person (Referrals / Follow-ups pages), with a notification."""
 	from surveillance.event_tasks import AGE_GROUPS, _insert, get_event_tasks, notify_assigned
-	doc = _load(event, act=True)
+	doc = _load(event, step=6)
 	if doc.get("pathway") != "Referral" or doc.status != "Confirmed":
 		frappe.throw(_("Referrals are made after a disease that is not a priority disease is confirmed in AI triage."))
 	if age_group and age_group not in AGE_GROUPS:
@@ -533,7 +679,7 @@ def get_referral_state(event):
 def close_case(event, note):
 	"""Close a referral-pathway case once its referral (and follow-up) are done."""
 	from surveillance.events import set_status
-	doc = _load(event, act=True)
+	doc = _load(event, step=6)
 	if doc.get("pathway") != "Referral":
 		frappe.throw(_("Close this case from its event page."))
 	return set_status(doc.name, "close", note)

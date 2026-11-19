@@ -8,6 +8,7 @@ ones the disease model uses (symptom_rules.py). Runs on the app server; nothing 
 import re
 
 import frappe
+from frappe import _
 from frappe.utils import cint
 
 from surveillance import symptom_rules as sx
@@ -271,8 +272,8 @@ def add_to_report(report, symptoms=None, age_group=None, animal_exposure=None, a
 	animal contact or number of people sick when the report has none or differs. Every change is noted on the report.
 	Saving the report re-runs the case definitions, the Review Queue routing, AI triage and the risk score."""
 	from frappe.utils import get_fullname
-	from surveillance.capabilities import require_capability
-	require_capability("act_on_events")
+	from surveillance.events import require_step
+	require_step(1, 2)   # Signal captured or Verification (Roles & Permissions, KRCS 19 Nov 2026)
 	doc = frappe.get_doc("Case Report", report)
 	try:   # Monitoring Reports R38: what the voice notes offer before anything is added
 		from surveillance.monitoring import voice_offered

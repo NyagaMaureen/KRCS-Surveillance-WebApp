@@ -20,6 +20,7 @@ const STATUS_OPTIONS = [
   { value: 'New', label: 'New' },
   { value: 'Verifying', label: 'Verifying' },
   { value: 'Verified', label: 'Verified' },
+  { value: 'Verified', label: 'Verified' },
   { value: 'Escalated', label: 'Escalated' },
   { value: 'Discarded', label: 'Discarded' },
   { value: 'Closed', label: 'Closed' },

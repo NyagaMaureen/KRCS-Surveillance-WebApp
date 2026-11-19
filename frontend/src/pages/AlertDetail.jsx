@@ -28,7 +28,7 @@ const REVIEW_OUTCOMES = [
   { value: 'No action needed', label: 'Reviewed – no action needed', help: 'Expected or explained (e.g. seasonal rise, known cause).' },
   { value: 'Data error', label: 'Data error', help: 'The numbers are wrong (e.g. a facility entry mistake).' },
 ]
-const EVENT_OPEN = ['New', 'Verifying', 'Investigating', 'Confirmed', 'Escalated']
+const EVENT_OPEN = ['New', 'Verifying', 'Verified', 'Investigating', 'Confirmed', 'Escalated']
 const EVENT_STATUS = { Investigating: 'In the field', Escalated: 'Escalated' }
 
 const WHY = {

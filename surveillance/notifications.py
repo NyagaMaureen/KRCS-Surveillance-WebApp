@@ -158,7 +158,7 @@ def _gps(doc):
 		f'{doc.latitude},{doc.longitude}" style="color:#b91c1c;font-weight:700">View on map</a>')
 
 
-CHANNEL_LABEL = {"Mobile": "Mobile app", "Web": "Web form"}
+CHANNEL_LABEL = {"Mobile": "Mobile app", "Web": "Web app"}
 ANIMAL_LABEL = {"Bite or scratch": "Bitten or scratched", "Handled sick or dead animal": "Handled a sick or dead animal"}
 
 
@@ -211,7 +211,7 @@ def send_disease_changed(event_name, old_name, new_name):
 		if not frappe.db.exists("Surveillance Event", event_name):
 			return
 		doc = frappe.get_doc("Surveillance Event", event_name)
-		users = sub_county_users(doc.sub_county, event_name)
+		users = _officers(sub_county_users(doc.sub_county, event_name))   # CHAs are not told about diseases
 		if not users:
 			return
 		subject = f"{event_name} is now {new_name} (was {old_name}), {doc.sub_county or 'location missing'}"
@@ -239,7 +239,7 @@ def on_left_queue(event, old_name, new_name, report):
 def send_left_queue(event_name, old_name, new_name, report):
 	try:
 		doc = frappe.db.get_value("Surveillance Event", event_name, ["sub_county", "county"], as_dict=True)
-		users = sub_county_users(doc.sub_county, event_name) if doc else []
+		users = _officers(sub_county_users(doc.sub_county, event_name)) if doc else []   # not the CHAs
 		if not users:
 			return
 		subject = f"Resolved: {event_name} ({report}) is {new_name}, followed in Epi Trends"
@@ -275,7 +275,27 @@ def on_new_event(event, signal_date=None):
 		enqueue_after_commit=True)
 
 
+def _is_cha_user(user):
+	"""Works the Review Queue without "See AI Triage and Diseases" (Roles & Permissions): told about signals to
+	verify, never about diseases (KRCS 19 Nov 2026)."""
+	from surveillance.investigation import viewer_is_cha
+	from surveillance.user_scope import user_workspace
+	return user_workspace(user) == "cha" or viewer_is_cha(user)
+
+
+def _chas(users):
+	return [u for u in users if _is_cha_user(u.name)]
+
+
+def _officers(users):
+	"""Everyone on the sub-county list except the CHAs: CHAs verify signals and are not told about diseases
+	(KRCS 19 Nov 2026)."""
+	return [u for u in users if not _is_cha_user(u.name)]
+
+
 def send_new_event(event_name):
+	"""A new signal goes to the CHA(s) to verify, without the disease. The officers are told when the CHA confirms
+	the verification (send_verified). With no CHA in the sub-county the officers are told now, as before."""
 	event = event_name
 	try:
 		if not frappe.db.exists("Surveillance Event", event):
@@ -284,46 +304,81 @@ def send_new_event(event_name):
 		users = sub_county_users(doc.sub_county, event)
 		if not users:
 			return
-		from surveillance.events import related_events
-		related = related_events(doc.disease, doc.sub_county, doc.first_reported, exclude=doc.name)
-		related_ids = ", ".join(r["id"] for r in related)
-		disease = _suspected(doc.disease_name or doc.disease) or "Disease not yet assigned"
-		subject = (f"New signal: {disease}, {doc.sub_county or 'location missing'}, {_affected(doc)} affected"
-			+ (f" · related to {related_ids}" if related else ""))
-		signs, reporters = _report_lines(doc.name)
-		det = _report_details(doc.name)
-		# same arrangement as the escalation email; severity left out (KRCS 18 Nov 2026)
-		html = (
-			f'<p style="font-size:15px"><b>A new signal needs verification in the Review Queue.</b></p>'
-			+ (f'<p style="font-size:14px"><b>Related to {escape_html(related_ids)}</b>: another open {escape_html(disease)} '
-				f'event in {escape_html(doc.sub_county)} in the last 7 days. This may be the same outbreak.</p>' if related else "")
-			+ _rows([
-				(_disease_label(doc), escape_html(disease)),
-				("Signs and symptoms", "<br>".join(escape_html(x) for x in signs) or "Not recorded"),
-				(_cases_label(doc), doc.people or 0),
-				("Deaths", doc.deaths or 0),
-				("Reports", doc.reports or 0),
-				("Date of onset", det.onset),
-				("Affected age group", escape_html(det.ages)),
-				("Animal exposure", escape_html(det.animals)),
-				("Reporting channel", escape_html(det.channels)),
-			] + _dates(doc) + [
-				("Location", escape_html(", ".join(x for x in [doc.area, doc.county] if x))),
-				("GPS", _gps(doc)),
-				("Reporter contacts", "<br>".join(escape_html(x) for x in reporters)),
-				("Why flagged", escape_html(doc.reason or "")),
-				("Event ID", doc.name),
-			])
-			+ _button(_link(doc.name), "Open and verify")
-		)
-		_send([u.email for u in users], subject, html, doc.name,
-			[u.mobile_no for u in users if u.mobile_no],
-			f"KRCS: new {disease} signal, {doc.sub_county}. {_affected(doc)}."
-			+ (f" Related to {related_ids}." if related else "") + f" Verify: {_link(doc.name)}")
-		_in_app([u.name for u in users], subject, doc.name)
+		chas = _chas(users)
+		if chas:
+			_send_signal(doc, chas, for_cha=True)
+		else:
+			_send_signal(doc, _officers(users))
 		frappe.db.commit()
 	except Exception:
 		frappe.log_error(title=f"New event alert failed ({event})", message=frappe.get_traceback())
+
+
+def on_verified(event):
+	"""Sent straight away, not in the background (KRCS 19 Nov 2026), so it does not depend on a worker running."""
+	send_verified(event, by=frappe.session.user)
+
+
+def send_verified(event_name, by=None):
+	"""The CHA used Confirm and save: the officers get the signal, ready for AI triage."""
+	try:
+		doc = frappe.get_doc("Surveillance Event", event_name)
+		users = _officers(sub_county_users(doc.sub_county, event_name))
+		if users:
+			_send_signal(doc, users, verified_by=get_fullname(by) if by else None)
+			frappe.db.commit()
+	except Exception:
+		frappe.log_error(title=f"Verified signal alert failed ({event_name})", message=frappe.get_traceback())
+
+
+def _send_signal(doc, users, for_cha=False, verified_by=None):
+	"""The new-signal email (same arrangement as the escalation email; severity left out, KRCS 18 Nov 2026).
+	for_cha: no disease, no reason flagged (it names the disease), no related events. verified_by: the officers'
+	copy once the CHA confirmed the verification."""
+	from surveillance.events import related_events
+	related = [] if for_cha else related_events(doc.disease, doc.sub_county, doc.first_reported, exclude=doc.name)
+	related_ids = ", ".join(r["id"] for r in related)
+	disease = _suspected(doc.disease_name or doc.disease) or "Disease not yet assigned"
+	where = doc.sub_county or "location missing"
+	if for_cha:
+		subject = f"New signal to verify: {where}, {_affected(doc)} affected"
+		intro = "A new signal needs verification. Call the reporter, check the symptoms and answer the questions."
+	elif verified_by:
+		subject = f"Verified signal: {disease}, {where}, {_affected(doc)} affected" + (f" · related to {related_ids}" if related else "")
+		intro = f"{escape_html(verified_by)} verified this signal. It is ready for AI triage in the Review Queue."
+	else:
+		subject = f"New signal: {disease}, {where}, {_affected(doc)} affected" + (f" · related to {related_ids}" if related else "")
+		intro = "A new signal needs verification in the Review Queue."
+	signs, reporters = _report_lines(doc.name)
+	det = _report_details(doc.name)
+	html = (
+		f'<p style="font-size:15px"><b>{intro}</b></p>'
+		+ (f'<p style="font-size:14px"><b>Related to {escape_html(related_ids)}</b>: another open {escape_html(disease)} '
+			f'event in {escape_html(doc.sub_county)} in the last 7 days. This may be the same outbreak.</p>' if related else "")
+		+ _rows(([] if for_cha else [(_disease_label(doc), escape_html(disease))]) + [
+			("Signs and symptoms", "<br>".join(escape_html(x) for x in signs) or "Not recorded"),
+			(_cases_label(doc), doc.people or 0),
+			("Deaths", doc.deaths or 0),
+			("Reports", doc.reports or 0),
+			("Date of onset", det.onset),
+			("Affected age group", escape_html(det.ages)),
+			("Animal exposure", escape_html(det.animals)),
+			("Reporting channel", escape_html(det.channels)),
+		] + _dates(doc) + [
+			("Location", escape_html(", ".join(x for x in [doc.area, doc.county] if x))),
+			("GPS", _gps(doc)),
+			("Reporter contacts", "<br>".join(escape_html(x) for x in reporters)),
+			("Why flagged", "" if for_cha else escape_html(doc.reason or "")),
+			("Event ID", doc.name),
+		])
+		+ _button(_link(doc.name), "Open and verify" if (for_cha or not verified_by) else "Open AI triage")
+	)
+	sms = (f"KRCS: new signal to verify, {where}. {_affected(doc)}." if for_cha
+		else f"KRCS: {'verified' if verified_by else 'new'} {disease} signal, {where}. {_affected(doc)}."
+			+ (f" Related to {related_ids}." if related else ""))
+	_send([u.email for u in users], subject, html, doc.name, [u.mobile_no for u in users if u.mobile_no],
+		f"{sms} {_link(doc.name)}")
+	_in_app([u.name for u in users], subject, doc.name)
 
 
 # ---------- 2. escalation ----------
@@ -416,7 +471,7 @@ def send_escalation(event_name, reason, escalated_by):
 			f"KRCS ESCALATION: {disease}, {doc.sub_county}/{doc.county}. {doc.people or 0} cases, "
 			f"{doc.deaths or 0} deaths. Facility: {doc.nearest_facility or '-'}. By {officer.get('full_name') or ''}"
 			f"{', ' + officer['mobile_no'] if officer.get('mobile_no') else ''}. {_link(doc.name)}")
-		team = [u.name for u in sub_county_users(doc.sub_county, doc.name)]
+		team = [u.name for u in _officers(sub_county_users(doc.sub_county, doc.name))]   # not the CHAs
 		_in_app(team + moh_users(doc.region), f"Escalated to County/MOH: {doc.title}", doc.name)
 		doc.append("actions", {"at": now_datetime(), "user": "Administrator", "action": "Escalation sent",
 			"note": f"Emailed {len([c for c in contacts if c.email])} County/National MOH contact(s)"

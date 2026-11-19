@@ -52,6 +52,8 @@ const emptyForm = () => ({
   password: '',
 })
 
+const NATIONAL = '__national__'   // shown as National; saved as no region and no sub-county (KRCS 19 Nov 2026)
+
 export default function UserManagement() {
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = ['roles', 'units'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'users'
@@ -101,7 +103,7 @@ export default function UserManagement() {
   }, [])
 
   useEffect(() => {
-    if (!form.assigned_region) { setSubCounties([]); return }
+    if (!form.assigned_region || form.assigned_region === NATIONAL) { setSubCounties([]); return }
     let cancelled = false
     getSubCounties(form.assigned_region).then((list) => { if (!cancelled) setSubCounties(list) }).catch(() => { if (!cancelled) setSubCounties([]) })
     return () => { cancelled = true }
@@ -121,7 +123,7 @@ export default function UserManagement() {
   }, [unitSub])
 
   function regionInfo(id) {
-    if (!id) return { label: '—', unresolved: false }
+    if (!id) return { label: 'National', unresolved: false }   // no region = national (sees every region)
     const label = regionMap[id]
     if (label) return { label, unresolved: false }
     return { label: id, unresolved: true }
@@ -141,7 +143,7 @@ export default function UserManagement() {
       if (q && !name.includes(q) && !u.name.toLowerCase().includes(q)) return false
       if (roleFilter && u.primary_role !== roleFilter) return false
       if (statusFilter && (u.account_status || 'Active') !== statusFilter) return false
-      if (regionFilter && u.assigned_region !== regionFilter) return false
+      if (regionFilter && (u.assigned_region || NATIONAL) !== regionFilter) return false
       return true
     })
   }, [users, search, roleFilter, statusFilter, regionFilter])
@@ -197,7 +199,7 @@ export default function UserManagement() {
       last_name: u.last_name || '',
       mobile_no: u.mobile_no || '',
       primary_role: u.primary_role || '',
-      assigned_region: u.assigned_region || '',
+      assigned_region: u.assigned_region || NATIONAL,
       assigned_sub_county: u.assigned_sub_county || '',
       assigned_facility: u.assigned_facility || '',
       health_units: (userUnits[u.name] || []).map((x) => x.id),
@@ -236,8 +238,14 @@ export default function UserManagement() {
       setFormError('Set a temporary password before adding this user.')
       return
     }
-    if (!form.assigned_region || !form.assigned_sub_county) {   // every user has a region and sub-county (KRCS, 16 Nov 2026)
-      setFormError('Choose the region and sub-county for this user.')
+    const national = form.assigned_region === NATIONAL
+    if (national && kind) {
+      setFormError(`A ${kind === 'chp' ? 'CHP' : 'CHA'} works in one sub-county. Choose their region and sub-county.`)
+      return
+    }
+    // every user has a region and sub-county (KRCS, 16 Nov 2026), except National, which has no sub-county (19 Nov 2026)
+    if (!form.assigned_region || (!national && !form.assigned_sub_county)) {
+      setFormError(form.assigned_region ? 'Choose the sub-county for this user.' : 'Choose the region for this user.')
       return
     }
     if (kind && !form.health_units.length) {
@@ -252,6 +260,7 @@ export default function UserManagement() {
     setSaving(true)
     try {
       const data = { ...form, health_units: kind ? form.health_units : [] }   // only CHPs and CHAs have a CHU
+      if (national) { data.assigned_region = ''; data.assigned_sub_county = '' }   // National: no region limit
       if (editingUser) {
         await updateUser(editingUser.name, data)
       } else {
@@ -417,6 +426,7 @@ export default function UserManagement() {
             </select>
             <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 text-sm text-gray-600 bg-gray-50">
               <option value="">All Regions</option>
+              <option value={NATIONAL}>National</option>
               {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
             </select>
           </div>
@@ -595,9 +605,13 @@ export default function UserManagement() {
                         <label className={labelCls}>Region <span className="text-red-600">*</span></label>
                         <select value={form.assigned_region} onChange={(e) => updateForm({ assigned_region: e.target.value, assigned_sub_county: '' })} className={inputCls}>
                           <option value="">Select a region</option>
+                          <option value={NATIONAL}>National (every region)</option>
                           {regions.map((r) => <option key={r.name} value={r.name}>{r.region_name}</option>)}
                         </select>
                       </div>
+                      {form.assigned_region === NATIONAL ? (
+                        <p className="self-end pb-2 text-sm text-gray-700">National users see every region and sub-county, so no sub-county is needed.</p>
+                      ) : (
                       <div>
                         <label className={labelCls}>Sub-county <span className="text-red-600">*</span></label>
                         <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value, health_units: [] })} disabled={!form.assigned_region} className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`}>
@@ -606,6 +620,7 @@ export default function UserManagement() {
                         </select>
                         <p className="text-xs text-gray-500 mt-1.5">CHA / SCDSC: receives alerts for new signals in this sub-county.</p>
                       </div>
+                      )}
                       {kind && (
                         <div className="md:col-span-2">
                           <div className="flex items-center justify-between gap-3">

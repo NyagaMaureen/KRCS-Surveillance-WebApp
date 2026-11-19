@@ -17,7 +17,7 @@ from surveillance.capabilities import has_capability, require_capability
 TASK = "Event Task"
 FACILITY = "Reporting Facility"
 CONFIRM = "receive_referrals"
-OPEN_EVENT = ["New", "Verifying", "Investigating", "Confirmed", "Escalated"]
+OPEN_EVENT = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
 REFERRAL_STATUS = {"Assigned": "Pending", "In progress": "Pending", "Done": "Arrived", "Could not complete": "Did not arrive"}
 REPORT_STATUS = {"Submitted": "Awaiting review"}
 TASK_FIELDS = ["name", "people_referred", "reason", "instructions", "facility", "assigned_to", "case_report", "creation",
