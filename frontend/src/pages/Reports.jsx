@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Clock, Search as SearchIcon, CheckCircle, Search, Upload, Plus, Eye, Camera } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties, getUnitOptions } from '../api/frappe'
+import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties, getUnitOptions, getMyArea } from '../api/frappe'
 import { STATUSES, CHANNELS } from '../data/formOptions'
 
 const PAGE_SIZES = [10, 25, 50]
@@ -49,6 +49,8 @@ export default function Reports() {
   const [reporterText, setReporterText] = useState('')
   const [reporterFilter, setReporterFilter] = useState('')
   const [subCounties, setSubCounties] = useState([])
+  const [area, setArea] = useState({ locked: false, subCounties: [], regions: [] })   // officers, FHWs, CHAs: their places only
+  const mySubs = area.locked ? subCounties.filter((sc) => area.subCounties.some((x) => x.id === sc.name)) : subCounties
   // "Turkana West · Kalobeyei" on the first line, the block / village the reporter typed below it
   const subCountyName = (id) => (subCounties.find((sc) => sc.name === id) || {}).sub_county_name || String(id || '').replace(/^[^-]+-/, '')
   const placeLine = (r) => [subCountyName(r.sub_county), regions[r.region] || ''].filter(Boolean).join(' · ')
@@ -165,6 +167,7 @@ export default function Reports() {
     getReferenceLabels().then((labels) => setRegions(labels.regions || {}))
     getDiseaseOptions().then(setDiseaseOptions)
     getSubCounties('').then(setSubCounties).catch(() => {})
+    getMyArea().then(setArea).catch(() => {})
     getUnitOptions().then(setUnits).catch(() => {})
   }, [])
 
@@ -225,15 +228,15 @@ export default function Reports() {
         </select>
         <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Locations</option>
-          {Object.entries(regions).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          {Object.entries(regions).filter(([id]) => !area.locked || area.regions.includes(id)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
         <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} aria-label="Channel" className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
           <option value="">All Channels</option>
           {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <select value={subCountyFilter} onChange={(e) => setSubCountyFilter(e.target.value)} aria-label="Sub-county" className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">
-          <option value="">All Sub-counties</option>
-          {subCounties.map((sc) => <option key={sc.name} value={sc.name}>{sc.sub_county_name || sc.name}</option>)}
+          <option value="">{area.locked ? (mySubs.length > 1 ? 'All my sub-counties' : mySubs[0]?.sub_county_name || 'My sub-county') : 'All Sub-counties'}</option>
+          {(area.locked && mySubs.length <= 1 ? [] : mySubs).map((sc) => <option key={sc.name} value={sc.name}>{sc.sub_county_name || sc.name}</option>)}
         </select>
         {!isChp && units.options.length > 0 && (
           <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)} aria-label="Health unit" className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 min-w-0 max-w-full">

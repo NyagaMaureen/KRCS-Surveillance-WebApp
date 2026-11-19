@@ -144,13 +144,22 @@ def _user_row(user):
 	return frappe.db.get_value("User", user, fields, as_dict=True)
 
 
+def _all_scopes(user, row):
+	"""unit_scopes for the assigned sub-county, plus an officer's other sub-counties (KRCS 19 Nov 2026)."""
+	tokens = set(unit_scopes(row.get("assigned_region"), row.get("assigned_sub_county")))
+	from surveillance.user_scope import user_sub_counties
+	for sc in user_sub_counties(user)[1:]:
+		tokens |= set(unit_scopes(None, sc))
+	return sorted(tokens)
+
+
 def _staff_context(user, row):
 	roles = sorted(set(frappe.get_roles(user)) & surveillance_roles())
 	caps = set(get_user_capabilities(user))
 	level = actor_level(user, roles, caps)
 	national = NATIONAL_SCOPE in caps
 	return {
-		"scopes": None if national else unit_scopes(row.get("assigned_region"), row.get("assigned_sub_county")),
+		"scopes": None if national else _all_scopes(user, row),
 		"user": user, "user_ref": user, "roles": roles,
 		"actor_class": "Community Health Worker" if level == 1 else "Staff",
 		"regions": [row.assigned_region] if row.get("assigned_region") else None,

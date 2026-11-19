@@ -109,7 +109,8 @@ def _filters(raw):
 	f.disease = raw.disease or None
 	area = locked_area()
 	if area:
-		f.scope = f"{area.sub_county} sub-county"
+		from surveillance.user_scope import pick_sub_county
+		f.scope = f"{pick_sub_county(area, raw.sub_county)} sub-county"
 	elif f.sub_county:
 		f.scope = f"{(raw.sub_county or '').strip()} sub-county"
 	elif f.region:
@@ -1218,15 +1219,19 @@ def _options():
 	area = locked_area()
 	mine = area.region if area else _user_region()
 	pilot, _d = _scope()
-	regions = frappe.get_all("Region", filters={"name": mine} if mine else {}, fields=["name", "region_name"], order_by="region_name asc")
-	subs = [s for s in frappe.get_all("Sub County", filters={"region": mine} if mine else {},
-		fields=["sub_county_name", "region"], order_by="sub_county_name asc") if (s.sub_county_name or "").strip().lower() in pilot]
-	if area:
-		subs = [s for s in subs if (s.sub_county_name or "").strip().lower() == area.sub_county.strip().lower()]
+	if area:   # their sub-county or sub-counties (KRCS 19 Nov 2026)
+		regions = frappe.get_all("Region", filters={"name": ["in", area.regions or [""]]}, fields=["name", "region_name"], order_by="region_name asc")
+		subs = sorted(frappe.get_all("Sub County", filters={"name": ["in", area.ids]}, fields=["sub_county_name", "region"]),
+			key=lambda s: area.sub_counties.index(s.sub_county_name) if s.sub_county_name in area.sub_counties else 99)
+	else:
+		regions = frappe.get_all("Region", filters={"name": mine} if mine else {}, fields=["name", "region_name"], order_by="region_name asc")
+		subs = [s for s in frappe.get_all("Sub County", filters={"region": mine} if mine else {},
+			fields=["sub_county_name", "region"], order_by="sub_county_name asc") if (s.sub_county_name or "").strip().lower() in pilot]
 	active = _active()
 	dis = sorted(((k, d.disease_name or k) for k, d in _diseases().items() if k in active),
 		key=lambda x: x[1].lower().removeprefix("suspected "))
-	return {"lockedRegion": mine, "lockedSubCounty": area.sub_county if area else None,
+	return {"lockedRegion": mine if not area or len(area.regions) <= 1 else None,
+		"lockedSubCounty": area.sub_county if area and len(area.ids) == 1 else None, "pickSubCounty": bool(area and len(area.ids) > 1),
 		"regions": [{"value": r.name, "label": r.region_name or r.name} for r in regions],
 		"subCounties": [{"value": s.sub_county_name, "label": s.sub_county_name, "region": s.region} for s in subs],
 		"diseases": [{"value": k, "label": v} for k, v in dis],

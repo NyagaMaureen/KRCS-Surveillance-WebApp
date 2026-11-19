@@ -324,6 +324,7 @@ export async function createUser(userData) {
     assigned_sub_county: userData.assigned_sub_county || '',
     assigned_facility: userData.assigned_facility || '',
     health_units: (userData.health_units || []).map((u) => ({ health_unit: u })),
+    other_sub_counties: (userData.other_sub_counties || []).map((sc) => ({ sub_county: sc })),
     mobile_no: (userData.mobile_no || '').trim(),
     account_status: userData.account_status || 'Active',
 
@@ -396,6 +397,7 @@ export async function updateUser(name, userData) {
     assigned_sub_county: userData.assigned_sub_county || '',
     assigned_facility: userData.assigned_facility || '',
     health_units: (userData.health_units || []).map((u) => ({ health_unit: u })),
+    other_sub_counties: (userData.other_sub_counties || []).map((sc) => ({ sub_county: sc })),
     mobile_no: (userData.mobile_no || '').trim(),
     account_status: userData.account_status || 'Active',
 
@@ -453,6 +455,14 @@ export async function saveHealthUnit({ id, name, subCounty, active }) {
 // Health unit filters on Signals Captured and the Review Queue: { units: [{ id, name, subCounty, active }], options: [ids] }
 export async function getUnitOptions() {
   return (await callMethod('/api/method/surveillance.health_units.get_unit_options')) || { units: [], options: [] }
+}
+
+export async function getUsersOtherSubCounties() {   // {user: [Sub County id]}: an officer's other sub-counties
+  return (await callMethod('/api/method/surveillance.user_scope.get_users_other_sub_counties')) || {}
+}
+
+export async function getMyArea() {   // {locked, subCounties: [{id, name}], regions}: where an officer, FHW or CHA works
+  return (await callMethod('/api/method/surveillance.user_scope.get_my_area')) || { locked: false, subCounties: [], regions: [] }
 }
 
 export async function getUserHealthUnits() {

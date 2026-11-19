@@ -127,7 +127,8 @@ export default function HqDashboard() {
     const regionLabel = options?.regions?.find((r) => r.value === filters.region)?.label
     const channelLabel = options?.channels?.find((c) => c.value === filters.channel)?.label
     const statusLabel = options?.statuses?.find((s) => s.value === filters.status)?.label
-    const where = options?.lockedSubCounty ? `${options.lockedSubCounty} sub-county` : filters.subCounty ? `${filters.subCounty} sub-county` : regionLabel || 'All regions'
+    const picked = filters.subCounty || (options?.pickSubCounty ? options.subCounties?.[0]?.label : '')   // an officer with several sub-counties sees one at a time
+    const where = options?.lockedSubCounty ? `${options.lockedSubCounty} sub-county` : picked ? `${picked} sub-county` : regionLabel || 'All regions'
     const text = [`${periodText(filters)} (${fmtDay(filters.from)} to ${fmtDay(filters.to)})`, where, channelLabel || 'All channels',
       statusLabel || 'All statuses', tab.category && filters.category ? filters.category : null].filter(Boolean).join(' · ')
     return { dashboard: isMoh ? MOH_TITLE : TITLES[workspace] || TITLES.full, tab: tab.label, filters: text, user: currentUserFullName(), role: primaryRole }
@@ -157,6 +158,7 @@ export default function HqDashboard() {
           <h2 className="text-xl font-bold text-gray-900">{isMoh ? MOH_TITLE : TITLES[workspace] || TITLES.full}</h2>
           <p className="text-sm text-gray-900">
             {options?.lockedSubCounty ? `${options.lockedSubCounty} sub-county at a glance`
+              : options?.pickSubCounty ? `${options.subCounties.map((x) => x.label).join(' and ')} sub-counties at a glance`
               : isMoh ? `${options?.regions?.length === 1 ? `${options.regions[0].label} region` : 'Your region'} at a glance`
                 : 'Surveillance and system performance at a glance'}
           </p>
@@ -248,7 +250,7 @@ function FilterBar({ filters, set, options, category, changed, clear }) {
   const subs = (options?.subCounties || []).filter((s) => !filters.region || s.region === filters.region)
   return (
     <div className="mb-5 flex flex-wrap items-end justify-end gap-3 rounded-xl border border-gray-200 bg-white p-3">
-      {!options?.lockedRegion && (options?.regions?.length || 0) > 1 && (
+      {!options?.lockedRegion && !options?.pickSubCounty && (options?.regions?.length || 0) > 1 && (
         <Field label="Region">
           <select className={SELECT} value={filters.region} onChange={(e) => set('region', e.target.value)}>
             <option value="">National (all)</option>
@@ -262,8 +264,8 @@ function FilterBar({ filters, set, options, category, changed, clear }) {
         </Field>
       ) : (
       <Field label="Sub-county">
-        <select className={SELECT} value={filters.subCounty} onChange={(e) => set('subCounty', e.target.value)}>
-          <option value="">All sub-counties</option>
+        <select className={SELECT} value={options?.pickSubCounty ? (filters.subCounty || subs[0]?.value || '') : filters.subCounty} onChange={(e) => set('subCounty', e.target.value)}>
+          {!options?.pickSubCounty && <option value="">All sub-counties</option>}
           {subs.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </Field>

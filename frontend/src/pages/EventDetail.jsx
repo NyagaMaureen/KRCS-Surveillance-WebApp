@@ -39,6 +39,8 @@ const SECONDARY = 'bg-white text-gray-900 border-gray-200 hover:bg-gray-50'
 const BTN = 'border rounded-lg px-5 py-2.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed'
 const INPUT = `w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-300 ${FOCUS}`
 
+const CLOSING = new Set(['close', 'close_unconfirmed', 'discard'])   // these end the event: go back to the queue
+
 const ACTION_LABELS = {
   start: 'Start verification',
   investigate: 'Proceed to field investigation',
@@ -734,11 +736,33 @@ function TriageRisk({ risk, event }) {
 // ---------- Verification (step 2): the CHA, or an officer (KRCS 19 Nov 2026) ----------
 // Call each reporter and check the symptoms, answer the questions every signal has, then Confirm and save: the
 // officers are told and choose the disease in AI triage. No diseases are shown here.
+// Tabs with a curved top, the open one joined to the page below (Elizabeth, 19 Nov 2026)
+function CurvedTabs({ label, tabs, value, onChange }) {
+  return (
+    <div role="tablist" aria-label={label} className="mb-6 flex gap-1 overflow-x-auto border-b border-gray-300">
+      {tabs.map((t) => {
+        const on = t.key === value
+        return (
+          <button key={t.key} type="button" role="tab" aria-selected={on} disabled={t.disabled} title={t.disabled ? t.why : undefined}
+            onClick={() => onChange(t.key)}
+            className={`-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-t-xl border px-4 py-2.5 text-sm ${FOCUS} ${on
+              ? 'border-gray-300 border-b-white bg-white font-semibold text-red-700'
+              : 'border-transparent font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900'} disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-transparent`}>
+            {t.done && <Check className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />}
+            {t.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
   const [data, setData] = useState(null)
   const [failed, setFailed] = useState('')
   const [busy, setBusy] = useState(false)
   const [busyKey, setBusyKey] = useState('')
+  const [vtab, setVtab] = useState('reporter')   // 1. check with the reporter · 2. questions about this signal
   const load = useCallback(() => getTriage(event.id).then(setData).catch((e) => setFailed(e.message || 'Could not load the reports.')), [event.id])
   useEffect(() => { load() }, [load])
 
@@ -782,7 +806,7 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
 
   return (
     <div className={card}>
-      <PanelHeader title="Verification" sub="Call each reporter and check the symptoms below with them, then answer the questions about this signal. Everything you record is saved on the report." />
+      <PanelHeader title="Verification" sub="Call each reporter and check the symptoms with them, then answer the questions about this signal. Everything you record is saved on the report." />
       {inv.verified && (
         <p className="mb-5 rounded-lg border border-emerald-300 px-4 py-3 text-sm text-gray-900">
           <span className="font-semibold text-emerald-800">✓ Verified</span> by <span className="font-semibold">{inv.verified.by || '—'}</span> on {fmtDateTime(inv.verified.on)}.
@@ -790,6 +814,13 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
         </p>
       )}
 
+      <CurvedTabs label="Verification" value={vtab} onChange={setVtab} tabs={[
+        { key: 'reporter', label: '1. Check with the reporter', done: reports.length > 0 && waiting.length === 0 },
+        { key: 'questions', label: '2. Questions about this signal', done: questions.length > 0 && unanswered.length === 0 },
+      ]} />
+
+      {vtab === 'reporter' && (
+      <>
       <div className="space-y-3">
         {reports.map((r) => (
           <TriageReporter key={r.ref} r={{ ...r, tryChaAfter: tries }} eventId={event.id} canAct={editable} open={open} busy={busy} busyKey={busyKey}
@@ -803,8 +834,15 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
           </div>
         ))}
       </div>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
+        <p className="text-sm text-gray-700">{editable && waiting.length ? `Still to do here: call ${waiting.map((r) => _firstName(r.reporter?.name)).join(', ')} (Reached, or No answer ${tries} times).` : ''}</p>
+        <button type="button" onClick={() => setVtab('questions')} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Next →</button>
+      </div>
+      </>
+      )}
 
-      <h3 className="mt-7 mb-2 text-sm font-bold text-gray-900">Questions about this signal</h3>
+      {vtab === 'questions' && (
+      <>
       <table className="w-full border-collapse text-sm">
         <tbody>
           {questions.map((q) => (
@@ -820,16 +858,20 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
         </tbody>
       </table>
 
-      {editable && (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
-          <p className="text-sm text-gray-700">
-            {ready ? (inv.verified ? 'Save your changes.' : (isCha ? 'Ready. The surveillance officer is emailed when you confirm.' : 'Ready to confirm.'))
-              : `Still to do: ${left.join('; ')}.`}
-          </p>
-          <button type="button" disabled={busy || !ready} onClick={confirm} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
-            {busy ? 'Saving…' : 'Confirm and save'}
-          </button>
-        </div>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
+        <button type="button" onClick={() => setVtab('reporter')} className={`text-sm font-medium text-gray-700 hover:text-gray-900 underline underline-offset-2 rounded ${FOCUS}`}>← Back to the reporter</button>
+        {editable && (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-gray-700">
+              {ready ? (isCha ? 'Ready. The surveillance officer is emailed when you confirm.' : 'Ready to confirm.') : `Still to do: ${left.join('; ')}.`}
+            </p>
+            <button type="button" disabled={busy || !ready} onClick={confirm} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
+              {busy ? 'Saving…' : 'Confirm and save'}
+            </button>
+          </div>
+        )}
+      </div>
+      </>
       )}
       {!isCha && inv.verificationDone && (
         <div className="mt-6 flex justify-end border-t border-gray-100 pt-5">
@@ -842,12 +884,12 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
 
 // What step 2 found, read only, at the top of AI triage (KRCS 19 Nov 2026)
 const _redFlagQ = (q) => q.redFlag ?? String(q.kind || '').toLowerCase().includes('red')
-function VerifiedSummary({ inv, reports }) {
+function VerifiedSummary({ inv, reports, plain = false }) {
   const questions = (inv.questions || []).filter((q) => q.stage === 'CHA')
   const th = 'w-2/5 border-r border-gray-200 p-3 text-sm font-bold text-gray-900'
   return (
     <section aria-label="What the CHA found">
-      <h3 className="text-base font-bold text-gray-900">1. What the CHA found</h3>
+      {!plain && <h3 className="text-base font-bold text-gray-900">What the CHA found</h3>}
       <p className="text-sm text-gray-900">{inv.verified ? <>Verified by <b>{inv.verified.by || '—'}</b> on {fmtDateTime(inv.verified.on)}</> : 'Not verified yet: see step 2.'}</p>
       <table className="mt-3 w-full border border-gray-200 text-sm">
         <tbody>
@@ -885,7 +927,9 @@ function VerifiedSummary({ inv, reports }) {
   )
 }
 
-function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDiscard, onSplit, busy: pageBusy }) {
+// AI triage in four tabs (Elizabeth, 19 Nov 2026): 1. what the CHA found, 2. choose the disease, then for a priority
+// disease 3. its questions and 4. the next step (renderPart draws those two from VerificationPanel)
+function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDiscard, onSplit, busy: pageBusy, renderPart }) {
   const [data, setData] = useState(null)
   const [failed, setFailed] = useState('')
   const [busy, setBusy] = useState(false)
@@ -893,6 +937,7 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
   const [options, setOptions] = useState([])
   const [other, setOther] = useState(false)
   const [discarding, setDiscarding] = useState(false)
+  const [ttab, setTtab] = useState(null)   // null: the tab the event is at
 
   const load = useCallback(() => getTriage(event.id).then(setData).catch((e) => setFailed(e.message || 'AI triage could not be loaded.')), [event.id])
   useEffect(() => { load() }, [load])
@@ -908,6 +953,7 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
       const res = await confirmTriageDisease(event.id, pending.key)
       setPending(null)
       await load()
+      if (res.pathway !== 'Referral') setTtab('questions')
       onConfirmed(res)
     } catch (e) { onError(e.message || 'Could not save the disease') } finally { setBusy(false) }
   }
@@ -918,21 +964,47 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
   // the disease is chosen once Verification (step 2) is confirmed (KRCS 19 Nov 2026)
   const canChoose = data.canChoose && open && !!data.verificationDone
   const conflict = data.conflict
+  const priorityChosen = !!data.confirmed && data.pathway !== 'Referral' && !!renderPart
+  const atTab = priorityChosen ? 'questions' : data.verificationDone ? 'disease' : 'cha'
+  const cur = ttab && (priorityChosen || !['questions', 'decide'].includes(ttab)) ? ttab : atTab
+  const nextBtn = (to, label) => (
+    <div className="mt-6 flex justify-end border-t border-gray-100 pt-5">
+      <button type="button" onClick={() => setTtab(to)} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{label} →</button>
+    </div>
+  )
 
   return (
     <div className={`${card} relative`}>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">AI triage</h2>
-          <p className="text-sm text-gray-900 mt-0.5">1. Read what the CHA found · 2. Choose the disease · 3. Answer its questions · 4. Decide the next step</p>
+          <p className="text-sm text-gray-900 mt-0.5">Read what the CHA found, choose the disease, answer its questions, then decide the next step.</p>
         </div>
         <TriageRisk risk={event.risk} event={event} />
       </div>
 
-      <VerifiedSummary inv={inv} reports={reports} />
+      <CurvedTabs label="AI triage" value={cur} onChange={setTtab} tabs={[
+        { key: 'cha', label: '1. Read what the CHA found', done: !!data.verificationDone },
+        { key: 'disease', label: '2. Choose the disease', done: !!data.confirmed },
+        ...(data.pathway === 'Referral' ? [] : [
+          { key: 'questions', label: '3. Answer its questions', disabled: !priorityChosen, why: 'Choose a priority disease first' },
+          { key: 'decide', label: '4. Decide the next step', disabled: !priorityChosen, why: 'Choose a priority disease first' },
+        ]),
+      ]} />
 
-      <section aria-label="Choose the disease" className="mt-8">
-        <h3 className="text-base font-bold text-gray-900">2. Choose the disease</h3>
+      {cur === 'cha' && (
+        <>
+          <VerifiedSummary inv={inv} reports={reports} plain />
+          {nextBtn('disease', 'Next: choose the disease')}
+        </>
+      )}
+
+      {cur === 'questions' && priorityChosen && renderPart('questions', () => setTtab('decide'))}
+      {cur === 'decide' && priorityChosen && renderPart('decide')}
+
+      {cur === 'disease' && (
+      <>
+      <section aria-label="Choose the disease">
         <p className="text-sm text-gray-900">
           Case definitions first, then the AI model's suggestions{reports.length > 1 ? `, from all ${reports.length} reports` : ''}.
           {!canChoose && open && !data.verificationDone && ' Choose once verification (step 2) is confirmed.'}
@@ -1002,6 +1074,7 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
         )}
       </section>
 
+      {priorityChosen && nextBtn('questions', 'Next: answer its questions')}
       {!(data.confirmed && data.pathway !== 'Referral') && (
       <div className="mt-6 flex items-center justify-between gap-3 flex-wrap border-t border-gray-100 pt-4">
         {canAct && open && !discarding ? (
@@ -1012,11 +1085,13 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
         {data.pathway === 'Referral' ? (
           <button type="button" onClick={() => onNext(6)} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Refer the patient →</button>
         ) : data.confirmed ? (
-          <span className="text-sm text-gray-700">Answer the questions below, then start the field investigation.</span>
+          <span className="text-sm text-gray-700">Answer its questions next (tab 3).</span>
         ) : <span className="text-sm text-gray-700">{data.verificationDone ? 'Choose a disease to continue' : 'Waiting for verification (step 2)'}</span>}
       </div>
       )}
       {canAct && open && discarding && <DiscardBox busy={pageBusy} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
+      </>
+      )}
     </div>
   )
 }
@@ -1320,7 +1395,8 @@ function SignalCapturePanel({ event, signals, canAct, canAddVoice, editable, bus
   )
 }
 
-function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVerify, canAct, canSplit, onCheck, onSplit, onAnswer, onProceed, onDecide, onDiscard }) {
+// part: 'questions' or 'decide' to show just that part inside the AI triage tabs (KRCS 19 Nov 2026)
+function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVerify, canAct, canSplit, onCheck, onSplit, onAnswer, onProceed, onDecide, onDiscard, part, onNextTab }) {
   const [showAll, setShowAll] = useState(false)
   // field reports are checked by phone in AI triage (the call is their verification), so only the situation is left
   const triaged = signals.some((s) => s.source === 'Field')
@@ -1362,9 +1438,16 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
     : !questionsDone ? `${questions.length - answered} question${questions.length - answered === 1 ? '' : 's'} left before the field investigation can start.`
       : 'Ready. Read the suggestion and continue.'
 
+  const sub = `${chaDone ? `The ${chaDone} question${chaDone === 1 ? '' : 's'} the CHA answered ${chaDone === 1 ? 'is' : 'are'} not asked again. ` : ''}Ask the reporter, the facility or the team.`
   return (
-    <div className={card}>
-      <PanelHeader title={`${triaged ? '3. ' : ''}Questions for ${event.diseaseName || 'this disease'}`} sub={`${chaDone ? `The ${chaDone} question${chaDone === 1 ? '' : 's'} the CHA answered ${chaDone === 1 ? 'is' : 'are'} not asked again. ` : ''}Ask the reporter, the facility or the team.`} />
+    <div className={part ? '' : card}>
+      {!part && <PanelHeader title={`${triaged ? '3. ' : ''}Questions for ${event.diseaseName || 'this disease'}`} sub={sub} />}
+      {part === 'questions' && (
+        <div className="mb-4">
+          <h3 className="text-base font-bold text-gray-900">Questions for {event.diseaseName || 'this disease'}</h3>
+          <p className="text-sm text-gray-900">{sub}</p>
+        </div>
+      )}
 
       {!triaged && (
       <div role="tablist" aria-label="Verification steps" className="mb-6 flex gap-1 border-b border-gray-200 overflow-x-auto">
@@ -1477,8 +1560,8 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
         </div>
       )}
 
-      {tab === 'B' && (
-      <section aria-label="Questions about the situation" className={`mb-8 ${!reportsDone ? 'opacity-50' : ''}`}>
+      {tab === 'B' && part !== 'decide' && (
+      <section aria-label="Questions about the situation" className={`${part ? '' : 'mb-8'} ${!reportsDone ? 'opacity-50' : ''}`}>
         {!triaged && <p className="mb-3 text-sm text-gray-700">These are about the whole situation in this place, not one report. Ask the reporter, the facility or the team.</p>}
         {!reportsDone && <p className="mb-3 text-sm text-gray-500">{fromTrend ? 'Answer A first.' : 'Check a report in A first.'}</p>}
         {questions.length === 0 ? (
@@ -1523,8 +1606,16 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
       </section>
       )}
 
+      {part === 'questions' && onNextTab && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
+          <p className="text-sm text-gray-700">{questionsDone ? 'All answered.' : `${questions.length - answered} question${questions.length - answered === 1 ? '' : 's'} left.`}</p>
+          <button type="button" onClick={onNextTab} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Next →</button>
+        </div>
+      )}
+
+      {part !== 'questions' && (
       <section aria-label="Decide the next step">
-        <h3 className="mb-3 text-base font-bold text-gray-900">{triaged ? '4. ' : ''}Decide the next step</h3>
+        {!part && <h3 className="mb-3 text-base font-bold text-gray-900">{triaged ? '4. ' : ''}Decide the next step</h3>}
         <KeyCheckLine check={inv.gates?.keyCheck} />
         <div className="rounded-xl border border-gray-200">
         {inv.suggestion && (
@@ -1575,6 +1666,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
         </div>
         {editable && open && discarding && <DiscardBox busy={busy} initial={discardReason} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
       </section>
+      )}
     </div>
   )
 }
@@ -2717,6 +2809,10 @@ export default function EventDetail() {
     setBusy(true)
     try {
       const updated = await setEventStatus(event.id, action, text || '', facility || '')
+      if (CLOSING.has(action)) {   // closed: back to the queue list (Elizabeth, 19 Nov 2026)
+        backToQueue(`${event.id} ${action === 'discard' ? 'discarded' : 'closed'}.`)
+        return true
+      }
       setEvent(updated)
       setInv(await getInvestigation(event.id))
       setChoice(null)
@@ -2829,6 +2925,11 @@ export default function EventDetail() {
   }
 
   const backTo = { pathname: '/alerts-signals', search: location.search }
+  function backToQueue(notice) {
+    const p = new URLSearchParams(location.search)
+    p.delete('step')
+    navigate({ pathname: '/alerts-signals', search: p.toString() ? `?${p}` : '' }, { state: { notice } })
+  }
   const place = event ? [event.area, event.subCounty].filter(Boolean).join(', ') || 'Location missing' : ''
   const canAct = !!inv?.canAct
   // the steps this user sees and works on, from the step boxes in Roles & Permissions (KRCS 19 Nov 2026)
@@ -2910,10 +3011,11 @@ export default function EventDetail() {
               } catch (err) { showToast(err.message || 'Could not split the report', true) }
             }}
             onConfirmed={(r) => {
-              showToast(r.pathway === 'Referral' ? `${r.diseaseName} confirmed. Refer the patient next.` : `${r.diseaseName} confirmed. Answer its questions below.`)
+              showToast(r.pathway === 'Referral' ? `${r.diseaseName} confirmed. Refer the patient next.` : `${r.diseaseName} confirmed. Answer its questions next.`)
               refreshEvent()
               if (r.pathway === 'Referral') selectStep(6)
             }}
+            renderPart={officerQuestions ? (part, onNextTab) => questionsPanel(part, onNextTab) : null}
           />
         ) : (
           <div className={card}>
@@ -2925,11 +3027,11 @@ export default function EventDetail() {
             </RiskAssessment>
           </div>
         )
-        return (
-          <div className="flex flex-col gap-6">
-            {triage}
-            {officerQuestions && event.pathway !== 'Referral' && (
+        function questionsPanel(part, onNextTab) {
+          return (
               <VerificationPanel
+                part={part}
+                onNextTab={onNextTab}
                 event={event}
                 inv={inv}
                 editable={can(3) && ['New', 'Verifying', 'Verified'].includes(status)}
@@ -2946,7 +3048,13 @@ export default function EventDetail() {
                 onDiscard={(reason) => runAction('discard', reason)}
                 onDecide={openDecision}
               />
-            )}
+          )
+        }
+        return (
+          <div className="flex flex-col gap-6">
+            {triage}
+            {/* events with no field report (CBS, Epi Trends): the questions stay on their own card below */}
+            {fieldReports.length === 0 && officerQuestions && event.pathway !== 'Referral' && questionsPanel()}
           </div>
         )
       }
@@ -2983,7 +3091,7 @@ export default function EventDetail() {
         )
       case 6:
         if (event.pathway === 'Referral') {
-          return <ReferralPanel event={event} canAct={can(6)} onToast={showToast} onClosed={refreshEvent} />
+          return <ReferralPanel event={event} canAct={can(6)} onToast={showToast} onClosed={() => backToQueue(`${event.id} closed.`)} />
         }
         return (
           <ResponsePanel

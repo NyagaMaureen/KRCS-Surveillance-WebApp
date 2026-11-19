@@ -1,6 +1,7 @@
 """Alerts to people outside the event page: email + in-app now, SMS ready to switch on.
 
-1. New event   -> the CHA and SCDSC assigned to that sub-county (User.assigned_sub_county).
+1. New event   -> the CHA and SCDSC assigned to that sub-county (User.assigned_sub_county, or one of an officer's
+                  other sub-counties).
 2. Escalation  -> County and National MOH contacts (Escalation Contact list, managed by KRCS),
                   with what they need to act: disease, signs and symptoms,
                   cases and deaths, dates, location, nearest health facility, reporter contacts,
@@ -61,6 +62,14 @@ def sub_county_users(sub_county_name, event=None):
 		return []
 	users = frappe.get_all("User", filters={"assigned_sub_county": ["in", ids], "enabled": 1},
 		fields=["name", "email", "mobile_no", "full_name"])
+	from surveillance.user_scope import OTHER_CHILD, OTHER_FIELD
+	if frappe.get_meta("User").has_field(OTHER_FIELD):   # officers who also cover this sub-county (KRCS 19 Nov 2026)
+		have = {u.name for u in users}
+		more = set(frappe.get_all(OTHER_CHILD, filters={"parenttype": "User", "parentfield": OTHER_FIELD,
+			"sub_county": ["in", ids]}, pluck="parent")) - have
+		if more:
+			users += frappe.get_all("User", filters={"name": ["in", list(more)], "enabled": 1},
+				fields=["name", "email", "mobile_no", "full_name"])
 	# Event alerts (new signal, disease changed, resolved in Epi Trends, escalation copy) go to the officers and CHAs.
 	# CHPs hear about their tasks and referrals, never about suspected diseases; FHWs, for now, only about referrals to
 	# their facility (surveillance.fhw); Data & AI Administrators run the system and get no case alerts (KRCS 19 Nov 2026)

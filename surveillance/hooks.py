@@ -191,7 +191,8 @@ doc_events = {
 	"User": {
 		"validate": ["surveillance.health_units.validate_user",   # CHP: one CHU, CHA: one or more (KRCS 17 Nov 2026)
 			"surveillance.system_admin.validate_user_roles",   # only System Managers give System Manager (KRCS 18 Nov 2026)
-			"surveillance.account.user_status_rules"],   # Inactive / Suspended cannot log in (KRCS 18 Nov 2026)
+			"surveillance.account.user_status_rules",   # Inactive / Suspended cannot log in (KRCS 18 Nov 2026)
+			"surveillance.user_scope.validate_other_sub_counties"],   # officers: more than one sub-county (KRCS 19 Nov 2026)
 		"after_insert": "surveillance.whatsapp.data.clear_staff_cache",
 		"on_update": ["surveillance.whatsapp.data.clear_staff_cache",
 			"surveillance.account.end_sessions_when_disabled"],   # a deactivated user is signed out everywhere

@@ -17,14 +17,13 @@ def _own_only(user):
 
 
 def _sub_county_only(user):
-	"""Surveillance Officers, FHWs and CHAs with View Reports: only their assigned sub-county, the same place their
-	dashboard shows (KRCS, 16 Nov 2026)."""
+	"""Surveillance Officers, FHWs and CHAs with View Reports: only their sub-county or sub-counties (Sub County ids),
+	the same places their dashboard and Review Queue show (KRCS 16 and 19 Nov 2026)."""
 	if user in ("Administrator",) or not has_capability("view_reports", user):
 		return None
-	from surveillance.user_scope import SCOPED_WORKSPACES, user_workspace
-	if user_workspace(user) not in SCOPED_WORKSPACES or not frappe.get_meta("User").has_field("assigned_sub_county"):
-		return None
-	return frappe.db.get_value("User", user, "assigned_sub_county") or None
+	from surveillance.user_scope import locked_area
+	area = locked_area(user)
+	return list(area.ids) if area else None
 
 
 def _region_only(user):
@@ -46,7 +45,8 @@ def case_report_query(user=None):
 	if sub:
 		from surveillance.health_units import report_condition
 		unit = report_condition(user)   # CHAs: their CHU(s) and reports from no CHU (KRCS 17 Nov 2026)
-		place = f"`tabCase Report`.sub_county = {frappe.db.escape(sub)}" + (f" and {unit}" if unit else "")
+		subs = ", ".join(frappe.db.escape(x) for x in sub)
+		place = f"`tabCase Report`.sub_county in ({subs})" + (f" and {unit}" if unit else "")
 		return f"(({place}) or {own})"
 	region = _region_only(user)
 	if region:
@@ -62,7 +62,7 @@ def case_report_permission(doc, ptype=None, user=None):
 	sub = _sub_county_only(user)
 	if sub:
 		from surveillance.health_units import cha_scope, report_ok
-		return own or (doc.get("sub_county") == sub and report_ok(cha_scope(user), doc.get("community_health_unit")))
+		return own or (doc.get("sub_county") in sub and report_ok(cha_scope(user), doc.get("community_health_unit")))
 	region = _region_only(user)
 	if region:
 		return own or doc.get("region") == region

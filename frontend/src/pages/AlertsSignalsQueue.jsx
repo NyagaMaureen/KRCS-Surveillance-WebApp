@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-do
 import { Search, RefreshCw, ShieldAlert, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { PageSizeSelect } from '../components/common/Pager'
-import { getReviewEvents, getDiseaseOptions } from '../api/frappe'
+import { getReviewEvents, getDiseaseOptions, getMyArea } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { statusLabel, parseDate, relTime } from '../data/eventHelpers'
 import { RiskPill } from '../components/risk/RiskScore'
@@ -106,6 +106,13 @@ function SkeletonRows() {
 
 export default function AlertsSignalsQueue() {
   const location = useLocation()
+  const [notice, setNotice] = useState(location.state?.notice || '')   // e.g. EVT-00012 closed (from the event page)
+  useEffect(() => {
+    if (!notice) return undefined
+    window.history.replaceState({ ...window.history.state, usr: undefined }, '')   // not shown again on refresh
+    const t = setTimeout(() => setNotice(''), 6000)
+    return () => clearTimeout(t)
+  }, [notice])
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
 
@@ -123,6 +130,7 @@ export default function AlertsSignalsQueue() {
   const disease = params.get('disease') || ''
   const channel = params.get('channel') || ''
   const unit = params.get('unit') || ''   // Community Health Unit (KRCS 17 Nov 2026)
+  const scParam = params.get('sc')   // sub-county; 'all' = every one the user can see (KRCS 19 Nov 2026)
   const sevFilter = SEVERITIES.some((s) => s.key === params.get('sev')) ? params.get('sev') : ''
   const overdueOnly = params.get('overdue') === '1'
 
@@ -133,6 +141,10 @@ export default function AlertsSignalsQueue() {
   const [forbidden, setForbidden] = useState(false)
   const [updatedAt, setUpdatedAt] = useState(null)
   const [diseases, setDiseases] = useState([])
+  const [area, setArea] = useState({ locked: false, subCounties: [] })   // officers, FHWs and CHAs: where they work
+  useEffect(() => { getMyArea().then(setArea).catch(() => {}) }, [])
+  // pre-selected to their assigned sub-county (Elizabeth, 19 Nov 2026)
+  const subCounty = scParam === 'all' ? '' : scParam || (area.locked ? area.subCounties[0]?.name || '' : '')
   const [searchText, setSearchText] = useState(q)
   const reqId = useRef(0)
 
@@ -205,10 +217,14 @@ export default function AlertsSignalsQueue() {
     return () => clearInterval(timer)
   }, [load])
 
-  const overdueCount = useMemo(() => events.filter((e) => waitInfo(e)?.state === 'over').length, [events])
+  const scKey = (x) => String(x || '').trim().toLowerCase()
+  const scEvents = useMemo(() => (subCounty ? events.filter((e) => scKey(e.subCounty) === scKey(subCounty)) : events), [events, subCounty])
+  const subCountyOptions = useMemo(() => (area.locked ? area.subCounties.map((x) => x.name)
+    : [...new Set(events.map((e) => e.subCounty).filter(Boolean))].sort()), [area, events])
+  const overdueCount = useMemo(() => scEvents.filter((e) => waitInfo(e)?.state === 'over').length, [scEvents])
 
   const visibleEvents = useMemo(() => {
-    let list = events
+    let list = scEvents
     if (statuses) list = list.filter((e) => statuses.includes(e.status))
     if (sevFilter) list = list.filter((e) => e.severity === sevFilter)
     if (channel) list = list.filter((e) => channelsOf(e).includes(channel))
@@ -217,20 +233,20 @@ export default function AlertsSignalsQueue() {
     const sorted = sortEvents(list, sort)
     // officers: verified signals first in any list (they are waiting for AI triage)
     return isCha ? sorted : [...sorted.filter((e) => e.status === 'Verified'), ...sorted.filter((e) => e.status !== 'Verified')]
-  }, [events, statuses, sevFilter, channel, unit, overdueOnly, sort, isCha])
-  const channelOptions = useMemo(() => [...new Set(events.flatMap(channelsOf))].sort(), [events])
-  const unitOptions = useMemo(() => {
+  }, [scEvents, statuses, sevFilter, channel, unit, overdueOnly, sort, isCha])
+  const channelOptions = useMemo(() => [...new Set(scEvents.flatMap(channelsOf))].sort(), [scEvents])
+  const unitOptions = useMemo(() => {   // only the health units in the chosen sub-county (Elizabeth, 19 Nov 2026)
     const seen = new Map()
-    events.forEach((e) => (e.units || []).forEach((u) => seen.set(u.id, u.name)))
+    scEvents.forEach((e) => (e.units || []).forEach((u) => seen.set(u.id, u.name)))
     return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
-  }, [events])
+  }, [scEvents])
 
-  const tabCount = (t) => (t.statuses ? events.filter((e) => t.statuses.includes(e.status)).length : events.length)
+  const tabCount = (t) => (t.statuses ? scEvents.filter((e) => t.statuses.includes(e.status)).length : scEvents.length)
 
-  const filtersActive = !!(q || disease || channel || unit || sevFilter || overdueOnly)
+  const filtersActive = !!(q || disease || channel || unit || sevFilter || overdueOnly || scParam)
   const clearFilters = () => {
     setSearchText('')
-    setParam({ q: '', disease: '', channel: '', unit: '', sev: '', overdue: '' })
+    setParam({ q: '', disease: '', channel: '', unit: '', sev: '', overdue: '', sc: '' })
   }
   // View details opens on Signal captured (KRCS 19 Nov 2026); the queue's filters come along for the Back link
   const detailsSearch = (step = 1) => {
@@ -258,9 +274,11 @@ export default function AlertsSignalsQueue() {
     { key: 'closed', label: 'Closed this week', value: closedThisWeek },
     { key: 'overdue', label: 'Overdue', value: overdueCount },
   ]
-  if (!isCha && !isMoh) {   // officers: Verified card first, after All
-    const v = stats.findIndex((x) => x.key === 'verified')
-    stats.splice(1, 0, ...stats.splice(v, 1))
+  if (!isCha && !isMoh) {   // officers: Verified, then Verifying, right after All (an SO can verify too, KRCS 19 Nov 2026)
+    for (const [key, at] of [['verified', 1], ['verifying', 2]]) {
+      const v = stats.findIndex((x) => x.key === key)
+      if (v >= 0) stats.splice(at, 0, ...stats.splice(v, 1))
+    }
   }
   if (isMoh) {   // county MOH: Escalated to MOH instead of Overdue (verification targets are KRCS's)
     stats.splice(1, 0, { key: 'escalated', label: 'Escalated to MOH', value: tabCount(TABS.find((x) => x.key === 'escalated')) })
@@ -279,6 +297,7 @@ export default function AlertsSignalsQueue() {
             ? 'Signals from CHPs and CBS in your area. Call the reporter, check the symptoms and answer the questions, then Confirm and save so the surveillance officer can take it on.'
             : 'Individual reports of priority diseases from CHPs and CBS. Each one needs an officer to verify it, investigate if needed, and record a decision.'}</p>
           {!isCha && <Link to="/epi-trends" className={`inline-block text-xs text-gray-500 hover:text-gray-900 underline underline-offset-2 mt-1 rounded ${FOCUS}`}>Looking for diseases rising over several weeks? See Epi Trends</Link>}
+          {notice && <p role="status" className="mt-2 text-sm font-semibold text-emerald-800">{notice}</p>}
         </div>
         {!forbidden && (
           <button onClick={() => load()} disabled={loading} className={`h-9 inline-flex items-center gap-1.5 px-3.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium ${FOCUS}`}>
@@ -328,6 +347,12 @@ export default function AlertsSignalsQueue() {
               <option value="">All channels</option>
               {channelOptions.map((x) => <option key={x} value={x}>{x}</option>)}
             </select>
+            {subCountyOptions.length > 0 && (
+              <select aria-label="Sub-county" value={subCounty} onChange={(e) => setParam({ sc: e.target.value || 'all', unit: '' })} className={SELECT_SOFT}>
+                <option value="">{area.locked ? (area.subCounties.length > 1 ? 'All my sub-counties' : 'All, incl. no location') : 'All sub-counties'}</option>
+                {subCountyOptions.map((x) => <option key={x} value={x}>{x}</option>)}
+              </select>
+            )}
             <select aria-label="Health unit" value={unit} onChange={(e) => setParam({ unit: e.target.value })} className={SELECT_SOFT}>
               <option value="">All health units</option>
               {unitOptions.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}

@@ -39,3 +39,4 @@ surveillance.patches.chp_notification_cleanup #2026-11-19 fhw
 surveillance.patches.ai_triage_capability
 surveillance.patches.event_step_permissions
 surveillance.patches.verified_status
+surveillance.patches.officer_sub_counties

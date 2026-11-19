@@ -6,7 +6,7 @@ import AppShell from '../components/layout/AppShell'
 import { PageSizeSelect } from '../components/common/Pager'
 import RolesPermissions from '../components/settings/RolesPermissions'
 import HealthUnits from '../components/settings/HealthUnits'
-import { getUsers, createUser, updateUser, deactivateUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties, getReferralFacilities, getHealthUnits, getUserHealthUnits, saveHealthUnit, sendPasswordReset } from '../api/frappe'
+import { getUsers, createUser, updateUser, deactivateUser, getRoles, getRegions, createRole, getReferenceLabels, getUserRoles, getSubCounties, getReferralFacilities, getHealthUnits, getUserHealthUnits, getUsersOtherSubCounties, saveHealthUnit, sendPasswordReset } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 
 const tabs = [
@@ -48,6 +48,7 @@ const emptyForm = () => ({
   assigned_sub_county: '',
   assigned_facility: '',
   health_units: [],
+  other_sub_counties: [],   // an officer's other sub-counties (KRCS 19 Nov 2026)
   account_status: 'Active',
   password: '',
 })
@@ -85,12 +86,16 @@ export default function UserManagement() {
   const [regionMap, setRegionMap] = useState({})
   const [userRolesMap, setUserRolesMap] = useState({})
   const [userUnits, setUserUnits] = useState({})   // {user: [{id, name}]}
+  const [userOtherSubs, setUserOtherSubs] = useState({})   // {user: [Sub County id]}
+  const [allSubs, setAllSubs] = useState([])   // every sub-county, for an officer's other sub-counties
   const [unitsBySub, setUnitsBySub] = useState({})   // CHUs per sub-county, loaded when a sub-county is chosen on the form
   const { has } = useCapabilities()
   const [newUnit, setNewUnit] = useState(null)   // name typed in "+ New unit" on the user form
   const [newUnitError, setNewUnitError] = useState('')
   const [savingUnit, setSavingUnit] = useState(false)
   const kind = unitKind(form.primary_role)
+  // officers (not CHPs, CHAs or FHWs) can cover more than one sub-county (KRCS 19 Nov 2026)
+  const canHaveOtherSubs = !kind && form.primary_role !== 'Facility Health Worker' && form.assigned_region !== NATIONAL && !!form.assigned_sub_county
 
   function updateForm(fields) {
     setForm((prev) => ({ ...prev, ...fields }))
@@ -98,6 +103,7 @@ export default function UserManagement() {
 
   useEffect(() => {
     getSubCounties('').then((list) => {
+      setAllSubs(list)
       setSubCountyMap(Object.fromEntries(list.map((s) => [s.name, s.sub_county_name])))
     }).catch(() => {})
   }, [])
@@ -203,6 +209,7 @@ export default function UserManagement() {
       assigned_sub_county: u.assigned_sub_county || '',
       assigned_facility: u.assigned_facility || '',
       health_units: (userUnits[u.name] || []).map((x) => x.id),
+      other_sub_counties: userOtherSubs[u.name] || [],
       account_status: u.account_status || 'Active',
       password: '',
     })
@@ -261,6 +268,7 @@ export default function UserManagement() {
     try {
       const data = { ...form, health_units: kind ? form.health_units : [] }   // only CHPs and CHAs have a CHU
       if (national) { data.assigned_region = ''; data.assigned_sub_county = '' }   // National: no region limit
+      if (!canHaveOtherSubs) data.other_sub_counties = []   // only officers cover more than one sub-county
       if (editingUser) {
         await updateUser(editingUser.name, data)
       } else {
@@ -337,6 +345,7 @@ export default function UserManagement() {
   async function loadUsers() {
     setUsers(await getUsers({ limit: 500 }))
     setUserUnits(await getUserHealthUnits().catch(() => ({})))
+    setUserOtherSubs(await getUsersOtherSubCounties().catch(() => ({})))
   }
 
   async function loadRoles() {
@@ -476,7 +485,7 @@ export default function UserManagement() {
                         <span className="ml-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full align-middle">unresolved</span>
                       )}
                     </td>
-                    <td className="px-5 py-3 text-gray-700">{u.assigned_sub_county ? (subCountyMap[u.assigned_sub_county] || u.assigned_sub_county) : '—'}</td>
+                    <td className="px-5 py-3 text-gray-700">{u.assigned_sub_county ? [u.assigned_sub_county, ...(userOtherSubs[u.name] || [])].map((x) => subCountyMap[x] || x).join(', ') : '—'}</td>
                     <td className="px-5 py-3 text-gray-700">{(userUnits[u.name] || []).map((x) => x.name).join(', ') || (unitKind(u.primary_role) ? <span className="text-amber-700">Not set</span> : '—')}</td>
                     <td className="px-5 py-3"><span className={['text-xs font-medium px-3 py-1 rounded-full', statusColor(u.account_status)].join(' ')}>{u.account_status || 'Active'}</span></td>
                     <td className="px-5 py-3 text-gray-500">{formatDate(u.last_login)}</td>
@@ -614,12 +623,31 @@ export default function UserManagement() {
                       ) : (
                       <div>
                         <label className={labelCls}>Sub-county <span className="text-red-600">*</span></label>
-                        <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value, health_units: [] })} disabled={!form.assigned_region} className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`}>
+                        <select value={form.assigned_sub_county} onChange={(e) => updateForm({ assigned_sub_county: e.target.value, health_units: [], other_sub_counties: form.other_sub_counties.filter((x) => x !== e.target.value) })} disabled={!form.assigned_region} className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-400`}>
                           <option value="">{form.assigned_region ? 'Select a sub-county' : 'Select a region first'}</option>
                           {subCounties.map((s) => <option key={s.name} value={s.name}>{s.sub_county_name} · {s.county}</option>)}
                         </select>
                         <p className="text-xs text-gray-500 mt-1.5">CHA / SCDSC: receives alerts for new signals in this sub-county.</p>
                       </div>
+                      )}
+                      {canHaveOtherSubs && (
+                        <div className="md:col-span-2">
+                          <label className={labelCls}>Other sub-counties <span className="font-normal text-gray-500">(optional)</span></label>
+                          <div className="flex flex-wrap gap-2">
+                            {allSubs.filter((sc) => sc.name !== form.assigned_sub_county).map((sc) => {
+                              const on = form.other_sub_counties.includes(sc.name)
+                              return (
+                                <button key={sc.name} type="button" aria-pressed={on}
+                                  onClick={() => updateForm({ other_sub_counties: on ? form.other_sub_counties.filter((x) => x !== sc.name) : [...form.other_sub_counties, sc.name] })}
+                                  className={['rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                                    on ? 'bg-red-50 border-red-500 text-red-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'].join(' ')}>
+                                  {on ? '✓ ' : ''}{sc.sub_county_name}{sc.county ? ` · ${sc.county}` : ''}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1.5">For an officer who covers more than one sub-county: their Review Queue, Signals Captured, filters and alerts cover all of them.</p>
+                        </div>
                       )}
                       {kind && (
                         <div className="md:col-span-2">

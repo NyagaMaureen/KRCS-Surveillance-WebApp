@@ -598,6 +598,13 @@ def _scope_filters(check=True):
 	vis = visible_events()   # CHAs: their sub-county, reports from their CHU(s) or from no CHU (KRCS 17 Nov 2026)
 	if vis is not None:
 		return {"name": ["in", list(vis) or [""]]}
+	from surveillance.user_scope import locked_area
+	area = locked_area()   # officers and FHWs: their sub-county or sub-counties, not the whole region (KRCS 19 Nov 2026)
+	if area:
+		names = frappe.db.sql_list("""select name from `tabSurveillance Event`
+			where lower(trim(ifnull(sub_county, ''))) in %(subs)s or ifnull(sub_county, '') = ''""",
+			{"subs": tuple(n.strip().lower() for n in area.sub_counties)})
+		return {"name": ["in", names or [""]]}
 	region = _user_region()
 	if not region:
 		return {}
@@ -619,6 +626,12 @@ def _check_access(doc):
 	vis = visible_events()
 	if vis is not None and doc.name not in vis:
 		frappe.throw(_("This event is not in your Community Health Unit."), frappe.PermissionError)
+	from surveillance.user_scope import in_area, locked_area
+	area = locked_area()
+	if area:   # officers and FHWs: their sub-county or sub-counties (KRCS 19 Nov 2026)
+		if doc.sub_county and not in_area(area, doc.sub_county):
+			frappe.throw(_("This event is outside your sub-county."), frappe.PermissionError)
+		return
 	region = _user_region()
 	if region and doc.sub_county and doc.region != region:
 		frappe.throw(_("This event is outside your region."), frappe.PermissionError)
@@ -954,9 +967,10 @@ def get_map_events(status="open", disease=None, days=30):
 	from surveillance.user_scope import locked_area
 	active = active_diseases()   # active diseases only, plus unmatched reports (as in the Review Queue)
 	rows = [d for d in rows if not d.disease or d.disease in active or d.disease == "unclassified-illness"]
-	area = locked_area()   # officers, FHWs and CHAs: their sub-county only
+	area = locked_area()   # officers, FHWs and CHAs: their sub-county or sub-counties
 	if area:
-		rows = [d for d in rows if (d.sub_county or "").strip().lower() == area.sub_county.strip().lower()]
+		from surveillance.user_scope import in_area
+		rows = [d for d in rows if in_area(area, d.sub_county)]
 	from surveillance.health_units import visible_events
 	vis = visible_events()   # CHAs: their CHU(s)
 	if vis is not None:

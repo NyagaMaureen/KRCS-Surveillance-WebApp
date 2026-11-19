@@ -53,13 +53,15 @@ def _require_dashboard():
 def _f(region=None, sub_county=None, from_date=None, to_date=None, channel=None, status=None, category=None):
 	from surveillance.events import _user_region
 	area = locked_area()
-	if area:
-		region, sub_county = area.region, area.sub_county
+	if area:   # one of their sub-counties at a time: the one picked, or the first (KRCS 19 Nov 2026)
+		from surveillance.user_scope import pick_sub_county
+		sub_county = pick_sub_county(area, sub_county)
+		region = _region_of(sub_county) or area.region
 	to_d = getdate(to_date) if to_date else getdate(nowdate())
 	from_d = getdate(from_date) if from_date else add_days(to_d, -29)
 	if from_d > to_d:
 		from_d, to_d = to_d, from_d
-	mine = area.region if area else _user_region()
+	mine = region if area else _user_region()
 	from surveillance.health_units import cha_scope, visible_events
 	return frappe._dict(
 		cha=cha_scope(), vis=visible_events(),   # CHAs: their CHU(s) only (KRCS 17 Nov 2026)
@@ -67,6 +69,10 @@ def _f(region=None, sub_county=None, from_date=None, to_date=None, channel=None,
 		from_d=from_d, to_d=to_d, start=get_datetime(f"{from_d} 00:00:00"), end=get_datetime(f"{to_d} 23:59:59"),
 		channel=channel if channel in CHANNELS else None, status=status if status in STATUSES else None,
 		category=category if category in ("Human", "Animal") else None, locked_region=mine)
+
+
+def _region_of(sub_county_name):
+	return frappe.db.get_value("Sub County", {"sub_county_name": sub_county_name}, "region") if sub_county_name else None
 
 
 def _sub_names():
@@ -477,14 +483,19 @@ def get_filter_options():
 	area = locked_area()
 	mine = area.region if area else _user_region()
 	pilot, _d = _scope()
-	regions = frappe.get_all("Region", filters={"name": mine} if mine else {}, fields=["name", "region_name"], order_by="region_name asc")
-	subs = [s for s in frappe.get_all("Sub County", filters={"region": mine} if mine else {},
-		fields=["sub_county_name", "region"], order_by="sub_county_name asc") if (s.sub_county_name or "").strip().lower() in pilot]
-	if area:
-		subs = [s for s in subs if (s.sub_county_name or "").strip().lower() == area.sub_county.strip().lower()]
+	if area:   # their sub-county or sub-counties, whatever region they are in (KRCS 19 Nov 2026)
+		regions = frappe.get_all("Region", filters={"name": ["in", area.regions or [""]]}, fields=["name", "region_name"], order_by="region_name asc")
+		subs = sorted(frappe.get_all("Sub County", filters={"name": ["in", area.ids]}, fields=["sub_county_name", "region"]),
+			key=lambda s: area.sub_counties.index(s.sub_county_name) if s.sub_county_name in area.sub_counties else 99)
+	else:
+		regions = frappe.get_all("Region", filters={"name": mine} if mine else {}, fields=["name", "region_name"], order_by="region_name asc")
+		subs = [s for s in frappe.get_all("Sub County", filters={"region": mine} if mine else {},
+			fields=["sub_county_name", "region"], order_by="sub_county_name asc") if (s.sub_county_name or "").strip().lower() in pilot]
 	return {
-		"lockedRegion": mine,
-		"lockedSubCounty": area.sub_county if area else None,
+		"lockedRegion": mine if not area or len(area.regions) <= 1 else None,
+		# one sub-county: shown fixed; more than one: picked from their own (pickSubCounty)
+		"lockedSubCounty": area.sub_county if area and len(area.ids) == 1 else None,
+		"pickSubCounty": bool(area and len(area.ids) > 1),
 		"canSeeAll": has_capability(VIEW) and not area,
 		"regions": [{"value": r.name, "label": r.region_name or r.name} for r in regions],
 		"subCounties": [{"value": s.sub_county_name, "label": s.sub_county_name, "region": s.region} for s in subs],

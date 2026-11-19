@@ -60,7 +60,8 @@ def _sub_counties():
 	from surveillance.user_scope import locked_area
 	area = locked_area()   # officers, FHWs and CHAs: their sub-county only
 	if area:
-		out = {k: v for k, v in out.items() if k == area.sub_county.strip().lower()}
+		from surveillance.user_scope import in_area
+		out = {k: v for k, v in out.items() if in_area(area, k)}
 	return out
 
 

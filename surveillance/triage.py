@@ -724,11 +724,9 @@ def get_referrals(limit=1000):
 		vis = visible_events()
 		rows = [r for r in rows if (r.event and r.event in vis) or (not r.event and r.case_report and unit_of.get(r.case_report)
 			and report_ok(value, unit_of.get(r.case_report)))]
-	elif kind == "sub_county":
-		names = {value.sub_county.strip().lower()}
-		ids = frappe.get_all("Sub County", filters={"sub_county_name": value.sub_county}, pluck="name")
-		names |= {i.lower() for i in ids}
-		rows = [r for r in rows if (r.sub_county or "").strip().lower() in names]
+	elif kind == "sub_county":   # their sub-county or sub-counties (KRCS 19 Nov 2026)
+		from surveillance.user_scope import in_area
+		rows = [r for r in rows if in_area(value, r.sub_county)]
 	events = {e.name: e for e in frappe.get_all("Surveillance Event", filters={"name": ["in", list({r.event for r in rows if r.event}) or [""]]},
 		fields=["name", "status", "pathway", "title", "disease_name"], limit_page_length=0)}
 	followups = {}

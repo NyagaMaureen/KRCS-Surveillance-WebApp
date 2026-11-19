@@ -233,7 +233,7 @@ function FilterBar({ report, filters, set, options, changed, clear, search, q, s
             className={`h-9 w-full rounded-lg border border-gray-100 bg-gray-50 pl-9 pr-3 text-sm ${FOCUS}`} />
         </div>
       )}
-      {use.has('region') && !options?.lockedRegion && (options?.regions?.length || 0) > 1 && (
+      {use.has('region') && !options?.lockedRegion && !options?.pickSubCounty && (options?.regions?.length || 0) > 1 && (
         <select aria-label="Region" className={SELECT_SOFT} value={filters.region} onChange={(e) => set('region', e.target.value)}>
           <option value="">All regions</option>
           {options.regions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -242,8 +242,8 @@ function FilterBar({ report, filters, set, options, changed, clear, search, q, s
       {use.has('sub_county') && (options?.lockedSubCounty ? (
         <span className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700">{options.lockedSubCounty}</span>
       ) : (
-        <select aria-label="Sub-county" className={SELECT_SOFT} value={filters.subCounty} onChange={(e) => set('subCounty', e.target.value)}>
-          <option value="">All sub-counties</option>
+        <select aria-label="Sub-county" className={SELECT_SOFT} value={options?.pickSubCounty ? (filters.subCounty || subs[0]?.value || '') : filters.subCounty} onChange={(e) => set('subCounty', e.target.value)}>
+          {!options?.pickSubCounty && <option value="">All sub-counties</option>}
           {subs.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       ))}

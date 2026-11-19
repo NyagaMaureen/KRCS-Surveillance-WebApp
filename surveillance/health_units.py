@@ -292,9 +292,8 @@ def get_unit_options():
 		options = [r.name for r in rows if r.name in scope.units]
 	else:
 		from surveillance.user_scope import locked_area
-		area = locked_area()
-		sc = frappe.db.get_value("User", frappe.session.user, "assigned_sub_county") if area else None
-		options = [r.name for r in rows if not sc or r.sub_county == sc]
+		area = locked_area()   # their sub-county or sub-counties (KRCS 19 Nov 2026)
+		options = [r.name for r in rows if not area or r.sub_county in area.ids]
 	return {"units": [{"id": r.name, "name": r.health_unit_name, "subCounty": r.sub_county, "active": bool(r.is_active)} for r in rows],
 		"options": options}
 
