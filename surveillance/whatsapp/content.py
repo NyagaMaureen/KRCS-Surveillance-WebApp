@@ -291,6 +291,7 @@ ADVICE = {
 		"animals": "*Sick or dead animals:* do not slaughter, eat, sell or touch sick or dead animals, their meat or their milk. Keep sick animals apart and tell the local veterinary officer.",
 		"bite": "*Animal bite or scratch:* wash the wound with soap and running water for 15 minutes, and go to a health facility today.",
 		"general": "*If the person gets worse* (cannot drink, very weak, confused, bleeding or struggling to breathe), go to the nearest health facility at once.",
+		"next": "*What happens next:* the KRCS surveillance team reviews every report. A health worker may call you on this number to check the details or tell you what to do.",
 		"close": f"KRCS toll-free: *{HOTLINE}*. Emergency: *999* / *112*.",
 	},
 	"sw": {
@@ -304,6 +305,7 @@ ADVICE = {
 		"animals": "*Wanyama wagonjwa au waliokufa:* usichinje, usile, usiuze wala kugusa wanyama wagonjwa au waliokufa, nyama yao au maziwa yao. Watenge wanyama wagonjwa na umjulishe afisa wa mifugo.",
 		"bite": "*Kuumwa au kukwaruzwa na mnyama:* osha jeraha kwa sabuni na maji yanayotiririka kwa dakika 15, na uende kituo cha afya leo.",
 		"general": "*Hali ya mgonjwa ikizidi kuwa mbaya* (hawezi kunywa, ni dhaifu sana, amechanganyikiwa, anatokwa na damu au anapumua kwa shida), nenda kituo cha afya kilicho karibu mara moja.",
+		"next": "*Kinachofuata:* timu ya ufuatiliaji ya KRCS hukagua kila taarifa. Mhudumu wa afya anaweza kukupigia kwenye nambari hii kuthibitisha maelezo au kukueleza la kufanya.",
 		"close": f"Nambari ya bure ya KRCS: *{HOTLINE}*. Dharura: *999* / *112*.",
 	},
 }

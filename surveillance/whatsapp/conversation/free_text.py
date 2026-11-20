@@ -153,11 +153,14 @@ def approved_advice(s, ctx):
 		return {}
 
 
-def advice_for(s, ctx):
-	"""What to do while waiting, for the groups of symptoms reported: approved Community Advice where KRCS
-	has set it, else the draft in content.ADVICE."""
+def advice_for(s, ctx, disease=None):
+	"""What to do while waiting (SRS R10, RCCE). Approved Community Advice for the suspected disease first (its Key
+	is the disease's key, e.g. awd-cholera, as for protocols); without it, advice for the groups of symptoms
+	reported. Then animals and bites, what happens next, and the hotlines. Approved Community Advice replaces the
+	bot's draft in content.ADVICE key by key."""
 	d = s.draft
-	A = {**(C.ADVICE.get(s.lang) or C.ADVICE["en"]), **approved_advice(s, ctx)}
+	approved = approved_advice(s, ctx)
+	A = {**(C.ADVICE.get(s.lang) or C.ADVICE["en"]), **approved}
 	categories = {x["name"]: x.get("category") for x in ctx.data.catalog()["symptoms"]}
 	groups = {categories.get(sid) for sid in d.symptoms}
 	signs = (d.extraction or {}).get("danger_signs") or []
@@ -173,7 +176,7 @@ def advice_for(s, ctx):
 		"Febrile/Systemic",
 		"Dermatological",
 	]
-	parts = [A[g] for g in order if g in groups]
+	parts = [approved[disease]] if disease and approved.get(disease) else [A[g] for g in order if g in groups]
 	animals = (
 		d.category in (ANIMALS, ALL_DISEASE)
 		or d.animal_exposure == "Handled sick or dead animal"
@@ -185,4 +188,4 @@ def advice_for(s, ctx):
 		parts.append(A["bite"])
 	if not parts or not animals:
 		parts.append(A["general"])
-	return "\n\n".join([A["title"], *(f"• {p}" for p in parts), A["close"]])
+	return "\n\n".join([A["title"], *(f"• {p}" for p in parts), A["next"], A["close"]])

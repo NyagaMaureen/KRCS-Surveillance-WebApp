@@ -642,6 +642,24 @@ class TestConversation(FrappeTestCase):
 		h.say("1")  # Ugonjwa wa binadamu
 		self.assertEqual(h.s.draft.category, "Human Disease")
 
+	def test_community_advice_for_the_suspected_disease_comes_first(self):
+		for approved, expect, absent in (
+			({"awd-cholera": "Cholera advice approved by KRCS RCCE."}, "Cholera advice approved", "Diarrhoea or vomiting"),
+			({}, "Diarrhoea or vomiting", "Cholera advice"),  # none approved for it: by symptom group, as before
+		):
+			h = Harness(self, PUBLIC)
+			h.data.disease = "awd-cholera"
+			h.data.community = approved
+			start(h)
+			fill_location(h)
+			h.tap("Amina")
+			fill_common_steps(h)
+			finish_without_extras(h)
+			h.tap("Confirm & submit")
+			self.assertIn(expect, h.bodies())
+			self.assertNotIn(absent, h.bodies())
+			self.assertIn("*What happens next:* the KRCS surveillance team reviews every report", h.bodies())
+
 	def test_community_reports_get_no_duplicate_question(self):
 		h = Harness(self, PUBLIC)
 		start(h)

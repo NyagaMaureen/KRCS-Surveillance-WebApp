@@ -427,7 +427,7 @@ def submit(s, ctx):
 			ctx.log_error("WhatsApp report could not be saved")
 		return quiet(text(t(s)["saveFailed"]))
 	# SRS R10: community reporters get advice for what they reported; staff get the mobile app's next steps.
-	advice = next_steps(s, report, ctx) if s.mode == "staff" else [text(advice_for(s, ctx))]
+	advice = next_steps(s, report, ctx) if s.mode == "staff" else [text(advice_for(s, ctx, report.get("suspected_disease")))]
 	draft = s.draft
 	s.draft = None
 	if draft.description:
