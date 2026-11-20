@@ -837,9 +837,8 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertEqual((staff_user, staff_call["on_behalf_of"]), (STAFF_USER, None))
 		self.assertEqual((public_user, public_call["on_behalf_of"]), ("Administrator", "whatsapp:abc123"))
 		self.assertEqual((staff_call["language"], public_call["language"]), ("Kiswahili", "English"))
-		self.assertEqual(
-			{(c["mode"], c["channel"]) for _, c in seen}, {("verbatim", "WhatsApp")}
-		)  # no generated summaries on WhatsApp
+		self.assertEqual({c["channel"] for _, c in seen}, {"WhatsApp"})
+		self.assertTrue(all("mode" not in c for _, c in seen))  # the Knowledge Base decides, as in the app
 		self.assertEqual((staff_call["correlation_id"], staff_call["conversation_id"]), ("r1", "c1"))
 
 	def test_a_question_the_knowledge_base_refuses_is_logged_once_and_passed_on(self):

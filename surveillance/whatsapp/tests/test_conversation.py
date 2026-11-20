@@ -221,7 +221,22 @@ class FakeKnowledge:
 		if "down" in q:
 			raise ConnectionError("Knowledge Base unavailable")
 		if "water" in q and "trusted" in q:
-			return {"mode": "trusted_source", "answer": "From WHO: ...", "escalated": True, "reason": "no_results|trusted:WHO"}
+			return {
+				"mode": "trusted_source",
+				"answer": "## From WHO\n\nBoil water for one minute [1]. See [WHO water](https://who.int/water).",
+				"sources": [{"n": 1, "title": "Drinking water", "section": "WHO", "url": "https://who.int/water"}],
+				"used_sources": [1],
+				"escalated": True,
+				"reason": "no_results|trusted:WHO",
+			}
+		if "summary" in q:
+			return {
+				"mode": "summary",
+				"answer": "**Isolate** the person and give ORS [1].",
+				"sources": [{"n": 1, "title": "Cholera Response Protocol", "version": "v1.0", "section": "Home care"}],
+				"used_sources": [1],
+				"escalated": False,
+			}
 		if "cholera" in q and user:
 			return {
 				"mode": "verbatim",
@@ -1104,14 +1119,23 @@ class TestConversation(FrappeTestCase):
 		self.assertEqual(kb.calls[0]["conversation_id"], pseudonym(STAFF, None))
 		self.assertNotEqual(kb.calls[0]["request_id"], kb.calls[1]["request_id"])
 
-	def test_trusted_website_answers_are_not_shown_on_whatsapp(self):
+	def test_trusted_website_answers_are_shown_and_passed_to_the_desk_as_in_the_app(self):
 		h = Harness(self, STAFF, knowledge=FakeKnowledge())
 		start(h, "staff")
 		h.tap("Ask a question")
 		h.say("trusted advice on water")
-		self.assertNotIn("From WHO", h.bodies())
-		self.assertIn("couldn't find approved guidance", h.bodies())
+		self.assertIn("*From WHO*\n\nBoil water for one minute [1]. See WHO water (https://who.int/water).", h.bodies())
+		self.assertIn("_Source: [1] Drinking water, WHO, https://who.int/water_", h.bodies())
 		self.assertEqual(h.escalated[0]["reason"], "no_results|trusted:WHO")
+
+	def test_a_written_answer_is_shown_as_the_app_shows_it(self):
+		h = Harness(self, STAFF, knowledge=FakeKnowledge())
+		start(h, "staff")
+		h.tap("Ask a question")
+		h.say("cholera home care summary")
+		self.assertIn("*Isolate* the person and give ORS [1].", h.bodies())
+		self.assertIn("_Source: [1] Cholera Response Protocol, v1.0, Home care_", h.bodies())
+		self.assertEqual(h.escalated, [])
 
 	def test_dose_and_diagnosis_questions_get_a_referral_without_asking_the_knowledge_base(self):
 		for phone, question in (

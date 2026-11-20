@@ -5,8 +5,10 @@ Staff ask as themselves: their roles, scope and level decide what they see, exac
 A community member is asked for by the WhatsApp service with on_behalf_of "whatsapp:<pseudonym>", which gets only
 approved Public documents (site config kb_public_enabled); their number never reaches the Knowledge Base.
 
-Answers are always verbatim approved text (mode "verbatim"): generated summaries stay off on WhatsApp until KRCS
-approves them, and so does the trusted-website fallback (see ask.py).
+No mode is sent, so the Knowledge Base answers exactly as it does in the app: for staff, a written answer checked
+against the approved passages when Claude (or the local model) is set up, else the passages verbatim, and the
+trusted websites when the documents don't answer; for the public, one approved passage, verbatim, in the fixed
+template (knowledge_base.ask, summary_allowed).
 """
 
 import frappe
@@ -36,7 +38,6 @@ class KnowledgeBase:
 				correlation_id=request_id,
 				conversation_id=conversation_id,
 				on_behalf_of=None if user else PUBLIC_PREFIX + public_ref,
-				mode="verbatim",
 			)
 		except Exception as e:
 			raise KnowledgeError(f"{type(e).__name__}: {e}"[:300]) from e

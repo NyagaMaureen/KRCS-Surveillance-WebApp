@@ -4,7 +4,7 @@ A question goes through, in order:
 	safety.check       a request for a dose or a diagnosis gets a referral; orders to the bot get a refusal
 	ctx.chatbot        /classify-intent (optional): a report sent as a question is offered the report flow,
 	                   a count question is pointed to the app, a greeting gets the prompt again
-	ctx.knowledge      the approved answer, quoted as it is (knowledge.py); no approved answer is passed to the desk
+	ctx.knowledge      the answer the app would give (knowledge.py); no answer is passed to the desk
 """
 
 import re
@@ -29,9 +29,10 @@ from surveillance.whatsapp.conversation.steps import choose, first_missing, miss
 from surveillance.whatsapp.messages import menu, text
 from surveillance.whatsapp.redact import pseudonym, redact
 
-# Anything else is not shown and is passed to the desk: no approved answer (not_found), approved documents that
-# disagree (conflict), and the trusted-website fallback (trusted_source), which stays off here until KRCS approves it.
-ANSWERED = ("verbatim", "public", "summary")
+# Shown, as in the app. A trusted-website answer (trusted_source) is also passed to the desk, as the Knowledge Base
+# marks it escalated. Anything else is not shown and is passed to the desk: no answer (not_found) and approved
+# documents that disagree (conflict); the person gets a fixed reply that doesn't show the desk's numbers.
+ANSWERED = ("verbatim", "public", "summary", "trusted_source")
 
 
 def _ask_options(s, ctx):
@@ -145,8 +146,10 @@ def _intent(question, ctx):
 
 
 def whatsapp_text(answer):
-	"""Markdown bold (**x**) as WhatsApp bold (*x*)."""
-	return re.sub(r"\*\*(.+?)\*\*", r"*\1*", answer or "")
+	"""Markdown as WhatsApp shows it: **bold** and # headings as *bold*, [label](url) as label (url)."""
+	value = re.sub(r"\*\*(.+?)\*\*", r"*\1*", answer or "")
+	value = re.sub(r"(?m)^#{1,6}[ \t]+(.+?)[ \t]*$", r"*\1*", value)
+	return re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"\1 (\2)", value)
 
 
 def source_lines(r, s):
@@ -155,7 +158,8 @@ def source_lines(r, s):
 	for src in r.get("sources") or []:
 		if used and src.get("n") not in used:
 			continue
-		where = ", ".join(str(x) for x in (src.get("title"), src.get("version"), src.get("section")) if x)
+		parts = (src.get("title"), src.get("version"), src.get("section"), src.get("url"))
+		where = ", ".join(str(x) for x in parts if x)
 		if where:
 			lines.append(f"[{src.get('n')}] {where}")
 	return f"_{t(s)['askSources']}: " + "; ".join(lines) + "_" if lines else None
