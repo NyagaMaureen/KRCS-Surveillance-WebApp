@@ -271,13 +271,23 @@ class RDeaths(State):
 
 
 class RRegion(State):
-	"""The staff member's assigned region is listed first."""
+	"""An officer's own sub-counties come first (one tap sets region and sub-county), then every region with the
+	staff member's assigned region at the top."""
 
 	def options(self, s, ctx):
 		regions = ctx.data.catalog()["regions"]
 		mine = s.staff.region if s.staff else None
 		ordered = [r for r in regions if r["name"] == mine] + [r for r in regions if r["name"] != mine]
 		return [
+			*(
+				{
+					"id": f"q:{x['name']}",
+					"title": x["label"],
+					"full": x["label"],
+					"desc": t(s)["subCountyYours"],
+				}
+				for x in ((s.staff or {}).get("sub_counties") or [])
+			),
 			*(
 				{
 					"id": f"r:{r['name']}",
@@ -292,13 +302,18 @@ class RRegion(State):
 
 	def prompt(self, s, ctx):
 		n, total = step_no(s, "r_region", ctx)
-		opts = [o for o in self.options(s, ctx) if o["id"].startswith("r:")]
+		opts = [o for o in self.options(s, ctx) if o["id"].startswith(("q:", "r:"))]
 		return [ask(s, t(s)["region"](n, total), opts)]
 
 	def on(self, s, inp, choice, ctx):
 		moved = paging(s, choice)
 		if moved:
 			return moved
+		if choice and choice.startswith("q:"):
+			mine = next(x for x in s.staff.sub_counties if x["name"] == choice[2:])
+			s.draft.region, s.draft.sub_county = mine["region"], mine["name"]
+			s.draft.region_from_pin = s.draft.sub_county_from_pin = False
+			return go(after(s, "r_subcounty", ctx))
 		if not (choice and choice.startswith("r:")):
 			return None
 		region = choice[2:]

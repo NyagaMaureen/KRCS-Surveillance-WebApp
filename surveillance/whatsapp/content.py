@@ -500,6 +500,7 @@ T = {
 		"deathsInvalid": "Please type the number of deaths (0 or more), or tap *None*.",
 		"region": lambda n, t: f"{_step_en(n, t, 'Where is it happening?')}\nSelect the region:",
 		"regionYours": "Your assigned region",
+		"subCountyYours": "Your sub-county",
 		"subCounty": lambda n, t, region: f"{_step_en(n, t, 'Sub-county')}\nWhich sub-county of *{region}*?",
 		"place": lambda n,
 		t: f"{_step_en(n, t, 'Exact location')} _(optional)_\nShare your location, type the village, camp block or landmark, or skip.",
@@ -578,9 +579,12 @@ T = {
 		"editPrompt": "*Which section would you like to edit?*",
 		"editBack": "Back to review",
 		"incomplete": lambda what: f"Please complete: *{what}*",
-		"duplicate": lambda r: f"*Potential duplicate report detected*\n\n*{r['name']}* – {r.get('symptom_tags') or 'same symptoms'}, "
-		f"reported on {r.get('report_date')}, is still open in this region.\n\nIs this a separate incident?",
+		"duplicate": lambda r: "*A similar report was sent recently*\n\nA report "
+		+ ("of the same suspected disease" if r.get("match") == "disease" else "with at least two of the same signs")
+		+ f" was sent from this sub-county on {r.get('report_date')} and is still open.\n\n"
+		"Is yours a new incident, or the same one? Either way your report is sent.",
 		"submitAnyway": "New incident",
+		"sameIncident": "Same incident",
 		"consentAsk": "*Attachments*\n\nDoes any photo, video, voice note or file show or record a person? If yes, did they (or a parent or guardian, for a child) agree?",
 		"consentNone": "No person in them",
 		"consentPerson": "Person agreed",
@@ -725,6 +729,7 @@ T = {
 		"deathsInvalid": "Tafadhali andika idadi ya vifo (0 au zaidi), au bonyeza *Hakuna*.",
 		"region": lambda n, t: f"{_step_sw(n, t, 'Linatokea wapi?')}\nChagua eneo:",
 		"regionYours": "Eneo lako",
+		"subCountyYours": "Kaunti ndogo yako",
 		"subCounty": lambda n,
 		t,
 		region: f"{_step_sw(n, t, 'Kaunti ndogo')}\nKaunti ndogo ipi ya *{region}*?",
@@ -804,9 +809,12 @@ T = {
 		"editPrompt": "*Ungependa kubadilisha sehemu gani?*",
 		"editBack": "Rudi kukagua",
 		"incomplete": lambda what: f"Tafadhali kamilisha: *{what}*",
-		"duplicate": lambda r: f"*Huenda taarifa hii tayari ipo*\n\n*{r['name']}* – {r.get('symptom_tags') or 'dalili zilezile'}, "
-		f"iliyotumwa {r.get('report_date')}, bado iko wazi katika eneo hili.\n\nJe, hili ni tukio tofauti?",
+		"duplicate": lambda r: "*Taarifa inayofanana ilitumwa hivi karibuni*\n\nTaarifa "
+		+ ("ya ugonjwa uleule unaoshukiwa" if r.get("match") == "disease" else "yenye angalau dalili mbili zilezile")
+		+ f" ilitumwa kutoka kaunti ndogo hii tarehe {r.get('report_date')} na bado iko wazi.\n\n"
+		"Je, yako ni tukio jipya, au ni lilelile? Kwa vyovyote vile taarifa yako itatumwa.",
 		"submitAnyway": "Tukio jipya",
+		"sameIncident": "Tukio lilelile",
 		"consentAsk": "*Viambatisho*\n\nJe, picha, video, sauti au faili yoyote inaonyesha au inarekodi mtu? Kama ndiyo, je alikubali (au mzazi au mlezi, kwa mtoto)?",
 		"consentNone": "Hakuna mtu",
 		"consentPerson": "Mtu alikubali",

@@ -163,17 +163,20 @@ class FakeData:
 		self.reports.append(report)
 		return report
 
-	def find_duplicate(self, region, symptoms):
-		return next(
-			(
-				r
-				for r in reversed(self.reports)
-				if r["region"] == region
-				and r["status"] != "Closed"
-				and any(x["symptom"] in symptoms for x in r["symptoms"])
-			),
-			None,
-		)
+	def find_duplicate(self, sub_county, symptoms, age_group=None, animal_exposure=None):
+		self.duplicate_asked = (sub_county, list(symptoms), age_group, animal_exposure)
+		for r in reversed(self.reports):
+			if r.get("sub_county") != sub_county or r["status"] == "Closed":
+				continue
+			shared = {x["symptom"] for x in r["symptoms"]} & set(symptoms)
+			match = (
+				"disease"
+				if self.disease and r["suspected_disease"] == self.disease
+				else ("symptoms" if len(shared) >= 2 else None)
+			)
+			if match:
+				return {"name": r["name"], "report_date": r.get("report_date"), "match": match}
+		return None
 
 	def my_reports(self, user=None, phone=None, limit=9):
 		rows = [
@@ -353,6 +356,25 @@ def submit_staff_report(h):
 	h.say("10/10/2026")
 	h.tap("Skip & review")
 	h.tap("Confirm & submit")
+
+
+def staff_to_review(h, *media):
+	"""Staff portal -> Dadaab / Fafi -> skip place -> the common steps -> today -> review (with any media)."""
+	start(h, "staff")
+	h.tap("Submit health report")
+	fill_location(h)
+	h.tap("Human disease")
+	h.tap("Suspected Outbreak")
+	h.tap("Diarrhea")
+	h.say("vomiting")
+	h.tap("Continue")
+	answers = {"r_count": "12", "r_age": "skip", "r_exposure": "skip", "r_deaths": "0"}
+	while h.s.state in answers:
+		h.say(answers[h.s.state])
+	h.tap("Today")
+	for m in media:
+		h.send(m)
+	h.tap("Proceed to review" if media else "Skip & review")
 
 
 def start(h, lang="English", guided=True):
@@ -618,7 +640,7 @@ class TestConversation(FrappeTestCase):
 		h.say("1")  # Ugonjwa wa binadamu
 		self.assertEqual(h.s.draft.category, "Human Disease")
 
-	def test_duplicate_warning(self):
+	def test_community_reports_get_no_duplicate_question(self):
 		h = Harness(self, PUBLIC)
 		start(h)
 		for i in range(2):
@@ -630,9 +652,78 @@ class TestConversation(FrappeTestCase):
 			fill_common_steps(h)
 			finish_without_extras(h)
 			h.tap("Confirm & submit")
-		self.assertRegex(h.bodies(), r"Potential duplicate report[\s\S]*RPT-001")
+			self.assertEqual(h.s.state, "r_done")
+		self.assertEqual(len(h.data.reports), 2)
+
+	def test_staff_duplicate_question_names_no_other_report(self):
+		first = Harness(self, STAFF)
+		staff_to_review(first)
+		first.tap("Confirm & submit")
+		h = Harness(self, STAFF, data=first.data)
+		staff_to_review(h)
+		h.tap("Confirm & submit")
+		self.assertEqual(h.s.state, "r_duplicate")
+		self.assertIn("with at least two of the same signs was sent from this sub-county", h.bodies())
+		self.assertNotIn("RPT-001", h.bodies())  # someone else's report
+		self.assertEqual(h.data.duplicate_asked[:2], ("Garissa-Fafi", ["sym-4", "sym-5"]))
 		h.tap("New incident")
 		self.assertEqual(len(h.data.reports), 2)
+		self.assertNotIn("Possible duplicate", h.data.reports[-1].get("extraction_details") or "")
+
+	def test_same_incident_still_sends_the_report_with_a_note_for_the_desk(self):
+		first = Harness(self, STAFF)
+		first.data.disease = "cholera"
+		staff_to_review(first)
+		first.tap("Confirm & submit")
+		h = Harness(self, STAFF, data=first.data)
+		staff_to_review(h)
+		h.tap("Confirm & submit")
+		self.assertIn("of the same suspected disease", h.bodies())
+		h.tap("Same incident")
+		self.assertEqual(h.s.state, "r_done")
+		self.assertEqual(len(h.data.reports), 2)
+		self.assertIn(
+			"Possible duplicate of RPT-001: the reporter said it is the same incident.",
+			h.data.reports[-1]["extraction_details"],
+		)
+
+	def test_no_duplicate_question_for_another_sub_county_or_one_shared_symptom(self):
+		first = Harness(self, STAFF)
+		staff_to_review(first)
+		first.tap("Confirm & submit")
+		first.data.reports[0]["sub_county"] = "Garissa-Liboi"
+		h = Harness(self, STAFF, data=first.data)
+		staff_to_review(h)
+		h.tap("Confirm & submit")
+		self.assertEqual(h.s.state, "r_done")
+		first.data.reports[0]["sub_county"] = "Garissa-Fafi"
+		first.data.reports[0]["symptoms"] = first.data.reports[0]["symptoms"][:1]
+		first.data.reports[1]["status"] = "Closed"
+		h = Harness(self, STAFF, data=first.data)
+		staff_to_review(h)
+		h.tap("Confirm & submit")
+		self.assertEqual(h.s.state, "r_done")
+
+	def test_an_officer_picks_one_of_their_sub_counties_in_one_tap(self):
+		h = Harness(self, STAFF)
+		h.data.staff_extra = {
+			"sub_counties": [
+				{"name": "Turkana-Lokichogio", "label": "Lokichogio", "region": "reg-kalobeyei"},
+				{"name": "Garissa-Fafi", "label": "Fafi", "region": "reg-dadaab"},
+			]
+		}
+		start(h, "staff")
+		h.tap("Submit health report")
+		titles = [o["title"] for o in h.options()]
+		self.assertEqual(titles[:3], ["Lokichogio", "Fafi", "Dadaab"])  # theirs first, then every region
+		h.tap("Fafi")
+		self.assertEqual((h.s.draft.region, h.s.draft.sub_county), ("reg-dadaab", "Garissa-Fafi"))
+		self.assertNotEqual(h.s.state, "r_subcounty")
+		h.s.draft = None
+		h.say("menu")
+		h.tap("Submit health report")
+		h.tap("Kalobeyei")  # any other place is still there
+		self.assertEqual(h.s.state, "r_subcounty")
 
 	def test_staff_see_only_their_own_reports(self):
 		data = FakeData()
@@ -1528,10 +1619,11 @@ class TestFreeText(FrappeTestCase):
 		self.assertEqual(media, [])
 
 	def test_a_file_sent_at_the_duplicate_question_still_needs_consent(self):
-		h = Harness(self, PUBLIC)
-		self._to_review_with_media(h)
-		h.tap("Confirm & submit")
-		self._to_review_with_media(h)
+		first = Harness(self, STAFF)
+		staff_to_review(first)
+		first.tap("Confirm & submit")
+		h = Harness(self, STAFF, data=first.data)
+		staff_to_review(h)
 		h.tap("Confirm & submit")
 		self.assertEqual(h.s.state, "r_duplicate")
 		h.send({"type": "media", "kind": "image", "media_id": "m9", "mime_type": "image/jpeg"})

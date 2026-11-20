@@ -136,12 +136,7 @@ class RReview(State):
 			return go(missing[0], text(t(s)["incomplete"](", ".join(step_name(s, m) for m in missing))))
 		if needs_consent(s):
 			return go("r_consent")
-		if not s.draft.skip_duplicate_check:
-			dup = ctx.data.find_duplicate(s.draft.region, s.draft.symptoms)
-			if dup:
-				s.draft.duplicate_of = dup
-				return go("r_duplicate")
-		return submit(s, ctx)
+		return duplicate_check(s, ctx) or submit(s, ctx)
 
 
 CONSENT_CHOICES = {
@@ -198,34 +193,52 @@ class RConsent(State):
 			note = []
 		else:
 			return None
-		if not s.draft.skip_duplicate_check:
-			dup = ctx.data.find_duplicate(s.draft.region, s.draft.symptoms)
-			if dup:
-				s.draft.duplicate_of = dup
-				return go("r_duplicate", *note)
-		return submit(s, ctx)
+		return duplicate_check(s, ctx, *note) or submit(s, ctx)
+
+
+def duplicate_check(s, ctx, *say):
+	"""Staff only: a community member can't know what others reported, and a second report of the same incident
+	costs the desk little. Same sub-county, last 3 days, same suspected disease or two symptoms in common
+	(data.find_duplicate)."""
+	d = s.draft
+	if d.skip_duplicate_check or s.mode != "staff" or not s.staff:
+		return None
+	dup = ctx.data.find_duplicate(d.sub_county, d.symptoms, d.age_group, d.animal_exposure)
+	if not dup:
+		return None
+	d.duplicate_of = dup
+	return go("r_duplicate", *say)
 
 
 class RDuplicate(State):
+	"""The other report is never named: it is someone else's. Both answers send the report; "Same incident" tells
+	the desk which report it may repeat."""
+
 	def options(self, s, ctx):
 		return [
 			{
 				"id": "submit",
 				"title": t(s)["submitAnyway"],
-				"aliases": ["submit", "yes", "new", "tuma", "ndiyo"],
+				"aliases": ["submit", "yes", "new", "tuma", "ndiyo", "jipya"],
 			},
-			{"id": "cancel", "title": t(s)["cancel"], "aliases": ["no", "discard", "hapana"]},
+			{
+				"id": "same",
+				"title": t(s)["sameIncident"],
+				"aliases": ["same", "no", "hapana", "sawa", "lilelile"],
+			},
 		]
 
 	def prompt(self, s, ctx):
 		return [choose(s, t(s)["duplicate"](s.draft.duplicate_of), self.options(s, ctx))]
 
 	def on(self, s, inp, choice, ctx):
-		if choice == "cancel":
-			s.draft = None
-			return go("r_done", text(t(s)["cancelled"]))
-		if choice != "submit":
+		if choice not in ("submit", "same"):
 			return None
+		if choice == "same":
+			s.draft.duplicate_note = (
+				f"Possible duplicate of {s.draft.duplicate_of['name']}: "
+				"the reporter said it is the same incident."
+			)
 		s.draft.skip_duplicate_check = True
 		# Something may have been attached while this question was showing.
 		return go("r_consent") if needs_consent(s) else submit(s, ctx)
@@ -390,7 +403,7 @@ def build_doc(s, ctx):
 		# Additional Notes: only what the reporter wrote (their message, then any notes they typed). What was filled
 		# in from the message stays with the report as extraction_details (KRCS 17 Nov 2026).
 		"additional_notes": "\n\n".join(x for x in [d.description, *d.notes] if x) or None,
-		"extraction_details": extraction_note(s),
+		"extraction_details": "\n".join(x for x in [extraction_note(s), d.duplicate_note] if x) or None,
 		"channel": "WhatsApp",
 		"status": "Submitted",
 		"client_ref": _client_ref(ctx),

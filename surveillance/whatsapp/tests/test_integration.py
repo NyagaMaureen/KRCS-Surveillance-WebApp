@@ -284,9 +284,32 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		)
 		self.assertEqual(frappe.session.user, "Administrator")
 		self.assertEqual(data.my_reports(user=STAFF_USER, limit=1)[0]["name"], report["name"])
-		dup = data.find_duplicate(self.sub_county.region, [self.symptom])
-		self.assertEqual(dup["name"], report["name"])
-		self.assertIsNone(data.find_duplicate(self.sub_county.region, []))
+		self.assertIsNone(data.find_duplicate(self.sub_county.name, []))
+
+	def test_duplicates_are_the_same_sub_county_with_the_same_disease_or_two_symptoms(self):
+		symptoms = frappe.get_all("Symptom", pluck="name", limit=3)
+		doc = self.case_report(STAFF_USER, STAFF_PHONE)
+		doc["symptoms"] = [{"symptom": x} for x in symptoms[:2]]
+		report = data.create_report(doc)
+		disease = frappe.db.get_value("Case Report", report["name"], "suspected_disease")
+		with patch("surveillance.case_definitions.classify_detailed", return_value=[]):
+			dup = data.find_duplicate(self.sub_county.name, symptoms[:2])
+			self.assertEqual((dup["name"], dup["match"]), (report["name"], "symptoms"))
+			self.assertIsNone(data.find_duplicate(self.sub_county.name, symptoms[:1]))  # one in common
+			other = frappe.db.get_value("Sub County", {"name": ["!=", self.sub_county.name]})
+			self.assertIsNone(data.find_duplicate(other, symptoms[:2]))
+		if disease:
+			with patch("surveillance.case_definitions.classify_detailed", return_value=[{"disease": disease}]):
+				dup = data.find_duplicate(self.sub_county.name, symptoms[2:3])
+				self.assertEqual(dup["match"], "disease")
+
+	def test_an_officer_gets_their_sub_counties_and_field_staff_none(self):
+		frappe.db.set_value("User", STAFF_USER, "assigned_sub_county", self.sub_county.name)
+		self.assertEqual(data.find_staff(STAFF_PHONE)["sub_counties"], [])  # a CHP is locked to their area
+		with patch.object(data, "is_field_staff", return_value=False):
+			mine = data.find_staff(STAFF_PHONE)["sub_counties"]
+		self.assertEqual(mine[0]["name"], self.sub_county.name)
+		self.assertEqual(mine[0]["region"], self.sub_county.region)
 
 	def test_delivery_updates_are_logged_and_failures_reach_the_error_log(self):
 		body = json.dumps(

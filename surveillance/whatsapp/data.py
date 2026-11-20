@@ -145,6 +145,7 @@ def find_staff(phone):
 	if len(matches) != 1:
 		return None
 	u = matches[0]
+	locked = is_field_staff(u.name)
 	return {
 		"user": u.name,
 		"full_name": u.full_name or u.name,
@@ -152,8 +153,34 @@ def find_staff(phone):
 		"region": u.assigned_region or None,
 		"sub_county": u.get("assigned_sub_county") or None,
 		# CHPs and Facility Health Workers report only for their assigned area (Case Report validate)
-		"area_locked": is_field_staff(u.name),
+		"area_locked": locked,
+		"sub_counties": [] if locked else my_sub_counties(u.name),
 	}
+
+
+def my_sub_counties(user):
+	"""Where an officer works: their assigned sub-county, then User.other_sub_counties (KRCS 19 Nov 2026), as
+	{name, label, region}. Offered first when they report; any other place can still be chosen."""
+	try:
+		from surveillance.user_scope import user_sub_counties
+	except ImportError:  # before main had other sub-counties
+		ids = [frappe.db.get_value("User", user, "assigned_sub_county")]
+	else:
+		ids = user_sub_counties(user)
+	ids = [i for i in ids if i]
+	if not ids:
+		return []
+	rows = {
+		r.name: r
+		for r in frappe.get_all(
+			"Sub County", filters={"name": ["in", ids]}, fields=["name", "sub_county_name", "region"]
+		)
+	}
+	return [
+		{"name": i, "label": rows[i].sub_county_name or i, "region": rows[i].region}
+		for i in ids
+		if i in rows and rows[i].region
+	]
 
 
 def roles_of(user):
@@ -224,23 +251,47 @@ def general_advice():
 	return [line.strip() for line in value.splitlines() if line.strip()]
 
 
-def find_duplicate(region, symptoms, days=DUPLICATE_DAYS):
-	"""An open report in the same region, from the last `days` days, sharing at least one symptom."""
-	if not region or not symptoms:
+def find_duplicate(sub_county, symptoms, age_group=None, animal_exposure=None, days=DUPLICATE_DAYS):
+	"""An open report from the same sub-county in the last `days` days that looks like the same incident: the same
+	suspected disease (by main's case definitions, as Case Report sets it on save), or at least two symptoms in
+	common. Staff reports only (the conversation decides); returns {name, report_date, match}, which the reporter
+	is never shown (other people's reports)."""
+	if not sub_county or not symptoms:
 		return None
+	from surveillance import case_definitions
+
+	found = case_definitions.classify_detailed(symptoms, age_group, animal_exposure)
+	disease = found[0]["disease"] if found else None
 	rows = frappe.get_all(
 		"Case Report",
 		filters=[
-			["region", "=", region],
+			["sub_county", "=", sub_county],
 			["report_date", ">=", add_days(today(), -days)],
 			["status", "!=", "Closed"],
-			["Case Report Symptom", "symptom", "in", list(symptoms)],
 		],
-		fields=REPORT_FIELDS,
+		fields=["name", "report_date", "suspected_disease"],
 		order_by="creation desc",
-		limit=1,
+		limit=50,
 	)
-	return _row(rows[0]) if rows else None
+	if not rows:
+		return None
+	shared = {}
+	for r in frappe.get_all(
+		"Case Report Symptom",
+		filters={"parenttype": "Case Report", "parent": ["in", [r.name for r in rows]]},
+		fields=["parent", "symptom"],
+	):
+		if r.symptom in symptoms:
+			shared.setdefault(r.parent, set()).add(r.symptom)
+	for r in rows:
+		match = (
+			"disease"
+			if disease and r.suspected_disease == disease
+			else ("symptoms" if len(shared.get(r.name, ())) >= 2 else None)
+		)
+		if match:
+			return {"name": r.name, "report_date": str(r.report_date), "match": match}
+	return None
 
 
 def my_reports(user=None, phone=None, limit=9):
