@@ -270,6 +270,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertIsNone(data.find_staff(STAFF_PHONE))
 		user.reload()
 		user.account_status = "Active"
+		user.enabled = 1  # suspending also disabled the account (account.user_status_rules)
 		user.save(ignore_permissions=True)
 		self.assertIsNotNone(data.find_staff(STAFF_PHONE))
 
