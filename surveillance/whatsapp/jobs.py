@@ -16,7 +16,7 @@ from frappe.utils import cint, now_datetime
 from frappe.utils.password import get_encryption_key
 
 from surveillance import chatbot_log
-from surveillance.whatsapp import data, sessions
+from surveillance.whatsapp import cbs, data, sessions
 from surveillance.whatsapp.chatbot import ChatbotClient
 from surveillance.whatsapp.client import MediaTooLarge, WhatsAppClient, WhatsAppError
 from surveillance.whatsapp.content import T
@@ -266,7 +266,10 @@ def after_submit(report, media, phone, reporter_role=None, danger_signs=None, la
 	failed = attach_media(report, media) if media else 0
 	if failed:
 		tell_reporter_media_failed(report, phone, failed, lang)
-	notify_desk(report, phone, reporter_role, danger_signs)
+	if cbs.writes_back(report):  # a community report: CBS escalates it (cbs.py)
+		cbs.queue(report, danger_signs)
+	else:
+		notify_desk(report, phone, reporter_role, danger_signs)
 
 
 def tell_reporter_media_failed(report, phone, failed, lang=None):

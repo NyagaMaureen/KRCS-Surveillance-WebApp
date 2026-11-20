@@ -216,6 +216,7 @@ scheduler_events = {
 	"hourly_long": ["surveillance.cbs_feed.hourly", "surveillance.risk.refresh_open", "surveillance.push.check_receipts",
 		"surveillance.transcription.retry_failed"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
+	"cron": {"*/5 * * * *": ["surveillance.whatsapp.cbs.retry_due"]},
 }
 # scheduler_events = {
 # 	"all": [

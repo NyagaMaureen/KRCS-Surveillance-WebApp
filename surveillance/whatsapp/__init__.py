@@ -16,6 +16,7 @@ Case Report with channel = WhatsApp, so it shows in the dashboard, map, alerts a
 	transcribe.py    voice notes: speech-to-text client (POST /transcribe)
 	redact.py        personal details taken out before text reaches the AI services and logs
 	retention.py     media past its retention period; removing a reporter's details on request
+	cbs.py           community reports created in CBS, which escalates them (AI/ML §6.6); retries
 	setup.py         after_migrate: the community reporter account
 
 Configuration: the WhatsApp Settings DocType (System Manager only).

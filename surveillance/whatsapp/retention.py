@@ -7,7 +7,7 @@ import frappe
 from frappe.utils import add_days, cint, now_datetime
 from frappe.utils.password import get_encryption_key
 
-from surveillance.whatsapp import data, sessions
+from surveillance.whatsapp import cbs, data, sessions
 from surveillance.whatsapp.conversation import normalize_phone
 from surveillance.whatsapp.redact import pseudonym
 
@@ -98,12 +98,15 @@ def purge_media(days):
 @frappe.whitelist(methods=["POST"])
 def anonymise_reporter(phone):
 	"""Run by the Data Protection Officer on a person's request (DPA data subject rights). Removes the name, number,
-	their own words, exact place and media from their WhatsApp reports, the versions that record those values, their
-	questions in the Chatbot Query Log, and the conversation. Returns the reports changed."""
+	their own words, exact place and media from their WhatsApp community reports, and the description and number from
+	the copies sent to CBS, the versions that record those values, their questions in the Chatbot Query Log, and the
+	conversation. Staff reports are left as they are: staff report as themselves. Returns the reports changed."""
 	frappe.only_for("System Manager")
 	normalised = normalize_phone(phone, data.country_code())
 	reports = frappe.get_all(
-		"Case Report", filters={"phone_number": f"+{normalised}", "channel": "WhatsApp"}, pluck="name"
+		"Case Report",
+		filters={"phone_number": f"+{normalised}", "channel": "WhatsApp", "signal_type": cbs.COMMUNITY_SIGNAL},
+		pluck="name",
 	)
 	for name in reports:
 		rows = frappe.get_all(
@@ -114,6 +117,7 @@ def anonymise_reporter(phone):
 		_remove_attachments(rows, "Removed at the reporter's request.")
 		frappe.db.set_value("Case Report", name, {**IDENTIFYING, **_coarse_place(name)}, update_modified=False)
 		frappe.db.delete("Version", {"ref_doctype": "Case Report", "docname": name})
+		cbs.forget(name)
 	_clear_questions(normalised)
 	sessions.clear(normalised)
 	frappe.get_doc(
