@@ -12,6 +12,7 @@ The report steps follow the web "Record Health Signal" form and end in an ordina
 	report.py     starting a report, review, duplicate check, edit, saving, what the reporter sees afterwards
 	status.py     report status, recent reports, lookup by reference
 	ask.py        questions, answered from the Knowledge Base
+	router.py     reports and questions typed anywhere else in the conversation
 	safety.py     questions refused before the Knowledge Base is asked (doses, diagnosis, orders to the bot)
 	privacy.py    the privacy notice, consent and the PRIVACY keyword
 	portal.py     welcome, language, staff portal, help, resume
@@ -38,6 +39,7 @@ This package does not import frappe: everything it needs comes in through `ctx`
 """
 
 from surveillance.whatsapp import content as C
+from surveillance.whatsapp.conversation import router
 from surveillance.whatsapp.conversation.ask import Ask, RNotReport
 from surveillance.whatsapp.conversation.core import (
 	MEDIA_TYPES,
@@ -175,6 +177,8 @@ def dispatch(s, inp, ctx):
 	st = STATES.get(s.state) or STATES["welcome"]
 	if inp["type"] == "media" and s.draft and not media_allowed(inp):
 		return [text(t(s)["mediaRefused"]), *st.prompt(s, ctx)]
+	if not urgent(inp) and (answered := router.question_in_a_step(s, inp, ctx)):
+		return answered
 	choice = resolve_choice(st.options(s, ctx), inp, s.shown)
 	res = st.on(s, inp, choice, ctx)
 	if res:
@@ -187,6 +191,9 @@ def dispatch(s, inp, ctx):
 	if inp["type"] == "media" and s.draft:
 		s.draft.media.append(to_media(inp))
 		return [text(media_ack(s, inp))]
+	routed = router.unhandled(s, inp, ctx)
+	if routed:
+		return routed
 	return [text(t(s)["invalid"]), *(STATES.get(s.state) or STATES["welcome"]).prompt(s, ctx)]
 
 
@@ -226,5 +233,6 @@ STATES.update(
 		"r_consent": RConsent(),
 		"r_edit": REdit(),
 		"r_done": RDone(),
+		"r_add_or_new": router.RAddOrNew(),
 	}
 )

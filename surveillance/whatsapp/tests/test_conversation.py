@@ -260,8 +260,10 @@ class FakeChatbot:
 		if q.startswith(("good morning", "habari ya asubuhi")):
 			return {"intent": "greeting"}
 		if "children too" in q:
-			return {"intent": "mixed"}
-		return {"intent": "protocol_query"}
+			return {"intent": "mixed", "signals": ["question", "counted_people"]}
+		if "?" in q or q.split()[0] in ("what", "how", "why"):
+			return {"intent": "protocol_query", "signals": ["question"]}
+		return {"intent": "protocol_query", "signals": ["default"]}  # as the service does
 
 
 def _reraise(title):
@@ -1336,6 +1338,101 @@ class FakeExtractor:
 			"extractor": "rules-1.0", "language": "en", "is_report": True, "fields": out, "danger_signs": [],
 			"threat": "routine", "mentioned_diseases": [], "notes": [], **self.extra,
 		}  # fmt: skip
+
+
+class TestRouting(FrappeTestCase):
+	"""Reports and questions typed in the middle of something else (router.py), as test transcripts."""
+
+	def staff_at(self, state, chatbot=True):
+		kb = FakeKnowledge()
+		h = Harness(self, STAFF, knowledge=kb, chatbot=FakeChatbot() if chatbot else None)
+		start(h, "staff")
+		h.tap("Submit health report")
+		fill_location(h)
+		if state != "r_category":
+			h.tap("Human disease")
+			h.tap("Suspected Outbreak")
+			h.tap("Diarrhea")
+			h.tap("Continue")
+		self.assertEqual(h.s.state, state)
+		return h, kb
+
+	def test_a_question_in_a_report_step_is_answered_and_the_step_asked_again(self):
+		h, kb = self.staff_at("r_count")
+		h.say("How long does cholera take to show signs?")
+		self.assertEqual(kb.calls[-1]["question"], "How long does cholera take to show signs?")
+		self.assertIn("[sample approved content]", h.bodies())
+		self.assertEqual(h.s.state, "r_count")  # the same step, asked again
+		self.assertEqual(h.s.draft.symptoms, ["sym-4"])  # the draft is kept
+		h.say("12")
+		self.assertEqual(h.s.draft.affected_count, 12)
+
+	def test_a_note_stays_a_note(self):
+		h, kb = self.staff_at("r_count")
+		answers = {"r_count": "12", "r_age": "skip", "r_exposure": "skip", "r_deaths": "0"}
+		while h.s.state in answers:
+			h.say(answers[h.s.state])
+		h.tap("Today")
+		self.assertEqual(h.s.state, "r_extra")
+		h.say("3 more children are sick in block 4")
+		self.assertIn("3 more children are sick in block 4", h.s.draft.notes)
+		self.assertEqual(kb.calls, [])
+
+	def test_a_question_typed_as_the_name_is_answered_not_saved_as_the_name(self):
+		kb = FakeKnowledge()
+		h = Harness(self, PUBLIC, knowledge=kb)
+		start(h)
+		fill_location(h)
+		self.assertEqual(h.s.state, "r_name")
+		h.say("what should I do while I wait?")
+		self.assertEqual(len(kb.calls), 1)
+		self.assertEqual(h.s.state, "r_name")
+		self.assertIsNone(h.s.draft.reporter_name)
+
+	def test_a_report_typed_during_a_report_asks_whether_it_belongs_to_it(self):
+		h, kb = self.staff_at("r_category")
+		h.say("5 people have unexplained bleeding and fever")
+		self.assertEqual(h.s.state, "r_add_or_new")
+		self.assertIn("part of the report you are writing, or a new one", h.bodies())
+		h.tap("Add to this report")
+		self.assertEqual(h.s.state, "r_category")
+		self.assertIn("5 people have unexplained bleeding and fever", h.s.draft.notes)
+
+		h.say("5 people have unexplained bleeding and fever")
+		h.tap("Start a new report")
+		self.assertNotIn("5 people have unexplained bleeding and fever", h.s.draft.notes)
+		self.assertEqual(h.s.state, "r_region")  # staff: the guided steps again
+
+		h.say("5 people have unexplained bleeding and fever")
+		h.tap("Continue my report")
+		self.assertEqual(h.s.state, "r_region")
+		self.assertEqual(kb.calls, [])
+
+	def test_a_report_typed_on_the_help_screen_starts_one(self):
+		h = Harness(self, PUBLIC, knowledge=FakeKnowledge(), chatbot=FakeChatbot())
+		h.say("hi")
+		h.say("help")
+		self.assertEqual(h.s.state, "help")
+		h.say("5 people have unexplained bleeding and fever")
+		self.assertEqual(h.s.draft.description, "5 people have unexplained bleeding and fever")
+		self.assertIn("From your message I noted:", h.bodies())
+
+	def test_a_question_on_the_help_screen_is_answered_without_the_chatbot_service(self):
+		kb = FakeKnowledge()
+		h = Harness(self, PUBLIC, knowledge=kb)
+		h.say("hi")
+		h.say("help")
+		h.say("how do I keep water safe at home?")
+		self.assertEqual(len(kb.calls), 1)
+		self.assertEqual(h.s.state, "help")
+
+	def test_anything_else_is_still_not_understood(self):
+		h, kb = self.staff_at("r_category")
+		for value in ("blue banana", "ok thanks"):
+			h.say(value)
+			self.assertIn("didn't understand", h.bodies())
+			self.assertEqual(h.s.state, "r_category")
+		self.assertEqual(kb.calls, [])
 
 
 class TestFreeText(FrappeTestCase):

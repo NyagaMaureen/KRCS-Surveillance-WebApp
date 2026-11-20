@@ -421,6 +421,11 @@ T = {
 		"askClinical": "I can't recommend medicines, doses or a diagnosis. A health worker must examine the person: go to the nearest health facility. "
 		"If someone is very unwell, call *999* or *112*.",
 		"askGreeting": "Hello. Type your question about a health concern, e.g. _How does cholera spread?_",
+		"routeAsk": "This sounds like a report. Is it part of the report you are writing, or a new one?",
+		"routeAdd": "Add to this report",
+		"routeNew": "Start a new report",
+		"routeBack": "Continue my report",
+		"routeAdded": "Added to your report's notes.",
 		"askRouted": "This sounds like a report of people who are sick. Please send it as a report so the surveillance team receives it.",
 		"askMixed": "If people are sick now, please also send a report.",
 		"askCount": "Report counts are not available on WhatsApp. Please use the *Reports* page of the KRCS surveillance app.",
@@ -660,6 +665,11 @@ T = {
 		"askClinical": "Siwezi kupendekeza dawa, vipimo vya dawa au kutambua ugonjwa. Mhudumu wa afya lazima amchunguze mgonjwa: nenda kwenye kituo cha afya kilicho karibu. "
 		"Ikiwa mtu ni mgonjwa sana, piga *999* au *112*.",
 		"askGreeting": "Habari. Andika swali lako kuhusu tatizo la afya, k.m. _Kipindupindu huenezwa vipi?_",
+		"routeAsk": "Hii inaonekana kuwa taarifa. Je, ni sehemu ya taarifa unayoandika, au ni mpya?",
+		"routeAdd": "Ongeza kwa taarifa",
+		"routeNew": "Anza taarifa mpya",
+		"routeBack": "Endelea na taarifa",
+		"routeAdded": "Imeongezwa kwenye maelezo ya taarifa yako.",
 		"askRouted": "Hii inaonekana kuwa taarifa ya watu walio wagonjwa. Tafadhali itume kama taarifa ili timu ya ufuatiliaji iipokee.",
 		"askMixed": "Kama kuna watu wagonjwa sasa, tafadhali tuma pia taarifa.",
 		"askCount": "Idadi ya ripoti haipatikani kwenye WhatsApp. Tafadhali tumia ukurasa wa *Ripoti* kwenye programu ya ufuatiliaji ya KRCS.",

@@ -129,14 +129,19 @@ class RNotReport(State):
 		return None
 
 
-def _intent(question, ctx):
-	"""The chatbot service's intent for the question, or None when it is not set up or does not answer."""
+def classify(question, ctx):
+	"""The chatbot service's /classify-intent reply ({intent, confidence, signals}), or {} when it is not set up or
+	does not answer."""
 	if not ctx.chatbot:
-		return None
+		return {}
 	try:
-		return (ctx.chatbot.classify(question) or {}).get("intent")
+		return ctx.chatbot.classify(question) or {}
 	except Exception:
-		return None
+		return {}
+
+
+def _intent(question, ctx):
+	return classify(question, ctx).get("intent")
 
 
 def whatsapp_text(answer):
@@ -156,12 +161,15 @@ def source_lines(r, s):
 	return f"_{t(s)['askSources']}: " + "; ".join(lines) + "_" if lines else None
 
 
-def ask_question(s, question, ctx):
+def ask_question(s, question, ctx, intent=None, stay=False):
 	"""Roles and scope come from Frappe, never from the message. The reply is approved text quoted as it is, or a
-	fixed reply; the conversation then stays in `ask` for the next question."""
-	s.state = "ask"
-	s.page = 0
-	s.question = None
+	fixed reply; the conversation then stays in `ask` for the next question.
+	`stay`: a question typed in the middle of something else (router.py). It is answered and the person stays where
+	they were, so nothing here offers buttons. `intent`: already classified by the caller."""
+	if not stay:
+		s.state = "ask"
+		s.page = 0
+		s.question = None
 	staff = _asker(s, ctx)
 	roles = ctx.data.roles_of(staff.user) if staff else []
 	req = {
@@ -184,6 +192,8 @@ def ask_question(s, question, ctx):
 		)
 
 	def offer_report(key):
+		if stay:
+			return text(t(s)[key])
 		s.question = AttrDict(text=question, report=True)
 		return choose(
 			s,
@@ -199,7 +209,7 @@ def ask_question(s, question, ctx):
 		handled("info", refused, t(s)["askClinical"])
 		return quiet(text(t(s)["askClinical"]), offer_report("askMixed"))
 
-	intent = _intent(question, ctx)
+	intent = intent or _intent(question, ctx)
 	if intent == "signal_report":
 		handled("routed", "signal_report", None)
 		return (not s.staff and seed_report(s, question, ctx)) or quiet(offer_report("askRouted"))
