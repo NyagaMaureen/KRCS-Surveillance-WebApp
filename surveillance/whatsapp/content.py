@@ -408,13 +408,19 @@ T = {
 		"menuHelp": "Help & support",
 		"submitReport": "Submit a report",
 		"backToMenu": "Main menu",
-		# Response Support Chatbot. Answers are the service's own text (approved protocols or fixed templates).
+		# Questions: answers are approved Knowledge Base text, quoted as it is (knowledge.py), or the fixed replies below.
 		"menuAsk": "Ask a question",
 		"askPrompt": "*Ask a question*\nType your question, e.g. _What should I do if I suspect cholera?_\n\n"
 		"Answers come only from approved KRCS guidance. Type *menu* to go back.",
 		"askPromptCommunity": "*Ask a question*\nType your question. If there is no approved answer, it is passed to the KRCS team.\n\n"
 		"For an emergency call *999* or *112*. Type *menu* to go back.",
-		"askClarify": "Which of these did you mean? Choose one, or type your question again.",
+		"askNotFound": lambda contact: f"I couldn't find approved guidance that answers this, so I have not guessed. Your question has been passed to {contact}. "
+		"If this is an emergency, follow your usual emergency reporting procedure.",
+		"askSources": "Source",
+		"askBlocked": "I can only answer questions from approved KRCS guidance. Please type your question about a health concern, or type *menu*.",
+		"askClinical": "I can't recommend medicines, doses or a diagnosis. A health worker must examine the person: go to the nearest health facility. "
+		"If someone is very unwell, call *999* or *112*.",
+		"askGreeting": "Hello. Type your question about a health concern, e.g. _How does cholera spread?_",
 		"askRouted": "This sounds like a report of people who are sick. Please send it as a report so the surveillance team receives it.",
 		"askMixed": "If people are sick now, please also send a report.",
 		"askCount": "Report counts are not available on WhatsApp. Please use the *Reports* page of the KRCS surveillance app.",
@@ -643,7 +649,13 @@ T = {
 		"Majibu yanatoka tu kwenye miongozo iliyoidhinishwa na KRCS. Andika *menyu* kurudi.",
 		"askPromptCommunity": "*Uliza swali*\nAndika swali lako. Kama hakuna jibu lililoidhinishwa, litatumwa kwa timu ya KRCS.\n\n"
 		"Kwa dharura piga *999* au *112*. Andika *menyu* kurudi.",
-		"askClarify": "Ulimaanisha lipi kati ya haya? Chagua moja, au andika swali lako tena.",
+		"askNotFound": lambda contact: f"Sikupata mwongozo ulioidhinishwa unaojibu swali hili, kwa hivyo sijakisia. Swali lako limetumwa kwa {contact}. "
+		"Ikiwa ni dharura, fuata utaratibu wako wa kawaida wa kuripoti dharura.",
+		"askSources": "Chanzo",
+		"askBlocked": "Ninaweza kujibu maswali kutoka kwenye miongozo iliyoidhinishwa na KRCS pekee. Tafadhali andika swali lako kuhusu tatizo la afya, au andika *menyu*.",
+		"askClinical": "Siwezi kupendekeza dawa, vipimo vya dawa au kutambua ugonjwa. Mhudumu wa afya lazima amchunguze mgonjwa: nenda kwenye kituo cha afya kilicho karibu. "
+		"Ikiwa mtu ni mgonjwa sana, piga *999* au *112*.",
+		"askGreeting": "Habari. Andika swali lako kuhusu tatizo la afya, k.m. _Kipindupindu huenezwa vipi?_",
 		"askRouted": "Hii inaonekana kuwa taarifa ya watu walio wagonjwa. Tafadhali itume kama taarifa ili timu ya ufuatiliaji iipokee.",
 		"askMixed": "Kama kuna watu wagonjwa sasa, tafadhali tuma pia taarifa.",
 		"askCount": "Idadi ya ripoti haipatikani kwenye WhatsApp. Tafadhali tumia ukurasa wa *Ripoti* kwenye programu ya ufuatiliaji ya KRCS.",

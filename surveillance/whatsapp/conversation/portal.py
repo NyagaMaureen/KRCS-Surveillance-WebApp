@@ -1,7 +1,7 @@
 """Welcome, language, the staff portal, help, and resuming an unfinished report."""
 
 from surveillance.whatsapp import content as C
-from surveillance.whatsapp.conversation.ask import _chatbot_options, _is_question, ask_chatbot
+from surveillance.whatsapp.conversation.ask import _ask_options, _is_question, ask_question
 from surveillance.whatsapp.conversation.core import (
 	STATES,
 	AttrDict,
@@ -37,7 +37,7 @@ class Welcome(State):
 				"title": t(s)["roleStaff"],
 				"aliases": ["staff", "chp", "krcs staff", "mfanyakazi"],
 			},
-			*_chatbot_options(s, ctx),
+			*_ask_options(s, ctx),
 			{"id": "help", "title": t(s)["roleHelp"], "aliases": ["hotlines", "emergency", "dharura"]},
 		]
 
@@ -72,7 +72,7 @@ class Welcome(State):
 			return seeded
 		if urgent(inp):
 			return go("help")
-		return ask_chatbot(s, inp["text"], ctx) if ctx.chatbot else None
+		return ask_question(s, inp["text"], ctx) if ctx.knowledge else None
 
 
 class NotStaff(State):
@@ -135,7 +135,7 @@ class Menu(State):
 			},
 			{"id": "status", "title": t(s)["menuStatus"], "aliases": ["status", "track", "hali"]},
 			{"id": "recent", "title": t(s)["menuRecent"], "aliases": ["recent", "history", "my reports"]},
-			*_chatbot_options(s, ctx),
+			*_ask_options(s, ctx),
 			{"id": "help", "title": t(s)["menuHelp"], "aliases": ["support"]},
 		]
 
@@ -173,7 +173,7 @@ class Menu(State):
 		if urgent(inp):
 			return go("help")
 		if _is_question(inp, ctx):
-			return ask_chatbot(s, inp["text"], ctx)
+			return ask_question(s, inp["text"], ctx)
 		return None
 
 

@@ -28,6 +28,7 @@
   "notify_template_language",
   "escalation_template",
   "chatbot_section",
+  "answer_questions",
   "chatbot_url",
   "chatbot_timeout",
   "column_break_chatbot",
@@ -164,7 +165,7 @@
    "label": "Desk Alert Numbers"
   },
   {
-   "description": "Questions the chatbot cannot answer go here, one per line. Empty: the desk alert numbers.",
+   "description": "Questions with no approved answer go here, one per line. Empty: the desk alert numbers.",
    "fieldname": "escalation_numbers",
    "fieldtype": "Small Text",
    "label": "Escalation Numbers"
@@ -196,10 +197,17 @@
    "collapsible": 1,
    "fieldname": "chatbot_section",
    "fieldtype": "Section Break",
-   "label": "Response Support Chatbot"
+   "label": "Questions"
   },
   {
-   "description": "Optional, e.g. http://10.0.0.5:8100. Empty: \"Ask a question\" is not offered.",
+   "default": "1",
+   "description": "Offer \"Ask a question\". Answers are approved Knowledge Base text, quoted as it is, as in the web and mobile assistant: staff see what their account may see; community members see Public documents only (site config kb_public_enabled). No approved answer: the question goes to the Escalation Numbers.",
+   "fieldname": "answer_questions",
+   "fieldtype": "Check",
+   "label": "Answer Questions"
+  },
+  {
+   "description": "Optional, e.g. http://10.0.0.5:8100: the chatbot service tells a report sent as a question apart from a question (POST /classify-intent) and reads free-text reports (POST /extract). Empty: every question goes to the Knowledge Base.",
    "fieldname": "chatbot_url",
    "fieldtype": "Data",
    "label": "Chatbot URL"
@@ -329,7 +337,7 @@
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-18 10:00:00.000000",
+ "modified": "2026-11-20 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "WhatsApp Settings",

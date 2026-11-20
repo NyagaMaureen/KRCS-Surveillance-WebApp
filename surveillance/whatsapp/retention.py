@@ -9,6 +9,7 @@ from frappe.utils.password import get_encryption_key
 
 from surveillance.whatsapp import cbs, data, sessions
 from surveillance.whatsapp.conversation import normalize_phone
+from surveillance.whatsapp.knowledge import PUBLIC_PREFIX
 from surveillance.whatsapp.redact import pseudonym
 
 REMOVED = "Removed"
@@ -34,8 +35,10 @@ def _clear_questions(phone):
 	"""A community member's questions in the Chatbot Query Log and the searches behind them. The outcomes stay, as the
 	SRS metrics count them."""
 	log = "Chatbot Query Log"
+	ref = pseudonym(phone, get_encryption_key())
+	# knowledge_base.ask records them as "whatsapp:<pseudonym>" (knowledge.py), questions answered here as the pseudonym
 	asked = frappe.get_all(
-		log, filters={"user_ref": pseudonym(phone, get_encryption_key())}, fields=["name", "correlation_id"]
+		log, filters={"user_ref": ["in", [ref, PUBLIC_PREFIX + ref]]}, fields=["name", "correlation_id"]
 	)
 	linked = {r.correlation_id for r in asked if r.correlation_id}
 	rows = {r.name for r in asked}
@@ -48,6 +51,10 @@ def _clear_questions(phone):
 			{"query_text": REMOVED, "user_ref": None, "trace": None, "feedback_comment": None, "response_note": None},
 			update_modified=False,
 		)
+	# the last few questions the Knowledge Base keeps for follow-ups (two hours)
+	from surveillance import kb_grounding
+
+	frappe.cache().delete_value(kb_grounding._history_key(PUBLIC_PREFIX + ref, ref))
 
 
 def daily():

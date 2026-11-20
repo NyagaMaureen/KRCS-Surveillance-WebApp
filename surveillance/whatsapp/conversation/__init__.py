@@ -1,4 +1,4 @@
-"""The WhatsApp conversation: welcome, staff portal, the report steps, review, questions to the chatbot.
+"""The WhatsApp conversation: welcome, staff portal, the report steps, review, questions.
 
 A state machine over one session per phone number. Each state has
         options(s, ctx) -> choices, prompt(s, ctx) -> messages, on(s, input, choice, ctx) -> result or None.
@@ -11,7 +11,8 @@ The report steps follow the web "Record Health Signal" form and end in an ordina
 	free_text.py  community reports in their own words: what was understood, advice afterwards
 	report.py     starting a report, review, duplicate check, edit, saving, what the reporter sees afterwards
 	status.py     report status, recent reports, lookup by reference
-	ask.py        questions to the Response Support Chatbot
+	ask.py        questions, answered from the Knowledge Base
+	safety.py     questions refused before the Knowledge Base is asked (doses, diagnosis, orders to the bot)
 	privacy.py    the privacy notice, consent and the PRIVACY keyword
 	portal.py     welcome, language, staff portal, help, resume
 	__init__.py   handle(): global keywords (menu, cancel, back...) and the state table
@@ -23,7 +24,9 @@ This package does not import frappe: everything it needs comes in through `ctx`
                       reporter_advice(disease, user)
         ctx.settings  idle_minutes, welcome_image_url
         ctx.now()     epoch seconds
-        ctx.chatbot   Response Support Chatbot client, or None
+        ctx.knowledge Knowledge Base (knowledge.KnowledgeBase): ask(question, lang, user=, public_ref=,
+                      conversation_id=, request_id=), or None: "Ask a question" is not offered
+        ctx.chatbot   chatbot service client, for classify(text) -> {"intent", ...}, or None
         ctx.extractor free-text extraction client (extract.ExtractionClient), or None for the keyword fallback
         ctx.transcribe(input) -> {"text", "language"} (or the text) of a voice note, or None (optional); the service
                                  detects the spoken language

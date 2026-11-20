@@ -1,7 +1,16 @@
-"""Questions to the Response Support Chatbot, and messages that were not a report."""
+"""Questions, answered from the Knowledge Base, and messages that were not a report.
 
+A question goes through, in order:
+	safety.check       a request for a dose or a diagnosis gets a referral; orders to the bot get a refusal
+	ctx.chatbot        /classify-intent (optional): a report sent as a question is offered the report flow,
+	                   a count question is pointed to the app, a greeting gets the prompt again
+	ctx.knowledge      the approved answer, quoted as it is (knowledge.py); no approved answer is passed to the desk
+"""
+
+import re
 import uuid
 
+from surveillance.whatsapp.conversation import safety
 from surveillance.whatsapp.conversation.core import (
 	AttrDict,
 	State,
@@ -16,15 +25,19 @@ from surveillance.whatsapp.conversation.core import (
 )
 from surveillance.whatsapp.conversation.free_text import describe
 from surveillance.whatsapp.conversation.report import begin_report, report_from_question, seed_report
-from surveillance.whatsapp.conversation.steps import ask, choose, first_missing, missing_steps
+from surveillance.whatsapp.conversation.steps import choose, first_missing, missing_steps
 from surveillance.whatsapp.messages import menu, text
 from surveillance.whatsapp.redact import pseudonym, redact
 
+# Anything else is not shown and is passed to the desk: no approved answer (not_found), approved documents that
+# disagree (conflict), and the trusted-website fallback (trusted_source), which stays off here until KRCS approves it.
+ANSWERED = ("verbatim", "public", "summary")
 
-def _chatbot_options(s, ctx):
+
+def _ask_options(s, ctx):
 	return (
 		[{"id": "ask", "title": t(s)["menuAsk"], "aliases": ["ask", "question", "uliza", "swali"]}]
-		if ctx.chatbot
+		if ctx.knowledge
 		else []
 	)
 
@@ -36,20 +49,28 @@ def _asker(s, ctx):
 
 
 def _user_ref(staff, s, ctx):
-	"""Staff by login, as the chatbot's access decision needs. A community member's number stays in Frappe."""
+	"""Staff by login. A community member's number stays in Frappe: they are a pseudonym."""
 	if staff:
 		return staff.user
 	return pseudonym(normalize_phone(s.phone), getattr(ctx, "pseudonym_key", None))
 
 
 def _is_question(inp, ctx):
-	return bool(ctx.chatbot) and inp["type"] == "text" and len(normalize(inp.get("text"))) >= 3
+	return bool(ctx.knowledge) and inp["type"] == "text" and len(normalize(inp.get("text"))) >= 3
+
+
+def _names_disease(question, ctx):
+	try:
+		diseases = (ctx.data.catalog().get("options") or {}).get("suspected_disease") or []
+	except Exception:
+		return False
+	q = question.lower()
+	return any(d.lower() in q for d in diseases if len(d) > 3)
 
 
 class Ask(State):
 	def options(self, s, ctx):
 		return [
-			*((s.question or {}).get("options") or []),
 			{"id": "report", "title": t(s)["menuReport"], "aliases": ["report", "ripoti", "taarifa"]},
 			{"id": "menu", "title": t(s)["backToMenu"]},
 		]
@@ -70,10 +91,8 @@ class Ask(State):
 		if choice == "report":
 			q = s.question
 			return report_from_question(s, q.text, ctx) if q and q.get("report") else begin_report(s, ctx)
-		if choice and choice.startswith("p:") and s.question:
-			return ask_chatbot(s, s.question.text, ctx, choice[2:])
 		if inp["type"] == "text" and normalize(inp.get("text")):
-			return ask_chatbot(s, inp["text"], ctx)
+			return ask_question(s, inp["text"], ctx)
 		return None
 
 
@@ -100,8 +119,8 @@ class RNotReport(State):
 		if choice == "other":
 			question = s.draft.description
 			s.draft = None
-			if ctx.chatbot:
-				return ask_chatbot(s, question, ctx)
+			if ctx.knowledge:
+				return ask_question(s, question, ctx)
 			req = {"request_id": str(uuid.uuid4()), "user_ref": _user_ref(_asker(s, ctx), s, ctx)}
 			_call(ctx, "on_escalate", question=question, session=s, request=req, reason="not_a_report")
 			return go("r_done", text(t(s)["notReportPassed"]))
@@ -110,11 +129,39 @@ class RNotReport(State):
 		return None
 
 
-def ask_chatbot(s, question, ctx, selected_protocol_id=None):
-	"""Roles and region come from Frappe, never from the message. The reply is approved content or a fixed
-	template and is shown unchanged; the conversation then stays in `ask`."""
+def _intent(question, ctx):
+	"""The chatbot service's intent for the question, or None when it is not set up or does not answer."""
+	if not ctx.chatbot:
+		return None
+	try:
+		return (ctx.chatbot.classify(question) or {}).get("intent")
+	except Exception:
+		return None
+
+
+def whatsapp_text(answer):
+	"""Markdown bold (**x**) as WhatsApp bold (*x*)."""
+	return re.sub(r"\*\*(.+?)\*\*", r"*\1*", answer or "")
+
+
+def source_lines(r, s):
+	used = set(r.get("used_sources") or [])
+	lines = []
+	for src in r.get("sources") or []:
+		if used and src.get("n") not in used:
+			continue
+		where = ", ".join(str(x) for x in (src.get("title"), src.get("version"), src.get("section")) if x)
+		if where:
+			lines.append(f"[{src.get('n')}] {where}")
+	return f"_{t(s)['askSources']}: " + "; ".join(lines) + "_" if lines else None
+
+
+def ask_question(s, question, ctx):
+	"""Roles and scope come from Frappe, never from the message. The reply is approved text quoted as it is, or a
+	fixed reply; the conversation then stays in `ask` for the next question."""
 	s.state = "ask"
 	s.page = 0
+	s.question = None
 	staff = _asker(s, ctx)
 	roles = ctx.data.roles_of(staff.user) if staff else []
 	req = {
@@ -122,14 +169,57 @@ def ask_chatbot(s, question, ctx, selected_protocol_id=None):
 		"roles": roles or ["Guest"],
 		"language": s.lang,
 		"location": staff.region if staff else None,
-		"selected_protocol_id": selected_protocol_id,
 		"user_ref": _user_ref(staff, s, ctx),
 		"request_id": str(uuid.uuid4()),
-		# The bot does not run report counts for the user, so it never offers that capability.
-		"capabilities": [],
 	}
+
+	def handled(outcome, reason, reply):
+		"""Answered here without the Knowledge Base: still one Chatbot Query Log record."""
+		_call(
+			ctx,
+			"on_chatbot",
+			request=req,
+			response={"outcome": outcome, "reason": reason, "message": reply},
+			session=s,
+		)
+
+	def offer_report(key):
+		s.question = AttrDict(text=question, report=True)
+		return choose(
+			s,
+			t(s)[key],
+			[{"id": "report", "title": t(s)["menuReport"]}, {"id": "menu", "title": t(s)["backToMenu"]}],
+		)
+
+	refused = safety.check(question, roles, _names_disease(question, ctx))
+	if refused == safety.BLOCKED_INSTRUCTION:
+		handled("info", refused, t(s)["askBlocked"])
+		return quiet(text(t(s)["askBlocked"]))
+	if refused:
+		handled("info", refused, t(s)["askClinical"])
+		return quiet(text(t(s)["askClinical"]), offer_report("askMixed"))
+
+	intent = _intent(question, ctx)
+	if intent == "signal_report":
+		handled("routed", "signal_report", None)
+		return (not s.staff and seed_report(s, question, ctx)) or quiet(offer_report("askRouted"))
+	if intent == "report_count":
+		handled("count", "report_count", t(s)["askCount"])
+		return quiet(text(t(s)["askCount"]))
+	if intent == "greeting":
+		handled("greeting", "greeting", t(s)["askGreeting"])
+		return quiet(text(t(s)["askGreeting"]))
+
 	try:
-		r = ctx.chatbot.ask(req)
+		r = ctx.knowledge.ask(
+			req["message"],
+			s.lang,
+			user=staff.user if staff else None,
+			public_ref=None if staff else req["user_ref"],
+			# Follow-up questions ("and for children?") are read with the previous ones (knowledge_base.ask).
+			conversation_id=pseudonym(normalize_phone(s.phone), getattr(ctx, "pseudonym_key", None)),
+			request_id=req["request_id"],
+		)
 	except Exception as e:
 		_call(
 			ctx,
@@ -141,34 +231,26 @@ def ask_chatbot(s, question, ctx, selected_protocol_id=None):
 			error=str(e),
 		)
 		return quiet(text(t(s)["askUnavailable"](t(s)["askTeam"])))
-	_call(ctx, "on_chatbot", request=req, response=r, session=s)
-	reply = [text(part) for part in split_text(r["message"])] if r.get("message") else []
 
-	if r.get("outcome") == "clarify" and r.get("options"):
-		options = [{"id": f"p:{o['protocol_id']}", "title": o["title"]} for o in r["options"]]
-		s.question = AttrDict(text=question, options=options)
-		return quiet(ask(s, t(s)["askClarify"], options, extra=[{"id": "menu", "title": t(s)["backToMenu"]}]))
-	s.question = None
-
-	def offer_report():
-		s.question = AttrDict(text=question, options=[], report=True)
-		return choose(
-			s,
-			t(s)["askRouted"] if r.get("outcome") == "routed" else t(s)["askMixed"],
-			[
-				{"id": "report", "title": t(s)["menuReport"]},
-				{"id": "menu", "title": t(s)["backToMenu"]},
-			],
+	mode = r.get("mode")
+	if mode not in ANSWERED or not (r.get("answer") or "").strip():
+		_call(
+			ctx,
+			"on_escalate",
+			question=question,
+			session=s,
+			request=req,
+			reason=r.get("reason") or mode or "no_answer",
+			response=r,
 		)
-
-	if r.get("outcome") == "routed":
-		return (not s.staff and seed_report(s, question, ctx)) or quiet(offer_report())
-	if r.get("route") == "report_count":
-		return quiet(text(t(s)["askCount"]))
-	if r.get("escalate") or r.get("outcome") == "escalate":
+		return quiet(text(t(s)["askNotFound"](t(s)["askTeam"])))
+	if r.get("escalated"):
 		_call(
 			ctx, "on_escalate", question=question, session=s, request=req, reason=r.get("reason"), response=r
 		)
-	if r.get("route") == "mixed":
-		return quiet(*reply, offer_report())
-	return quiet(*(reply or [text(t(s)["askUnavailable"](t(s)["askTeam"]))]))
+	body = whatsapp_text(r["answer"])
+	sources = source_lines(r, s)
+	reply = [text(part) for part in split_text(body + (f"\n\n{sources}" if sources else ""))]
+	if intent == "mixed":
+		return quiet(*reply, offer_report("askMixed"))
+	return quiet(*reply)

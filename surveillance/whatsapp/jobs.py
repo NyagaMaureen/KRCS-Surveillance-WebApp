@@ -8,6 +8,7 @@ Needs the background workers (bench worker) and Redis to be running.
 """
 
 import json
+import re
 import time
 from types import SimpleNamespace
 
@@ -22,6 +23,7 @@ from surveillance.whatsapp.client import MediaTooLarge, WhatsAppClient, WhatsApp
 from surveillance.whatsapp.content import T
 from surveillance.whatsapp.conversation import MEDIA_TYPES, AttrDict, format_phone, handle
 from surveillance.whatsapp.extract import ExtractionClient
+from surveillance.whatsapp.knowledge import KnowledgeBase
 from surveillance.whatsapp.messages import as_text, sendable, text
 from surveillance.whatsapp.redact import redact
 from surveillance.whatsapp.transcribe import TranscriptionClient
@@ -40,6 +42,12 @@ ESCALATION_REASONS = {
 	"not_a_report": "Message was not a health report",
 	"service_unavailable": "Assistant was unavailable",
 	"no_match": "No approved answer found",
+	"no_results": "No approved answer found",
+	"not_found": "No approved answer found",
+	"below_score_floor": "No confident answer found",
+	"model_not_in_sources": "No approved answer found",
+	"public_safety": "Approved answer not suitable for the public",
+	"conflict": "Approved documents disagree",
 	"low_confidence": "No confident answer found",
 	"ambiguous": "Question could mean several things",
 	"missing_capability": "Asker lacks access to this answer",
@@ -235,6 +243,7 @@ def make_context(st):
 			idle_minutes=cint(st.idle_minutes) or 15, welcome_image_url=st.welcome_image_url or None
 		),
 		now=time.time,
+		knowledge=KnowledgeBase() if cint(st.answer_questions) else None,
 		chatbot=chatbot_client(st),
 		extractor=extraction_client(st),
 		transcribe=voice_transcriber(st),
@@ -433,8 +442,9 @@ def notify_desk(report, phone, reporter_role=None, danger_signs=None):
 
 
 def log_chatbot(request, response, session):
-	"""One Chatbot Query Log record per question, the source of the SRS acceptance metrics. The question is redacted
-	and a community member's number is a pseudonym. Read access needs view_chatbot_logs."""
+	"""A question answered without the Knowledge Base (refused, a report, a count question, a greeting) still gets
+	its Chatbot Query Log record, the source of the SRS acceptance metrics; knowledge_base.ask writes the others.
+	The question is redacted and a community member's number is a pseudonym. Read access needs view_chatbot_logs."""
 	chatbot_log.log_conversation(
 		request,
 		response,
@@ -452,13 +462,14 @@ def _escalation_target():
 
 def on_escalate(question, session, request, reason, error=None, response=None):
 	staff = session.staff or {}
-	if error:  # the service never answered, so log_chatbot wrote nothing
+	logged = chatbot_log.find_by_correlation(request.get("request_id"))
+	if error and not logged:  # failed before knowledge_base.ask wrote its record
 		chatbot_log.log_conversation(
 			request, None, channel="WhatsApp", user=staff.get("user"), error=error, escalated_to=_escalation_target()
 		)
 	else:
 		chatbot_log.update(
-			chatbot_log.find_by_correlation(request.get("request_id")),
+			logged,
 			escalated_to_human=1,
 			escalated_to=_escalation_target(),
 		)
@@ -495,7 +506,9 @@ def format_time(when):
 
 
 def reason_label(reason):
-	"""Unknown reasons still read as words: the chatbot service can add new ones."""
+	"""Unknown reasons still read as words: the Knowledge Base can add new ones. Its details after ":" or "|"
+	(document names, trusted sources) stay in the Chatbot Query Log."""
+	reason = re.split(r"[:|]", reason or "")[0]
 	return ESCALATION_REASONS.get(reason) or (reason or "—").replace("_", " ")
 
 

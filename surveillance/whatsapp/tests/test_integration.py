@@ -22,6 +22,7 @@ from surveillance.whatsapp.redact import pseudonym
 from surveillance.whatsapp.client import MediaTooLarge, WhatsAppError
 from surveillance.whatsapp.content import PRIVACY_VERSION
 from surveillance.whatsapp.conversation import AttrDict, new_session
+from surveillance.whatsapp.knowledge import KnowledgeBase
 
 PHONE = "254799111222"
 STAFF_PHONE = "254711000222"
@@ -113,6 +114,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 				"verify_token": "verify-me",
 				"notify_numbers": DESK,
 				"notify_template": "",
+				"answer_questions": 0,  # tests that ask turn it on
 			}
 		).save()
 		cls.sub_county = frappe.get_all(
@@ -795,6 +797,59 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertTrue(all(r.query_text == "Removed" and not r.user_ref for r in rows))
 		self.assertEqual({r.outcome for r in rows}, {"Clarify", "No Match"})
 		self.assertEqual(self.query_log(someone_else).query_text, "cholera steps?")
+
+	def test_the_knowledge_base_is_asked_as_the_staff_member_or_for_a_pseudonym(self):
+		seen = []
+
+		def ask(**kwargs):
+			seen.append((frappe.session.user, kwargs))
+			return {"mode": "verbatim", "answer": "Approved text [1]"}
+
+		before = frappe.session.user
+		with patch("surveillance.knowledge_base.ask", side_effect=ask):
+			KnowledgeBase().ask("cholera steps?", "sw", user=STAFF_USER, conversation_id="c1", request_id="r1")
+			KnowledgeBase().ask("cholera steps?", "en", public_ref="abc123", conversation_id="c2", request_id="r2")
+		self.assertEqual(frappe.session.user, before)
+		(staff_user, staff_call), (public_user, public_call) = seen
+		self.assertEqual((staff_user, staff_call["on_behalf_of"]), (STAFF_USER, None))
+		self.assertEqual((public_user, public_call["on_behalf_of"]), ("Administrator", "whatsapp:abc123"))
+		self.assertEqual((staff_call["language"], public_call["language"]), ("Kiswahili", "English"))
+		self.assertEqual(
+			{(c["mode"], c["channel"]) for _, c in seen}, {("verbatim", "WhatsApp")}
+		)  # no generated summaries on WhatsApp
+		self.assertEqual((staff_call["correlation_id"], staff_call["conversation_id"]), ("r1", "c1"))
+
+	def test_a_question_the_knowledge_base_refuses_is_logged_once_and_passed_on(self):
+		frappe.db.set_single_value("WhatsApp Settings", "answer_questions", 1)
+		self.addCleanup(frappe.db.set_single_value, "WhatsApp Settings", "answer_questions", 0)
+		frappe.clear_document_cache("WhatsApp Settings", "WhatsApp Settings")
+		ref = "whatsapp:" + pseudonym(PHONE, jobs.get_encryption_key())
+		with (
+			patch.dict(frappe.conf, {"kb_public_enabled": 0}),
+			patch("frappe.db.rollback"),  # a refusal rolls back; here that would undo the class fixtures
+		):
+			self.receive({"type": "text", "text": "hi"})
+			self.receive({"type": "reply", "id": "ask"})
+			self.receive({"type": "text", "text": "how is cholera spread?"})
+		self.assertIn("passed to", self.wa.sent[-1][1]["body"])
+		rows = frappe.get_all(
+			"Chatbot Query Log", filters={"user_ref": ref, "level": "Conversation"}, fields=["name", "escalated_to_human"]
+		)
+		self.assertEqual(len(rows), 1)  # the Knowledge Base's own record, not a second one from the bot
+		self.assertEqual(rows[0].escalated_to_human, 1)
+
+		retention.anonymise_reporter(PHONE)
+		self.assertEqual(frappe.db.get_value("Chatbot Query Log", rows[0].name, "query_text"), "Removed")
+
+	def test_answer_questions_is_turned_on_once_for_a_site_that_never_saved_it(self):
+		frappe.db.sql(
+			"delete from tabSingles where doctype = 'WhatsApp Settings' and field = 'answer_questions'"
+		)
+		setup.default_new_settings()
+		self.assertEqual(frappe.db.get_single_value("WhatsApp Settings", "answer_questions"), 1)
+		frappe.db.set_single_value("WhatsApp Settings", "answer_questions", 0)
+		setup.default_new_settings()
+		self.assertEqual(frappe.db.get_single_value("WhatsApp Settings", "answer_questions"), 0)
 
 	def test_session_retention_comes_from_settings(self):
 		s = sessions.load(PHONE)
