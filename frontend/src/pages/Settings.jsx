@@ -9,6 +9,7 @@ import SecurityPanel from '../components/settings/SecurityPanel'
 import DataPanel from '../components/settings/DataPanel'
 import RiskWeights from '../components/risk/RiskWeights'
 import RedFlagSymptoms from '../components/risk/RedFlagSymptoms'
+import AiReviewDeadlines from '../components/risk/AiReviewDeadlines'
 import { listFeedback } from '../api/frappe'
 
 const TABS = [
@@ -28,7 +29,7 @@ const PAGE_TITLES = {
   profile: ['My Profile', 'Your details'],
   password: ['Change Password', 'Change the password you sign in with'],
   notifications: ['Notifications', 'Choose which notifications you get'],
-  'ai-config': ['AI Risk Engine', 'How the risk score is worked out and which symptoms are red flags'],
+  'ai-config': ['AI Risk Engine', 'How the risk score is worked out, which symptoms are red flags, and AI review deadlines'],
   'alert-thresholds': ['Alert Thresholds', 'Case counts that raise alerts, and the regions under surveillance'],
   data: ['Data and Database', 'Database size, background jobs and backups'],
   security: ['Security Settings', 'Password rules, sign-in limits and who is signed in'],
@@ -972,6 +973,7 @@ export default function Settings({ only = '' }) {
         <div className="space-y-6">
         {has('manage_alert_thresholds') && <RiskWeights />}
         {has('manage_alert_thresholds') && <RedFlagSymptoms />}
+        <AiReviewDeadlines canEdit={has('settings_ai_config')} />
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
           <div className="flex items-center gap-3 mb-2">
             <Wand2 className="w-7 h-7 text-gray-900" />

@@ -4,6 +4,7 @@ import { RefreshCw, TrendingUp } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getEpiTrends } from '../api/frappe'
 import { FOCUS, PERIODS, RISE, fmtNum, DiseaseChart } from '../components/epi/TrendChart'
+import DiseaseContext from '../components/epi/DiseaseContext'
 
 // Epi Trends: one disease at a time. Confirmed cases each week, stacked by where they were reported (small numbers next
 // to big facility counts are labelled so they stay visible), with the usual level and the weeks the alert engine
@@ -13,7 +14,7 @@ import { FOCUS, PERIODS, RISE, fmtNum, DiseaseChart } from '../components/epi/Tr
 // A-Z ignoring 'Suspected', so 'Suspected Measles' sits under M
 const alphaName = (n) => (n || '').toLowerCase().replace(/^suspected\s+/, '')
 
-function DiseaseCard({ item, weeks, labels, showUnconfirmed, onOpenRise, others }) {
+function DiseaseCard({ item, weeks, labels, showUnconfirmed, onOpenRise, others, subCounty, contextOpen }) {
   const flaggedWeeks = item.flags.filter((f) => f.length).length
   const parts = [
     item.communityTotal ? `${fmtNum(item.communityTotal)} from community and field reports` : '',
@@ -38,6 +39,7 @@ function DiseaseCard({ item, weeks, labels, showUnconfirmed, onOpenRise, others 
         )}
       </div>
       <DiseaseChart item={item} weeks={weeks} labels={labels} showUnconfirmed={showUnconfirmed} onOpenRise={onOpenRise} />
+      <DiseaseContext disease={item.disease} subCounty={subCounty} startOpen={contextOpen} />
     </section>
   )
 }
@@ -149,11 +151,11 @@ export default function EpiTrends() {
           ) : showAll ? (
             series.map((s) => (
               <DiseaseCard key={s.disease} item={s} weeks={data.weeks} labels={Object.fromEntries(data.sources.map((x) => [x.key, x.label]))}
-                showUnconfirmed={showUnconfirmed} onOpenRise={openRise} others={0} />
+                showUnconfirmed={showUnconfirmed} onOpenRise={openRise} others={0} subCounty={subCounty} contextOpen={false} />
             ))
           ) : (
             <DiseaseCard item={current} weeks={data.weeks} labels={Object.fromEntries(data.sources.map((x) => [x.key, x.label]))}
-              showUnconfirmed={showUnconfirmed} onOpenRise={openRise} others={series.length - 1} />
+              showUnconfirmed={showUnconfirmed} onOpenRise={openRise} others={series.length - 1} subCounty={subCounty} contextOpen />
           )}
         </div>
       )}

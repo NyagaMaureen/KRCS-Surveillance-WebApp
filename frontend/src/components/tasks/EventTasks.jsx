@@ -15,7 +15,7 @@ export const useEventTasks = () => useContext(TaskContext)
  * (StepTaskLink) or the Tasks panel open the assign dialog.
  */
 export function EventTasksProvider({ eventId, eventStatus, onChanged, onToast, children }) {
-  const [data, setData] = useState({ tasks: [], canAssign: false, followupDays: [7, 14, 21] })
+  const [data, setData] = useState({ tasks: [], canAssign: false, canRefer: false, followupDays: [7, 14, 21] })
   const [assignees, setAssignees] = useState(null)
   const [dialog, setDialog] = useState(null)        // prefill for AssignDialog
   const [followupOpen, setFollowupOpen] = useState(false)
@@ -140,7 +140,7 @@ export function EventTasksPanel() {
   const [editing, setEditing] = useState(null)
   const [showDone, setShowDone] = useState(false)
   if (!ctx) return null
-  const { tasks, canAssign, eventStatus } = ctx
+  const { tasks, canAssign, canRefer, eventStatus } = ctx
   const open = tasks.filter(isOpen)
   const done = tasks.filter((t) => !isOpen(t))
   const hasFollowups = tasks.some((t) => t.type === 'Follow-up')
@@ -155,7 +155,7 @@ export function EventTasksPanel() {
     }
   }
 
-  if (!tasks.length && !canAssign) return null
+  if (!tasks.length && !canAssign && !canRefer) return null
 
   return (
     <section className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-7">
@@ -169,7 +169,15 @@ export function EventTasksPanel() {
             <Plus className="w-4 h-4" aria-hidden="true" /> Assign task
           </button>
         )}
+        {canRefer && (
+          <button type="button" onClick={() => ctx.openAssign({ type: 'Referral', lockType: true })} className={BTN_SECONDARY}>
+            <Plus className="w-4 h-4" aria-hidden="true" /> Refer the patient
+          </button>
+        )}
       </div>
+      {canRefer && (
+        <p className="mt-2 text-sm text-gray-900">The signal was discarded. If the patient still needs care, ask the CHP to refer them to a health facility.</p>
+      )}
 
       {closed && canAssign && !hasFollowups && (
         <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
@@ -354,7 +362,7 @@ function AssignDialog({ eventId, prefill, assignees, onClose, onSaved, onError }
         <div>
           <Label>Type</Label>
           <div role="radiogroup" aria-label="Task type" className="flex flex-wrap gap-2">
-            {TASK_TYPES.map((t) => (
+            {TASK_TYPES.filter((t) => !prefill.lockType || t.key === type).map((t) => (
               <button key={t.key} type="button" role="radio" aria-checked={type === t.key} onClick={() => pickType(t.key)}
                 className={`h-8 px-3 rounded-lg border text-sm ${FOCUS} ${type === t.key ? 'border-gray-900 text-gray-900 font-medium' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                 {t.key}

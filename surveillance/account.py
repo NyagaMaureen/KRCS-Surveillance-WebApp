@@ -176,19 +176,38 @@ def end_sessions_when_disabled(doc, method=None):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=10, seconds=60 * 60)
+@rate_limit(limit=60, seconds=60 * 60)
 def login_problem(usr, pwd):
-	"""After a failed login: says "deactivated" only when the password was right, so it tells nothing to someone who
-	does not know the password (KRCS 18 Nov 2026)."""
+	"""After a failed login, what to tell the person (KRCS 18 and 20 Nov 2026):
+	- deactivated: only when the password was right, so it tells nothing to someone who does not know the password
+	- attemptsLeft: wrong passwords left before the account is locked (Security Settings: Wrong password limit)
+	- locked / lockedFor: the account is now locked, and for how many seconds
+	Frappe locks only after one more wrong password than the limit; here the account is locked as soon as the limit
+	is reached, so the number of tries matches the setting."""
+	from frappe.auth import get_login_attempt_tracker
 	from frappe.utils.password import check_password
 	usr = (usr or "").strip()
 	user = (frappe.db.get_value("User", {"name": usr}) or frappe.db.get_value("User", {"email": usr})
 		or frappe.db.get_value("User", {"username": usr}))
-	if not user or user in ("Administrator", "Guest") or frappe.db.get_value("User", user, "enabled"):
+	if not user or user in ("Administrator", "Guest"):
 		return {"deactivated": False}
-	try:
-		check_password(user, pwd, delete_tracker_cache=False)
-	except Exception:
-		frappe.clear_messages()
+	if not frappe.db.get_value("User", user, "enabled"):
+		try:
+			check_password(user, pwd, delete_tracker_cache=False)
+		except Exception:
+			frappe.clear_messages()
+			return {"deactivated": False}
+		return {"deactivated": True}
+	limit = cint(frappe.db.get_single_value("System Settings", "allow_consecutive_login_attempts"))
+	if limit <= 0:
 		return {"deactivated": False}
-	return {"deactivated": True}
+	lock_for = cint(frappe.db.get_single_value("System Settings", "allow_login_after_fail")) or 60
+	tracker = get_login_attempt_tracker(user, raise_locked_exception=False)
+	failed = cint(tracker.login_failed_count)
+	if not failed:
+		return {"deactivated": False}
+	if failed >= limit:
+		if failed == limit:
+			tracker.login_failed_count = limit + 1   # locked now (Frappe would allow one more try)
+		return {"deactivated": False, "locked": True, "lockedFor": lock_for, "attemptsLeft": 0}
+	return {"deactivated": False, "attemptsLeft": limit - failed}

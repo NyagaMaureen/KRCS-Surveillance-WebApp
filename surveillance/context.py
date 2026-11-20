@@ -211,15 +211,78 @@ def _wash_context(sc, today):
 		"poor": sum(1 for i in items if i["rating"] == "poor"), "notes": w.narrative_notes or ""}
 
 
-# Which context is relevant to which disease (fixed rules, not AI). Population is shown for every disease.
-# Keys are Alert Threshold Config names. Change these lists if KRCS wants different links.
-RAIN_DISEASES = {"malaria", "awd-cholera", "rift-valley-fever", "dengue", "yellow-fever"}
-WASH_DISEASES = {"awd-cholera", "dysentery", "typhoid", "acute-jaundice", "unclassified-illness"}
-RAIN_WHY = {"malaria": "more breeding sites for mosquitoes, usually 2-6 weeks before cases rise",
-	"awd-cholera": "flooding can contaminate water sources and latrines",
-	"rift-valley-fever": "heavy rain is the classic trigger for mosquito-borne spread",
-	"dengue": "standing water increases mosquito breeding",
-	"yellow-fever": "standing water increases mosquito breeding"}
+# ---------- What the context means, per disease (fixed rules, not AI) ----------
+# Keys are Alert Threshold Config names. Each rule says why the factor matters for the disease and what to check next.
+# Edit these lists if KRCS wants different links. Population is shown for every disease.
+# Context is background only: it never changes the risk score, severity or the alert engine.
+
+_FLOOD_WATER = ("Heavy rain and flooding can wash sewage into water points and latrines.",
+	"Check latrines and water points near the cases for flooding or overflow.")
+_SHORT_WATER = ("When water is short, people use unsafe sources and wash their hands less.",
+	"Find out where the cases collect water and whether there is enough for drinking and handwashing.")
+_DIRTY_WATER = "Check the cases' water source and handwashing at home, and ask the WASH team to test chlorine there."
+
+# Rain above usual
+RAIN_WET = {
+	"malaria": ("More rain means more places for mosquitoes to breed; malaria cases usually rise 2 to 6 weeks later.",
+		"Expect more cases in the coming weeks: check malaria test (RDT) and drug stock at nearby facilities, and bed net use where the cases live."),
+	"rift-valley-fever": ("Heavy rain floods low ground where the mosquitoes that carry Rift Valley fever breed; animals are usually affected first.",
+		"Ask about sick livestock and animal abortions near the cases, and inform the veterinary team."),
+	"dengue": ("Standing water in containers lets the mosquitoes that carry dengue breed.",
+		"Look for water containers, tyres and other standing water around the cases' homes."),
+	"yellow-fever": ("Standing water lets the mosquitoes that carry yellow fever breed.",
+		"Look for standing water around the cases' homes and check their yellow fever vaccination status."),
+	"awd-cholera": _FLOOD_WATER,
+	"typhoid": _FLOOD_WATER,
+	"dysentery": _FLOOD_WATER,
+}
+# Rain below usual (and, for meningitis, the usual dry season too)
+RAIN_DRY = {
+	"awd-cholera": _SHORT_WATER,
+	"typhoid": _SHORT_WATER,
+	"dysentery": _SHORT_WATER,
+	"acute-malnutrition": ("Below-usual rain can cut food and milk supplies.",
+		"Share with the nutrition team and check when MUAC screening was last done in the area."),
+	"meningococcal-meningitis": ("Meningitis outbreaks are more common in the hot, dry, dusty season.",
+		"Watch closely for more cases and check the cases' meningitis vaccination status."),
+}
+DRY_SEASON_COUNTS = {"meningococcal-meningitis"}
+# Poor water and sanitation: (why, next step, which WASH fields count; None = all five)
+WASH_RULES = {
+	"awd-cholera": ("Unsafe water and poor sanitation are how cholera spreads.",
+		"Find out if the cases share a water source and ask the WASH team to test chlorine there.", None),
+	"dysentery": ("Dysentery spreads through dirty water, food and hands.", _DIRTY_WATER, None),
+	"typhoid": ("Typhoid spreads through dirty water and food.", _DIRTY_WATER, None),
+	"acute-jaundice": ("Hepatitis A and E, the usual causes of jaundice in camps, spread through dirty water and poor sanitation.",
+		_DIRTY_WATER, None),
+	"afp-polio": ("Poliovirus spreads through faeces where sanitation and handwashing are poor.",
+		"Check polio vaccination coverage in the area and handwashing and latrine use where the cases live.", None),
+	"acute-malnutrition": ("Diarrhoea from unsafe water makes malnutrition worse.",
+		"Share with the nutrition and WASH teams.", None),
+	"guinea-worm": ("Guinea worm spreads through drinking unfiltered water from ponds and other surface water.",
+		"Find the water the cases drink and make sure it is filtered.", ["water_source_type"]),
+}
+CROWDING = {"measles": "Measles spreads very fast where many people live close together.",
+	"meningococcal-meningitis": "Meningitis spreads more easily where many people live close together.",
+	"covid-sari": "Respiratory infections spread more easily where many people live close together.",
+	"mpox": "Mpox spreads through close contact, which is common in crowded shelters."}
+SHORT_NAMES = {"awd-cholera": "cholera", "guinea-worm": "guinea worm", "covid-sari": "COVID-19 / SARI", "afp-polio": "AFP / polio",
+	"meningococcal-meningitis": "meningitis", "rift-valley-fever": "Rift Valley fever", "acute-jaundice": "acute jaundice",
+	"vhf": "viral haemorrhagic fever", "mdr-tb": "MDR/XDR TB"}
+WEATHER_STALE_DAYS = 3
+# kept for anything else that imports them
+RAIN_DISEASES = set(RAIN_WET) | set(RAIN_DRY)
+WASH_DISEASES = set(WASH_RULES)
+
+
+def _disease_names(disease):
+	full = frappe.db.get_value("Alert Threshold Config", disease, "disease_name") or disease
+	short = SHORT_NAMES.get(disease)
+	if not short:
+		short = full[len("Suspected "):] if full.lower().startswith("suspected ") else full
+		short = " ".join(w if w.isupper() or w in ("Rift", "Valley", "Guinea", "Ebola", "Marburg", "Lassa") else w.lower()
+			for w in short.split(" (")[0].split())
+	return full, short
 
 
 def _ratio_text(w):
@@ -228,22 +291,155 @@ def _ratio_text(w):
 	if w["ratio"] >= 2:
 		return f"{w['ratio']:g}× usual"
 	if w["ratio"] <= 0.5:
-		return f"{w['ratio']:g}× usual (much drier)"
+		return f"{w['ratio']:g}× usual, much drier"
 	return f"{w['changePct']:+d}% vs usual" if w.get("changePct") is not None else None
 
 
-def _supports(ctx, disease):
-	"""Short, rule-based lines saying how the context relates to this disease. Never changes severity."""
+def _rain_headline(w):
+	if w.get("level") == "dry":
+		return "Dry, as usual for this time of year"
+	if w.get("usualMm") is None:
+		return f"{w['rainfallMm']:g} mm"
+	if w.get("level") == "above":
+		return w.get("ratioText") or f"{w['changePct']}% above usual"
+	if w.get("level") == "below":
+		return w.get("ratioText") or f"{abs(w['changePct'])}% below usual"
+	return "About usual"
+
+
+def _rain_detail(w):
+	if w.get("usualMm") is None:
+		return "Rain in the last 4 weeks. There are no earlier years to compare with yet."
+	return (f"{w['rainfallMm']:g} mm in the last 4 weeks, usual {w['usualMm']:g} mm "
+		f"({w['yearsCompared']} earlier year{'' if w['yearsCompared'] == 1 else 's'}). {w['last7RainMm']:g} mm this week.")
+
+
+def _fmt(d):
+	return getdate(d).strftime("%-d %b %Y") if d else ""
+
+
+def _rain_finding(ctx, disease, short):
+	w = ctx.get("weather")
+	row = {"key": "weather", "factor": "Rainfall"}
+	if not w:
+		return {**row, "mark": "check", "headline": "No rainfall data yet", "detail": "", "source": "",
+			"means": f"Rainfall can't be checked for {short} until the daily weather import has data for this sub-county.",
+			"next": "Ask the system administrator to check the weather import (Context Data, Weather tab)."}
+	row.update({"headline": _rain_headline(w), "detail": _rain_detail(w) if w.get("level") != "dry" else
+		f"{w['rainfallMm']:g} mm in the last 4 weeks, usual {w['usualMm']:g} mm.", "source": f"Open-Meteo, up to {_fmt(w['lastDate'])}"})
+	old = date_diff(getdate(nowdate()), w["lastDate"]) > WEATHER_STALE_DAYS
+	wet, dry = RAIN_WET.get(disease), RAIN_DRY.get(disease)
+	level = w.get("level")
+	if level == "above" and wet:
+		row.update(mark="supports", supports=True, means=wet[0], next=wet[1])
+	elif dry and (level == "below" or (level == "dry" and disease in DRY_SEASON_COUNTS)):
+		row.update(mark="supports", supports=True, means=dry[0], next=dry[1])
+	else:
+		if level is None:
+			means = "There are no earlier years to compare with yet, so it can't say whether rain is unusual."
+		elif wet and dry:
+			means = f"Rain is neither well above nor well below usual, so it does not point to {short} on its own."
+		elif wet:
+			means = f"Rain is not above usual, so it does not point to more {short} on its own."
+		else:
+			means = f"Rain is not below usual, so it does not point to more {short} on its own."
+		row.update(mark="background", means=means, next="No action from rainfall.")
+	if old:
+		row["mark"] = "check"
+		row["source"] += " · not updated recently"
+		row["next"] = row["next"] + " Weather data has not been updated since " + _fmt(w["lastDate"]) + "."
+	return row
+
+
+def _wash_finding(ctx, disease, short):
+	wash = ctx.get("wash")
+	why, nxt, fields = WASH_RULES[disease]
+	row = {"key": "wash", "factor": "Water and sanitation"}
+	place = ctx.get("subCountyName") or "this sub-county"
+	if not wash:
+		return {**row, "mark": "check", "headline": "No assessment recorded", "detail": "", "source": "", "means": why,
+			"next": f"Ask the WASH team to record an assessment for {place} in Context Data."}
+	items = [i for i in wash["items"] if fields is None or i["key"] in fields]
+	poor = [i for i in items if i["rating"] == "poor"]
+	fair = [i for i in items if i["rating"] == "fair"]
+	total = len(fields) if fields else len(WASH_FIELDS)
+	src = f"WASH assessment {_fmt(wash['date'])}" + (f", {wash['site']}" if wash.get("site") else "") + (f", by {wash['by']}" if wash.get("by") else "")
+	if wash.get("stale"):
+		src += f" · {round(wash['ageDays'] / 30)} months old"
+	lower = lambda xs: ", ".join(i["value"][:1].lower() + i["value"][1:] for i in xs)
+	cap = lambda t: t[:1].upper() + t[1:]
+	if poor:
+		head = poor[0]["label"] + ": " + poor[0]["value"].lower() if total == 1 else f"{len(poor)} of {total} poor"
+		detail = "" if total == 1 else cap(lower(poor)) + "."
+		if fair:
+			detail += f" Fair: {lower(fair)}."
+		row.update(mark="supports", supports=True, headline=head, detail=detail.strip(), source=src, means=why, next=nxt)
+	else:
+		head = "Not poor" if total == 1 else "None poor"
+		detail = f"Fair: {lower(fair)}." if fair else ""
+		row.update(mark="background", headline=head, detail=detail, source=src,
+			means=f"Water and sanitation were not poor at the last assessment, so they do not point to {short} on their own.",
+			next="No action from this, unless conditions have changed since the assessment.")
+	if wash.get("stale"):
+		row["mark"] = "check"
+		row["next"] = row["next"] + f" The assessment is {round(wash['ageDays'] / 30)} months old: ask for a new one."
+	return row
+
+
+def _population_finding(ctx, disease, short, people):
+	p = ctx.get("population")
+	row = {"key": "population", "factor": "Population"}
+	means = CROWDING.get(disease, "Shows how big the event is compared with everyone living in the sub-county." if people
+		else "Used to compare case numbers between sub-counties of different sizes.")
+	if not p:
+		return {**row, "mark": "check", "headline": "No population figure recorded", "detail": "", "source": "",
+			"means": means, "next": "Add the latest UNHCR, IOM or KNBS figure in Context Data so rates can be worked out."}
+	src = f"{p['source']}, as of {_fmt(p['asOf'])}" + (f", {p['site']}" if p.get("site") else "")
+	if people:
+		people = int(people)
+		head = f"{people:,} {'person' if people == 1 else 'people'} affected"
+		detail = f"That is {p['per10k']:g} per 10,000 of about {p['population']:,} people" + (f" ({p['proportionText'].split('(')[-1]}" if p.get("proportionText") else "") + "."
+	else:
+		head, detail = f"About {p['population']:,} people", ""
+	row.update(mark="background", headline=head, detail=detail, source=src, means=means, next="No action from this.")
+	if p.get("stale"):
+		row.update(mark="check", source=src + " · over a year old",
+			next="Ask for the latest population bulletin before relying on these rates.")
+	return row
+
+
+def findings(ctx, disease, people=None):
+	"""Rows for the context table: factor, what the data shows, what it means for this disease, next step."""
+	full, short = _disease_names(disease)
+	rows = []
+	if disease in RAIN_WET or disease in RAIN_DRY:
+		rows.append(_rain_finding(ctx, disease, short))
+	if disease in WASH_RULES:
+		rows.append(_wash_finding(ctx, disease, short))
+	rows.append(_population_finding(ctx, disease, short, people))
+	hidden = [n for n, linked in (("rainfall", disease in RAIN_WET or disease in RAIN_DRY), ("water and sanitation", disease in WASH_RULES)) if not linked]
+	plural = len(hidden) > 1 or hidden == ["water and sanitation"]
+	note = (f"{' and '.join(hidden).capitalize()} {'are' if plural else 'is'} not linked to {short}, so "
+		f"{'they are' if plural else 'it is'} not shown.") if hidden else ""
+	return {"diseaseName": full, "diseaseShort": short, "rows": rows, "notShown": note}
+
+
+def watch_list(ctx):
+	"""Diseases these conditions are known to favour, grouped by reason (Context Data overview)."""
+	label = lambda k: _disease_names(k)[1]
 	out = []
-	w, wash, pop = ctx.get("weather"), ctx.get("wash"), ctx.get("population")
-	if disease in RAIN_DISEASES and w and w.get("level") == "above":
-		out.append({"kind": "weather", "text": f"Rainfall {_ratio_text(w)} in the last 4 weeks ({w['rainfallMm']} mm vs usual {w['usualMm']} mm)",
-			"why": RAIN_WHY.get(disease, "")})
-	if disease in WASH_DISEASES and wash and wash.get("poor"):
-		poor = [i["value"].lower() for i in wash["items"] if i["rating"] == "poor"]
-		age = f", {round(wash['ageDays'] / 30)} months old" if wash.get("stale") else ""
-		out.append({"kind": "wash", "text": f"Latest WASH assessment ({wash['date']}{age}): " + ", ".join(poor),
-			"why": "poor water and sanitation help diarrhoeal and water-borne diseases spread"})
+	w, wash = ctx.get("weather"), ctx.get("wash")
+	if w and w.get("level") == "above":
+		out.append({"reason": "rain above usual", "diseases": [label(k) for k in RAIN_WET]})
+	if w and w.get("level") == "below":
+		out.append({"reason": "rain below usual", "diseases": [label(k) for k in RAIN_DRY]})
+	elif w and w.get("level") == "dry":
+		out.append({"reason": "dry season", "diseases": [label(k) for k in DRY_SEASON_COUNTS]})
+	if wash:
+		poor = {i["key"] for i in wash["items"] if i["rating"] == "poor"}
+		ds = [label(k) for k, (_, _, f) in WASH_RULES.items() if poor and (f is None or poor & set(f))]
+		if ds:
+			out.append({"reason": "poor water and sanitation" + (" (old assessment)" if wash.get("stale") else ""), "diseases": ds})
 	return out
 
 
@@ -253,44 +449,80 @@ def _context(sc, people=None, disease=None):
 	ctx = {"subCounty": sc, "subCountyName": info.get("sub_county_name"), "county": info.get("county"),
 		"weather": _rain_context(sc, today), "population": _population_context(sc, today, people),
 		"wash": _wash_context(sc, today)}
-	if disease:
-		ctx["disease"] = disease
-		ctx["show"] = {"weather": disease in RAIN_DISEASES, "wash": disease in WASH_DISEASES, "population": True}
-		ctx["supports"] = _supports(ctx, disease)
-		ctx["rainWhy"] = RAIN_WHY.get(disease)
-	else:
-		ctx["show"] = {"weather": True, "wash": True, "population": True}
-		ctx["supports"] = []
 	if ctx["weather"]:
 		ctx["weather"]["ratioText"] = _ratio_text(ctx["weather"])
+		ctx["weather"]["headline"] = _rain_headline(ctx["weather"])
+	if disease:
+		ctx["disease"] = disease
+		ctx.update(findings(ctx, disease, people))
+	else:
+		ctx["watch"] = watch_list(ctx)
 	return ctx
 
 
 @frappe.whitelist()
 def get_context(sub_county=None, county=None, people=None, disease=None):
 	"""Context for one place. sub_county may be the record id or its name (then pass county too).
-	disease (Alert Threshold Config key) limits the context to what's relevant and adds the 'supports' lines."""
+	disease (Alert Threshold Config key) adds the rows: what the data shows, what it means for it, next step."""
 	_require_view()
 	sc = resolve_sub_county(sub_county, county)
 	if not sc:
 		return {"subCounty": None, "subCountyName": sub_county, "county": county, "weather": None, "population": None,
-			"wash": None, "unknownLocation": True, "show": {}, "supports": []}
+			"wash": None, "unknownLocation": True, "rows": []}
 	return _context(sc, people, disease)
+
+
+def _area_sub_counties(only=None):
+	from surveillance.events import _scope, _user_region
+	from surveillance.user_scope import in_area, locked_area
+	subs, _ = _scope()
+	region = _user_region()
+	area = locked_area()
+	filters = {"is_active": 1}
+	if region:
+		filters["region"] = region
+	rows = frappe.get_all(SUB_COUNTY, filters=filters, fields=["name", "sub_county_name"], order_by="county, sub_county_name")
+	out = []
+	for s in rows:
+		n = (s.sub_county_name or "").strip().lower()
+		if n not in subs or not in_area(area, s.name):
+			continue
+		if only and only.strip().lower() not in (n, s.name.lower()):
+			continue
+		out.append(s)
+	return out
 
 
 @frappe.whitelist()
 def get_area_context():
-	"""Context for every pilot sub-county in the user's area (Dashboard)."""
+	"""Context for every pilot sub-county in the user's area (Context Data overview), with the diseases to watch."""
 	_require_view()
-	from surveillance.events import _scope, _user_region
-	subs, _ = _scope()
-	region = _user_region()
-	filters = {"is_active": 1}
-	if region:
-		filters["region"] = region
-	rows = [s for s in frappe.get_all(SUB_COUNTY, filters=filters, fields=["name", "sub_county_name"], order_by="county, sub_county_name")
-		if (s.sub_county_name or "").strip().lower() in subs]
-	return [_context(s.name) for s in rows]
+	return [_context(s.name) for s in _area_sub_counties()]
+
+
+@frappe.whitelist()
+def get_disease_context(disease, sub_county=None):
+	"""Epi Trends: what the context means for one disease, for each sub-county in the user's area (or one)."""
+	_require_view()
+	if not frappe.db.exists("Alert Threshold Config", disease):
+		frappe.throw(_("Unknown disease."))
+	full, short = _disease_names(disease)
+	places = []
+	for s in _area_sub_counties(sub_county):
+		c = _context(s.name, None, disease)
+		places.append({"subCounty": s.name, "subCountyName": c["subCountyName"], "rows": c["rows"]})
+	f = findings({}, disease)
+	why = []
+	if disease in RAIN_WET:
+		why.append({"factor": "Rain above usual", "text": RAIN_WET[disease][0]})
+	if disease in RAIN_DRY:
+		why.append({"factor": "Rain below usual" + (" or dry season" if disease in DRY_SEASON_COUNTS else ""), "text": RAIN_DRY[disease][0]})
+	if disease in WASH_RULES:
+		why.append({"factor": "Poor water and sanitation", "text": WASH_RULES[disease][0]})
+	if disease in CROWDING:
+		why.append({"factor": "Population", "text": CROWDING[disease]})
+	return {"disease": disease, "diseaseName": full, "diseaseShort": short, "notShown": f["notShown"],
+		"factors": [{"key": r["key"], "factor": r["factor"]} for r in f["rows"]], "why": why, "places": places}
 
 
 # ---------- Context Data page ----------

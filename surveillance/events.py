@@ -270,8 +270,9 @@ def _received_at(sig):
 
 
 def related_events(disease, sub_county, when=None, exclude=None):
-	"""Open events of the same disease in the same sub-county reported within WINDOW_DAYS of `when`."""
-	if not disease or not sub_county:
+	"""Open events of the same disease in the same sub-county reported within WINDOW_DAYS of `when`.
+	Unclassified reports are never grouped (KRCS 20 Nov 2026): each stays its own event, so none are suggested."""
+	if not disease or not sub_county or disease == UNCLASSIFIED:
 		return []
 	when = get_datetime(when) if when else now_datetime()
 	filters = {"disease": disease, "sub_county": sub_county, "status": ["in", OPEN],
@@ -298,6 +299,8 @@ def merge_events(event, into, note=None):
 		frappe.throw(_("Only open events can be merged."))
 	if src.disease != dst.disease:
 		frappe.throw(_("Only events of the same disease can be merged."))
+	if src.disease == UNCLASSIFIED:
+		frappe.throw(_("Unclassified reports stay one per event. Choose the disease in AI triage first, then merge."))
 	note = (note or "").strip()
 	if not note:
 		frappe.throw(_("Please say why these are the same outbreak."))
@@ -603,7 +606,7 @@ def _scope_filters(check=True):
 	if area:
 		names = frappe.db.sql_list("""select name from `tabSurveillance Event`
 			where lower(trim(ifnull(sub_county, ''))) in %(subs)s or ifnull(sub_county, '') = ''""",
-			{"subs": tuple(n.strip().lower() for n in area.sub_counties)})
+			{"subs": tuple({n.strip().lower() for n in area.sub_counties} | {i.strip().lower() for i in area.ids})})
 		return {"name": ["in", names or [""]]}
 	region = _user_region()
 	if not region:
@@ -798,15 +801,28 @@ CHA_TIMELINE = {"Call: reached", "Call: no answer", "Verification started", "Ver
 	"Verification updated", "Note", "Note added"}
 
 
+@frappe.whitelist()
+def get_report_event(report):
+	"""Signals Captured: the Review Queue event a report is on, for the link on the report page. Shown to anyone who may
+	open that event, CHAs included (KRCS 20 Nov 2026); otherwise nothing."""
+	frappe.get_doc("Case Report", report).check_permission("read")
+	event = frappe.db.get_value("Surveillance Signal", f"Field-{report}", "event")
+	if not event or not frappe.db.exists("Surveillance Event", event):
+		return {"event": None}
+	doc = frappe.get_doc("Surveillance Event", event)
+	try:
+		require_capability(VIEW)
+		_check_access(doc)
+	except frappe.PermissionError:
+		frappe.clear_messages()
+		return {"event": None}
+	return {"event": {"id": doc.name, "status": doc.status}}
+
+
 def _for_cha(out):
-	"""A CHA verifies the signal without being told the suspected disease (KRCS 19 Nov 2026): the title names the
-	place, and the disease, the reason it was flagged (it names the disease), the risk score, related events and the
-	timeline entries about diseases are left out."""
-	place = out.get("area") or out.get("subCounty") or "location unknown"
-	out.update({"title": f"Signal · {place}", "disease": None, "diseaseName": None, "priority": None, "reason": None,
-		"risk": None, "linkedAlert": None, "related": [], "relatedCount": 0, "escalation": None, "pathway": None})
-	for sg in out.get("signals") or []:
-		sg["disease"], sg["reason"] = None, None
+	"""A CHA sees the suspected disease but not the risk score (KRCS 20 Nov 2026, Allan; on 19 Nov the disease was
+	hidden too). The timeline keeps to the verification entries."""
+	out.update({"risk": None})
 	if "timeline" in out:
 		out["timeline"] = [t for t in out["timeline"] if t["action"] in CHA_TIMELINE]
 	return out
@@ -916,6 +932,12 @@ def set_status(event, action, note=None, facility=None):
 		if still_open:
 			doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Tasks continue", "note": still_open})
 	doc.save(ignore_permissions=True)
+	if action in ("discard", "escalate", "investigate", "confirm"):   # the officer acted on the AI output (AUD-01, AUD-08)
+		from surveillance import ai_review
+		if 3 in allowed_steps():
+			ai_review.reviewed(doc, f"{ACTION_LABEL[action]}" + (f": {note}" if note else ""))
+		elif action == "discard":
+			ai_review.closed_without_review(doc, f"Discarded at verification: {note}")
 	investigation.sync_reports(doc, action, note)
 	from surveillance.alerts import sync_alert_for_event
 	sync_alert_for_event(doc)   # Epi Trends status follows the event (confirm, escalate, close, discard)

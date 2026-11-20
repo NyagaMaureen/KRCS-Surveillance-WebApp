@@ -1,289 +1,267 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
-import { Search, Download, MoreHorizontal, Eye, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Search, Download, X, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
-import { PageSizeSelect } from '../components/common/Pager'
+import Pager from '../components/common/Pager'
+import usePaged from '../components/common/usePaged'
 import { getAuditLogs, exportCsv } from '../api/frappe'
 
+// The whole system's audit trail (SRS R57, Audit Framework V2.0, AUD-01 / AUD-08): records created, changed and deleted,
+// every action on Review Queue events, AI outputs and their review, reports, and (when ticked) sign-ins and sign-outs.
+// Plain grid table, black text (Elizabeth). Data: surveillance/audit_log.py.
 
-const CATEGORY_COLORS = {
-  Investigation: 'bg-purple-50 text-purple-700',
-  Auth: 'bg-brand-red/10 text-red-700',
-  Alert: 'bg-[#F2C94C]/10 text-[#F2C94C]',
-  Report: 'bg-[#27AE60]/10 text-[#27AE60]',
-  Case: 'bg-[#1447E6]/10 text-[#1447E6]',
-  Config: 'bg-[#9333EA]/10 text-[#9333EA]',
-  User: 'bg-gray-50 text-gray-900',
-  AI: 'bg-brand-red/10 text-red-700',
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-gray-400'
+const TH = 'border border-gray-200 bg-gray-50 px-3 py-2 text-left text-xs font-bold text-gray-900'
+const TD = 'border border-gray-200 px-3 py-2.5 align-top text-sm text-gray-900'
+const SEL = `h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 ${FOCUS}`
+const LOGINS_KEY = 'krcs.audit.showLogins'
+const RANGES = [
+  { key: 'all', label: 'All time', days: null },
+  { key: 'today', label: 'Today', days: 1 },
+  { key: '7d', label: 'Last 7 days', days: 7 },
+  { key: '30d', label: 'Last 30 days', days: 30 },
+  { key: '90d', label: 'Last 90 days', days: 90 },
+]
+
+function readPref() {
+  try { return localStorage.getItem(LOGINS_KEY) === '1' } catch { return false }
 }
-const categoryColor = (c) => CATEGORY_COLORS[c] || 'bg-gray-100 text-gray-600'
-
-const DATE_RANGE_MS = { today: 24 * 60 * 60 * 1000, '7d': 7 * 24 * 60 * 60 * 1000, '30d': 30 * 24 * 60 * 60 * 1000 }
-
-function formatTimestamp(v) {
-  return new Date(v).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'medium' })
-}
-
-function formatChangeValue(v) {
-  return v === null || v === undefined || v === '' ? '—' : v
-}
-
-function changesToText(changes) {
-  if (!changes?.length) return ''
-  return changes.map((c) => `${c.field}: ${formatChangeValue(c.from)} → ${formatChangeValue(c.to)}`).join('; ')
+function writePref(on) {
+  try { localStorage.setItem(LOGINS_KEY, on ? '1' : '0') } catch { /* private window: not remembered */ }
 }
 
-function useClickOutside(ref, handler) {
-  useEffect(() => {
-    function onClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) handler()
-    }
-    document.addEventListener('click', onClick, true)
-    return () => document.removeEventListener('click', onClick, true)
-  }, [ref, handler])
+function fmtTime(v) {
+  const d = new Date(String(v).replace(' ', 'T'))
+  return isNaN(d) ? String(v) : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
+const blank = (v) => (v === null || v === undefined || v === '' ? '—' : v)
+const changesText = (c) => (c || []).map((x) => `${x.field}: ${blank(x.from)} → ${blank(x.to)}`).join('; ')
+const recordText = (r) => (r || []).map((x) => `${x.label}: ${blank(x.value)}`).join('; ')
 
 export default function AuditLog() {
-  const [logs, setLogs] = useState([])
+  const [logs, setLogs] = useState(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
-  const [roleFilter, setRoleFilter] = useState('')
-  const [userFilter, setUserFilter] = useState('')
-  const [dateRange, setDateRange] = useState('all')
-  const [page, setPage] = useState(0)
-  const [openMenu, setOpenMenu] = useState(null)
-  const [detailsLog, setDetailsLog] = useState(null)
-  const menuRef = useRef(null)
+  const [category, setCategory] = useState('')
+  const [role, setRole] = useState('')
+  const [user, setUser] = useState('')
+  const [range, setRange] = useState('30d')
+  const [showLogins, setShowLogins] = useState(readPref)
+  const [open, setOpen] = useState(null)
 
-  useClickOutside(menuRef, () => setOpenMenu(null))
+  const days = RANGES.find((r) => r.key === range)?.days
+  const load = useCallback(() => {
+    setLoading(true)
+    getAuditLogs({ limit: 3000, days, includeLogins: showLogins })
+      .then((r) => { setLogs(r); setError('') })
+      .catch((e) => setError(e.message || 'The audit log could not be loaded.'))
+      .finally(() => setLoading(false))
+  }, [days, showLogins])
+  useEffect(() => { load() }, [load])
 
-  useEffect(() => {
-    getAuditLogs({ limit: 500 }).then(setLogs)
-  }, [])
+  const all = useMemo(() => logs || [], [logs])
+  const categories = useMemo(() => [...new Set(all.map((l) => l.category))].sort(), [all])
+  const roles = useMemo(() => [...new Set(all.map((l) => l.role))].sort(), [all])
+  const users = useMemo(() => [...new Map(all.map((l) => [l.user, l.userName || l.user])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [all])
 
-  const categories = useMemo(() => [...new Set(logs.map((l) => l.category))].sort(), [logs])
-  const roles = useMemo(() => [...new Set(logs.map((l) => l.role))].sort(), [logs])
-  const users = useMemo(() => [...new Set(logs.map((l) => l.user))].sort(), [logs])
-
-  const filteredLogs = useMemo(() => {
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const cutoff = DATE_RANGE_MS[dateRange] ? Date.now() - DATE_RANGE_MS[dateRange] : null
-
-    return logs.filter((l) => {
+    return all.filter((l) => {
+      if (category && l.category !== category) return false
+      if (role && l.role !== role) return false
+      if (user && l.user !== user) return false
       if (q) {
-        const changesText = (l.changes || []).map((c) => `${c.field} ${c.from} ${c.to}`).join(' ')
-        const haystack = `${l.action} ${l.user} ${l.role} ${l.details} ${l.category} ${changesText}`.toLowerCase()
-        if (!haystack.includes(q)) return false
+        const text = `${l.action} ${l.user} ${l.userName} ${l.role} ${l.details} ${l.category} ${changesText(l.changes)} ${recordText(l.record)}`.toLowerCase()
+        if (!text.includes(q)) return false
       }
-      if (categoryFilter && l.category !== categoryFilter) return false
-      if (roleFilter && l.role !== roleFilter) return false
-      if (userFilter && l.user !== userFilter) return false
-      if (cutoff && new Date(l.timestamp).getTime() < cutoff) return false
       return true
     })
-  }, [logs, search, categoryFilter, roleFilter, userFilter, dateRange])
+  }, [all, search, category, role, user])
+  const paged = usePaged(filtered, 25, `${search}|${category}|${role}|${user}|${range}|${showLogins}`)
 
-  const [PAGE_SIZE, setPageSize] = useState(25)
-  const lastPage = Math.max(0, Math.ceil(filteredLogs.length / PAGE_SIZE) - 1)
-  const pagedLogs = filteredLogs.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
-  const paginationLabel = (() => {
-    if (!filteredLogs.length) return 'Showing 0 of 0'
-    const start = page * PAGE_SIZE + 1
-    const end = Math.min(start + PAGE_SIZE - 1, filteredLogs.length)
-    return `Showing ${start} to ${end} of ${filteredLogs.length}`
-  })()
-
-  function toggleMenu(name) {
-    setOpenMenu((prev) => (prev === name ? null : name))
-  }
-
-  function viewDetails(log) {
-    setDetailsLog(log)
-    setOpenMenu(null)
+  function toggleLogins(on) {
+    setShowLogins(on)
+    writePref(on)
+    if (!on && category === 'Auth') setCategory('')
   }
 
   function handleExport() {
-    exportCsv('audit-log.csv', filteredLogs, [
-      { label: 'Timestamp', value: (r) => formatTimestamp(r.timestamp) },
+    exportCsv('audit-log.csv', filtered, [
+      { label: 'Time', value: (r) => fmtTime(r.timestamp) },
       { label: 'Category', value: (r) => r.category },
       { label: 'Action', value: (r) => r.action },
-      { label: 'User', value: (r) => r.user },
+      { label: 'Outcome', value: (r) => r.outcome || '' },
+      { label: 'User', value: (r) => r.userName || r.user },
+      { label: 'User ID', value: (r) => r.user },
       { label: 'Role', value: (r) => r.role },
       { label: 'Details', value: (r) => r.details },
-      { label: 'Changes', value: (r) => changesToText(r.changes) },
+      { label: 'Changes', value: (r) => changesText(r.changes) },
+      { label: 'AI record', value: (r) => recordText(r.record) },
     ])
   }
 
   return (
     <AppShell>
-      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-brand-navy">Audit Log</h2>
-          <p className="text-sm text-gray-400">Access activity, User Logs, Alert Created, Data Export and System Backup</p>
+          <p className="mt-0.5 text-sm text-gray-900">
+            Who did what and when: records created, changed and deleted, every step on Review Queue events, AI outputs and
+            their review, reports viewed and exported, and sign-ins.
+          </p>
         </div>
-        <div className="flex gap-3">
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-500 bg-white focus:outline-none"
-          >
-            <option value="all">All Time</option>
-            <option value="today">Today</option>
-            <option value="7d">Last 7 Days</option>
-            <option value="30d">Last 30 Days</option>
-          </select>
-          <button onClick={handleExport} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2.5 text-sm font-semibold flex items-center gap-2">
-            <Download className="w-4 h-4" /> Export
+        <div className="flex gap-2">
+          <button type="button" onClick={load} disabled={loading} className={`inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 hover:bg-gray-50 ${FOCUS}`}>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" /> Refresh
+          </button>
+          <button type="button" onClick={handleExport} disabled={!filtered.length} className={`inline-flex h-10 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 ${FOCUS}`}>
+            <Download className="h-4 w-4" aria-hidden="true" /> Export
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap gap-3 mb-6">
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            type="text"
-            placeholder="Search"
-            className="w-full bg-gray-50 border border-gray-100 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-100"
-          />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" aria-hidden="true" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} type="search" placeholder="Search actions, people, events, details"
+            aria-label="Search the audit log" className={`h-10 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 ${FOCUS}`} />
         </div>
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="border border-gray-100 bg-gray-50 rounded-lg px-3.5 py-2.5 text-sm text-gray-700 min-w-[170px]">
-          <option value="">All Categories</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
+        <select aria-label="Period" value={range} onChange={(e) => setRange(e.target.value)} className={SEL}>
+          {RANGES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
-        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="border border-gray-100 bg-gray-50 rounded-lg px-3.5 py-2.5 text-sm text-gray-700 min-w-[170px]">
-          <option value="">All Roles</option>
-          {roles.map((r) => (
-            <option key={r} value={r}>{r}</option>
-          ))}
+        <select aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)} className={SEL}>
+          <option value="">All categories</option>
+          {categories.map((c) => <option key={c} value={c}>{c === 'Auth' ? 'Sign-ins' : c}</option>)}
         </select>
-        <select value={userFilter} onChange={(e) => setUserFilter(e.target.value)} className="border border-gray-100 bg-gray-50 rounded-lg px-3.5 py-2.5 text-sm text-gray-700 min-w-[170px]">
-          <option value="">All Users</option>
-          {users.map((u) => (
-            <option key={u} value={u}>{u}</option>
-          ))}
+        <select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)} className={SEL}>
+          <option value="">All roles</option>
+          {roles.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
+        <select aria-label="User" value={user} onChange={(e) => setUser(e.target.value)} className={`${SEL} max-w-[14rem]`}>
+          <option value="">All users</option>
+          {users.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+        <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900">
+          <input type="checkbox" checked={showLogins} onChange={(e) => toggleLogins(e.target.checked)} className="h-4 w-4 rounded border-gray-300" />
+          Show sign-ins and sign-outs
+        </label>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-gray-900 text-xs font-medium bg-gray-50 border-b border-gray-100">
-              <th className="px-5 py-3.5 font-medium">Timestamp</th>
-              <th className="px-5 py-3.5 font-medium">Category</th>
-              <th className="px-5 py-3.5 font-medium">Action</th>
-              <th className="px-5 py-3.5 font-medium">User</th>
-              <th className="px-5 py-3.5 font-medium">Role</th>
-              <th className="px-5 py-3.5 font-medium">Details</th>
-              <th className="px-5 py-3.5 font-medium w-10"></th>
-            </tr>
-          </thead>
+      <div className="rounded-2xl border border-gray-200 bg-white">
+        {error ? (
+          <p className="p-6 text-sm text-red-700">{error} <button type="button" onClick={load} className="font-semibold underline">Try again</button></p>
+        ) : logs === null ? (
+          <p className="p-6 text-sm text-gray-700">Loading…</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto p-4">
+              <table className="w-full min-w-[960px] border-collapse border border-gray-200">
+                <thead>
+                  <tr>
+                    <th className={`${TH} w-44`}>Time</th>
+                    <th className={`${TH} w-32`}>Category</th>
+                    <th className={`${TH} w-52`}>Action</th>
+                    <th className={`${TH} w-48`}>User</th>
+                    <th className={TH}>Details</th>
+                    <th className={`${TH} w-24`}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.shown.map((l) => (
+                    <tr key={l.name}>
+                      <td className={`${TD} whitespace-nowrap`}>{fmtTime(l.timestamp)}</td>
+                      <td className={TD}>{l.category === 'Auth' ? 'Sign-in' : l.category}</td>
+                      <td className={`${TD} font-semibold ${l.outcome === 'Failed' ? 'text-red-700' : ''}`}>{l.action}</td>
+                      <td className={TD}>{l.userName || l.user}<div className="text-xs text-gray-700">{l.role}</div></td>
+                      <td className={`${TD} break-words`}>
+                        {l.details}
+                        {l.link && <> · <Link to={l.link} className={`rounded font-semibold text-red-700 underline-offset-2 hover:underline ${FOCUS}`}>Open</Link></>}
+                      </td>
+                      <td className={TD}>
+                        {(l.changes?.length || l.record?.length) ? (
+                          <button type="button" onClick={() => setOpen(l)} className={`rounded text-sm font-semibold text-gray-900 underline underline-offset-2 ${FOCUS}`}>
+                            {l.record?.length ? 'Full record' : 'Changes'}
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                  {!paged.shown.length && (
+                    <tr><td colSpan={6} className={`${TD} py-10 text-center`}>No audit log entries match your filters.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <Pager paged={paged} noun="entries" />
+          </>
+        )}
+      </div>
+
+      {open && <Details log={open} onClose={() => setOpen(null)} />}
+    </AppShell>
+  )
+}
+
+function Details({ log, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const rows = [
+    ['Time', fmtTime(log.timestamp)], ['Category', log.category === 'Auth' ? 'Sign-in' : log.category], ['Action', log.action],
+    ['User', `${log.userName || log.user}${log.user && log.userName !== log.user ? ` (${log.user})` : ''}`], ['Role', log.role],
+    ['Details', log.details], ['Entry ID', log.name],
+  ]
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Audit log entry"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-bold text-gray-900">{log.action}</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className={`rounded text-gray-700 hover:text-gray-900 ${FOCUS}`}><X className="h-5 w-5" /></button>
+        </div>
+        <table className="w-full border-collapse border border-gray-200">
           <tbody>
-            {pagedLogs.map((log) => (
-              <tr key={log.name} className="border-b border-gray-50 hover:bg-gray-50">
-                <td className="px-5 py-4 text-gray-500 whitespace-nowrap">{formatTimestamp(log.timestamp)}</td>
-                <td className="px-5 py-4">
-                  <span className={['inline-block text-xs font-medium px-4 py-1.5 rounded-full', categoryColor(log.category)].join(' ')}>{log.category}</span>
-                </td>
-                <td className="px-5 py-4 font-medium text-gray-900 whitespace-nowrap">{log.action}</td>
-                <td className="px-5 py-4 text-gray-900 whitespace-nowrap">{log.user}</td>
-                <td className="px-5 py-4 text-gray-500 whitespace-nowrap">{log.role}</td>
-                <td className="px-5 py-4 text-gray-500 max-w-xs">
-                  {log.details}
-                  {log.link && <Link to={log.link} className="ml-2 text-xs text-red-700 hover:underline">Open</Link>}
-                  {log.changes?.length > 0 && (
-                    <>
-                      {' '}
-                      <button onClick={() => viewDetails(log)} className="text-xs text-gray-400 hover:underline">View changes</button>
-                    </>
-                  )}
-                </td>
-                <td className="px-5 py-4 text-right relative">
-                  <button onClick={() => toggleMenu(log.name)} className="text-gray-400 hover:text-gray-700">
-                    <MoreHorizontal className="w-5 h-5" />
-                  </button>
-                  {openMenu === log.name && (
-                    <div ref={menuRef} className="absolute right-5 top-10 z-10 bg-white border border-gray-100 rounded-lg shadow-lg py-1 w-40">
-                      <button onClick={() => viewDetails(log)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                        <Eye className="w-3.5 h-3.5" /> View Details
-                      </button>
-                    </div>
-                  )}
-                </td>
-              </tr>
+            {rows.map(([k, v]) => (
+              <tr key={k}><th scope="row" className={`${TD} w-48 text-left font-bold`}>{k}</th><td className={`${TD} whitespace-pre-wrap break-words`}>{blank(v)}</td></tr>
             ))}
-            {!pagedLogs.length && (
-              <tr>
-                <td colSpan={7} className="px-5 py-12 text-center text-gray-400">No audit log entries match your filters</td>
-              </tr>
-            )}
           </tbody>
         </table>
+        {log.link && <p className="mt-2 text-sm"><Link to={log.link} className="font-semibold text-red-700 hover:underline">Open the record</Link></p>}
 
-        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 flex-wrap gap-3">
-          <div className="flex gap-2">
-            <button onClick={() => setPage(0)} disabled={page === 0} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50">First</button>
-            <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50">Previous</button>
-          </div>
-          <span className="text-sm text-gray-500">{paginationLabel}</span>
-          <PageSizeSelect value={PAGE_SIZE} onChange={(n) => { setPageSize(n); setPage(0) }} />
-          <div className="flex gap-2">
-            <button onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={page >= lastPage} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50">Next</button>
-            <button onClick={() => setPage(lastPage)} disabled={page >= lastPage} className="border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:bg-gray-50">Last</button>
-          </div>
-        </div>
+        {log.record?.length > 0 && (
+          <>
+            <h4 className="mb-2 mt-5 text-sm font-bold text-gray-900">AI output and review</h4>
+            <table className="w-full border-collapse border border-gray-200">
+              <tbody>
+                {log.record.map((r) => (
+                  <tr key={r.label}><th scope="row" className={`${TD} w-48 text-left font-bold`}>{r.label}</th><td className={`${TD} whitespace-pre-wrap break-words`}>{blank(r.value)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {log.changes?.length > 0 && (
+          <>
+            <h4 className="mb-2 mt-5 text-sm font-bold text-gray-900">Changes</h4>
+            <table className="w-full border-collapse border border-gray-200">
+              <thead><tr><th className={TH}>Field</th><th className={TH}>From</th><th className={TH}>To</th></tr></thead>
+              <tbody>
+                {log.changes.map((c, i) => (
+                  <tr key={i}>
+                    <td className={`${TD} font-bold`}>{blank(c.field)}</td>
+                    <td className={`${TD} whitespace-pre-wrap break-words`}>{blank(c.from)}</td>
+                    <td className={`${TD} whitespace-pre-wrap break-words`}>{blank(c.to)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
       </div>
-
-      {detailsLog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) setDetailsLog(null) }}>
-          <div className={['bg-white rounded-xl w-full p-6', detailsLog.changes?.length > 0 ? 'max-w-2xl max-h-[80vh] overflow-y-auto' : 'max-w-md'].join(' ')}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-900">Log Details</h3>
-              <button onClick={() => setDetailsLog(null)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
-            </div>
-            <dl className="space-y-3 text-sm">
-              <div className="flex justify-between gap-4"><dt className="text-gray-400">Entry ID</dt><dd className="text-gray-900 font-medium">{detailsLog.name}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-gray-400">Timestamp</dt><dd className="text-gray-900 font-medium">{formatTimestamp(detailsLog.timestamp)}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-gray-400">Category</dt><dd><span className={['text-xs font-medium px-3 py-1 rounded-full', categoryColor(detailsLog.category)].join(' ')}>{detailsLog.category}</span></dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-gray-400">Action</dt><dd className="text-gray-900 font-medium">{detailsLog.action}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-gray-400">User</dt><dd className="text-gray-900 font-medium">{detailsLog.user}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-gray-400">Role</dt><dd className="text-gray-900 font-medium">{detailsLog.role}</dd></div>
-              <div><dt className="text-gray-400 mb-1">Details</dt><dd className="text-gray-700 break-words whitespace-pre-wrap">{detailsLog.details}{detailsLog.link && <Link to={detailsLog.link} className="ml-2 text-xs text-red-700 hover:underline">Open</Link>}</dd></div>
-            </dl>
-            {detailsLog.changes?.length > 0 && (
-              <div className="mt-4">
-                <h4 className="text-gray-400 text-sm mb-2">Changes</h4>
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-left">
-                      <th className="text-xs font-medium text-gray-400 pb-2 pr-3">Field</th>
-                      <th className="text-xs font-medium text-gray-400 pb-2 pr-3">From</th>
-                      <th className="text-xs font-medium text-gray-400 pb-2">To</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detailsLog.changes.map((c, i) => (
-                      <tr key={i} className="border-b border-gray-50">
-                        <td className="text-sm text-gray-900 py-2 pr-3 break-words whitespace-pre-wrap align-top">{c.field || <span className="text-gray-400">—</span>}</td>
-                        <td className="text-sm text-gray-500 line-through decoration-gray-300 py-2 pr-3 break-words whitespace-pre-wrap align-top">
-                          {c.from === null || c.from === undefined || c.from === '' ? <span className="text-gray-400 no-underline">—</span> : c.from}
-                        </td>
-                        <td className="text-sm text-gray-900 font-medium py-2 break-words whitespace-pre-wrap align-top">
-                          {c.to === null || c.to === undefined || c.to === '' ? <span className="text-gray-400 font-normal">—</span> : c.to}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </AppShell>
+    </div>
   )
 }

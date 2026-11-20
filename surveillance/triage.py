@@ -376,7 +376,12 @@ def get_triage(event):
 			"tryChaAfter": TRY_CHA_AFTER}
 	queue = _queue_diseases()
 	diseases, conflict = _event_diseases(reports, queue)
+	if diseases and doc.status in ("New", "Verifying", "Verified"):   # the AI output's audit record (AUD-01)
+		frappe.enqueue("surveillance.ai_review.record_from_triage", queue="short", event=doc.name,
+			diseases=[{k: d.get(k) for k in ("key", "name", "level", "probability")} for d in diseases[:5]])
+	top = diseases[0]["key"] if diseases else None
 	return {
+		"aiTop": top,
 		"event": doc.name, "status": doc.status, "pathway": doc.get("pathway") or None,
 		"disease": doc.disease, "diseaseName": doc.disease_name,
 		"reports": reports, "reachedAny": any(r["reached"] for r in reports),
@@ -426,7 +431,7 @@ def answer(event, report, symptom, value=None):
 	records it as checked and not present, empty clears the answer. Saved on the report (Update history: 'Asked by
 	phone') and the case definitions are run again, so the officer's suggestions change straight away. The questions
 	can be answered before the call is recorded (KRCS 19 Nov 2026). A new sign the reporter mentions is added the same
-	way."""
+	way. Since KRCS 20 Nov 2026 the reporter must have been reached first: the answers are what they said on the call."""
 	from surveillance.case_definitions import absent_of
 	from surveillance.events import OPEN
 	doc = _load_verify(event)
@@ -436,6 +441,8 @@ def answer(event, report, symptom, value=None):
 	sig = f"Field-{report}"
 	if frappe.db.get_value("Surveillance Signal", sig, "event") != doc.name:
 		frappe.throw(_("This report is not part of this event."))
+	if frappe.db.get_value("Surveillance Signal", sig, "check_reached") != "Yes":
+		frappe.throw(_("Call the reporter first. Ask about the symptoms once you have spoken to them."))
 	if value not in ANSWERS + ("", None):
 		frappe.throw(_("Answer Yes or No."))
 	if not frappe.db.exists("Symptom", symptom):
@@ -469,7 +476,7 @@ def answer(event, report, symptom, value=None):
 
 
 @frappe.whitelist(methods=["POST"])
-def confirm_disease(event, disease):
+def confirm_disease(event, disease, override_reason=None):
 	"""The officer's disease for the whole event, after talking to the reporter(s). Saved on every field report.
 	Priority disease: the event continues to verification. Otherwise: the referral pathway (refer, follow up, close)."""
 	from surveillance.events import OPEN, _relabel_event, recompute_event
@@ -484,6 +491,12 @@ def confirm_disease(event, disease):
 		frappe.throw(_("Verification is not finished yet: the CHA (or you) must call the reporter and use Confirm and save first."))
 	labels = _labels()
 	disease_name = labels["disease"].get(disease, disease)
+	# AI outputs are advisory; when the officer does not follow the top suggestion they say why (AUD-01)
+	from surveillance import ai_review
+	top, top_name = ai_review.top_suggestion(doc)
+	override_reason = (override_reason or "").strip()
+	if top and top != disease and not override_reason:
+		frappe.throw(_("The AI's top suggestion was {0}. Please say why you chose {1} instead.").format(top_name or top, disease_name))
 	who, today = get_fullname(frappe.session.user), frappe.utils.format_date(nowdate())
 	for s in sigs:
 		if not frappe.db.exists("Case Report", s.ref):
@@ -524,6 +537,8 @@ def confirm_disease(event, disease):
 		doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Disease confirmed by phone",
 			"note": f"{disease_name}: not a priority disease. Referral pathway: refer the patient, follow up, then close."})
 	doc.save(ignore_permissions=True)
+	ai_review.reviewed(doc, "Accepted the top AI suggestion" if not top or top == disease else "Chose a different disease",
+		disease, disease_name, override_reason if top and top != disease else None)
 	recompute_event(doc.name)
 	from surveillance.investigation import sync_reports
 	sync_reports(doc, "confirm" if not priority else "start", "")
@@ -703,6 +718,56 @@ def _referral_scope():
 	if region:
 		return "region", region
 	return "all", None
+
+
+@frappe.whitelist()
+def get_referral_case(task):
+	"""Referrals page: the full case behind a referral (KRCS 20 Nov 2026): the event, and each report as it came in,
+	laid out like Signal captured. Seen by whoever may see the case itself."""
+	from surveillance.event_tasks import DOCTYPE
+	from surveillance.events import _check_access
+	t = frappe.get_doc(DOCTYPE, task)
+	if t.task_type != "Referral":
+		frappe.throw(_("This is not a referral."))
+	if not (has_capability("view_review_queue") or has_capability("view_reports")):
+		frappe.throw(_("You do not have permission to see this case."), frappe.PermissionError)
+	event, refs = None, []
+	if t.event:
+		doc = frappe.get_doc("Surveillance Event", t.event)
+		_check_access(doc)
+		event = {"id": doc.name, "disease": doc.disease_name or None, "status": doc.status,
+			"place": ", ".join(x for x in [doc.area, doc.sub_county] if x) or None,
+			"people": cint(doc.people), "deaths": cint(doc.deaths), "reports": cint(doc.reports),
+			"firstReported": str(doc.first_reported) if doc.first_reported else None}
+		sigs = frappe.get_all("Surveillance Signal", filters={"event": doc.name}, order_by="signal_date desc",
+			fields=["source", "ref", "reported", "people", "deaths", "signal_date", "area", "sub_county"])
+		refs = [x.ref for x in sigs if x.source == "Field" and x.ref]
+		others = [{"source": x.source, "ref": x.ref, "reported": x.reported, "people": cint(x.people), "deaths": cint(x.deaths),
+			"date": str(x.signal_date) if x.signal_date else None, "place": x.area or x.sub_county}
+			for x in sigs if x.source != "Field"]
+	else:
+		others = []
+		if t.case_report:
+			frappe.get_doc("Case Report", t.case_report).check_permission("read")
+			refs = [t.case_report]
+	show_phone = has_capability("act_on_events") or has_capability("step_verification")
+	rows = []
+	for r in frappe.get_all("Case Report", filters={"name": ["in", refs or [""]]}, order_by="creation desc", fields=[
+			"name", "channel", "signal_type", "category", "report_date", "creation", "affected_count", "deaths_count",
+			"symptom_tags", "absent_symptom_tags", "onset_date", "age_group", "age_groups", "animal_exposure",
+			"location_name", "latitude", "longitude", "additional_notes", "reporter_name", "phone_number", "reported_by"]):
+		rows.append({"ref": r.name, "channel": r.channel, "kind": " · ".join(x for x in [r.category, r.signal_type] if x),
+			"date": str(r.report_date or r.creation), "people": cint(r.affected_count), "deaths": cint(r.deaths_count),
+			"symptoms": r.symptom_tags or None, "notPresent": r.absent_symptom_tags or None,
+			"onset": str(r.onset_date) if r.onset_date else None, "ages": r.age_groups or r.age_group or None,
+			"animal": r.animal_exposure if r.animal_exposure and r.animal_exposure != "None" else None,
+			"location": r.location_name or None,
+			"gps": [r.latitude, r.longitude] if (r.latitude or r.longitude) else None,
+			"notes": r.additional_notes or None,
+			"reporter": (r.reporter_name if r.reporter_name and "@" not in r.reporter_name
+				else get_fullname(r.reported_by or r.reporter_name) if (r.reported_by or r.reporter_name) else None),
+			"phone": r.phone_number if show_phone else None})
+	return {"event": event, "reports": rows, "others": others}
 
 
 @frappe.whitelist()

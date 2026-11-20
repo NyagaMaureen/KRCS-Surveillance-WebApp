@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "creation": "2026-11-20 12:00:00.000000",
+ "modified": "2026-11-20 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "AI Review Settings",
+ "description": "How long officers have to review an AI output before it is escalated (AUD-08 escalation matrix).",
+ "field_order": [
+  "enabled",
+  "l1_high_hours",
+  "l1_standard_hours",
+  "l2_hours",
+  "l2_roles",
+  "l3_roles",
+  "escalate_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Escalate AI outputs that are not reviewed in time",
+   "default": "1"
+  },
+  {
+   "fieldname": "l1_high_hours",
+   "fieldtype": "Float",
+   "label": "L1 deadline, high or very high risk (hours)",
+   "default": "4"
+  },
+  {
+   "fieldname": "l1_standard_hours",
+   "fieldtype": "Float",
+   "label": "L1 deadline, medium or low risk (hours)",
+   "default": "24"
+  },
+  {
+   "fieldname": "l2_hours",
+   "fieldtype": "Float",
+   "label": "L2 deadline after escalation (hours)",
+   "default": "8"
+  },
+  {
+   "fieldname": "l2_roles",
+   "fieldtype": "Small Text",
+   "label": "L2 roles (one per line)",
+   "default": "Public Health Officer"
+  },
+  {
+   "fieldname": "l3_roles",
+   "fieldtype": "Small Text",
+   "label": "L3 roles (one per line)",
+   "default": "Public Health HQ\nSystem Administrator"
+  },
+  {
+   "fieldname": "escalate_from",
+   "fieldtype": "Datetime",
+   "label": "Escalate outputs ready for review from",
+   "read_only": 1,
+   "description": "Set when escalation was switched on, so older events are not escalated all at once."
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "row_format": "Dynamic",
+ "issingle": 1
+}

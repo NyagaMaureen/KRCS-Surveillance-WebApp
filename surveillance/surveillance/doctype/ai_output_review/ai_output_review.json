@@ -1,0 +1,181 @@
+{
+ "actions": [],
+ "creation": "2026-11-20 12:00:00.000000",
+ "modified": "2026-11-20 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "AI Output Review",
+ "description": "One AI output on a Review Queue event (disease suggestions and risk score) and its human review: inputs, output, model version, confidence, time, reviewer, action, override reason, and escalation when nobody reviews it in time (Audit Framework V2.0 cl. 21, 26, 32; AUD-01, AUD-08).",
+ "field_order": [
+  "event",
+  "component",
+  "output_on",
+  "model_version",
+  "ai_suggestion",
+  "ai_suggestion_name",
+  "ai_basis",
+  "ai_confidence",
+  "suggestions",
+  "risk_score",
+  "risk_level",
+  "inputs",
+  "review_from",
+  "review_due",
+  "status",
+  "escalation_level",
+  "escalated_l2_on",
+  "escalated_l3_on",
+  "reviewed_by",
+  "reviewed_on",
+  "review_action",
+  "chosen_disease",
+  "override_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "event",
+   "fieldtype": "Link",
+   "label": "Event",
+   "options": "Surveillance Event",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "component",
+   "fieldtype": "Data",
+   "label": "AI component"
+  },
+  {
+   "fieldname": "output_on",
+   "fieldtype": "Datetime",
+   "label": "Output time"
+  },
+  {
+   "fieldname": "model_version",
+   "fieldtype": "Data",
+   "label": "Model version"
+  },
+  {
+   "fieldname": "ai_suggestion",
+   "fieldtype": "Data",
+   "label": "Top suggestion (disease key)"
+  },
+  {
+   "fieldname": "ai_suggestion_name",
+   "fieldtype": "Data",
+   "label": "Top suggestion",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "ai_basis",
+   "fieldtype": "Data",
+   "label": "Basis of the top suggestion"
+  },
+  {
+   "fieldname": "ai_confidence",
+   "fieldtype": "Float",
+   "label": "Model confidence (%)"
+  },
+  {
+   "fieldname": "suggestions",
+   "fieldtype": "Small Text",
+   "label": "Suggestions shown, in order"
+  },
+  {
+   "fieldname": "risk_score",
+   "fieldtype": "Int",
+   "label": "Risk score"
+  },
+  {
+   "fieldname": "risk_level",
+   "fieldtype": "Data",
+   "label": "Risk level"
+  },
+  {
+   "fieldname": "inputs",
+   "fieldtype": "Small Text",
+   "label": "Data inputs"
+  },
+  {
+   "fieldname": "review_from",
+   "fieldtype": "Datetime",
+   "label": "Ready for review from"
+  },
+  {
+   "fieldname": "review_due",
+   "fieldtype": "Datetime",
+   "label": "Review due (L1)"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Waiting for verification\nAwaiting review\nReviewed\nReviewed late\nClosed without review",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "escalation_level",
+   "fieldtype": "Int",
+   "label": "Escalation level",
+   "default": "1"
+  },
+  {
+   "fieldname": "escalated_l2_on",
+   "fieldtype": "Datetime",
+   "label": "Escalated to L2 on"
+  },
+  {
+   "fieldname": "escalated_l3_on",
+   "fieldtype": "Datetime",
+   "label": "Escalated to L3 on"
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewer",
+   "options": "User"
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed on"
+  },
+  {
+   "fieldname": "review_action",
+   "fieldtype": "Data",
+   "label": "Reviewer action"
+  },
+  {
+   "fieldname": "chosen_disease",
+   "fieldtype": "Data",
+   "label": "Disease chosen"
+  },
+  {
+   "fieldname": "override_reason",
+   "fieldtype": "Small Text",
+   "label": "Override reason"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "row_format": "Dynamic",
+ "autoname": "hash"
+}

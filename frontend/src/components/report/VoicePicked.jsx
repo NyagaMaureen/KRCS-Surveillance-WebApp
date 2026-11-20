@@ -66,8 +66,8 @@ export default function VoicePicked({ picked, report, canAdd, onAdded, plain = f
   }
 
   return (
-    <div className={plain ? '' : 'mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-3 sm:px-4'}>
-      <div className={`flex items-center gap-1.5 text-xs ${plain ? 'font-bold text-gray-900' : 'font-semibold text-blue-900'}`}>
+    <div className={plain ? '' : 'mt-3 rounded-lg border border-gray-200 bg-white px-3 py-3 sm:px-4'}>
+      <div className="flex items-center gap-1.5 text-xs font-bold text-gray-900">
         <Mic className="w-3.5 h-3.5" aria-hidden="true" />
         Picked from the voice note
       </div>
@@ -116,7 +116,7 @@ export default function VoicePicked({ picked, report, canAdd, onAdded, plain = f
       {result && <p role="status" className={`mt-2 text-xs ${result.ok ? 'text-green-800' : 'text-red-700'}`}>{result.text}</p>}
 
       {(same.length > 0 || deathCheck || places.length > 0) && (
-        <div className={`${todo.length > 0 ? `mt-3 border-t ${plain ? 'border-gray-200' : 'border-blue-100'} pt-2.5` : 'mt-2'}`}>
+        <div className={`${todo.length > 0 ? 'mt-3 border-t border-gray-200 pt-2.5' : 'mt-2'}`}>
           {same.length > 0 && (
             <>
               {todo.length > 0 && (

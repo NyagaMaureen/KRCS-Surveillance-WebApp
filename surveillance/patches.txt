@@ -40,3 +40,4 @@ surveillance.patches.ai_triage_capability
 surveillance.patches.event_step_permissions
 surveillance.patches.verified_status
 surveillance.patches.officer_sub_counties
+surveillance.patches.split_unclassified_events

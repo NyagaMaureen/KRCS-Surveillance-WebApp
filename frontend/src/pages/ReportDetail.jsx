@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Pencil, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, History } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { getUnitOptions, getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, getReportCandidates, sendReportToQueue, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
+import { getUnitOptions, getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, getReportCandidates, getReportEvent, sendReportToQueue, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
 import VoicePicked from '../components/report/VoicePicked'
 import { CATEGORIES, AGE_GROUPS, ANIMAL_EXPOSURE_OPTIONS, formatDateTime } from '../data/formOptions'
 import { useCapabilities } from '../context/CapabilitiesContext'
@@ -136,6 +136,8 @@ export default function ReportDetail() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [mode, setMode] = useState('view')
+  const [subNames, setSubNames] = useState({})   // Sub County id -> name, so the page shows Lokichogio, not Turkana-Lokichogio
+  useEffect(() => { getSubCounties('').then((l) => setSubNames(Object.fromEntries(l.map((x) => [x.name, x.sub_county_name || x.name])))).catch(() => {}) }, [])
   const [editForm, setEditForm] = useState({ location_name: '', status: '', additional_notes: '', category: '', onset_date: '', region: '', sub_county: '', latitude: null, longitude: null })
   const [editAttachments, setEditAttachments] = useState([])
   const [actionError, setActionError] = useState('')
@@ -218,6 +220,16 @@ export default function ReportDetail() {
     getReportCandidates(report.name).then((c) => live && setCands(c)).catch(() => live && setCands(null))
     return () => { live = false }
   }, [report?.name, report?.suspected_disease, report?.classified_by]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the Review Queue event this report is on, for everyone who may open it (CHAs too, KRCS 20 Nov 2026)
+  const [onEvent, setOnEvent] = useState(null)
+  useEffect(() => {
+    if (!report?.name) return
+    let live = true
+    getReportEvent(report.name).then((r) => live && setOnEvent(r?.event || null)).catch(() => live && setOnEvent(null))
+    return () => { live = false }
+  }, [report?.name, report?.status])
+  const queueEvent = cands?.event || onEvent
 
   const categoryOptions = useMemo(() => withCurrentValue(CATEGORIES, report?.category), [report])
   const attachments = report?.attachments || []
@@ -404,9 +416,9 @@ export default function ReportDetail() {
                       <Cell label="Assigned suspected disease">
                         <span className={shownDisease.muted ? 'text-gray-500' : 'font-semibold'}>{shownDisease.text}</span>
                         {shownDisease.note && <span className="block text-xs text-gray-500">{shownDisease.note}</span>}
-                        {cands && cands.event && OPEN_EVENT.includes(cands.event.status) ? (
-                          <Link to={`/alerts-signals/${encodeURIComponent(cands.event.id)}`} className="mt-1 inline-block text-xs font-semibold text-red-700 hover:underline">
-                            In the Review Queue: open {cands.event.id} &rarr;
+                        {queueEvent && OPEN_EVENT.includes(queueEvent.status) ? (
+                          <Link to={`/alerts-signals/${encodeURIComponent(queueEvent.id)}`} className="mt-1 block text-sm font-semibold text-red-700 hover:underline">
+                            In the Review Queue: open {queueEvent.id} &rarr;
                           </Link>
                         ) : report.status === 'Recorded' && has('act_on_events') ? (
                           <button type="button" disabled={sendingToQueue} onClick={sendToQueue}
@@ -448,7 +460,7 @@ export default function ReportDetail() {
                     </Cell>
                     <Cell label="Location">{report.location_name || '—'}</Cell>
                     <Cell label="Community Health Unit">{report.community_health_unit ? (unitNames[report.community_health_unit] || report.community_health_unit) : 'None (not from a CHP)'}</Cell>
-                    <Cell label="Sub-county">{report.sub_county || '—'}</Cell>
+                    <Cell label="Sub-county">{report.sub_county ? (subNames[report.sub_county] || report.sub_county) : '—'}</Cell>
                     <Cell label="Region / County">{regionMap[report.region] || report.region || '—'}</Cell>
                     <Cell label="GPS coordinates">
                       {report.latitude != null && report.longitude != null && (Number(report.latitude) || Number(report.longitude)) ? (

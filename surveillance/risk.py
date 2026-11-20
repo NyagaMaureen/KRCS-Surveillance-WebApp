@@ -222,9 +222,10 @@ def _context(doc):
 	if not (rain_relevant or wash_relevant or pop.get("per10k") is not None):
 		return None    # nothing recorded that relates to this disease: skip and rescale
 	share, why = 0.0, []
-	for s in ctx.get("supports") or []:
-		share += c["context_sign_each"]
-		why.append(s["text"] + (": " + s["why"] if s.get("why") else ""))
+	for s in ctx.get("rows") or []:
+		if s.get("supports"):
+			share += c["context_sign_each"]
+			why.append(f"{s['factor']}: {s['headline'][:1].lower() + s['headline'][1:]}. {s['means'].rstrip('.')}")
 	if pop.get("per10k") is not None and flt(pop["per10k"]) >= c["population_per10k"]:
 		share += c["population_rate"]
 		why.append(f"{pop['per10k']} per 10,000 people affected: many cases for the population size, so wider spread is likely")

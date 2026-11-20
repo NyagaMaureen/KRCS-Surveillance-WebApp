@@ -75,8 +75,9 @@ def visible_events(user=None, fresh=False):
 			from `tabSurveillance Signal` s
 			join `tabSurveillance Event` e on e.name = s.event
 			left join `tabCase Report` cr on s.source = 'Field' and cr.name = s.ref
-			where ifnull(s.event, '') != '' and lower(trim(ifnull(e.sub_county, ''))) = %s
-		""", ((scope.sub_county_name or "").strip().lower(),), as_dict=True) if scope.sub_county_name else []
+			where ifnull(s.event, '') != '' and lower(trim(ifnull(e.sub_county, ''))) in %s
+		""", (tuple({(scope.sub_county_name or "").strip().lower(), (scope.sub_county or "").strip().lower()} - {""}),),
+			as_dict=True) if scope.sub_county_name else []   # the sub-county's name or its id (KRCS 20 Nov 2026)
 		cache[key] = {r.event for r in rows if r.source != "Field" or report_ok(scope, r.chu)}
 	return cache[key]
 

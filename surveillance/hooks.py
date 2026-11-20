@@ -221,7 +221,8 @@ scheduler_events = {
 		"surveillance.kb_ops.daily_reconcile", "surveillance.context.import_weather",
 		"surveillance.event_tasks.daily_reminders"],
 	"hourly_long": ["surveillance.cbs_feed.hourly", "surveillance.risk.refresh_open", "surveillance.push.check_receipts",
-		"surveillance.transcription.retry_failed", "surveillance.system_admin.check_system"],
+		"surveillance.transcription.retry_failed", "surveillance.system_admin.check_system",
+		"surveillance.ai_review.check_overdue"],
 	"daily_long": ["surveillance.cbs_feed.daily"],
 }
 # scheduler_events = {

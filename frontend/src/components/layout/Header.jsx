@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Search,
   Bell,
   Sparkles,
   ChevronDown,
@@ -172,18 +171,6 @@ export default function Header({ onOpenNav }) {
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
-        <div className="bg-gray-100 rounded-full h-11 hidden xl:flex items-center gap-2 pl-1 pr-4 w-64">
-          <span className="w-9 h-9 rounded-full bg-white flex items-center justify-center shrink-0">
-            <Search className="w-4 h-4 text-gray-600" />
-          </span>
-          <input
-            type="text"
-            aria-label="Search"
-            placeholder="Search..."
-            className="bg-transparent flex-1 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
-          />
-        </div>
-
         <div className="bg-gray-100 rounded-full h-11 flex items-center gap-1.5 px-1.5">
           <div ref={notifRef} className="relative">
             <button

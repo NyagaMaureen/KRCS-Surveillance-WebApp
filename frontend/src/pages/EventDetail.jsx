@@ -15,7 +15,7 @@ import DiseaseChoices from '../components/risk/DiseaseChoices'
 import VoicePicked from '../components/report/VoicePicked'
 import { TILE_URL, TILE_ATTRIBUTION } from '../components/map/MapView'
 import {
-  getReviewEvent, setEventStatus, addEventNote, getInvestigation, answerVerification, getEscalationPreview,
+  getReviewEvent, setEventStatus, getInvestigation, answerVerification, getEscalationPreview,
   setStepOutcome, saveFindings, addEvidence, removeEvidence, uploadFile, checkReport, splitReport, getPlaceContext, mergeEvents, getCbsContact, getTrendCbsReports,
   getReportCandidates, getDiseaseOptions, setSuspectedDisease, retryTranscription,
   getTriage, logTriageCall, answerByPhone, confirmTriageDisease, getReferralPeople, referPatient, getReferralState,
@@ -306,7 +306,7 @@ function ReportCheckRow({ s, canVerify, canAct, canSplit, saving, onCheck, onSpl
         <tr className="bg-gray-50">
           <td colSpan={7} className="px-3 py-3">
             <div className="flex gap-2 items-start">
-              <input value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" placeholder="Note about this check (goes to the audit timeline)" className={INPUT} />
+              <input value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" placeholder="Note about this check (kept in the Audit Log)" className={INPUT} />
               <button type="button" disabled={saving || !note.trim()} onClick={() => { save(reached, meets, note.trim()); setNote(''); setNoteOpen(false) }} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Save</button>
             </div>
           </td>
@@ -457,7 +457,9 @@ function VoiceTranscript({ m, canAct, retrying, onRetry }) {
   return null   // still being transcribed: the link appears by itself when the text is ready
 }
 
-function SignalMedia({ eventId, signalId, media, canAct, canAdd = canAct, report, onChanged }) {
+// fromRef: which report the files came with, shown in each label (KRCS 20 Nov 2026)
+function SignalMedia({ eventId, signalId, media, canAct, canAdd = canAct, report, onChanged, fromRef }) {
+  const from = fromRef ? ` from ${fromRef}` : ''
   const [items, setItems] = useState(media || [])
   const [viewing, setViewing] = useState(null)
   const [retrying, setRetrying] = useState('')
@@ -498,7 +500,7 @@ function SignalMedia({ eventId, signalId, media, canAct, canAdd = canAct, report
         return (
           <div key={m.id} className={`grid rounded-xl border border-gray-200 ${picked ? 'md:grid-cols-2' : ''}`}>
             <div className="p-3">
-              <div className="mb-2 text-xs font-bold text-gray-900">Voice note{voices.length > 1 ? ` ${i + 1}` : ''}</div>
+              <div className="mb-2 text-xs font-bold text-gray-900">Voice note{voices.length > 1 ? ` ${i + 1}` : ''}{from}</div>
               <audio controls preload="metadata" src={m.url} className="w-full max-w-md" aria-label="Voice note" />
               <VoiceTranscript m={m} canAct={canAct} retrying={retrying === m.id} onRetry={() => retry(m)} />
             </div>
@@ -512,7 +514,7 @@ function SignalMedia({ eventId, signalId, media, canAct, canAdd = canAct, report
       })}
       {photos.length > 0 && (
         <div>
-          <div className="mb-2 text-xs font-semibold text-gray-900">{photos.length === 1 ? 'Photo' : `${photos.length} photos`}</div>
+          <div className="mb-2 text-xs font-bold text-gray-900">{photos.length === 1 ? 'Photo' : `${photos.length} photos`}{from}</div>
           <div className="flex flex-wrap gap-2">
             {photos.map((m) => (
               <button key={m.id} type="button" onClick={() => setViewing(m)} className={`overflow-hidden rounded-lg border border-gray-100 ${FOCUS}`} aria-label="Open photo">
@@ -609,6 +611,8 @@ function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, on
   const tries = r.tryChaAfter || 3
   useEffect(() => { if (adding && !labels) getReferenceLabels().then((l) => setLabels(l?.symptoms || {})).catch(() => setLabels({})) }, [adding, labels])
   const listed = new Set(r.questions.map((q) => q.symptom))
+  const first = _firstName(rep.name)
+  const askable = canAnswer && r.reached   // the symptom answers are what the reporter said on the call (KRCS 20 Nov 2026)
   const addable = labels ? Object.entries(labels).filter(([id]) => !listed.has(id)).sort((x, y) => String(x[1]).localeCompare(String(y[1]))) : []
   return (
     <div className="rounded-xl border border-gray-200">
@@ -632,22 +636,34 @@ function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, on
             )}
           </p>
         </div>
-        <div className="shrink-0 sm:text-right">
-          {rep.phone ? (
-            <a href={`tel:${rep.phone}`} className={`inline-flex items-center gap-1.5 text-base font-semibold text-gray-900 tabular-nums rounded ${FOCUS}`}><Phone className="w-4 h-4 text-red-600" aria-hidden="true" />{rep.phone}</a>
-          ) : <p className="text-sm text-gray-700">No phone number on the report</p>}
-          {r.reached ? (
-            <p className="text-xs font-semibold text-emerald-700">Reached{lastReach ? ` ${relTime(lastReach.at)}${lastReach.by ? ` by ${lastReach.by}` : ''}` : ''}</p>
-          ) : misses.length ? (
-            <p className="text-xs text-amber-700">No answer · {misses.length} of {tries} tries{misses.length >= tries ? ': you can confirm without reaching them' : ''}</p>
-          ) : <p className="text-xs text-gray-700">Not called yet</p>}
-          {canAct && open && !r.reached && (
-            <div className="mt-2 flex gap-2 sm:justify-end">
-              <button type="button" disabled={busy} onClick={() => onCall(r, 'reached')} className={`${BTN} ${PRIMARY} ${FOCUS} px-3 py-1.5`}>Reached</button>
-              <button type="button" disabled={busy} onClick={() => onCall(r, 'no_answer')} className={`${BTN} ${SECONDARY} ${FOCUS} px-3 py-1.5`}>No answer</button>
-            </div>
-          )}
-        </div>
+      </div>
+      {/* step 1: the call, in plain words (KRCS 20 Nov 2026: Reached / No answer was not clear to CHAs) */}
+      <div className="border-b border-gray-100 p-4">
+        <p className="text-sm font-bold text-gray-900">
+          1. Call {first}{rep.phone ? <> on <a href={`tel:${rep.phone}`} className={`inline-flex items-center gap-1 tabular-nums text-red-700 hover:underline rounded ${FOCUS}`}><Phone className="w-3.5 h-3.5" aria-hidden="true" />{rep.phone}</a></> : ''}
+        </p>
+        {!rep.phone && <p className="text-sm text-gray-700">No phone number on the report. Reach {first} another way, for example through the CHU.</p>}
+        {r.reached ? (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+            <Check className="w-4 h-4" aria-hidden="true" />You spoke to {first}{lastReach ? ` ${relTime(lastReach.at)}${lastReach.by ? ` (${lastReach.by})` : ''}` : ''}
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-gray-900">
+              {misses.length >= tries ? `${first} did not answer after ${tries} tries. You can go on to the questions about this signal without them.`
+                : misses.length ? `${first} did not answer (${misses.length} of ${tries} tries). Call again, then say what happened.`
+                  : `Did you speak to ${first}?`}
+            </p>
+            {canAct && open && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button type="button" disabled={busy} onClick={() => onCall(r, 'reached')} className={`${BTN} ${PRIMARY} ${FOCUS} px-3 py-1.5`}>Yes, I spoke to {first}</button>
+                <button type="button" disabled={busy} onClick={() => onCall(r, 'no_answer')} className={`${BTN} ${SECONDARY} ${FOCUS} px-3 py-1.5`}>
+                  {misses.length ? 'No answer again' : 'No, they did not answer'}
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
       {mediaOpen && (
         <div className="border-b border-gray-100 p-4">
@@ -661,7 +677,8 @@ function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, on
         </div>
       )}
       <div className="p-4">
-        <p className="mb-1 text-xs font-bold text-gray-900">Symptoms to check with the reporter</p>
+        <p className="text-sm font-bold text-gray-900">2. Ask {first} about these symptoms</p>
+        {canAnswer && !r.reached && <p className="mb-1 text-sm text-gray-700">These open once you have spoken to {first}.</p>}
         {r.questions.length === 0 ? (
           <p className="text-sm text-gray-700">No extra symptoms to ask about. Add one below if the reporter mentions it.</p>
         ) : (
@@ -674,7 +691,7 @@ function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, on
                     <td className="py-2 pr-3 text-gray-900">{q.name}{!isCha && q.diseases?.length > 0 && <span className="block text-xs text-gray-500">For: {q.diseases.join(', ')}</span>}</td>
                     <td className="py-2 pr-3 whitespace-nowrap">
                       {canAnswer ? (
-                        <MiniSeg label={q.name} options={ANSWER_OPTIONS} value={ANSWER_OPTIONS.includes(q.answer) ? q.answer : null} disabled={busyKey === `${r.ref}:${q.symptom}`}
+                        <MiniSeg label={q.name} options={ANSWER_OPTIONS} value={ANSWER_OPTIONS.includes(q.answer) ? q.answer : null} disabled={!askable || busyKey === `${r.ref}:${q.symptom}`}
                           onChange={(v) => onAnswer(r, q, v === q.answer && q.source === 'phone' ? '' : v)} />
                       ) : <span className="text-gray-900">{q.answer || '—'}</span>}
                     </td>
@@ -685,7 +702,7 @@ function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, on
             </tbody>
           </table>
         )}
-        {canAnswer && (adding ? (
+        {askable && (adding ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <select autoFocus defaultValue="" aria-label="Add a symptom" disabled={!labels}
               onChange={(e) => { if (e.target.value) { onAnswer(r, { symptom: e.target.value, name: labels[e.target.value] }, 'Yes'); setAdding(false) } }}
@@ -726,7 +743,7 @@ function TriageRisk({ risk, event }) {
             ))}
           </ul>
           {risk.action && <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm"><span className="text-xs text-gray-500">Recommended action: </span>{risk.action}</p>}
-          <div className="mt-3"><ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} /></div>
+          <p className="mt-3 text-xs text-gray-700">What the local context means for this disease is under "4. Decide the next step".</p>
         </div>
       )}
     </div>
@@ -736,6 +753,18 @@ function TriageRisk({ risk, event }) {
 // ---------- Verification (step 2): the CHA, or an officer (KRCS 19 Nov 2026) ----------
 // Call each reporter and check the symptoms, answer the questions every signal has, then Confirm and save: the
 // officers are told and choose the disease in AI triage. No diseases are shown here.
+// Verification and AI triage data, fetched once in the background when the event opens, so those tabs open at once
+// (KRCS 20 Nov 2026). Kept for 30 seconds; every change reloads it fresh.
+const triageCache = new Map()
+function loadTriage(id, fresh = false) {
+  const hit = triageCache.get(id)
+  if (!fresh && hit && Date.now() - hit.at < 30000) return hit.p
+  const p = getTriage(id)
+  triageCache.set(id, { at: Date.now(), p })
+  p.catch(() => triageCache.delete(id))
+  return p
+}
+
 // Tabs with a curved top, the open one joined to the page below (Elizabeth, 19 Nov 2026)
 function CurvedTabs({ label, tabs, value, onChange }) {
   return (
@@ -757,14 +786,18 @@ function CurvedTabs({ label, tabs, value, onChange }) {
   )
 }
 
-function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
-  const [data, setData] = useState(null)
+function VerificationStep({ event, inv, signals, onInv, onSaved, onError, onDiscard, discardBusy }) {
+  const [data, setDataRaw] = useState(null)
+  const setData = useCallback((d) => { if (d) triageCache.set(event.id, { at: Date.now(), p: Promise.resolve(d) }); setDataRaw(d) }, [event.id])
   const [failed, setFailed] = useState('')
   const [busy, setBusy] = useState(false)
   const [busyKey, setBusyKey] = useState('')
   const [vtab, setVtab] = useState('reporter')   // 1. check with the reporter · 2. questions about this signal
-  const load = useCallback(() => getTriage(event.id).then(setData).catch((e) => setFailed(e.message || 'Could not load the reports.')), [event.id])
-  useEffect(() => { load() }, [load])
+  const [discarding, setDiscarding] = useState(false)
+  const load = useCallback(() => getTriage(event.id).then((d) => { triageCache.set(event.id, { at: Date.now(), p: Promise.resolve(d) }); setData(d) })
+    .catch((e) => setFailed(e.message || 'Could not load the reports.')), [event.id])
+  // first load from what Signal captured already fetched in the background (KRCS 20 Nov 2026)
+  useEffect(() => { loadTriage(event.id).then(setData).catch(() => load()) }, [event.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isCha = !!inv.isCha
   const canVerify = !!inv.canVerify
@@ -800,7 +833,7 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
   if (!data) return <div className={card}><PanelHeader title="Verification" /><p className="text-sm text-gray-700">Loading the reports…</p></div>
 
   const left = [
-    waiting.length ? `call ${waiting.map((r) => _firstName(r.reporter?.name)).join(', ')} (Reached, or No answer ${tries} times)` : null,
+    waiting.length ? `speak to ${waiting.map((r) => _firstName(r.reporter?.name)).join(', ')} (or try ${tries} times with no answer)` : null,
     unanswered.length ? `${unanswered.length} question${unanswered.length === 1 ? '' : 's'} left` : null,
   ].filter(Boolean)
 
@@ -835,7 +868,7 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
         ))}
       </div>
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
-        <p className="text-sm text-gray-700">{editable && waiting.length ? `Still to do here: call ${waiting.map((r) => _firstName(r.reporter?.name)).join(', ')} (Reached, or No answer ${tries} times).` : ''}</p>
+        <p className="text-sm text-gray-700">{editable && waiting.length ? `Still to do here: speak to ${waiting.map((r) => _firstName(r.reporter?.name)).join(', ')}, or try ${tries} times with no answer.` : ''}</p>
         <button type="button" onClick={() => setVtab('questions')} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Next →</button>
       </div>
       </>
@@ -865,12 +898,18 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError }) {
             <p className="text-sm text-gray-700">
               {ready ? (isCha ? 'Ready. The surveillance officer is emailed when you confirm.' : 'Ready to confirm.') : `Still to do: ${left.join('; ')}.`}
             </p>
+            {onDiscard && !discarding && (
+              <button type="button" disabled={busy || discardBusy} onClick={() => setDiscarding(true)} className={`text-sm font-medium text-gray-700 hover:text-gray-900 underline underline-offset-2 rounded ${FOCUS}`}>
+                Already a known false alarm? Discard signal
+              </button>
+            )}
             <button type="button" disabled={busy || !ready} onClick={confirm} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
               {busy ? 'Saving…' : 'Confirm and save'}
             </button>
           </div>
         )}
       </div>
+      {editable && onDiscard && discarding && <DiscardBox busy={discardBusy} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
       </>
       )}
       {!isCha && inv.verificationDone && (
@@ -930,17 +969,20 @@ function VerifiedSummary({ inv, reports, plain = false }) {
 // AI triage in four tabs (Elizabeth, 19 Nov 2026): 1. what the CHA found, 2. choose the disease, then for a priority
 // disease 3. its questions and 4. the next step (renderPart draws those two from VerificationPanel)
 function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDiscard, onSplit, busy: pageBusy, renderPart }) {
-  const [data, setData] = useState(null)
+  const [data, setDataRaw] = useState(null)
+  const setData = useCallback((d) => { if (d) triageCache.set(event.id, { at: Date.now(), p: Promise.resolve(d) }); setDataRaw(d) }, [event.id])
   const [failed, setFailed] = useState('')
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState(null)   // {key, name}: waiting for the officer's confirmation
+  const [overrideReason, setOverrideReason] = useState('')   // why not the AI's top suggestion (AUD-01)
   const [options, setOptions] = useState([])
   const [other, setOther] = useState(false)
   const [discarding, setDiscarding] = useState(false)
   const [ttab, setTtab] = useState(null)   // null: the tab the event is at
 
-  const load = useCallback(() => getTriage(event.id).then(setData).catch((e) => setFailed(e.message || 'AI triage could not be loaded.')), [event.id])
-  useEffect(() => { load() }, [load])
+  const load = useCallback(() => getTriage(event.id).then((d) => { triageCache.set(event.id, { at: Date.now(), p: Promise.resolve(d) }); setData(d) })
+    .catch((e) => setFailed(e.message || 'AI triage could not be loaded.')), [event.id])
+  useEffect(() => { loadTriage(event.id).then(setData).catch(() => load()) }, [event.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { getDiseaseOptions().then((o) => setOptions(o || [])).catch(() => {}) }, [])
 
   const reports = data?.reports || []
@@ -950,8 +992,9 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
   async function confirm() {
     setBusy(true)
     try {
-      const res = await confirmTriageDisease(event.id, pending.key)
+      const res = await confirmTriageDisease(event.id, pending.key, overriding ? overrideReason.trim() : '')
       setPending(null)
+      setOverrideReason('')
       await load()
       if (res.pathway !== 'Referral') setTtab('questions')
       onConfirmed(res)
@@ -963,6 +1006,8 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
 
   // the disease is chosen once Verification (step 2) is confirmed (KRCS 19 Nov 2026)
   const canChoose = data.canChoose && open && !!data.verificationDone
+  const aiTop = (data.diseases || []).find((d) => d.key === data.aiTop)
+  const overriding = !!(pending && data.aiTop && pending.key !== data.aiTop)
   const conflict = data.conflict
   const priorityChosen = !!data.confirmed && data.pathway !== 'Referral' && !!renderPart
   const atTab = priorityChosen ? 'questions' : data.verificationDone ? 'disease' : 'cha'
@@ -1000,7 +1045,14 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
       )}
 
       {cur === 'questions' && priorityChosen && renderPart('questions', () => setTtab('decide'))}
-      {cur === 'decide' && priorityChosen && renderPart('decide')}
+      {cur === 'decide' && priorityChosen && (
+        <>
+          {renderPart('decide')}
+          <div className="mt-8 border-t border-gray-200 pt-6">
+            <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} bare />
+          </div>
+        </>
+      )}
 
       {cur === 'disease' && (
       <>
@@ -1066,9 +1118,16 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
               {queue.has(pending.key) ? 'A priority disease: answer its questions next, then decide the next step.'
                 : 'Not a priority disease: refer the patient, follow up, then close. It is still counted in Epi Trends.'}
             </p>
+            {overriding && (
+              <label className="mt-3 block">
+                <span className="block text-sm font-bold text-gray-900">Why not {aiTop?.name || 'the top suggestion'}? <span className="text-red-700">*</span></span>
+                <span className="block text-xs text-gray-700 mb-1.5">The top suggestion was {aiTop?.name || data.aiTop}. Your reason is kept in the Audit Log.</span>
+                <textarea rows={2} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} className={INPUT} />
+              </label>
+            )}
             <div className="mt-3 flex gap-2">
-              <button type="button" disabled={busy} onClick={confirm} className={`${BTN} ${PRIMARY} ${FOCUS} px-4 py-2`}>{busy ? 'Saving...' : 'Confirm'}</button>
-              <button type="button" disabled={busy} onClick={() => setPending(null)} className={`${BTN} ${SECONDARY} ${FOCUS} px-4 py-2`}>Cancel</button>
+              <button type="button" disabled={busy || (overriding && !overrideReason.trim())} onClick={confirm} className={`${BTN} ${PRIMARY} ${FOCUS} px-4 py-2`}>{busy ? 'Saving...' : 'Confirm'}</button>
+              <button type="button" disabled={busy} onClick={() => { setPending(null); setOverrideReason('') }} className={`${BTN} ${SECONDARY} ${FOCUS} px-4 py-2`}>Cancel</button>
             </div>
           </div>
         )}
@@ -1293,9 +1352,8 @@ function ReportFacts({ s }) {
   )
 }
 
-function SignalCapturePanel({ event, signals, canAct, canAddVoice, editable, busy, next, onNext, onDiscard, onChanged }) {
+function SignalCapturePanel({ event, signals, canAct, canAddVoice, next, onNext, onChanged }) {
   const [showAll, setShowAll] = useState(false)
-  const [discarding, setDiscarding] = useState(false)
   const rows = showAll ? signals : signals.slice(0, 8)
   return (
     <div className={card}>
@@ -1321,7 +1379,7 @@ function SignalCapturePanel({ event, signals, canAct, canAddVoice, editable, bus
                   const hasMedia = (s.media || []).length > 0
                   return (
                   <Fragment key={s.id || i}>
-                  <tr className={`border-t border-gray-100 align-top ${checkStatus(s) === 'Not a case' ? 'bg-gray-50' : ''}`}>
+                  <tr className={`${i > 0 ? 'border-t-2 border-gray-300' : 'border-t border-gray-200'} align-top ${checkStatus(s) === 'Not a case' ? 'bg-gray-50' : ''}`}>
                     <td className="px-3 py-3 whitespace-nowrap">
                       {s.source === 'Field' && s.ref ? (
                         <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
@@ -1364,7 +1422,7 @@ function SignalCapturePanel({ event, signals, canAct, canAddVoice, editable, bus
                         )}
                         {hasMedia && (
                           <SignalMedia eventId={event.id} signalId={s.id} media={s.media} canAct={canAct} canAdd={canAddVoice}
-                            report={s.source === 'Field' ? s.ref : null} onChanged={onChanged} />
+                            report={s.source === 'Field' ? s.ref : null} onChanged={onChanged} fromRef={s.ref} />
                         )}
                       </td>
                     </tr>
@@ -1382,15 +1440,11 @@ function SignalCapturePanel({ event, signals, canAct, canAddVoice, editable, bus
           )}
         </>
       )}
-      <div className="mt-6 flex items-center justify-between gap-3 flex-wrap">
-        {editable && !discarding ? (
-          <button type="button" disabled={busy} onClick={() => setDiscarding(true)} className={`text-sm font-medium text-gray-500 hover:text-gray-900 underline underline-offset-2 rounded ${FOCUS}`}>
-            Already a known false alarm? Discard signal
-          </button>
-        ) : <span />}
-        {next && <button type="button" onClick={onNext} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{next.label} →</button>}
-      </div>
-      {editable && discarding && <DiscardBox busy={busy} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
+      {next && (
+        <div className="mt-6 flex justify-end">
+          <button type="button" onClick={onNext} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{next.label} →</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -1509,7 +1563,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
       <section aria-label="Check the reports" className="mb-8">
         <p className="mb-3 text-sm text-gray-500">Call each reporter and confirm the case. You need at least one checked report.</p>
         {definition && (
-          <p className="mb-3 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-800">
+          <p className="mb-3 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-900">
             <span className="font-semibold">Case definition:</span> {definition}
           </p>
         )}
@@ -2577,10 +2631,9 @@ function ReporterContact({ signal: s, canAct }) {
     <div className="flex flex-col gap-0.5">
       <span className="text-gray-900">{s.reporter.name || '—'}</span>
       {unit}
+      {/* the number only: calling is done in Verification (KRCS 20 Nov 2026) */}
       {s.reporter.phone ? (
-        <a href={`tel:${s.reporter.phone}`} className={`inline-flex items-center gap-1 text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
-          <Phone className="w-3 h-3" aria-hidden="true" /> Call {s.reporter.phone}
-        </a>
+        <span className="text-sm text-gray-900">Phone: {s.reporter.phone}</span>
       ) : (
         <span className="text-sm text-gray-700">No phone on profile</span>
       )}
@@ -2649,10 +2702,6 @@ export default function EventDetail() {
   const [busyKey, setBusyKey] = useState(null)
   const [openStep, setOpenStep] = useState(() => Number(new URLSearchParams(window.location.search).get('step')) || null)
   const [choice, setChoice] = useState(null)
-  const [noteOpen, setNoteOpen] = useState(false)
-  const [timelineOpen, setTimelineOpen] = useState(false)
-  const [note, setNote] = useState('')
-  const [savingNote, setSavingNote] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '', error: false })
   const [notice, setNotice] = useState(null)
   const toastTimer = useRef(null)
@@ -2710,6 +2759,7 @@ export default function EventDetail() {
   // bumped when the report itself changes on this page (signs added from a voice note), so AI triage reloads
   const [reportVersion, setReportVersion] = useState(0)
   const refreshEvent = useCallback(() => {
+    triageCache.delete(id)
     Promise.all([getReviewEvent(id), getInvestigation(id)])
       .then(([ev, iv]) => { setEvent(ev); setInv(iv) })
       .catch(() => {})
@@ -2787,10 +2837,9 @@ export default function EventDetail() {
     () => [...new Set([...signals].reverse().filter((s) => s.source === 'Field' && s.ref).map((s) => s.ref))],
     [signals]
   )
-  const timeline = useMemo(
-    () => [...(event?.timeline || [])].sort((a, b) => (parseDate(b.at)?.getTime() || 0) - (parseDate(a.at)?.getTime() || 0)),
-    [event]
-  )
+  // fetch Verification / AI triage in the background while Signal captured is open (KRCS 20 Nov 2026)
+  const hasField = fieldReports.length > 0
+  useEffect(() => { if (id && hasField) loadTriage(id).catch(() => {}) }, [id, hasField])
 
   async function runInv(key, fn, fallback) {
     setBusyKey(key)
@@ -2807,16 +2856,18 @@ export default function EventDetail() {
 
   async function runAction(action, text, facility) {
     setBusy(true)
+    triageCache.delete(event.id)   // the status changes what Verification and AI triage show
     try {
       const updated = await setEventStatus(event.id, action, text || '', facility || '')
-      if (CLOSING.has(action)) {   // closed: back to the queue list (Elizabeth, 19 Nov 2026)
+      // closed: back to the queue list (Elizabeth, 19 Nov 2026); a CHA who discards stays, to refer the patient if needed
+      if (CLOSING.has(action) && !(action === 'discard' && isCha)) {
         backToQueue(`${event.id} ${action === 'discard' ? 'discarded' : 'closed'}.`)
         return true
       }
       setEvent(updated)
       setInv(await getInvestigation(event.id))
       setChoice(null)
-      showToast(`${ACTION_LABELS[action]} done`)
+      showToast(action === 'discard' ? 'Signal discarded. If the patient still needs care, refer them below.' : `${ACTION_LABELS[action]} done`)
       return true
     } catch (e) {
       fail(e, 'Could not update the event')
@@ -2909,21 +2960,6 @@ export default function EventDetail() {
     selectStep(5)
   }
 
-  async function saveNote() {
-    if (!note.trim()) return
-    setSavingNote(true)
-    try {
-      setEvent(await addEventNote(event.id, note.trim()))
-      setNote('')
-      setNoteOpen(false)
-      showToast('Note saved')
-    } catch (e) {
-      fail(e, 'Could not save note')
-    } finally {
-      setSavingNote(false)
-    }
-  }
-
   const backTo = { pathname: '/alerts-signals', search: location.search }
   function backToQueue(notice) {
     const p = new URLSearchParams(location.search)
@@ -2933,7 +2969,8 @@ export default function EventDetail() {
   const place = event ? [event.area, event.subCounty].filter(Boolean).join(', ') || 'Location missing' : ''
   const canAct = !!inv?.canAct
   // the steps this user sees and works on, from the step boxes in Roles & Permissions (KRCS 19 Nov 2026)
-  const allowed = inv?.steps || [1, 2, 3, 4, 5, 6]
+  // escalated to the county / MOH: the event stops at AI triage, later steps are not shown (KRCS 20 Nov 2026)
+  const allowed = (inv?.steps || [1, 2, 3, 4, 5, 6]).filter((n) => status !== 'Escalated' || n <= 3)
   const can = (n) => allowed.includes(n)
   const canVerify = can(2) && ['New', 'Verifying', 'Investigating'].includes(status)
   const canSplit = (can(2) || can(3)) && !['Closed', 'Discarded'].includes(status) && signals.length >= 2
@@ -2944,6 +2981,10 @@ export default function EventDetail() {
   const wanted = openStep || currentStep || (isCha ? 2 : 3)
   // a step the role cannot see opens the nearest one before it (or the first it can see)
   const shown = can(wanted) ? wanted : [...allowed].reverse().find((n) => n < wanted) || allowed[0] || null
+  // Tasks (KRCS 20 Nov 2026): assigned in Field investigation and Response & close, not in Decision; after a discard a
+  // CHA can still refer the patient (a Referral task for the CHP), shown at the step the signal was discarded at
+  const discardedAt = (stepInfo?.states || []).indexOf('discarded') + 1
+  const showTasks = (shown === 4 || shown === 6) ? inv?.tasks?.see !== false : status === 'Discarded' && shown === discardedAt
 
   // Signal captured's button goes to the step the event is at (KRCS 19 Nov 2026: after Confirm and save it no longer
   // says Continue to Verification)
@@ -2965,11 +3006,8 @@ export default function EventDetail() {
             signals={signals}
             canAct={can(1) || can(2)}
             canAddVoice={(can(1) || can(2)) && !(isCha && inv?.locked) && ['New', 'Verifying', 'Verified'].includes(status)}
-            editable={can(1) && ['New', 'Verifying', 'Verified'].includes(status)}
-            busy={busy}
             next={nextFromCapture}
             onNext={() => selectStep(nextFromCapture.n)}
-            onDiscard={(reason) => runAction('discard', reason)}
           />
         )
       case 2:
@@ -2988,6 +3026,8 @@ export default function EventDetail() {
                 if (!isCha) selectStep(3)
               }
             }}
+            onDiscard={can(2) ? (reason) => runAction('discard', reason) : null}
+            discardBusy={busy}
           />
         )
       case 3: {
@@ -3251,68 +3291,9 @@ export default function EventDetail() {
 
             <div ref={panelRef} className="scroll-mt-4">{renderPanel()}</div>
 
-            {inv?.tasks?.see !== false && <EventTasksPanel />}
+            {showTasks && <div className="mt-6"><EventTasksPanel /></div>}
           </EventTasksProvider>
 
-          <div className={card}>
-            <div className={`flex items-center justify-between gap-3 flex-wrap ${timelineOpen ? 'mb-5' : ''}`}>
-              <button
-                type="button"
-                aria-expanded={timelineOpen}
-                onClick={() => setTimelineOpen((v) => !v)}
-                className={`flex items-center gap-2 text-left rounded ${FOCUS}`}
-              >
-                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${timelineOpen ? '' : '-rotate-90'}`} aria-hidden="true" />
-                <span className="text-xl font-semibold text-gray-900">Audit timeline</span>
-                <span className="text-sm text-gray-400">({timeline.length})</span>
-              </button>
-              {timelineOpen && allowed.length > 0 && !noteOpen && (
-                <button type="button" aria-label="Add note" onClick={() => setNoteOpen(true)} className={`text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
-                  Add note
-                </button>
-              )}
-            </div>
-            {timelineOpen && allowed.length > 0 && noteOpen && (
-              <div className="mb-6 flex flex-col gap-2">
-                <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={3}
-                  aria-label="Note"
-                  placeholder="Document findings, actions taken, or next steps..."
-                  className={INPUT}
-                />
-                <div className="flex gap-2">
-                  <button type="button" aria-label="Save note" disabled={savingNote || !note.trim()} onClick={saveNote} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
-                    {savingNote ? 'Saving...' : 'Save note'}
-                  </button>
-                  <button type="button" aria-label="Cancel" disabled={savingNote} onClick={() => { setNoteOpen(false); setNote('') }} className={`${BTN} ${SECONDARY} ${FOCUS}`}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-            {!timelineOpen ? null : timeline.length === 0 ? (
-              <p className="text-sm text-gray-400">No activity yet.</p>
-            ) : (
-              <ol className="space-y-4">
-                {timeline.map((t, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 mt-0.5" aria-hidden="true">
-                      {t.action === 'Merged' || t.action === 'Merged in' ? <Link2 className="w-3 h-3" /> : <Check className="w-3 h-3" />}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm text-gray-900">
-                        <span className="font-medium">{t.action}</span>
-                        <span className="text-gray-500"> · {t.user} · <span title={fmtDateTime(t.at)}>{relTime(t.at)}</span></span>
-                      </p>
-                      {t.note && <p className="text-sm text-gray-500 break-words whitespace-pre-wrap">{t.note}</p>}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
         </div>
       )}
 

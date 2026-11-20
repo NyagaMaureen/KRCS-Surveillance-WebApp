@@ -8,7 +8,7 @@ import {
   getSubCounties, getContextOptions, getWashAssessments, saveWashAssessment, getPopulationFigures,
   savePopulationFigure, deleteContextRecord, getWeatherStatus, getWeatherSeries, refreshWeather, getAreaContext,
 } from '../api/frappe'
-import { ContextBody } from '../components/context/ContextPanel'
+import { Dot, TH, TD } from '../components/context/ContextPanel'
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Info },
@@ -16,11 +16,6 @@ const TABS = [
   { key: 'population', label: 'Population', icon: Users },
   { key: 'weather', label: 'Weather', icon: CloudRain },
 ]
-const RATING_STYLES = {
-  good: 'bg-green-50 text-green-700 border-green-200',
-  fair: 'bg-amber-50 text-amber-700 border-amber-200',
-  poor: 'bg-red-50 text-red-700 border-red-200',
-}
 const field = 'w-full bg-white border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500'
 const label = 'block text-sm font-medium text-gray-700 mb-1.5'
 const todayIso = () => new Date().toISOString().slice(0, 10)
@@ -76,23 +71,65 @@ function OverviewTab() {
   useEffect(() => { getAreaContext().then(setRows).catch(() => setRows([])) }, [])
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6">
-      <h3 className="text-base font-semibold text-gray-900">Current conditions</h3>
-      <p className="text-xs text-gray-400 mt-0.5 mb-4">Rainfall and temperature, population and WASH for each sub-county in your area. Background only; not used by the alert engine.</p>
+      <h3 className="text-base font-bold text-gray-900">Current conditions</h3>
+      <p className="text-sm text-gray-900 mt-0.5 mb-4">Each sub-county in your area. "Diseases to watch" lists the diseases these conditions are known to favour. Open an event or Epi Trends to see what to check next for one disease.</p>
       {rows === null ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-600">Loading…</p>
       ) : !rows.length ? (
-        <p className="text-sm text-gray-400">No context recorded for your area yet.</p>
+        <p className="text-sm text-gray-900">No sub-counties in your area yet.</p>
       ) : (
-        <div className="space-y-5">
-          {rows.map((c) => (
-            <div key={c.subCounty}>
-              <div className="text-sm font-semibold text-gray-900 mb-2">{c.subCountyName} <span className="text-xs font-normal text-gray-400">· {c.county}</span></div>
-              <ContextBody ctx={c} />
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] border-collapse border border-gray-200 text-sm">
+            <thead>
+              <tr>
+                {['Sub-county', 'Rainfall, last 4 weeks', 'Temperature, last 7 days', 'Water and sanitation', 'Population', 'Diseases to watch'].map((h) => (
+                  <th key={h} className={TH}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((c) => <OverviewRow key={c.subCounty} c={c} />)}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
+  )
+}
+
+function OverviewRow({ c }) {
+  const w = c.weather, p = c.population, wash = c.wash
+  const poor = wash ? wash.items.filter((i) => i.rating === 'poor') : []
+  return (
+    <tr>
+      <td className={`${TD} font-bold`}>{c.subCountyName}<div className="text-xs font-normal text-gray-600">{c.county}</div></td>
+      <td className={TD}>
+        {w ? (<>
+          <b>{w.headline}</b>{w.usualMm != null && w.level !== 'dry' ? ` (${w.rainfallMm} mm, usual ${w.usualMm} mm)` : w.usualMm == null ? ' in the last 4 weeks; no earlier years to compare yet' : ''}
+          <div className="text-xs text-gray-600">Up to {fmtDate(w.lastDate)}</div>
+        </>) : <><Dot mark="check" />No weather data yet</>}
+      </td>
+      <td className={TD}>
+        {w && w.last7TempC != null ? <>{w.last7TempC}°C average{w.maxTempC != null ? `, ${w.maxTempC}°C highest in 4 weeks` : ''}</> : '—'}
+      </td>
+      <td className={TD}>
+        {wash ? (<>
+          {poor.length ? <><b>{poor.length} of 5 poor</b>: {poor.map((i) => i.value.toLowerCase()).join(', ')}</> : 'None poor'}
+          <div className="text-xs text-gray-600">{fmtDate(wash.date)}{wash.site ? `, ${wash.site}` : ''}{wash.stale ? <b> · {Math.round(wash.ageDays / 30)} months old</b> : ''}</div>
+        </>) : <><Dot mark="check" />No assessment recorded</>}
+      </td>
+      <td className={TD}>
+        {p ? (<>
+          {p.population.toLocaleString()}
+          <div className="text-xs text-gray-600">{p.source}, {fmtDate(p.asOf)}{p.stale ? <b> · over a year old</b> : ''}</div>
+        </>) : <><Dot mark="check" />No figure recorded</>}
+      </td>
+      <td className={TD}>
+        {c.watch?.length ? c.watch.map((g) => (
+          <div key={g.reason} className="mb-1 last:mb-0"><b>{g.reason[0].toUpperCase() + g.reason.slice(1)}:</b> {g.diseases.join(', ')}</div>
+        )) : !w && !wash ? 'Not enough data to say' : 'Nothing stands out'}
+      </td>
+    </tr>
   )
 }
 
@@ -182,15 +219,18 @@ function WashTab({ subCounties, options }) {
                 <div className="text-[11px] text-gray-400">{r.assessed_by || ''}</div>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap gap-1.5">
-                  {keys.filter((k) => r[k]).map((k) => (
-                    <span key={k} title={options.washLabels[k]}
-                      className={['text-[11px] border rounded-full px-2 py-0.5', RATING_STYLES[r.ratings[k]] || 'bg-gray-50 text-gray-600 border-gray-200'].join(' ')}>
-                      <span className="text-gray-400">{options.washLabels[k]}:</span> {r[k]}
-                    </span>
-                  ))}
-                </div>
-                {r.narrative_notes && <p className="text-xs text-gray-600 mt-2">{r.narrative_notes}</p>}
+                <table className="w-full border-collapse border border-gray-200 text-sm">
+                  <tbody>
+                    {keys.filter((k) => r[k]).map((k) => (
+                      <tr key={k}>
+                        <td className="w-48 border border-gray-200 px-3 py-1.5 font-bold text-gray-900">{options.washLabels[k]}</td>
+                        <td className="border border-gray-200 px-3 py-1.5 text-gray-900">{r[k]}</td>
+                        <td className={['w-20 border border-gray-200 px-3 py-1.5 capitalize', r.ratings[k] === 'poor' ? 'font-bold text-red-700' : 'text-gray-900'].join(' ')}>{r.ratings[k] || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {r.narrative_notes && <p className="text-sm text-gray-900 mt-2">{r.narrative_notes}</p>}
               </div>
               {canManage && <button onClick={() => remove(r)} className="text-gray-300 hover:text-red-700" title="Delete (mistakes only)"><Trash2 className="w-4 h-4" /></button>}
             </div>

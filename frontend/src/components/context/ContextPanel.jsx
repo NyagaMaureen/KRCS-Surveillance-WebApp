@@ -1,150 +1,56 @@
 import { useEffect, useState } from 'react'
-import { CloudRain, Thermometer, Users, Droplets, Info, AlertTriangle, Lightbulb } from 'lucide-react'
 import { getPlaceContext } from '../../api/frappe'
 
 /*
-  Context for one place, shown next to an event or alert. Context only: not used by the engine or AI.
+  Context for one place and one disease, shown on the event and alert pages. One table: what the data shows,
+  what it means for this disease and what to check next. The rules are fixed (surveillance/context.py), not AI.
 
   Props:
     subCounty  record id or name (e.g. "Dadaab")
     county     needed when subCounty is a name
-    people     affected count of the event/alert, to show cases per 10,000 people (optional)
-    disease    Alert Threshold Config key (e.g. "awd-cholera"); shows only relevant context and the
-               "Context supports this signal" lines. Fixed rules, never changes severity.
-    data       already-loaded context (skips the fetch; used by the Dashboard)
-    compact    smaller layout without the header
+    people     affected count of the event/alert, for the rate per 10,000 people (optional)
+    disease    Alert Threshold Config key (e.g. "awd-cholera")
 */
 
-const RATING_STYLES = {
-  good: 'bg-green-50 text-green-700 border-green-200',
-  fair: 'bg-amber-50 text-amber-700 border-amber-200',
-  poor: 'bg-red-50 text-red-700 border-red-200',
+export const MARKS = {
+  supports: { dot: 'bg-green-600', label: 'Points towards this disease' },
+  check: { dot: 'bg-yellow-500', label: 'Data old or missing: check before relying on it' },
+  background: { dot: 'bg-gray-300', label: 'Background only' },
 }
 
-const RAIN_STYLES = {
-  above: 'text-blue-700',
-  below: 'text-amber-700',
-  usual: 'text-gray-700',
-  dry: 'text-gray-700',
+export function Dot({ mark }) {
+  const m = MARKS[mark] || MARKS.background
+  return <span className={`mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full align-middle ${m.dot}`} title={m.label} aria-label={m.label} />
 }
 
-function fmtDate(v) {
-  if (!v) return '—'
-  const d = new Date(String(v).slice(0, 10))
-  return isNaN(d) ? '—' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-function rainText(w) {
-  if (w.level === 'dry') return 'Dry, as usual for this time of year'
-  if (w.usualMm == null) return 'No earlier years to compare yet'
-  if (w.ratioText && (w.level === 'above' || w.level === 'below')) return w.ratioText
-  if (w.level === 'above') return `${w.changePct}% above usual`
-  if (w.level === 'below') return `${Math.abs(w.changePct)}% below usual`
-  return 'About usual for this time of year'
-}
-
-export function ContextSupports({ items }) {
-  if (!items?.length) return null
+// What the data shows: dot, bold headline, details, and where it came from
+export function Shows({ row }) {
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 mb-1.5">
-        <Lightbulb className="w-4 h-4" /> Context supports this signal
-      </div>
-      <ul className="space-y-1">
-        {items.map((i) => (
-          <li key={i.kind} className="text-xs text-amber-900">
-            <span className="font-medium">{i.text}</span>
-            {i.why && <span className="text-amber-700">: {i.why}</span>}
-          </li>
-        ))}
-      </ul>
-      <p className="text-[11px] text-amber-700 mt-2">Background only. It doesn't change the severity; the officer decides.</p>
-    </div>
+    <>
+      <Dot mark={row.mark} /><b>{row.headline}</b>{row.detail ? <>. {row.detail}</> : null}
+      {row.source && <div className="mt-0.5 text-xs text-gray-600">{row.source}</div>}
+    </>
   )
 }
 
-function Section({ icon: Icon, title, children, aside }) {
+export function MarksKey({ marks }) {
+  const used = Object.keys(MARKS).filter((k) => !marks || marks.includes(k))
   return (
-    <div className="border border-gray-100 rounded-xl p-4">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-          <Icon className="w-4 h-4" /> {title}
-        </div>
-        {aside}
-      </div>
-      {children}
-    </div>
+    <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
+      {used.map((k) => <span key={k}><Dot mark={k} />{MARKS[k].label}</span>)}
+    </p>
   )
 }
 
-function Missing({ children }) {
-  return <p className="text-xs text-gray-400">{children}</p>
-}
+export const TH = 'border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900'
+export const TD = 'border border-gray-200 px-3 py-2.5 align-top text-gray-900'
 
-export function ContextBody({ ctx, people, compact = false }) {
-  const w = ctx.weather
-  const p = ctx.population
-  const wash = ctx.wash
-  const show = ctx.show || { weather: true, wash: true, population: true }
-  const count = [show.weather, show.population, show.wash].filter(Boolean).length
-  const cols = count >= 3 ? 'md:grid-cols-3' : count === 2 ? 'md:grid-cols-2' : ''
-  return (
-    <div className={compact ? 'space-y-3' : ['grid grid-cols-1 gap-3', cols].join(' ')}>
-      {show.weather && <Section icon={CloudRain} title="Rainfall & temperature">
-        {w ? (
-          <>
-            <div className="text-lg font-bold text-gray-900">{w.rainfallMm} mm <span className="text-xs font-normal text-gray-400">last {w.windowDays / 7} weeks</span></div>
-            <div className={['text-xs font-medium', RAIN_STYLES[w.level] || 'text-gray-700'].join(' ')}>{rainText(w)}</div>
-            {w.usualMm != null && <div className="text-[11px] text-gray-400">Usual: {w.usualMm} mm ({w.yearsCompared} earlier year{w.yearsCompared === 1 ? '' : 's'})</div>}
-            <div className="flex items-center gap-3 text-xs text-gray-600 mt-2">
-              <span>This week: {w.last7RainMm} mm</span>
-              {w.last7TempC != null && <span className="inline-flex items-center gap-1"><Thermometer className="w-3.5 h-3.5" />{w.last7TempC}°C avg</span>}
-            </div>
-          </>
-        ) : <Missing>No weather data yet for this area.</Missing>}
-      </Section>}
-
-      {show.population && <Section icon={Users} title="Population"
-        aside={p?.stale && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">Over a year old</span>}>
-        {p ? (
-          <>
-            <div className="text-lg font-bold text-gray-900">{p.population.toLocaleString()}</div>
-            <div className="text-[11px] text-gray-400">{p.source} · as of {fmtDate(p.asOf)}{p.site ? ` · ${p.site}` : ''}</div>
-                        {p.proportionText && people != null && (
-              <div className="text-xs text-gray-700 mt-2">{p.proportionText}</div>
-            )}
-          </>
-        ) : <Missing>No population figure recorded yet.</Missing>}
-      </Section>}
-
-      {show.wash && <Section icon={Droplets} title="WASH"
-        aside={wash?.stale && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">{Math.round(wash.ageDays / 30)} months old</span>}>
-        {wash ? (
-          <>
-            <div className="flex flex-wrap gap-1.5">
-              {wash.items.map((i) => (
-                <span key={i.key} title={i.label}
-                  className={['text-[11px] border rounded-full px-2 py-0.5', RATING_STYLES[i.rating] || 'bg-gray-50 text-gray-600 border-gray-200'].join(' ')}>
-                  {i.value}
-                </span>
-              ))}
-            </div>
-            <div className="text-[11px] text-gray-400 mt-2">Assessed {fmtDate(wash.date)}{wash.by ? ` by ${wash.by}` : ''}{wash.site ? ` · ${wash.site}` : ''}</div>
-            {wash.notes && !compact && <p className="text-xs text-gray-600 mt-1 line-clamp-2" title={wash.notes}>{wash.notes}</p>}
-          </>
-        ) : <Missing>No WASH assessment recorded yet.</Missing>}
-      </Section>}
-    </div>
-  )
-}
-
-export default function ContextPanel({ subCounty, county, people, disease, data, compact = false }) {
-  const [ctx, setCtx] = useState(data || null)
-  const [loading, setLoading] = useState(!data)
+export default function ContextPanel({ subCounty, county, people, disease, bare = false }) {
+  const [ctx, setCtx] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (data) { setCtx(data); return }
     if (!subCounty) { setLoading(false); return }
     let cancelled = false
     setLoading(true)
@@ -153,41 +59,69 @@ export default function ContextPanel({ subCounty, county, people, disease, data,
       .catch((e) => { if (!cancelled) setError(e.message || 'Could not load context') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [subCounty, county, people, disease, data])
+  }, [subCounty, county, people, disease])
 
   const place = ctx?.subCountyName || subCounty
+  const rows = ctx?.rows || []
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5">
-      {!compact && (
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div>
-            <h3 className="text-base font-semibold text-gray-900">Context{place ? ` for ${place}` : ''}</h3>
-            <p className="text-xs text-gray-400">Background to help interpret this signal.</p>
-          </div>
-        </div>
-      )}
-      {!subCounty && !data ? (
-        <p className="text-sm text-gray-400 flex items-center gap-2"><Info className="w-4 h-4" /> Location missing, so no context can be shown.</p>
+    <div className={`@container bg-white ${bare ? '' : 'rounded-2xl border border-gray-200 p-5'}`}>
+      <h3 className="text-base font-bold text-gray-900">Context for {place || 'this place'}{ctx?.diseaseName ? `: ${ctx.diseaseName}` : ''}</h3>
+      <p className="mb-3 mt-0.5 text-sm text-gray-900">
+        What rainfall, water and sanitation and population say about this disease here, and what to check next.
+        {ctx?.notShown ? ` ${ctx.notShown}` : ''}
+      </p>
+      {!subCounty ? (
+        <p className="text-sm text-gray-900">The location is missing, so no context can be shown.</p>
       ) : loading ? (
-        <p className="text-sm text-gray-400">Loading context…</p>
+        <p className="text-sm text-gray-600">Loading context…</p>
       ) : error ? (
-        <p className="text-sm text-red-700 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> {error}</p>
+        <p className="text-sm text-red-700">{error}</p>
       ) : ctx?.unknownLocation ? (
-        <p className="text-sm text-gray-400 flex items-center gap-2"><Info className="w-4 h-4" /> {place} isn't in our sub-county list, so no context is recorded for it.</p>
-      ) : ctx ? (
+        <p className="text-sm text-gray-900">{place} isn't in the sub-county list, so no context is recorded for it.</p>
+      ) : !rows.length ? (
+        <p className="text-sm text-gray-900">Choose a disease to see what the context means for it.</p>
+      ) : (
         <>
-          <ContextSupports items={ctx.supports} />
-          <ContextBody ctx={ctx} people={people} compact={compact} />
-          {ctx.show && (!ctx.show.weather || !ctx.show.wash) && (
-            <p className="text-[11px] text-gray-400 mt-2">
-              {!ctx.show.weather && !ctx.show.wash ? 'Rainfall and WASH are not shown because they are not linked to this disease.'
-                : !ctx.show.weather ? 'Rainfall is not shown because it is not linked to this disease.'
-                : 'WASH is not shown because it is not linked to this disease.'}
-            </p>
-          )}
+          {/* narrow places (alert page column): one small table per factor */}
+          <div className="space-y-3 @2xl:hidden">
+            {rows.map((r) => (
+              <table key={r.key} className="w-full border-collapse border border-gray-200 text-sm">
+                <tbody>
+                  <tr><th colSpan={2} className={TH}>{r.factor}</th></tr>
+                  <tr><td className={`${TD} w-28 font-bold`}>Data shows</td><td className={TD}><Shows row={r} /></td></tr>
+                  <tr><td className={`${TD} font-bold`}>What it means</td><td className={TD}>{r.means}</td></tr>
+                  <tr><td className={`${TD} font-bold`}>Next step</td><td className={TD}>{r.next}</td></tr>
+                </tbody>
+              </table>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto @2xl:block">
+            <table className="w-full border-collapse border border-gray-200 text-sm">
+              <thead>
+                <tr>
+                  <th className={`${TH} w-32`}>Factor</th>
+                  <th className={TH}>What the data shows</th>
+                  <th className={TH}>What it means for {ctx.diseaseShort}</th>
+                  <th className={TH}>Next step</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.key}>
+                    <td className={`${TD} font-bold`}>{r.factor}</td>
+                    <td className={TD}><Shows row={r} /></td>
+                    <td className={TD}>{r.means}</td>
+                    <td className={TD}>{r.next}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <MarksKey marks={[...new Set(rows.map((r) => r.mark))]} />
+          <p className="mt-1 text-xs text-gray-700">Green rows add to the "Local context" part of the risk score. The officer decides what to do.</p>
         </>
-      ) : null}
+      )}
     </div>
   )
 }

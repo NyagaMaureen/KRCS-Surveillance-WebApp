@@ -157,18 +157,28 @@ export async function login(usr, pwd) {
     try {
       const why = await callMethodPost('/api/method/surveillance.account.login_problem', { usr, pwd })
       if (why?.deactivated) return { ok: false, message: 'Your account has been deactivated. Contact your administrator.' }
+      // tries left before the account is locked, from Security Settings (KRCS 20 Nov 2026)
+      if (why?.locked) return { ok: false, message: `Wrong password. Your account is now locked for ${waitText(why.lockedFor)}. Try again after that, or reset your password.` }
+      if (why?.attemptsLeft) {
+        return { ok: false, message: why.attemptsLeft === 1
+          ? 'Invalid email or password. 1 attempt remaining: one more wrong password locks your account.'
+          : `Invalid email or password. ${why.attemptsLeft} attempts remaining.` }
+      }
     } catch { /* keep the usual message */ }
   }
   return { ok: false, message }
+}
+
+function waitText(secs) {
+  secs = Number(secs) || 0
+  return secs >= 3600 ? `${Math.round(secs / 3600)} hour${secs >= 7200 ? 's' : ''}` : secs >= 60 ? `${Math.round(secs / 60)} minute${secs >= 120 ? 's' : ''}` : `${secs} seconds`
 }
 
 function loginError(raw, status) {
   const text = String(raw || '')
   const locked = text.match(/locked.*?(\d+)\s*seconds/i)
   if (locked) {
-    const secs = Number(locked[1])
-    const wait = secs >= 3600 ? `${Math.round(secs / 3600)} hour${secs >= 7200 ? 's' : ''}` : secs >= 60 ? `${Math.round(secs / 60)} minute${secs >= 120 ? 's' : ''}` : `${secs} seconds`
-    return `Too many wrong passwords. This account is locked for ${wait}. Try again after that, or reset your password.`
+    return `Too many wrong passwords. Your account is locked for ${waitText(locked[1])}. Try again after that, or reset your password.`
   }
   if (/disabled/i.test(text)) return 'Your account has been deactivated. Contact your administrator.'
   if (status === 429) return 'Too many attempts. Wait a few minutes and try again.'
@@ -864,9 +874,9 @@ export async function getReferenceLabels() {
 }
 
 export async function getAuditLogs(opts = {}) {
-  const res = await fetch(`/api/method/surveillance.surveillance.api.get_audit_logs?limit=${opts.limit || 1000}`)
-  const data = await res.json()
-  return data.message || []
+  const qs = new URLSearchParams({ limit: opts.limit || 1000, include_logins: opts.includeLogins ? 1 : 0 })
+  if (opts.days) qs.set('days', opts.days)
+  return (await callMethod(`/api/method/surveillance.surveillance.api.get_audit_logs?${qs}`)) || []
 }
 
 // --- Case Report (health signal) CRUD ---
@@ -1297,6 +1307,11 @@ export async function getPlaceContext({ subCounty, county, people, disease } = {
 export async function getAreaContext() {
   return (await callMethod(`${CTX}.get_area_context`)) || []
 }
+export async function getDiseaseContext(disease, subCounty) {
+  const qs = new URLSearchParams({ disease })
+  if (subCounty) qs.set('sub_county', subCounty)
+  return callMethod(`${CTX}.get_disease_context?${qs}`)
+}
 export async function getContextOptions() {
   return callMethod(`${CTX}.get_options`)
 }
@@ -1587,14 +1602,21 @@ export async function answerByPhone(event, report, symptom, value) {
 export async function confirmVerification(event) {
   return callMethodPost(`${TRIAGE}.confirm_verification`, { event })
 }
-export async function confirmTriageDisease(event, disease) {
-  return callMethodPost(`${TRIAGE}.confirm_disease`, { event, disease })
+export async function confirmTriageDisease(event, disease, overrideReason) {
+  return callMethodPost(`${TRIAGE}.confirm_disease`, { event, disease, override_reason: overrideReason || '' })
 }
 export async function getReferralPeople(event) {
   return (await callMethod(`${TRIAGE}.referral_people?event=${encodeURIComponent(event)}`)) || []
 }
 export async function referPatient(event, data) {
   return callMethodPost(`${TRIAGE}.refer`, { event, ...data })
+}
+export async function getReportEvent(report) {   // {event: {id, status}} the Review Queue event a report is on
+  return callMethod(`/api/method/surveillance.events.get_report_event?report=${encodeURIComponent(report)}`)
+}
+
+export async function getReferralCase(task) {   // the case behind a referral: event and reports (KRCS 20 Nov 2026)
+  return callMethod(`${TRIAGE}.get_referral_case?task=${encodeURIComponent(task)}`)
 }
 export async function getReferralState(event) {
   return callMethod(`${TRIAGE}.get_referral_state?event=${encodeURIComponent(event)}`)
@@ -1621,3 +1643,14 @@ export async function getDataOverview() { return callMethod(`${SYS}get_data_over
 export async function runBackup() { return callMethodPost(`${SYS}run_backup`, {}) }
 // CHPs in my CHU (CHA, KRCS 18 Nov 2026)
 export async function getMyChps() { return callMethod('/api/method/surveillance.health_units.get_my_chps') }
+
+// AI review deadlines and escalation matrix (AUD-08)
+export async function getAiReviewSettings() {
+  return callMethod('/api/method/surveillance.ai_review.get_settings')
+}
+export async function saveAiReviewSettings(v) {
+  return callMethodPost('/api/method/surveillance.ai_review.save_settings', {
+    enabled: v.enabled ? 1 : 0, l1_high_hours: v.l1_high_hours, l1_standard_hours: v.l1_standard_hours, l2_hours: v.l2_hours,
+    l2_roles: JSON.stringify(v.l2_roles || []), l3_roles: JSON.stringify(v.l3_roles || []),
+  })
+}

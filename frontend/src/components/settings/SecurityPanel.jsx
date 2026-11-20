@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Shield, KeyRound, MonitorSmartphone, History, AlertTriangle, LogOut } from 'lucide-react'
+import { Shield, KeyRound, MonitorSmartphone, History, AlertTriangle, LogOut, Pencil } from 'lucide-react'
 import { getSecurity, saveSecurity, endSession } from '../../api/frappe'
 
 // Security Settings (KRCS 18 Nov 2026): real settings instead of the earlier placeholders. Password rules, sign-in
@@ -31,12 +31,13 @@ function Row({ title, text, children }) {
   )
 }
 
-function Card({ icon: Icon, title, note, children }) {
+function Card({ icon: Icon, title, note, action, children }) {
   return (
     <section className="rounded-2xl border border-gray-100 bg-white p-6">
       <div className="mb-2 flex items-center gap-3">
         <Icon className="h-6 w-6 text-gray-900" aria-hidden="true" />
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+        {action && <div className="ml-auto">{action}</div>}
       </div>
       {note && <p className="mb-2 text-sm text-gray-600">{note}</p>}
       {children}
@@ -63,6 +64,15 @@ export default function SecurityPanel({ notify }) {
   const [ending, setEnding] = useState('')
   const [allSessions, setAllSessions] = useState(false)
   const [allEvents, setAllEvents] = useState(false)
+  // read only until Edit is pressed, so a change is never left unsaved without noticing (KRCS 20 Nov 2026)
+  const [editing, setEditing] = useState(false)
+  const dirty = !!(data && form && Object.keys(form).some((k) => String(form[k]) !== String(data.settings[k])))
+  useEffect(() => {
+    if (!dirty) return undefined
+    const warn = (e) => { e.preventDefault(); e.returnValue = '' }   // leaving the page with unsaved changes
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
 
   function load() {
     getSecurity().then((d) => { setData(d); setForm(d.settings) }).catch((e) => setError(e.message || 'Could not load the security settings.'))
@@ -72,8 +82,24 @@ export default function SecurityPanel({ notify }) {
   if (error && !data) return <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">{error}</div>
   if (!data || !form) return <div className="h-64 animate-pulse rounded-2xl bg-gray-100" aria-busy="true" />
 
-  const changed = Object.keys(form).some((k) => String(form[k]) !== String(data.settings[k]))
+  const changed = dirty
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+  const label = (list, v, other) => (list.find(([x]) => String(x) === String(v)) || [null, other])[1]
+  const shown = {   // what each setting reads as when not editing
+    enable_password_policy: form.enable_password_policy ? 'On: weak passwords are rejected' : 'Off',
+    minimum_password_score: label(STRENGTH, form.minimum_password_score, form.minimum_password_score),
+    force_user_to_reset_password: label(EXPIRY, Number(form.force_user_to_reset_password), `Every ${form.force_user_to_reset_password} days`),
+    allow_consecutive_login_attempts: `${form.allow_consecutive_login_attempts} wrong passwords`,
+    allow_login_after_fail: label(LOCK_FOR, Number(form.allow_login_after_fail), `${form.allow_login_after_fail} seconds`),
+    session_expiry: SESSION_LABEL[form.session_expiry] || `${form.session_expiry} (hours:minutes)`,
+    logout_on_password_reset: form.logout_on_password_reset ? 'Yes' : 'No',
+  }
+  const view = (k) => <p className="text-sm font-semibold text-gray-900 sm:text-right">{shown[k]}</p>
+  function cancel() {
+    setForm(data.settings)
+    setEditing(false)
+    setError('')
+  }
 
   async function save() {
     setSaving(true)
@@ -82,6 +108,7 @@ export default function SecurityPanel({ notify }) {
       const d = await saveSecurity(form)
       setData(d)
       setForm(d.settings)
+      setEditing(false)
       notify?.('Security settings saved')
     } catch (e) {
       setError(e.message || 'Could not save the security settings.')
@@ -106,7 +133,28 @@ export default function SecurityPanel({ notify }) {
 
   return (
     <div className="space-y-6">
-      <Card icon={KeyRound} title="Passwords and sign-in">
+      <Card icon={KeyRound} title="Passwords and sign-in" action={!editing && (
+        <button type="button" onClick={() => setEditing(true)}
+          className={`inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 ${FOCUS}`}>
+          <Pencil className="h-4 w-4" aria-hidden="true" />Edit
+        </button>
+      )}>
+        {editing && (
+          <p className={`mb-1 text-sm font-semibold ${changed ? 'text-amber-700' : 'text-gray-700'}`}>
+            {changed ? 'You have unsaved changes. Press Save changes to keep them.' : 'Editing. Change what you need, then press Save changes.'}
+          </p>
+        )}
+        {!editing ? (
+          <div className="divide-y divide-gray-100">
+            <Row title="Password rules" text="Reject weak passwords when someone sets or changes one">{view('enable_password_policy')}</Row>
+            {!!form.enable_password_policy && <Row title="Minimum strength" text="Stronger needs longer passwords with a mix of letters, numbers and symbols">{view('minimum_password_score')}</Row>}
+            <Row title="Password expiry" text="Ask people to choose a new password after this long">{view('force_user_to_reset_password')}</Row>
+            <Row title="Wrong password limit" text="After this many wrong passwords in a row the account is locked for a while">{view('allow_consecutive_login_attempts')}</Row>
+            <Row title="Locked for" text="How long a locked account waits before it can try again">{view('allow_login_after_fail')}</Row>
+            <Row title="Session length" text="People are signed out after this long without using the system">{view('session_expiry')}</Row>
+            <Row title="Sign out everywhere after a password reset" text="When a password is reset, end that person's other sessions">{view('logout_on_password_reset')}</Row>
+          </div>
+        ) : (
         <div className="divide-y divide-gray-100">
           <Row title="Password rules" text="Reject weak passwords when someone sets or changes one">
             <label className="inline-flex items-center gap-2 text-sm text-gray-900">
@@ -152,14 +200,17 @@ export default function SecurityPanel({ notify }) {
             </label>
           </Row>
         </div>
+        )}
         {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
-        <div className="mt-4 flex gap-3">
-          <button type="button" onClick={save} disabled={!changed || saving}
-            className={`rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 ${FOCUS}`}>
-            {saving ? 'Saving…' : 'Save changes'}
-          </button>
-          {changed && <button type="button" onClick={() => setForm(data.settings)} className={`rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-900 ${FOCUS}`}>Cancel</button>}
-        </div>
+        {editing && (
+          <div className="mt-4 flex gap-3">
+            <button type="button" onClick={save} disabled={!changed || saving}
+              className={`rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 ${FOCUS}`}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+            <button type="button" onClick={cancel} disabled={saving} className={`rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-900 ${FOCUS}`}>Cancel</button>
+          </div>
+        )}
       </Card>
 
       <Card icon={MonitorSmartphone} title="Open sessions" note={`${data.sessions.length} session${data.sessions.length === 1 ? '' : 's'} that have not expired yet, newest first. Sign someone out if a phone or computer is lost or shared.`}>

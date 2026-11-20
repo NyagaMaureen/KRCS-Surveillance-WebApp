@@ -218,7 +218,12 @@ export default function AlertsSignalsQueue() {
   }, [load])
 
   const scKey = (x) => String(x || '').trim().toLowerCase()
-  const scEvents = useMemo(() => (subCounty ? events.filter((e) => scKey(e.subCounty) === scKey(subCounty)) : events), [events, subCounty])
+  // an event may hold the sub-county's name or its id (KRCS 20 Nov 2026)
+  const scMatch = useMemo(() => {
+    const hit = area.subCounties.find((x) => scKey(x.name) === scKey(subCounty))
+    return new Set([scKey(subCounty), hit ? scKey(hit.id) : ''].filter(Boolean))
+  }, [area, subCounty])
+  const scEvents = useMemo(() => (subCounty ? events.filter((e) => scMatch.has(scKey(e.subCounty))) : events), [events, subCounty, scMatch])
   const subCountyOptions = useMemo(() => (area.locked ? area.subCounties.map((x) => x.name)
     : [...new Set(events.map((e) => e.subCounty).filter(Boolean))].sort()), [area, events])
   const overdueCount = useMemo(() => scEvents.filter((e) => waitInfo(e)?.state === 'over').length, [scEvents])
@@ -331,18 +336,16 @@ export default function AlertsSignalsQueue() {
           <div className={`${card} p-3 flex items-center gap-2 flex-wrap`}>
             <div className="relative flex-1 min-w-[200px]">
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
-              <input value={searchText} onChange={(e) => setSearchText(e.target.value)} type="text" aria-label="Search events" placeholder={isCha ? 'Search by place or ID' : 'Search by disease, place or ID'}
+              <input value={searchText} onChange={(e) => setSearchText(e.target.value)} type="text" aria-label="Search events" placeholder="Search by disease, place or ID"
                 className={`w-full h-9 bg-gray-50 border border-gray-100 rounded-lg pl-9 pr-3 text-sm ${FOCUS}`} />
             </div>
             <select aria-label="Status" value={overdueOnly ? 'all' : tab} onChange={(e) => setParam({ tab: e.target.value === defaultTab ? '' : e.target.value, overdue: '' })} className={SELECT_SOFT}>
               {TABS.map((t) => <option key={t.key} value={t.key}>{t.key === 'all' ? 'All statuses' : t.label}</option>)}
             </select>
-            {!isCha && (
-              <select aria-label="Disease" value={disease} onChange={(e) => setParam({ disease: e.target.value })} className={SELECT_SOFT}>
-                <option value="">All diseases</option>
-                {diseases.filter((d) => d.active || d.key === 'unclassified-illness').map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
-              </select>
-            )}
+            <select aria-label="Disease" value={disease} onChange={(e) => setParam({ disease: e.target.value })} className={SELECT_SOFT}>
+              <option value="">All diseases</option>
+              {diseases.filter((d) => d.active || d.key === 'unclassified-illness').map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
+            </select>
             <select aria-label="Channel" value={channel} onChange={(e) => setParam({ channel: e.target.value })} className={SELECT_SOFT}>
               <option value="">All channels</option>
               {channelOptions.map((x) => <option key={x} value={x}>{x}</option>)}
@@ -377,7 +380,7 @@ export default function AlertsSignalsQueue() {
                   <tr className="text-left text-xs text-gray-900">
                     <th className="px-3 py-2.5 font-medium w-10 text-gray-900">#</th>
                     <th className="px-3 py-2.5 font-medium">Event ID</th>
-                    <th className="px-3 py-2.5 font-medium">{isCha ? 'Signal' : 'Disease'}</th>
+                    <th className="px-3 py-2.5 font-medium">Disease</th>
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Channel</th>
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Health unit</th>
                     <th className="px-3 py-2.5 font-medium hidden md:table-cell">Location</th>

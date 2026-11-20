@@ -47,17 +47,26 @@ RECEIVE = "receive_tasks"
 
 # ---------- helpers ----------
 
-def _event(event, act=True, step6=False):
+def _event(event, act=True, step6=False, referral=False):
 	"""act: assigning, changing or removing tasks (Assign Event Tasks); otherwise seeing them (See Event Tasks).
-	step6: referrals and follow-ups are part of Step 6 (Response & Close), so that box is enough for them."""
+	step6: referrals and follow-ups are part of Step 6 (Response & Close), so that box is enough for them.
+	referral: also allowed for whoever can verify (step 2) once the signal is discarded, so a CHA can still refer the
+	patient (KRCS 20 Nov 2026)."""
 	from surveillance.events import _check_access, allowed_steps
 	from surveillance.investigation import tasks_access
 	access = tasks_access()
-	if not ((access["assign"] if act else access["see"]) or (step6 and 6 in allowed_steps())):
-		frappe.throw(_("You do not have permission to perform this action."), frappe.PermissionError)
 	doc = frappe.get_doc("Surveillance Event", event)
+	if not ((access["assign"] if act else access["see"]) or (step6 and 6 in allowed_steps())
+			or (referral and _refer_after_discard(doc))):
+		frappe.throw(_("You do not have permission to perform this action."), frappe.PermissionError)
 	_check_access(doc)
 	return doc
+
+
+def _refer_after_discard(doc):
+	"""A discarded signal whose patient may still need care: people who verify (step 2) can give the CHP a referral."""
+	from surveillance.events import allowed_steps
+	return doc.status == "Discarded" and 2 in allowed_steps()
 
 
 def _role_label(user):
@@ -126,7 +135,7 @@ def get_assignees(event):
 	"""People an officer can assign to: the reporting CHP(s) first, then users in the event's sub-county,
 	then users in the event's region."""
 	from surveillance.notifications import sub_county_users
-	doc = _event(event, step6=True)   # also for referrals and follow-ups in Step 6
+	doc = _event(event, step6=True, referral=True)   # also for referrals and follow-ups in Step 6, and after a discard
 	out, seen = [], set()
 
 	def add(user, group):
@@ -148,9 +157,11 @@ def get_assignees(event):
 
 @frappe.whitelist()
 def get_event_tasks(event):
-	doc = _event(event, act=False, step6=True)
+	doc = _event(event, act=False, step6=True, referral=True)
 	rows = frappe.get_all(DOCTYPE, filters={"event": doc.name}, fields=FIELDS, order_by="due_date asc, creation asc")
-	return {"tasks": [_shape(t) for t in rows], "canAssign": has_capability("assign_event_tasks"),
+	can_assign = has_capability("assign_event_tasks")
+	return {"tasks": [_shape(t) for t in rows], "canAssign": can_assign,
+		"canRefer": not can_assign and _refer_after_discard(doc),
 		"followupDays": FOLLOWUP_DAYS, "eventStatus": doc.status}
 
 
@@ -179,7 +190,9 @@ def _insert(doc, task_type, title, assigned_to, due_date, instructions=None, fac
 @frappe.whitelist(methods=["POST"])
 def create_task(event, task_type, title, assigned_to, due_date, instructions=None, facility=None, urgency=None,
 		step_phase=None, step_no=None):
-	doc = _event(event)
+	doc = _event(event, referral=True)
+	if task_type != "Referral" and not has_capability("assign_event_tasks"):
+		frappe.throw(_("After a discard you can only refer the patient."), frappe.PermissionError)
 	t = _insert(doc, task_type, title, assigned_to, due_date, instructions, facility, urgency, step_phase, step_no)
 	_log(doc, "Task assigned", f"{t.task_type}: {t.title} → {get_fullname(t.assigned_to)}, due {t.due_date}")
 	notify_assigned(t.name)

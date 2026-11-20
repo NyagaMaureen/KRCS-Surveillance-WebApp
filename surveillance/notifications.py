@@ -276,7 +276,9 @@ def send_left_queue(event_name, old_name, new_name, report):
 # ---------- 1. new event ----------
 
 def on_new_event(event, signal_date=None):
-	"""Called when an event is created. Skips events built from old reports."""
+	"""Called when an event is created. Skips events built from old reports, and events a patch splits off."""
+	if frappe.flags.get("krcs_no_alerts"):
+		return
 	if signal_date and get_datetime(signal_date) < add_days(now_datetime(), -NEW_EVENT_MAX_AGE_DAYS):
 		return
 	# "event" is a reserved argument of frappe.enqueue, so the event ID is passed as event_name
@@ -303,7 +305,7 @@ def _officers(users):
 
 
 def send_new_event(event_name):
-	"""A new signal goes to the CHA(s) to verify, without the disease. The officers are told when the CHA confirms
+	"""A new signal goes to the CHA(s) to verify, with the suspected disease. The officers are told when the CHA confirms
 	the verification (send_verified). With no CHA in the sub-county the officers are told now, as before."""
 	event = event_name
 	try:
@@ -342,15 +344,15 @@ def send_verified(event_name, by=None):
 
 def _send_signal(doc, users, for_cha=False, verified_by=None):
 	"""The new-signal email (same arrangement as the escalation email; severity left out, KRCS 18 Nov 2026).
-	for_cha: no disease, no reason flagged (it names the disease), no related events. verified_by: the officers'
-	copy once the CHA confirmed the verification."""
+	for_cha: the CHA's copy, to verify (it names the suspected disease, KRCS 20 Nov 2026). verified_by: the officers'
+	copy once the CHA confirmed the verification. No email shows the risk score."""
 	from surveillance.events import related_events
-	related = [] if for_cha else related_events(doc.disease, doc.sub_county, doc.first_reported, exclude=doc.name)
+	related = related_events(doc.disease, doc.sub_county, doc.first_reported, exclude=doc.name)
 	related_ids = ", ".join(r["id"] for r in related)
 	disease = _suspected(doc.disease_name or doc.disease) or "Disease not yet assigned"
 	where = doc.sub_county or "location missing"
 	if for_cha:
-		subject = f"New signal to verify: {where}, {_affected(doc)} affected"
+		subject = f"New signal to verify: {disease}, {where}, {_affected(doc)} affected" + (f" · related to {related_ids}" if related else "")
 		intro = "A new signal needs verification. Call the reporter, check the symptoms and answer the questions."
 	elif verified_by:
 		subject = f"Verified signal: {disease}, {where}, {_affected(doc)} affected" + (f" · related to {related_ids}" if related else "")
@@ -364,7 +366,7 @@ def _send_signal(doc, users, for_cha=False, verified_by=None):
 		f'<p style="font-size:15px"><b>{intro}</b></p>'
 		+ (f'<p style="font-size:14px"><b>Related to {escape_html(related_ids)}</b>: another open {escape_html(disease)} '
 			f'event in {escape_html(doc.sub_county)} in the last 7 days. This may be the same outbreak.</p>' if related else "")
-		+ _rows(([] if for_cha else [(_disease_label(doc), escape_html(disease))]) + [
+		+ _rows([(_disease_label(doc), escape_html(disease))] + [
 			("Signs and symptoms", "<br>".join(escape_html(x) for x in signs) or "Not recorded"),
 			(_cases_label(doc), doc.people or 0),
 			("Deaths", doc.deaths or 0),
@@ -377,12 +379,12 @@ def _send_signal(doc, users, for_cha=False, verified_by=None):
 			("Location", escape_html(", ".join(x for x in [doc.area, doc.county] if x))),
 			("GPS", _gps(doc)),
 			("Reporter contacts", "<br>".join(escape_html(x) for x in reporters)),
-			("Why flagged", "" if for_cha else escape_html(doc.reason or "")),
+			("Why flagged", escape_html(doc.reason or "")),
 			("Event ID", doc.name),
 		])
 		+ _button(_link(doc.name), "Open and verify" if (for_cha or not verified_by) else "Open AI triage")
 	)
-	sms = (f"KRCS: new signal to verify, {where}. {_affected(doc)}." if for_cha
+	sms = (f"KRCS: new {disease} signal to verify, {where}. {_affected(doc)}." if for_cha
 		else f"KRCS: {'verified' if verified_by else 'new'} {disease} signal, {where}. {_affected(doc)}."
 			+ (f" Related to {related_ids}." if related else ""))
 	_send([u.email for u in users], subject, html, doc.name, [u.mobile_no for u in users if u.mobile_no],

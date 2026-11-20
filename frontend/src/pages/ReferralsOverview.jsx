@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Building2, Search, X, ArrowRightLeft, Users, MapPin, FileText, UserRound, UserCheck, CalendarDays, Clock, CheckCheck, ClipboardList } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
-import { getReferralsOverview, getReferralState, closeReferralCase } from '../api/frappe'
+import { getReferralsOverview, getReferralState, closeReferralCase, getReferralCase } from '../api/frappe'
 import { PageSizeSelect } from '../components/common/Pager'
 
 // Referrals page for officers, CHAs and HQ (KRCS 17 Nov 2026): every referral in the user's area (officers: their
@@ -42,6 +43,81 @@ function Tile({ icon: Icon, label, children, tone = '' }) {
 
 const longDate = (v) => (v ? new Date(String(v).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
 
+// The case behind a referral, laid out like Signal captured (KRCS 20 Nov 2026)
+const fmtWhen = (v) => (v ? new Date(String(v).replace(' ', 'T')).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—')
+
+function CaseSection({ task }) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let live = true
+    getReferralCase(task).then((d) => live && setData(d)).catch((e) => live && setError(e.message || 'Could not load the case.'))
+    return () => { live = false }
+  }, [task])
+  if (error) return <p className="text-sm text-gray-700">{error}</p>
+  if (!data) return <div className="h-24 animate-pulse rounded-xl bg-gray-100" aria-busy="true" />
+  const ev = data.event
+  if (!ev && !data.reports.length) return <p className="text-sm text-gray-700">Not linked to a case or a report.</p>
+  return (
+    <div>
+      {ev && (
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-sm text-gray-900">
+            <b>{ev.id}</b>{ev.disease ? ` · ${/^suspected/i.test(ev.disease) ? ev.disease : `Suspected ${ev.disease}`}` : ''} · {ev.status}{ev.place ? ` · ${ev.place}` : ''}
+            <span className="block text-gray-700">{ev.people} {ev.people === 1 ? 'person' : 'people'}{ev.deaths ? ` · ${ev.deaths} ${ev.deaths === 1 ? 'death' : 'deaths'}` : ''} · {ev.reports} {ev.reports === 1 ? 'report' : 'reports'} · first reported {fmtWhen(ev.firstReported)}</span>
+          </p>
+          <Link to={`/alerts-signals/${encodeURIComponent(ev.id)}`} className="text-sm font-semibold text-red-700 hover:underline">Open the case →</Link>
+        </div>
+      )}
+      {data.reports.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-left text-sm">
+            <thead><tr className="border-b border-gray-200 text-gray-900">
+              <th className="px-3 py-2 font-bold">Report</th><th className="px-3 py-2 font-bold">What was reported</th>
+              <th className="px-3 py-2 font-bold">Where</th><th className="px-3 py-2 font-bold">Reporter</th>
+            </tr></thead>
+            <tbody>
+              {data.reports.map((x) => (
+                <tr key={x.ref} className="border-t border-gray-200 align-top">
+                  <td className="px-3 py-3 whitespace-nowrap text-gray-900">
+                    <Link to={`/reports/${encodeURIComponent(x.ref)}`} className="font-semibold text-red-700 hover:underline">{x.ref}</Link>
+                    <span className="block">{x.channel || '—'}</span>
+                    {x.kind && <span className="block">{x.kind}</span>}
+                    <span className="block">{fmtWhen(x.date)}</span>
+                  </td>
+                  <td className="px-3 py-3 text-gray-900 min-w-[220px]">
+                    <span className="block font-semibold">{x.people} {x.people === 1 ? 'person' : 'people'}{x.deaths > 0 && <span className="text-red-700"> · {x.deaths} {x.deaths === 1 ? 'death' : 'deaths'}</span>}</span>
+                    <span className="block">{x.symptoms || '—'}</span>
+                    {x.notPresent && <span className="block text-gray-700">Not present: {x.notPresent}</span>}
+                    {x.onset && <span className="block"><b>Date of onset</b> {longDate(x.onset)}</span>}
+                    {x.ages && <span className="block"><b>Age group</b> {x.ages}</span>}
+                    {x.animal && <span className="block"><b>Animal exposure</b> {x.animal}</span>}
+                    {x.notes && <span className="mt-1 block whitespace-pre-wrap"><b>Notes</b> {x.notes}</span>}
+                  </td>
+                  <td className="px-3 py-3 text-gray-900 min-w-[130px]">
+                    <span className="block">{x.location || '—'}</span>
+                    {x.gps ? <a href={`https://www.google.com/maps?q=${x.gps[0]},${x.gps[1]}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-red-700 hover:underline">View on map</a>
+                      : <span className="block text-gray-700">No GPS recorded</span>}
+                  </td>
+                  <td className="px-3 py-3 text-gray-900 min-w-[130px]">
+                    <span className="block">{x.reporter || '—'}</span>
+                    {x.phone && <a href={`tel:${x.phone}`} className="font-semibold text-red-700 hover:underline">Call {x.phone}</a>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {data.others?.length > 0 && (
+        <ul className="mt-3 space-y-1 text-sm text-gray-900">
+          {data.others.map((o, i) => <li key={i}><b>{o.source}{o.ref ? ` ${o.ref}` : ''}</b> · {o.people} {o.people === 1 ? 'person' : 'people'} · {o.reported || '—'}{o.place ? ` · ${o.place}` : ''}</li>)}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function ReferralDetails({ row: r, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -53,7 +129,7 @@ function ReferralDetails({ row: r, onClose }) {
   const fu = r.followup
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div role="dialog" aria-modal="true" aria-label={`Referral ${r.ref}`} className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto shadow-xl">
+      <div role="dialog" aria-modal="true" aria-label={`Referral ${r.ref}`} className="bg-white rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto shadow-xl">
         <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600"><ArrowRightLeft className="h-5 w-5" aria-hidden="true" /></span>
@@ -75,12 +151,17 @@ function ReferralDetails({ row: r, onClose }) {
               <Tile icon={Users} label="Patients">{patients || '—'}</Tile>
               <Tile icon={Building2} label="Health facility">{r.facility || '—'}</Tile>
               <Tile icon={MapPin} label="Place">{[r.area, r.subCountyName].filter(Boolean).join(', ') || '—'}</Tile>
-              <Tile icon={FileText} label="Case">{r.event || 'Not linked to a case'}</Tile>
+              <Tile icon={FileText} label="Case">{r.event || (r.caseReport ? `Report ${r.caseReport}` : 'Not linked to a case')}</Tile>
             </div>
             <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3.5">
               <p className="text-xs font-bold text-gray-900">Why referred</p>
               <p className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap">{r.reason || r.instructions || '—'}</p>
             </div>
+          </section>
+
+          <section>
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">The case</h4>
+            <CaseSection task={r.id} />
           </section>
 
           <section>
