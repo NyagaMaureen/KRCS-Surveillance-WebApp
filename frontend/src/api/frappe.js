@@ -553,12 +553,17 @@ export async function setRoleCapability(role, capability, enabled) {
   return callMethodPost('/api/method/surveillance.capabilities.set_role_capability', { role, capability, enabled })
 }
 
-export function exportCsv(filename, rows, columns) {
-  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
-  const header = columns.map((c) => escape(c.label)).join(',')
-  const lines = rows.map((row) => columns.map((c) => escape(c.value(row))).join(','))
-  const csv = [header, ...lines].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+// Exports (KRCS 20 Nov 2026): every export is recorded in the Audit Log with its filters, and every file shows them.
+// opts: { page: the app path, title: the page name, filters: [{ label, value }] } — the filters as shown on the page.
+export const filtersLine = (filters) => (filters || []).filter((f) => f && f.value !== '' && f.value != null)
+  .map((f) => `${f.label}: ${f.value}`).join(' · ') || 'None: everything shown'
+
+export async function logExport({ page, title, format, rows = 0, filters = [] }) {
+  return callMethodPost('/api/method/surveillance.exports.log_export',
+    { page, title, format, rows, filters: typeof filters === 'string' ? filters : JSON.stringify((filters || []).filter((f) => f && f.value !== '' && f.value != null)) })
+}
+
+function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -567,6 +572,41 @@ export function exportCsv(filename, rows, columns) {
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
+}
+
+const exportedLine = () => `Exported ${new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+
+/** CSV with the page, filters and time at the top. Recorded in the Audit Log first; resolves when downloaded. */
+export async function exportCsv(filename, rows, columns, opts = {}) {
+  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  await logExport({ page: opts.page || window.location.pathname, title: opts.title || filename, format: 'CSV', rows: rows.length, filters: opts.filters })
+  const head = [escape(opts.title || filename), escape(`Filters: ${filtersLine(opts.filters)}`), escape(`${exportedLine()} · ${rows.length} rows`), '']
+  const header = columns.map((c) => escape(c.label)).join(',')
+  const lines = rows.map((row) => columns.map((c) => escape(c.value(row))).join(','))
+  saveBlob(new Blob(['\ufeff' + [...head, header, ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' }), filename)
+}
+
+/** JSON as { title, filters, exported, rows }. Recorded in the Audit Log first. */
+export async function exportJson(filename, data, opts = {}) {
+  const rows = Array.isArray(data) ? data.length : (data?.rows?.length || 0)
+  await logExport({ page: opts.page || window.location.pathname, title: opts.title || filename, format: 'JSON', rows, filters: opts.filters })
+  const body = { title: opts.title || filename, filters: filtersLine(opts.filters), exported: exportedLine(), data }
+  saveBlob(new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' }), filename)
+}
+
+/** Signals Captured as Excel, made on the server with the filters at the top (and recorded there). */
+export async function exportSignals(fields, filters, filterLabels) {
+  const res = await fetch(`${BASE}/api/method/surveillance.exports.export_signals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken() },
+    body: JSON.stringify({ fields, filters, filters_label: filtersLine(filterLabels) }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(extractErrorMessage(data))
+  }
+  const name = ((res.headers.get('Content-Disposition') || '').match(/filename="?([^";]+)"?/) || [])[1] || 'signals_captured.xlsx'
+  saveBlob(await res.blob(), name)
 }
 
 

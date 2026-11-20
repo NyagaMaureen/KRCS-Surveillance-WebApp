@@ -197,7 +197,12 @@ export default function SurveillanceMap() {
       { label: 'Last reported', value: (a) => a.lastSeen },
       { label: 'Latitude', value: (a) => a.lat },
       { label: 'Longitude', value: (a) => a.lng },
-    ])
+    ], { page: '/surveillance-map', title: 'Surveillance Map', filters: [
+      { label: 'Period', value: `Last ${days} days` }, { label: 'Search', value: search.trim() },
+      { label: 'Disease', value: diseaseFilter ? diseaseOptions.find((d) => d.key === diseaseFilter)?.name || diseaseFilter : '' },
+      { label: 'Severity', value: severityFilter }, { label: 'Status', value: STATUS_OPTIONS.find((s) => s.value === statusFilter)?.label || statusFilter },
+      { label: 'Waiting only', value: waitingOnly ? 'Yes' : '' },
+    ] }).catch((e) => window.alert(e.message || 'Export failed'))
   }
 
   const { stats } = data

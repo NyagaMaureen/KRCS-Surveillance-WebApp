@@ -87,6 +87,12 @@ export default function AuditLog() {
   }
 
   function handleExport() {
+    const filters = [
+      { label: 'Period', value: RANGES.find((r) => r.key === range)?.label }, { label: 'Search', value: search.trim() },
+      { label: 'Category', value: category === 'Auth' ? 'Sign-ins' : category }, { label: 'Role', value: role },
+      { label: 'User', value: user ? users.find(([id]) => id === user)?.[1] || user : '' },
+      { label: 'Sign-ins and sign-outs', value: showLogins ? 'Shown' : 'Hidden' },
+    ]
     exportCsv('audit-log.csv', filtered, [
       { label: 'Time', value: (r) => fmtTime(r.timestamp) },
       { label: 'Category', value: (r) => r.category },
@@ -98,7 +104,7 @@ export default function AuditLog() {
       { label: 'Details', value: (r) => r.details },
       { label: 'Changes', value: (r) => changesText(r.changes) },
       { label: 'AI record', value: (r) => recordText(r.record) },
-    ])
+    ], { page: '/audit-log', title: 'Audit Log', filters }).then(load).catch((e) => setError(e.message || 'Export failed'))
   }
 
   return (
@@ -233,7 +239,7 @@ function Details({ log, onClose }) {
 
         {log.record?.length > 0 && (
           <>
-            <h4 className="mb-2 mt-5 text-sm font-bold text-gray-900">AI output and review</h4>
+            <h4 className="mb-2 mt-5 text-sm font-bold text-gray-900">{log.category === 'Export' ? 'What was exported' : 'AI output and review'}</h4>
             <table className="w-full border-collapse border border-gray-200">
               <tbody>
                 {log.record.map((r) => (

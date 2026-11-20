@@ -118,7 +118,17 @@ def _filters(raw):
 	else:
 		f.scope = "National"
 	f.weeks = _weeks(f)
+	f.text = _filters_text(f)
 	return f
+
+
+def _filters_text(f):
+	"""The filters in words, for the exported files and the Audit Log (KRCS 20 Nov 2026)."""
+	from surveillance.hq_dashboard import CHANNEL_LABEL, _diseases
+	parts = [f"Area: {f.scope}", f"Period: {f.from_d.strftime('%-d %b %Y')} to {f.to_d.strftime('%-d %b %Y')}",
+		f"Disease: {_diseases()[f.disease].disease_name if f.disease and f.disease in _diseases() else (f.disease or 'All')}",
+		f"Channel: {CHANNEL_LABEL.get(f.channel, f.channel) if f.channel else 'All'}"]
+	return " · ".join(parts)
 
 
 def _weeks(f):
@@ -1191,7 +1201,7 @@ def _build(report, filters):
 			"rows": x["rows"]})
 	return r, f, {
 		"report": report, "title": r["title"], "description": r["description"], "filters": r["filters"],
-		"scope": f.scope, "from": str(f.from_d), "to": str(f.to_d),
+		"scope": f.scope, "from": str(f.from_d), "to": str(f.to_d), "filtersText": f.text,
 		"period": f"{f.from_d.strftime('%-d %b %Y')} to {f.to_d.strftime('%-d %b %Y')}",
 		"generatedAt": str(now_datetime())[:16], "generatedBy": frappe.utils.get_fullname(frappe.session.user),
 		"canExport": has_capability(EXPORT),
@@ -1199,9 +1209,9 @@ def _build(report, filters):
 	}
 
 
-def _log(report, action, fmt, filters, scope, rows):
+def _log(report, action, fmt, filters, scope, rows, text=None):
 	try:
-		flt_text = json.dumps({k: v for k, v in _parse(filters).items() if v}, sort_keys=True)[:1000]
+		flt_text = (text or json.dumps({k: v for k, v in _parse(filters).items() if v}, sort_keys=True))[:1000]
 		if action == "Viewed" and frappe.db.exists(RUN_LOG, {"user": frappe.session.user, "report": report, "action": "Viewed",
 				"filters": flt_text, "at": [">=", now_datetime() - timedelta(minutes=SEEN_AGAIN_MINUTES)]}):
 			return
@@ -1251,7 +1261,7 @@ def list_reports():
 def get_report(report, filters=None):
 	"""R41 / R43: one report, summary and detail. POST so the generation is logged (R46)."""
 	_r, f, out = _build(report, filters)
-	_log(report, "Viewed", "Screen", filters, f.scope, len(out["detail"]["rows"]))
+	_log(report, "Viewed", "Screen", filters, f.scope, len(out["detail"]["rows"]), f.text)
 	return out
 
 
@@ -1272,13 +1282,17 @@ def export_report(report, format="xlsx", filters=None, table=None):
 		import csv
 		buf = io.StringIO()
 		w = csv.writer(buf)
+		w.writerow([out["title"]])
+		w.writerow([f"Filters: {f.text}"])
+		w.writerow([f"Exported {str(now_datetime())[:16]} by {frappe.utils.get_fullname(frappe.session.user)}"])
+		w.writerow([])
 		w.writerow([c["label"] for c in cols])
 		for r in rows:
 			w.writerow([r.get(c["key"], "") for c in cols])
 		content, name = buf.getvalue().encode("utf-8-sig"), f"{name}.csv"
 	else:
 		content, name = _xlsx(out), f"{name}.xlsx"
-	_log(report, "Exported", "Excel" if format == "xlsx" else "CSV", filters, f.scope, len(rows))
+	_log(report, "Exported", "Excel" if format == "xlsx" else "CSV", filters, f.scope, len(rows), f.text)
 	frappe.response["filename"] = name
 	frappe.response["filecontent"] = content
 	frappe.response["type"] = "binary"
@@ -1294,7 +1308,8 @@ def _xlsx(out):
 	red = PatternFill("solid", fgColor="EE2435")
 	ws.append([out['title']])
 	ws["A1"].font = Font(bold=True, size=14)
-	for label, value in [("Area", out["scope"]), ("Period", out["period"]), ("Generated", f"{out['generatedAt']} by {out['generatedBy']}")]:
+	for label, value in [("Filters", out.get("filtersText") or ""), ("Area", out["scope"]), ("Period", out["period"]),
+			("Exported", f"{out['generatedAt']} by {out['generatedBy']}")]:
 		ws.append([label, value])
 	if out["summary"].get("inShort"):
 		ws.append([])
@@ -1347,7 +1362,7 @@ def log_export(report, format, filters=None, rows=0):
 	if format not in ("PDF", "JPEG"):
 		frappe.throw("Unknown format.")
 	f = _filters(filters)
-	_log(report, "Exported", format, filters, f.scope, rows)
+	_log(report, "Exported", format, filters, f.scope, rows, f.text)
 	return {"ok": True}
 
 

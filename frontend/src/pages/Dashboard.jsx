@@ -202,7 +202,12 @@ export default function Dashboard() {
       { label: 'Item', value: (r) => r.item },
       { label: 'Value', value: (r) => r.value },
       { label: 'Change / detail', value: (r) => r.change },
-    ])
+    ], { page: '/dashboard', title: 'Dashboard overview', filters: [
+      { label: 'Period', value: TIME_RANGES.find((t) => t.key === range)?.label || range },
+      { label: 'Sub-county', value: area ? areas.find((a) => a.subCounty === area)?.subCountyName || area : 'All' },
+      { label: 'Disease', value: disease || 'All' },
+      { label: 'Trend source', value: TREND_SOURCES.find((t) => t.key === trendSource)?.label || trendSource },
+    ] }).catch((e) => setError(e.message || 'Export failed'))
   }
 
   const sourceInfo = TREND_SOURCES.find((s) => s.key === trendSource)

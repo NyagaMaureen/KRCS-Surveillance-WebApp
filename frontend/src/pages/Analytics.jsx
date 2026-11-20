@@ -5,7 +5,7 @@ import AppShell from '../components/layout/AppShell'
 import ChartCard from '../components/analytics/ChartCard'
 import StatCard from '../components/analytics/StatCard'
 import { CHART_FONT } from '../charts/chartSetup'
-import { getAnalytics, exportCsv } from '../api/frappe'
+import { getAnalytics, exportCsv, exportJson } from '../api/frappe'
 
 const ICONS = { Clock, Sparkles, AlertTriangle, Map }
 const iconFor = (name) => ICONS[name] || Clock
@@ -177,6 +177,11 @@ export default function Analytics() {
       ticks: { color: TICK_COLOR, font: tickFont, backdropColor: 'transparent', stepSize: 25 }, pointLabels: { color: TICK_COLOR, font: tickFont } } },
   }
 
+  const exportFilters = () => [
+    { label: 'Period', value: data ? `${data.from} to ${data.to} (${weeks} weeks)` : `${weeks} weeks` },
+    { label: 'Source', value: SOURCES.find((s) => s.value === source)?.label || source }, { label: 'Disease', value: disease || 'All' },
+  ]
+
   function handleExportCsv() {
     if (!data) return
     const rows = [
@@ -189,16 +194,13 @@ export default function Analytics() {
     exportCsv(`analytics-${data.from}-to-${data.to}.csv`, rows, [
       { label: 'Section', value: (r) => r.section }, { label: 'Item', value: (r) => r.item },
       { label: 'Value', value: (r) => r.value }, { label: 'Detail', value: (r) => r.detail },
-    ])
+    ], { page: '/analytics', title: 'Analytics', filters: exportFilters() }).catch((e) => setError(e.message || 'Export failed'))
   }
 
   function handleExportJson() {
     if (!data) return
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url; link.download = `analytics-${data.from}-to-${data.to}.json`
-    document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url)
+    exportJson(`analytics-${data.from}-to-${data.to}.json`, data, { page: '/analytics', title: 'Analytics', filters: exportFilters() })
+      .catch((e) => setError(e.message || 'Export failed'))
   }
 
   const select = 'border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white'

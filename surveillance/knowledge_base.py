@@ -1666,6 +1666,13 @@ def open_document(name, download=0):
 	doc, f = _readable(name)
 	ext = (doc.extension or "").lower()
 	inline = not cint(download) and ext in INLINE_TYPES
+	if cint(download):   # downloads are recorded in the Audit Log (KRCS 20 Nov 2026)
+		try:
+			from surveillance.exports import record_later
+			record_later(frappe.session.user, f"/knowledge-base/{name}", f"Knowledge base document: {doc.title or name}", "File",
+				f"Version: {doc.get('version') or '—'}")
+		except Exception:  # noqa: BLE001 - never blocks the download
+			frappe.log_error(title="KB download log failed")
 	frappe.response.filename = doc.title or f.file_name   # the name it was uploaded with
 	frappe.response.filecontent = f.get_content()
 	frappe.response.type = "download"

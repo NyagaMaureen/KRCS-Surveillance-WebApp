@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { FileText, Clock, Search as SearchIcon, CheckCircle, Search, Upload, Plus, Eye, Camera } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { useCapabilities } from '../context/CapabilitiesContext'
-import { getList, getCount, exportExcel, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties, getUnitOptions, getMyArea } from '../api/frappe'
+import { getList, getCount, exportSignals, getReferenceLabels, getDiseaseOptions, getDoc, getSubCounties, getUnitOptions, getMyArea } from '../api/frappe'
 import { STATUSES, CHANNELS } from '../data/formOptions'
 
 const PAGE_SIZES = [10, 25, 50]
@@ -150,7 +150,13 @@ export default function Reports() {
     if (subCountyFilter) filters.push(['Case Report', 'sub_county', '=', subCountyFilter])
     if (unitFilter) filters.push(['Case Report', 'community_health_unit', '=', unitFilter])
     if (reporterFilter) filters.push(['Case Report', 'reporter_name', 'like', `%${reporterFilter}%`])
-    exportExcel('Case Report', EXPORT_FIELDS, filters)
+    const shown = [
+      { label: 'Status', value: statusFilter }, { label: 'Region', value: regionFilter ? regions[regionFilter] || regionFilter : '' },
+      { label: 'Disease', value: diseaseFilter ? diseaseName(diseaseFilter) : '' }, { label: 'Channel', value: channelFilter },
+      { label: 'Sub-county', value: subCountyFilter ? subCountyName(subCountyFilter) : '' },
+      { label: 'Health unit', value: unitFilter ? unitName(unitFilter) : '' }, { label: 'Reporter', value: reporterFilter },
+    ]
+    exportSignals(EXPORT_FIELDS, filters, shown).catch((e) => window.alert(e.message || 'Export failed'))
   }
 
   function openView(r) {

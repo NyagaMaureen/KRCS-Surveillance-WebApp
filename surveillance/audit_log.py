@@ -58,14 +58,14 @@ class _Ctx:
 	def role(self, user):
 		if user not in self.roles:
 			self.roles[user] = frappe.db.get_value("User", user, "primary_role") or (
-				"System" if user in ("Administrator", "Guest", None, "") else "—")
+				"System" if user in ("Administrator", "Guest", None, "", "System") else "—")
 		return self.roles[user]
 
 	def name(self, user):
 		if not user:
 			return "System"
 		if user not in self.names:
-			self.names[user] = "System" if user == "Administrator" else (get_fullname(user) or user)
+			self.names[user] = "System" if user == "System" else "Administrator" if user == "Administrator" else (get_fullname(user) or user)
 		return self.names[user]
 
 	def label(self, doctype, field):
@@ -101,7 +101,7 @@ class _Ctx:
 
 
 def _entry(c, name, at, category, action, user, details, link=None, changes=None, record=None, outcome=None):
-	return {"name": name, "timestamp": at, "category": category, "action": action, "user": user or "Administrator",
+	return {"name": name, "timestamp": at, "category": category, "action": action, "user": user or "System",
 		"userName": c.name(user), "role": c.role(user), "details": details, "link": link, "changes": changes or None,
 		"record": record or None, "outcome": outcome}
 
@@ -219,7 +219,8 @@ def get_audit_logs(limit=1000, days=None, include_logins=0):
 				where a.parenttype = 'Surveillance Event' {cond} order by a.`at` desc limit %(limit)s""",
 				{"since": since, "limit": limit}, as_dict=True):
 			act = a.action or "Updated"
-			out.append(_entry(c, f"event-{a.name}", a.at, "AI" if act.startswith("AI ") else "Investigation", act, a.user,
+			out.append(_entry(c, f"event-{a.name}", a.at, "AI" if act.startswith("AI ") else "Investigation", act,
+				"System" if act.startswith("AI review overdue") else a.user,
 				f"{a.parent}" + (f" · {a.title}" if a.title else "") + (f": {_short(a.note, 300)}" if a.note else ""),
 				f"/alerts-signals/{a.parent}"))
 
@@ -238,13 +239,21 @@ def get_audit_logs(limit=1000, days=None, include_logins=0):
 			out.append(_entry(c, f"alertnote-{n.name}", n.created_at, "Alert", action, n.added_by,
 				f"{n.parent} · {n.disease_name or ''}{', ' + n.sub_county if n.sub_county else ''}: {_short(text)}", f"/epi-trends/{n.parent}"))
 
-	# --- Monitoring Reports generated and exported (SRS R46) ---
+	# --- exports from every page, and Monitoring Reports viewed and exported (SRS R46), with their filters ---
 	if exists("Report Run Log"):
 		for g in frappe.get_all("Report Run Log", filters=sf("at"), fields=["name", "report", "report_title", "action", "format",
-				"scope", "rows", "user", "at"], order_by="at desc", limit_page_length=limit):
-			out.append(_entry(c, f"report-{g.name}", g.at, "Monitoring report",
-				f"Report exported ({g.format})" if g.action == "Exported" else "Report viewed", g.user,
-				f"{g.report_title or g.report} · {g.scope or ''} · {g.rows or 0} rows", f"/monitoring-reports?report={g.report}"))
+				"filters", "scope", "rows", "user", "at"], order_by="at desc", limit_page_length=limit):
+			page = (g.report or "").startswith("/")
+			flt = g.filters if g.filters and not g.filters.startswith("{") else (g.scope or "")
+			exported = g.action == "Exported"
+			fmt = "Download" if g.format == "FILE" else g.format
+			record = [{"label": k, "value": v} for k, v in (("Page", g.report_title or g.report),
+				("Format", fmt), ("Filters", flt or "None: everything shown"), ("Rows", str(g.rows or 0)))]
+			out.append(_entry(c, f"report-{g.name}", g.at, "Export" if exported else "Monitoring report",
+				(f"Exported ({fmt})" if exported else "Report viewed"), g.user,
+				f"{g.report_title or g.report} · Filters: {flt or 'none'}" + (f" · {g.rows} rows" if g.rows else ""),
+				g.report if page and not g.report.startswith("/knowledge-base/") else ("/knowledge-base" if page else f"/monitoring-reports?report={g.report}"),
+				record=record if exported else None))
 
 	# --- sign-ins and sign-outs (only when asked for) ---
 	if cint(include_logins):
@@ -295,7 +304,7 @@ def _ai(c, out, since, limit, exists):
 				("Override reason", r.override_reason or "—")]
 			record = [{"label": k, "value": v} for k, v in record]
 			base = f"{r.event} · {r.ai_suggestion_name or 'no suggestion yet'}" + (f" · risk {r.risk_score} {r.risk_level}" if r.risk_score is not None else "")
-			out.append(_entry(c, f"aiout-{r.name}", r.output_on or r.creation, "AI", "AI output", "Administrator",
+			out.append(_entry(c, f"aiout-{r.name}", r.output_on or r.creation, "AI", "AI output", "System",
 				base, f"/alerts-signals/{r.event}", record=record))
 			if r.reviewed_on:
 				action = ("Closed without review" if r.status == "Closed without review"
@@ -315,7 +324,7 @@ def _ai(c, out, since, limit, exists):
 				("Top result", f"{p.top_group} → {p.predicted_disease or 'not a Review Queue disease'}"),
 				("Confidence", _pct(p.top_probability)), ("Top 3", p.top3_diseases or "—"),
 				("Reviewer and action", "Reviewed with the event's AI triage (see its AI output entry)"))]
-			out.append(_entry(c, f"aipred-{p.name}", p.predicted_on, "AI", "AI model prediction", "Administrator",
+			out.append(_entry(c, f"aipred-{p.name}", p.predicted_on, "AI", "AI model prediction", "System",
 				f"{p.case_report} · {p.top_group} {_pct(p.top_probability)} · model {p.model_version or '—'}",
 				f"/reports/{p.case_report}", record=record))
 
@@ -330,7 +339,7 @@ def _ai(c, out, since, limit, exists):
 				("Time", _dt(a.transcribed_on)), ("Data inputs", f"Voice note on {a.parent} (language given: {a.spoken_language or 'not given'})"),
 				("Result", a.transcript_status), ("Language detected", a.transcript_language or "—"),
 				("Reviewer and action", "Officers read the text next to the original audio; nothing is decided from it alone"))]
-			out.append(_entry(c, f"stt-{a.name}", a.transcribed_on, "AI", f"Voice note transcribed ({a.transcript_status})", "Administrator",
+			out.append(_entry(c, f"stt-{a.name}", a.transcribed_on, "AI", f"Voice note transcribed ({a.transcript_status})", "System",
 				f"{a.parent} · {a.transcript_status}" + (f" · {a.transcript_language}" if a.transcript_language else ""),
 				f"/reports/{a.parent}", record=record))
 

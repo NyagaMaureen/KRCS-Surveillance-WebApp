@@ -470,7 +470,7 @@ function printReport(data, charts, w) {
     img{width:100%}table{border-collapse:collapse;width:100%}th{text-align:left;border-bottom:2px solid #EE2435;padding:4px}
     td{border-bottom:1px solid #E5E7EB;padding:4px;vertical-align:top}tr{break-inside:avoid}
   </style></head><body><h1>${esc(data.title)}</h1>
-  <p class="meta">${esc(data.scope)} · ${esc(data.period)} · made ${esc(fmtWhen(data.generatedAt))} by ${esc(data.generatedBy)} · Kenya Red Cross Society</p>
+  <p class="meta">${esc(data.filtersText || `${data.scope} · ${data.period}`)} · made ${esc(fmtWhen(data.generatedAt))} by ${esc(data.generatedBy)} · Kenya Red Cross Society</p>
   ${short}<div class="cards">${cards}</div>${measures}<h2>Charts</h2><div class="charts">${images || '<p>No chart data.</p>'}</div>${detail}</body></html>`)
   w.document.close()
   w.focus()
@@ -501,7 +501,7 @@ async function saveJpeg(data, charts) {
   g.font = font(24, 700)
   g.fillText(data.title, pad, pad + 22)
   g.font = font(14)
-  g.fillText(`${data.scope} · ${data.period} · made ${fmtWhen(data.generatedAt)} by ${data.generatedBy} · Kenya Red Cross Society`, pad, pad + 44)
+  g.fillText(`${data.filtersText || `${data.scope} · ${data.period}`} · made ${fmtWhen(data.generatedAt)} by ${data.generatedBy} · Kenya Red Cross Society`, pad, pad + 44)
   let y = pad + 70
   s.cards.forEach((c, i) => {
     const x = pad + (i % perRow) * (cardW + 16)

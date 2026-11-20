@@ -3,7 +3,7 @@ import { Bar, Line, Pie } from 'react-chartjs-2'
 import { Search, Download, Table, BarChart3, LineChart, PieChart, X, Filter, Loader2, Info } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { CHART_FONT } from '../charts/chartSetup'
-import { getDataExplorerOptions, queryDataExplorer, exportDataExplorer, exportCsv } from '../api/frappe'
+import { getDataExplorerOptions, queryDataExplorer, exportDataExplorer, exportCsv, exportJson } from '../api/frappe'
 
 const CHART_COLORS = ['#EE2435', '#2F80ED', '#F2C94C', '#27AE60', '#8B5CF6', '#EC4899', '#F97316', '#0EA5E9']
 const PAGE_SIZE = 25
@@ -134,19 +134,25 @@ export default function DataExplorer() {
     try {
       const { rows, truncated } = await exportDataExplorer({ ...params, page: 0 })
       const stamp = new Date().toISOString().slice(0, 10)
+      const name = (list, v) => (list || []).find((o) => o.value === v)?.label || v
+      const many = (list, vs) => (vs || []).map((v) => name(list, v)).join(', ')
+      const opts = { page: '/data-explorer', title: `Data Explorer (${dataset === 'reports' ? 'reports' : 'case counts'})`, filters: [
+        { label: 'Search', value: filters.search }, { label: 'Disease', value: many(options?.diseases, filters.diseases) },
+        { label: 'Sub-county', value: many(options?.subCounties, filters.sub_counties) }, { label: 'County', value: name(options?.counties, filters.county) },
+        { label: 'Status', value: many(options?.statuses, filters.statuses) }, { label: 'Channel', value: many(options?.channels, filters.channels) },
+        { label: 'Sources', value: many(options?.sources, filters.sources) },
+        { label: 'From', value: filters.date_from }, { label: 'To', value: filters.date_to },
+        { label: 'Pilot sub-counties only', value: filters.pilot_only ? 'Yes' : 'No' },
+      ] }
       if (kind === 'json') {
-        const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url; a.download = `data-explorer-${dataset}-${stamp}.json`
-        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+        await exportJson(`data-explorer-${dataset}-${stamp}.json`, rows, opts)
       } else {
         const cols = dataset === 'reports'
           ? [['Report ID', 'id'], ['Date', 'date'], ['Disease', 'diseaseName'], ['Sub-county', 'subCounty'], ['County', 'county'],
             ['Location', 'location'], ['Channel', 'channel'], ['Status', 'status'], ['People affected', 'affected'], ['Deaths', 'deaths']]
           : [['Week starting', 'week'], ['Epi week', 'epiWeek'], ['Source', 'sourceLabel'], ['Disease', 'diseaseName'],
             ['Sub-county', 'subCounty'], ['County', 'county'], ['Reports / cases', 'count'], ['People affected', 'affected'], ['Deaths', 'deaths']]
-        exportCsv(`data-explorer-${dataset}-${stamp}.csv`, rows, cols.map(([label, key]) => ({ label, value: (r) => r[key] })))
+        await exportCsv(`data-explorer-${dataset}-${stamp}.csv`, rows, cols.map(([label, key]) => ({ label, value: (r) => r[key] })), opts)
       }
       if (truncated) setError('Export limited to the first 20,000 rows. Narrow the filters to export the rest.')
     } catch (e) {

@@ -782,6 +782,8 @@ export default function ResponseProtocols() {
   }
 
   function exportVisible() {
+    const filters = [{ label: 'Search', value: search.trim() }, { label: 'Disease', value: disease ? diseases.find((d) => d.key === disease)?.name || disease : '' },
+      { label: 'Status', value: status || 'All' }]
     exportCsv('response-protocols.csv', visible, [
       { label: 'Title', value: (p) => p.title },
       { label: 'Disease', value: (p) => p.diseaseName },
@@ -791,7 +793,7 @@ export default function ResponseProtocols() {
       { label: 'Owner', value: (p) => p.owner },
       { label: 'Updated', value: (p) => p.updated },
       { label: 'Steps', value: (p) => (p.steps || []).map((s) => `${s.n}. ${s.step}`).join(' | ') },
-    ])
+    ], { page: '/response-protocols', title: 'Response Protocols', filters }).catch((e) => setActionError(e.message || 'Export failed'))
   }
 
   const chips = [['', 'All'], ['Approved', 'Approved'], ...(canManage ? [['Draft', 'Draft'], ['Retired', 'Retired']] : [])]

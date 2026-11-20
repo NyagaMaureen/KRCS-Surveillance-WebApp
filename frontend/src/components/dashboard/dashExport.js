@@ -1,10 +1,10 @@
 import { createContext } from 'react'
 import { Chart } from 'chart.js'
-import { downloadDashboardExcel } from '../../api/frappe'
+import { downloadDashboardExcel, logExport } from '../../api/frappe'
 
 // Dashboard downloads (KRCS, 17 Nov 2026): each chart or table as a PNG, and the whole tab as PNG, PDF or Excel.
 // Every download carries who downloaded it, when, and with which filters. Anyone who can see the dashboard can
-// download; downloads are not recorded in the Audit Log.
+// download; every download is recorded in the Audit Log with its filters (KRCS 20 Nov 2026).
 //
 // Panels register themselves in DashExportContext (title, note, the DOM node, wide or not); the cards of the tab too.
 // What a panel holds is read when it is downloaded: a chart from its Chart.js canvas, a table or list from the page.
@@ -235,8 +235,12 @@ const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
 
 // ---------- downloads ----------
 
+const record = (meta, format, title, rows = 0) => logExport({ page: window.location.pathname, title: `${meta.dashboard} · ${meta.tab}${title ? ` · ${title}` : ''}`,
+  format, rows, filters: meta.filters || 'None: everything shown' })
+
 /** One chart or table as a PNG, with the footer. */
 export async function downloadPanel(entry, meta) {
+  await record(meta, 'PNG', entry.title)
   const w = 1000
   const body = panelCanvas(entry, w)
   const canvas = compose(w, null, [{ canvas: body, height: body.height }], meta, whenNow())
@@ -271,6 +275,7 @@ function tabCanvases(panels, cards, w) {
 
 /** The whole tab as one PNG: cards, every chart and table, the footer. */
 export async function downloadTabPng(panels, cards, meta) {
+  await record(meta, 'PNG')
   const w = 1400
   const canvas = compose(w, { title: `${meta.dashboard} · ${meta.tab}`, sub: meta.filters }, tabCanvases(panels, cards, w), meta, whenNow())
   await save(canvas, `${fileName(meta.dashboard, meta.tab, stamp())}.png`)
@@ -280,6 +285,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 
 /** The whole tab in a print window: save it as PDF from there. win: opened by the click (pop-up rules). */
 export function printTab(win, panels, cards, meta) {
+  record(meta, 'PDF').catch(() => {})
   const when = whenNow()
   const cardHtml = cards.map((c) => `<div class="card"><b>${esc(c.label)}</b><span>${esc(typeof c.value === 'number' ? c.value.toLocaleString() : c.value)}</span><i>${esc(c.note || '')}</i></div>`).join('')
   const imgs = panels.map((e) => `<figure class="${e.wide ? 'wide' : ''}"><img src="${panelCanvas(e, e.wide ? 1400 : 700).toDataURL('image/png')}" /></figure>`).join('')
@@ -308,6 +314,7 @@ export async function downloadTabExcel(panels, cards, meta) {
     columns: ['Measure', 'Value', 'Note'],
     rows: cards.map((c) => [c.label, typeof c.value === 'number' ? c.value : String(c.value ?? ''), c.note || '']),
   }, ...panels.map((e) => ({ name: e.title, ...panelData(e.node.current) }))]
+  await record(meta, 'Excel', null, sheets.reduce((n, s) => n + (s.rows?.length || 0), 0))
   await downloadDashboardExcel({
     title: `${meta.dashboard} · ${meta.tab}`,
     meta: footerLines(meta, when),
