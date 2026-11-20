@@ -1,8 +1,9 @@
-"""Background jobs: answering messages, attaching media to reports, desk alerts and escalations.
+"""Background jobs: answering messages, attaching media to reports, desk alerts, CBS write-back and escalations.
 
 Messages from one number are answered one at a time and in order: the webhook appends each message
 to that number's inbox (a Redis list) and enqueues process_inbox; whichever worker holds the number's
-lock empties the inbox, so two quick taps never race on the same session.
+lock empties the inbox, so two quick taps never race on the same session. If the lock is held by a worker
+that has died, it expires after LOCK_SECONDS; one job per number waits that long so the messages still get an answer.
 Needs the background workers (bench worker) and Redis to be running.
 """
 
@@ -17,16 +18,17 @@ from frappe.utils.password import get_encryption_key
 from surveillance import chatbot_log
 from surveillance.whatsapp import data, sessions
 from surveillance.whatsapp.chatbot import ChatbotClient
-from surveillance.whatsapp.client import MediaTooLarge, WhatsAppClient
+from surveillance.whatsapp.client import MediaTooLarge, WhatsAppClient, WhatsAppError
 from surveillance.whatsapp.content import T
 from surveillance.whatsapp.conversation import MEDIA_TYPES, AttrDict, format_phone, handle
 from surveillance.whatsapp.extract import ExtractionClient
-from surveillance.whatsapp.messages import text, validate
+from surveillance.whatsapp.messages import as_text, sendable, text
 from surveillance.whatsapp.redact import redact
 from surveillance.whatsapp.transcribe import TranscriptionClient
 
 INBOX = "whatsapp:inbox:{}"
 LOCK = "whatsapp:lock:{}"
+WAITER = "whatsapp:waiter:{}"
 LOCK_SECONDS = 120  # longer than one message can take (chatbot: 2 tries x timeout)
 DAY = 24 * 3600
 
@@ -136,17 +138,54 @@ def process_inbox(phone):
 	while frappe.cache.llen(inbox):
 		# SET NX EX is the atomic lock; `lock` is site-prefixed by make_key, so sites don't share it.
 		if not frappe.cache.set(lock, 1, nx=True, ex=LOCK_SECONDS):  # nosemgrep
-			return  # another worker is answering this number and will take these messages too
+			if not wait_for_lock(phone, inbox, lock):
+				return  # the worker holding the lock takes these messages too
+			continue
 		try:
 			while raw := frappe.cache.lpop(inbox):
 				frappe.cache.expire(lock, LOCK_SECONDS)
+				ev = json.loads(raw)
 				try:
-					process_event(json.loads(raw))
+					process_event(ev)
 				except Exception:
 					frappe.db.rollback()
 					frappe.log_error(title="WhatsApp message failed")
+					tell_failed(ev)
 		finally:
 			frappe.cache.delete(lock)
+
+
+def wait_for_lock(phone, inbox, lock, poll=2):
+	"""Another worker holds this number's lock. A live one empties the inbox within seconds of a message arriving;
+	one that died leaves the lock until it expires, and without a job waiting the messages would sit there until
+	the person wrote again. One job per number waits. True: the lock is free and messages are left."""
+	waiter = frappe.cache.make_key(WAITER.format(phone))
+	if not frappe.cache.set(waiter, 1, nx=True, ex=LOCK_SECONDS + 30):  # nosemgrep
+		return False
+	try:
+		deadline = time.monotonic() + LOCK_SECONDS + 5
+		while time.monotonic() < deadline:
+			if not frappe.cache.llen(inbox):
+				return False
+			if frappe.cache.get(lock) is None:  # raw get: `lock` already carries the site prefix
+				return True
+			time.sleep(poll)
+		logger().warning(f"inbox lock for {phone} still held after {LOCK_SECONDS}s")
+		return False
+	finally:
+		frappe.cache.delete(waiter)
+
+
+def tell_failed(ev):
+	"""process_event failed outside the conversation (which answers its own errors), so nothing was sent."""
+	try:
+		lang = sessions.load(ev["from"]).lang
+	except Exception:
+		lang = None
+	try:
+		whatsapp_client().send(ev["from"], text((T.get(lang) or T["en"])["errorGeneric"]))
+	except Exception:
+		frappe.log_error(title="WhatsApp reply could not be sent")
 
 
 def process_event(ev):
@@ -163,15 +202,30 @@ def process_event(ev):
 	ctx.message_id = ev.get("id")   # becomes the report's client_ref, so a redelivered message never creates a second report
 	replies = handle(session, ev["input"], ctx)
 	sessions.save(session)
+	send_replies(wa, ev["from"], replies, (T.get(session.lang) or T["en"])["typeNumber"])
+
+
+def send_replies(wa, to, replies, hint):
+	"""In order. A menu Meta refuses goes again as numbered text; if a message can't be sent at all the rest
+	are not sent either, since they would make no sense without it."""
 	for msg in replies:
-		problems = validate(msg)
-		if problems:
-			logger().warning(f"message over WhatsApp limits: {'; '.join(problems)}")
-		try:
-			wa.send(ev["from"], msg)
-		except Exception:
-			frappe.log_error(title="WhatsApp reply could not be sent")
-			break
+		for part in sendable(msg, hint=hint):
+			try:
+				wa.send(to, part)
+			except WhatsAppError:
+				if part["kind"] not in ("buttons", "list"):
+					frappe.log_error(title="WhatsApp reply could not be sent")
+					return
+				frappe.log_error(title="WhatsApp menu refused, sent as text")
+				try:
+					for t in as_text(part, hint=hint):
+						wa.send(to, t)
+				except Exception:
+					frappe.log_error(title="WhatsApp reply could not be sent")
+					return
+			except Exception:
+				frappe.log_error(title="WhatsApp reply could not be sent")
+				return
 
 
 def make_context(st):

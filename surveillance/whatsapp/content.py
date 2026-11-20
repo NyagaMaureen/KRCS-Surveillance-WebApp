@@ -391,6 +391,7 @@ T = {
 		"invalid": "Sorry, I didn't understand that. Please choose one of the options, or type *menu*.",
 		"emergency": f"If someone's life is in danger, call *999* or *112* now. KRCS toll-free: *{HOTLINE}* _(free, 24 hours)_.",
 		"errorGeneric": f"Sorry, something went wrong on our side. Type *menu* to start again, or call *{HOTLINE}*.",
+		"typeNumber": "Reply with the number of your choice.",
 		"welcome": "*Welcome to Kenya Red Cross Society*\n\nI'm the KRCS Health Surveillance & Community Alert Assistant.\n\n"
 		"_Serving both authorised health workers and community members across Kenya._\n\nPlease choose an option:",
 		"roleCommunity": "Community member",
@@ -620,6 +621,7 @@ T = {
 		"invalid": "Samahani, sijaelewa. Tafadhali chagua mojawapo ya chaguo, au andika *menyu*.",
 		"emergency": f"Ikiwa maisha ya mtu yako hatarini, piga *999* au *112* sasa. Nambari ya bure ya KRCS: *{HOTLINE}* _(bure, saa 24)_.",
 		"errorGeneric": f"Samahani, kuna hitilafu upande wetu. Andika *menyu* kuanza upya, au piga *{HOTLINE}*.",
+		"typeNumber": "Jibu kwa namba ya chaguo lako.",
 		"welcome": "*Karibu Kenya Red Cross Society*\n\nMimi ni Msaidizi wa Ufuatiliaji wa Afya na Tahadhari za Jamii wa KRCS.\n\n"
 		"_Nikihudumia wahudumu wa afya walioidhinishwa na wanajamii kote Kenya._\n\nTafadhali chagua:",
 		"roleCommunity": "Mwanajamii",

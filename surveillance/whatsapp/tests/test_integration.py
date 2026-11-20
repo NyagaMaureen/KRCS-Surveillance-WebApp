@@ -19,7 +19,7 @@ from werkzeug.wrappers import Request
 from surveillance import chatbot_log
 from surveillance.whatsapp import data, jobs, retention, sessions, setup, webhook
 from surveillance.whatsapp.redact import pseudonym
-from surveillance.whatsapp.client import MediaTooLarge
+from surveillance.whatsapp.client import MediaTooLarge, WhatsAppError
 from surveillance.whatsapp.content import PRIVACY_VERSION
 from surveillance.whatsapp.conversation import AttrDict, new_session
 
@@ -34,6 +34,11 @@ QUESTION_FOR_DESK_FIXED_TEXT = (
 	"Please contact this person directly on the number above."
 )
 DISEASE = "wa-test-disease"
+
+
+def queue_hi(message_id):
+	ev = {"id": message_id, "from": PHONE, "input": {"type": "text", "text": "hi"}}
+	frappe.cache.rpush(jobs.INBOX.format(PHONE), json.dumps(ev))
 
 
 class FakeWhatsApp:
@@ -207,6 +212,52 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertEqual(self.wa.sent[0][1]["header"], "Welcome to Kenya Red Cross Society")
 		self.assertIn("choose your preferred language", self.wa.sent[-1][1]["body"])
 		self.assertEqual(sessions.load(PHONE).state, "lang")
+
+	def test_menu_refused_by_meta_is_sent_again_as_numbered_text(self):
+		refused = []
+
+		def send(to, msg):
+			if msg["kind"] in ("buttons", "list") and not refused:
+				refused.append(msg)
+				raise WhatsAppError("WhatsApp API 400 (code 131009): Parameter value is not valid")
+			self.wa.sent.append((to, msg))
+			return {}
+
+		with patch.object(self.wa, "send", side_effect=send):
+			self.receive({"type": "text", "text": "hi"})
+		self.assertTrue(refused)
+		self.assertTrue(any("\n1. " in m.get("body", "") for _, m in self.wa.sent))
+		self.receive({"type": "text", "text": "1"})  # the typed number picks the first option shown
+		self.assertNotEqual(sessions.load(PHONE).state, "welcome")
+
+	def test_failure_outside_the_conversation_still_gets_an_answer(self):
+		queue_hi("m1")
+		# The job rolls back after a failure; here that would undo the class fixtures.
+		with (
+			patch.object(jobs, "make_context", side_effect=RuntimeError("settings broken")),
+			patch("frappe.db.rollback"),
+		):
+			jobs.process_inbox(PHONE)
+		self.assertIn("something went wrong", self.wa.sent[-1][1]["body"])
+
+	def test_messages_behind_a_stale_lock_are_answered(self):
+		lock = frappe.cache.make_key(jobs.LOCK.format(PHONE))
+		frappe.cache.set(lock, 1, ex=60)  # left by a worker that died
+		queue_hi("m1")
+		with patch.object(jobs.time, "sleep", side_effect=lambda _: frappe.cache.delete(lock)):
+			jobs.process_inbox(PHONE)
+		self.assertEqual(frappe.cache.llen(jobs.INBOX.format(PHONE)), 0)
+		self.assertTrue(self.wa.sent)
+		# A second job for the same number doesn't wait while one already does.
+		frappe.cache.set(lock, 1, ex=60)
+		frappe.cache.set(frappe.cache.make_key(jobs.WAITER.format(PHONE)), 1, ex=60)
+		queue_hi("m2")
+		with patch.object(jobs.time, "sleep") as sleep:
+			jobs.process_inbox(PHONE)
+		sleep.assert_not_called()
+		for k in (lock, frappe.cache.make_key(jobs.WAITER.format(PHONE))):
+			frappe.cache.delete(k)
+		frappe.cache.delete_value(jobs.INBOX.format(PHONE))
 
 	def test_staff_matched_by_mobile_number_in_any_format(self):
 		st = data.find_staff(STAFF_PHONE)

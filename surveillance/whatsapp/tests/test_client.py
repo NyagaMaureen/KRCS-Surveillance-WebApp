@@ -15,7 +15,7 @@ from surveillance.whatsapp.client import (
 	to_payload,
 	verify_signature,
 )
-from surveillance.whatsapp.messages import menu
+from surveillance.whatsapp.messages import LIMITS, as_text, menu, sendable, validate
 
 
 def wrap(message):
@@ -189,3 +189,35 @@ class TestClient(FrappeTestCase):
 		self.assertFalse(verify_signature(body, sig, "other"))
 		self.assertFalse(verify_signature(body, None, "secret"))
 		self.assertFalse(verify_signature(body, sig, None))  # no App Secret set: nothing is accepted
+
+
+class TestMessageLimits(FrappeTestCase):
+	def test_long_titles_and_body_are_cut_to_fit(self):
+		rows = [
+			{"id": f"r{i}", "title": f"A very long option title number {i}", "desc": "d" * 100}
+			for i in range(4)
+		]
+		msg = menu("*Header*\n\n" + "x" * 1100, rows)
+		parts = sendable(msg)
+		self.assertEqual([p["kind"] for p in parts], ["text", "list"])
+		self.assertEqual(parts[0]["body"], "x" * 1100)
+		self.assertEqual(validate(parts[1]), [])
+		row = parts[1]["sections"][0]["rows"][0]
+		self.assertEqual((len(row["title"]), row["title"][-1], row["id"]), (LIMITS["row_title"], "…", "r0"))
+
+	def test_what_still_does_not_fit_goes_as_numbered_text(self):
+		rows = [{"id": f"r{i}", "title": f"Option {i}"} for i in range(12)]  # more rows than a list takes
+		parts = sendable(menu("Pick one", rows), hint="Type a number.")
+		self.assertEqual([p["kind"] for p in parts], ["text"])
+		self.assertIn("1. Option 0\n2. Option 1", parts[0]["body"])
+		self.assertTrue(parts[0]["body"].endswith("_Type a number._"))
+
+	def test_buttons_as_text_and_long_text_split(self):
+		msg = menu("*Report*\n\nIs this right?", [{"id": "yes", "title": "Yes"}, {"id": "no", "title": "No"}])
+		self.assertEqual(
+			as_text(msg)[0]["body"],
+			"*Report*\n\nIs this right?\n\n1. Yes\n2. No\n\n_Reply with the number of your choice._",
+		)
+		self.assertEqual(sendable(msg), [msg])
+		long = sendable({"kind": "text", "body": "y" * 5000})
+		self.assertEqual([len(p["body"]) for p in long], [4096, 904])
