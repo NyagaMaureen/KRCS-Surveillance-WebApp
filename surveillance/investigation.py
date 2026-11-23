@@ -11,7 +11,8 @@ Steps shown to the officer:
   5 Decision             confirm, discard or escalate, with a reason (human sign-off)
   6 Response and close   protocol steps with phase "Response", closing summary, feedback to field reporters
 
-Statuses: New -> Verifying -> Verified (Confirm and save) -> Investigating ("In the field") -> Confirmed / Escalated -> Closed   (Discarded at any open step)
+Statuses (KRCS 20 Nov 2026): New -> Verified (Confirm and save) -> Investigating ("In the field") -> Confirmed / Escalated -> Closed.
+Why it closed is the outcome: Responded, Not confirmed, Discarded (at verification or AI triage) or Referred (non-priority disease).
 
 The verification suggestion is rule-based and shows its reasons; it never decides. The officer decides.
 Every answer, step outcome, upload and decision is written to the event timeline.
@@ -356,7 +357,7 @@ def gates(doc):
 		"openResponseSteps": resp_open,
 		"handedOverSteps": sorted(n for _, n in handed),
 		"keyCheck": key_check(doc.get("verification") or []),
-		"canStartInvestigation": doc.status in ("Verifying", "Verified") and not unanswered and key_check(doc.get("verification") or [])["met"],
+		"canStartInvestigation": doc.status in ("New", "Verified") and not unanswered and key_check(doc.get("verification") or [])["met"],
 		"canConfirm": doc.status == "Investigating" and not inv_open,
 		"canClose": doc.status in ("Confirmed", "Escalated") and not resp_open,
 	}
@@ -366,6 +367,8 @@ def check_gate(doc, action):
 	"""Throw a clear message if an action is not allowed yet."""
 	ensure_investigation(doc)
 	g = gates(doc)
+	if action == "investigate" and not doc.get("verification_on") and needs_cha(doc):
+		frappe.throw(_("The CHA verifies this signal first (step 2: Confirm and save)."))
 	if action == "investigate" and g["unansweredQuestions"]:
 		frappe.throw(_("Answer all the verification questions first. Missing: {0}").format(
 			", ".join(str(n) for n in g["unansweredQuestions"])))
@@ -399,34 +402,82 @@ def after_status(doc, action, note):
 		doc.closing_summary = doc.closed_by = doc.closed_on = None
 
 
-REPORT_STATUS = {"Verifying": "Investigating", "Verified": "Investigating", "Investigating": "Investigating", "Confirmed": "Investigating",
-	"Escalated": "Investigating", "Closed": "Closed", "Discarded": "Closed", "New": "Submitted"}
+# a field report always shows its event's status (KRCS 20 Nov 2026); Submitted reads as New
+REPORT_STATUS = {"New": "Submitted", "Verified": "Verified", "Investigating": "Investigating", "Confirmed": "Confirmed",
+	"Escalated": "Escalated", "Closed": "Closed"}
+
+
+def needs_cha(doc):
+	"""Field and CBS signals are verified by the CHA before AI triage; facility (EMR) data is not (KRCS 23 Nov 2026)."""
+	return bool(frappe.db.exists("Surveillance Signal", {"event": doc.name, "source": ["in", ["Field", "CBS"]]}))
+
+
+# Feedback on every outcome (KRCS 23 Nov 2026), in-app only. Reporters (CHPs) never see the disease; the CHAs of the
+# sub-county get the same news about the event. Nobody is told about their own action. Officer notes are not sent.
+REPORTER_NEWS = {
+	"verified": "was checked by the CHA and sent to the surveillance officer",
+	"investigate": "is being followed up in the field by the surveillance team",
+	"confirm": "was confirmed by the public health team, who are responding",
+	"escalate": "was sent to the county health team",
+	"discard": "was checked and closed",
+	"close_unconfirmed": "was investigated: no outbreak was found, and it is closed",
+	"close": "was investigated and the response is complete",
+	"refer": "was checked: the patient is being referred to a health facility",
+}
+CHA_NEWS = {
+	"verified": "it was verified and sent to the surveillance officer for AI triage",
+	"investigate": "the officer started the field investigation",
+	"confirm": "the officer confirmed the event; the response has started",
+	"escalate": "the officer escalated it to the county health team",
+	"discard": "it was discarded",
+	"close_unconfirmed": "it was investigated and closed: no outbreak was found",
+	"close": "it is closed: the response is complete",
+	"refer": "the patient is being referred to a health facility by a CHP; the case is closed",
+}
 
 
 def sync_reports(doc, action, note):
-	"""Keep the field Case Reports in step with the event and send in-app feedback to their reporters.
+	"""Keep the field Case Reports in step with the event and tell the reporters and CHAs what happened.
 	CBS reporters cannot be contacted: we do not store their phone numbers."""
 	refs = frappe.get_all("Surveillance Signal", filters={"event": doc.name, "source": "Field"}, pluck="ref")
 	status = REPORT_STATUS.get(doc.status)
+	told = set()
 	for ref in refs:
 		if not frappe.db.exists("Case Report", ref):
 			continue
 		if status:
 			frappe.db.set_value("Case Report", ref, "status", status, update_modified=False)
-		if action in ("close", "discard", "close_unconfirmed"):
-			_feedback(ref, doc, action, note)
+		if action in REPORTER_NEWS:
+			told |= _feedback(ref, doc, action)
+	if action in CHA_NEWS:
+		_tell_chas(doc, action, told)
 
 
-def _feedback(ref, doc, action, note):
+def _notify(user, subject, doctype, name):
+	frappe.get_doc({"doctype": "Notification Log", "for_user": user, "type": "Alert",
+		"document_type": doctype, "document_name": name, "subject": subject[:140]}).insert(ignore_permissions=True)
+
+
+def _feedback(ref, doc, action):
 	reporter = frappe.db.get_value("Case Report", ref, "reported_by") or frappe.db.get_value("Case Report", ref, "owner")
-	if not reporter or reporter in ("Administrator", "Guest") or not frappe.db.exists("User", reporter):
+	if not reporter or reporter in ("Administrator", "Guest", frappe.session.user) or not frappe.db.exists("User", reporter):
+		return set()
+	# no disease named (KRCS 19 Nov 2026)
+	_notify(reporter, f"Your report {ref} {REPORTER_NEWS[action]}. Thank you for reporting.", "Case Report", ref)
+	return {reporter}
+
+
+def _tell_chas(doc, action, already=()):
+	try:
+		from surveillance.notifications import _chas, sub_county_users
+		chas = [u.name for u in _chas(sub_county_users(doc.sub_county, doc.name))]
+	except Exception:  # noqa: BLE001 - feedback never blocks the officer
 		return
-	outcome = ("was checked and closed" if action in ("discard", "close_unconfirmed")
-		else "was investigated and the response is complete")
-	subject = f"Your report {ref} {outcome}. Thank you for reporting."   # no disease named (KRCS 19 Nov 2026)
-	frappe.get_doc({"doctype": "Notification Log", "for_user": reporter, "type": "Alert",
-		"document_type": "Case Report", "document_name": ref, "subject": subject}).insert(ignore_permissions=True)
-	# officer notes are not sent: they may hold details the reporter should not receive by email
+	what = doc.disease_name or "Signal"
+	for u in chas:
+		if u in already or u == frappe.session.user:
+			continue
+		_notify(u, f"{doc.name} ({what}, {doc.sub_county or 'location missing'}): {CHA_NEWS[action]}.", "Surveillance Event", doc.name)
 
 
 # ---------- API ----------
@@ -528,7 +579,7 @@ def answer_question(event, question_no, answer, expected=None):
 	"""expected (optional): the answer the app last saw; a different answer on the server is refused with 409.
 	The CHA answers the Verification questions; the disease's own questions are the officer's."""
 	doc = _load_verify(event)
-	if doc.status not in ("New", "Verifying", "Verified", "Investigating"):
+	if doc.status not in ("New", "Verified", "Investigating"):
 		frappe.throw(_("Verification answers can only change while the event is open for verification."))
 	if answer not in ANSWERS:
 		frappe.throw(_("Answer Yes or No."))
@@ -551,8 +602,7 @@ def answer_question(event, question_no, answer, expected=None):
 	if row.answer == answer:
 		return _shape(doc)
 	row.answer, row.answered_by, row.answered_on = answer, frappe.session.user, now_datetime()
-	if doc.status == "New":
-		doc.status = "Verifying"
+	if doc.status == "New" and not any(a.action == "Verification started" for a in doc.actions):
 		_log(doc, "Verification started")
 	_log(doc, "Verification answer", f"{row.question.split('?')[0]}? {answer}")
 	doc.save(ignore_permissions=True)
@@ -563,7 +613,7 @@ def answer_question(event, question_no, answer, expected=None):
 def set_step_outcome(event, step_no, outcome=None, reason=None, expected=None):
 	"""Record Done / Not done / Not applicable on one protocol step. Not done needs a reason. Empty outcome clears it."""
 	doc = _load(event, step=(4, 6))
-	if doc.status in ("Discarded", "Closed"):
+	if doc.status == "Closed":
 		frappe.throw(_("Reopen the event to change its steps."))
 	ensure_investigation(doc)
 	row = next((s for s in doc.checklist if cint(s.step_no) == cint(step_no)), None)
@@ -687,7 +737,7 @@ def check_report(event, signal, reached=None, meets_case_definition=None, note=N
 	"""Verify ONE report: was its reporter reached, and does the case meet the case definition?
 	reached: Yes | No.  meets_case_definition: Yes | No | Not sure.  The note goes to the event timeline."""
 	doc = _load(event, step=2)
-	if doc.status not in ("New", "Verifying", "Verified", "Investigating"):
+	if doc.status not in ("New", "Verified", "Investigating"):
 		frappe.throw(_("Reports can only be checked while the event is being verified or investigated."))
 	sig = frappe.db.get_value("Surveillance Signal", signal, ["name", "event", "source", "ref"], as_dict=True)
 	if not sig or sig.event != doc.name:
@@ -699,8 +749,7 @@ def check_report(event, signal, reached=None, meets_case_definition=None, note=N
 	frappe.db.set_value("Surveillance Signal", sig.name, {"check_reached": reached, "check_case_definition": meets,
 		"check_status": status, "checked_by": frappe.session.user, "checked_on": now_datetime()}, update_modified=False)
 	ensure_investigation(doc)
-	if doc.status == "New":
-		doc.status = "Verifying"
+	if doc.status == "New" and not any(a.action == "Verification started" for a in doc.actions):
 		_log(doc, "Verification started")
 	_log(doc, f"Report checked: {status}", f"{sig.source} {sig.ref}. Reporter reached: {reached or '-'}; "
 		f"meets case definition: {meets or '-'}" + (f". {note.strip()}" if (note or "").strip() else ""))

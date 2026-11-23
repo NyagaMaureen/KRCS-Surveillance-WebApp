@@ -11,10 +11,11 @@ function withCurrentValue(list, value) {
   return value && !list.includes(value) ? [...list, value] : list
 }
 
-const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-700', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500' }
+const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-700', Linked: 'bg-amber-50 text-amber-700', Verified: 'bg-emerald-50 text-emerald-700', Reviewed: 'bg-gray-100 text-gray-700', Investigating: 'bg-blue-50 text-blue-700', Confirmed: 'bg-sky-50 text-sky-800', Escalated: 'bg-red-50 text-red-700', Closed: 'bg-gray-100 text-gray-700' }
 const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-700', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'
-const STATUS_LABEL = { Submitted: 'Awaiting review', Reviewed: 'Recorded', 'Not for review': 'Recorded', Linked: 'Awaiting review' }
+// a report shows its event's status (KRCS 20 Nov 2026): Submitted reads New
+const STATUS_LABEL = { Submitted: 'New', Reviewed: 'Recorded', 'Not for review': 'Recorded', Linked: 'New', Investigating: 'In the field' }
 const statusLabel = (s) => STATUS_LABEL[s] || s   // stored values stay as they are; this is what people see
 const channelColor = (c) => CHANNEL_COLORS[c] || 'bg-gray-100 text-gray-600'
 const symptomTags = (s) => (s || '').split(',').map((t) => t.trim()).filter(Boolean)
@@ -87,7 +88,7 @@ function Cell({ label, wide = false, span = false, children }) {
   )
 }
 
-const OPEN_EVENT = ['New', 'Verifying', 'Verified', 'Investigating', 'Confirmed', 'Escalated']
+const OPEN_EVENT = ['New', 'Verified', 'Investigating', 'Confirmed', 'Escalated']
 
 // Every update made on Signals Captured: when, who, and each field from -> to (Case Report Change rows)
 function UpdateHistory({ changes }) {

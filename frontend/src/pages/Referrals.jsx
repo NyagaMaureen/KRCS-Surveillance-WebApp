@@ -76,7 +76,7 @@ export default function Referrals() {
                         <p className="font-medium text-gray-900">{t.people ? `${t.people} ${t.people === 1 ? 'person' : 'people'} referred` : patientLabel(t)}</p>
                         <p className="text-xs text-gray-500 mt-0.5">{[t.ref, t.selfMade ? '' : `asked by ${t.assignedBy}`].filter(Boolean).join(' · ')}</p>
                       </td>
-                      <td className="px-4 py-3 text-gray-900">{t.facility || '—'}</td>
+                      <td className="px-4 py-3 text-gray-900">{t.facility || (isOpen(t) ? 'You choose the nearest one' : '—')}</td>
                       <td className="px-4 py-3 min-w-[220px] text-gray-900">
                         <p className="whitespace-pre-wrap">{t.reason || t.instructions || '—'}</p>
                         {t.outcome && <p className="text-xs text-gray-600 mt-1">Note: {t.outcome}</p>}
@@ -113,21 +113,27 @@ export default function Referrals() {
   )
 }
 
+// The CHP updates the referral (KRCS 20 Nov 2026): Referred (to the nearest facility they choose), Reached the
+// facility or Did not reach
 const UPDATE_CHOICES = [
-  { status: 'In progress', label: 'On the way' },
-  { status: 'Done', label: 'Reached facility' },
-  { status: 'Could not complete', label: 'Not reached' },
+  { status: 'In progress', label: 'Referred' },
+  { status: 'Done', label: 'Reached the facility' },
+  { status: 'Could not complete', label: 'Did not reach' },
 ]
 
 function ReferralUpdate({ task, onCancel, onSaved, onError }) {
-  const [status, setStatus] = useState('Done')
+  const [status, setStatus] = useState(task.status === 'Assigned' ? 'In progress' : 'Done')
   const [note, setNote] = useState('')
+  const [facility, setFacility] = useState(task.facility || '')
+  const [facilities, setFacilities] = useState(null)
   const [saving, setSaving] = useState(false)
+  useEffect(() => { if (!task.facility) getReferralFacilities(true).then(setFacilities).catch(() => setFacilities([])) }, [task.facility])
   const needsNote = status === 'Could not complete'
+  const needsFacility = !task.facility && status !== 'Could not complete'
   async function save() {
     setSaving(true)
     try {
-      await updateEventTask(task.id, { status, outcome: note })
+      await updateEventTask(task.id, { status, outcome: note, facility: needsFacility ? facility.trim() : '' })
       onSaved()
     } catch (e) {
       onError(e.message || 'Could not update')
@@ -145,11 +151,22 @@ function ReferralUpdate({ task, onCancel, onSaved, onError }) {
           </button>
         ))}
       </div>
+      {needsFacility && (
+        <label className="block">
+          <span className="block text-sm font-bold text-gray-900 mb-1.5">Health facility (the nearest one)</span>
+          {facilities && facilities.length > 0 ? (
+            <select value={facility} onChange={(e) => setFacility(e.target.value)} className={INPUT}>
+              <option value="">Choose the facility</option>
+              {facilities.map((x) => <option key={x.name} value={x.name}>{x.name}{x.subCounty ? ` · ${x.subCounty}` : ''}</option>)}
+            </select>
+          ) : <input value={facility} onChange={(e) => setFacility(e.target.value)} placeholder="Facility name" className={INPUT} />}
+        </label>
+      )}
       <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} className={TEXTAREA}
         placeholder={needsNote ? 'Why did the patient not reach the facility? (required)' : 'Note (optional), e.g. seen by a clinician, sample taken'} />
       <p className="text-xs text-gray-400">Do not write names or phone numbers.</p>
       <div className="flex gap-2">
-        <button type="button" onClick={save} disabled={saving || (needsNote && !note.trim())} className={BTN_PRIMARY}>{saving ? 'Saving…' : 'Save'}</button>
+        <button type="button" onClick={save} disabled={saving || (needsNote && !note.trim()) || (needsFacility && !facility.trim())} className={BTN_PRIMARY}>{saving ? 'Saving…' : 'Save'}</button>
         <button type="button" onClick={onCancel} className={BTN_SECONDARY}>Cancel</button>
       </div>
     </div>

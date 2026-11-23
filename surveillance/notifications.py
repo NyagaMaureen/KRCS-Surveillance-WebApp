@@ -82,11 +82,11 @@ def sub_county_users(sub_county_name, event=None):
 	return users
 
 
-MOH_ROLES = ("MOH DDSR",)
+MOH_ROLES = ("County MOH / PHEOC",)   # escalations go to the county (KRCS 23 Nov 2026)
 
 
 def moh_users(region):
-	"""County MOH (MOH DDSR) users who see this escalation in the system: their assigned region (counties later), or
+	"""County MOH / PHEOC users who see this escalation in the system: their assigned region (counties later), or
 	every region when none is assigned."""
 	users = frappe.get_all("Has Role", filters={"parenttype": "User", "role": ["in", list(MOH_ROLES)]}, pluck="parent")
 	out = []
@@ -210,26 +210,32 @@ def _dates(doc):
 # inbox never point to a disease that is no longer true.
 
 def on_disease_changed(event, old_name, new_name):
-	"""The event continues under another priority disease (questions and steps now follow its protocol)."""
+	"""The officer chose another disease. Not sent to the person who made the change (KRCS 20 Nov 2026)."""
 	frappe.enqueue("surveillance.notifications.send_disease_changed", event_name=event, old_name=old_name,
-		new_name=new_name, queue="short", enqueue_after_commit=True)
+		new_name=new_name, changed_by=frappe.session.user, queue="short", enqueue_after_commit=True)
 
 
-def send_disease_changed(event_name, old_name, new_name):
+def send_disease_changed(event_name, old_name, new_name, changed_by=None):
 	try:
 		if not frappe.db.exists("Surveillance Event", event_name):
 			return
 		doc = frappe.get_doc("Surveillance Event", event_name)
-		users = _officers(sub_county_users(doc.sub_county, event_name))   # CHAs are not told about diseases
+		changed_by = changed_by or frappe.session.user
+		users = [u for u in _officers(sub_county_users(doc.sub_county, event_name)) if u.name != changed_by]   # CHAs are not told about diseases
 		if not users:
 			return
+		from surveillance.events import in_scope
+		priority = in_scope(doc.disease, doc.sub_county, "Field")
 		subject = f"{event_name} is now {new_name} (was {old_name}), {doc.sub_county or 'location missing'}"
-		html = (f'<p style="font-size:15px">The officer reviewing {escape_html(event_name)} changed the suspected disease. '
-			f'Verification questions and steps now follow the {escape_html(new_name)} protocol.</p>'
+		next_step = (f"It is a priority disease: answer its questions in AI triage, then start the field investigation."
+			if priority else "It is not a priority disease: a CHP is asked to refer the patient to the nearest health facility, "
+			"and the case is closed.")
+		html = (f'<p style="font-size:15px">{escape_html(get_fullname(changed_by))} changed the suspected disease of '
+			f'{escape_html(event_name)}. {escape_html(next_step)}</p>'
 			+ _rows([("Was", escape_html(old_name)), ("Now", escape_html(new_name)),
 				("Severity", escape_html((doc.severity or "standard").title())),
 				("Location", escape_html(", ".join(x for x in [doc.area, doc.sub_county, doc.county] if x))),
-				("Changed by", escape_html(get_fullname(frappe.session.user)))])
+				("Changed by", escape_html(get_fullname(changed_by)))])
 			+ _button(_link(event_name), "Open the event"))
 		_send([u.email for u in users], subject, html, event_name)
 		_in_app([u.name for u in users], subject, event_name)

@@ -18,11 +18,10 @@ const SEVERITY_RANK = { critical: 0, high: 1, standard: 2 }
 const STATUS_OPTIONS = [
   { value: 'open', label: 'Open' },
   { value: 'New', label: 'New' },
-  { value: 'Verifying', label: 'Verifying' },
   { value: 'Verified', label: 'Verified' },
-  { value: 'Verified', label: 'Verified' },
+  { value: 'Investigating', label: 'In the field' },
+  { value: 'Confirmed', label: 'Confirmed' },
   { value: 'Escalated', label: 'Escalated' },
-  { value: 'Discarded', label: 'Discarded' },
   { value: 'Closed', label: 'Closed' },
   { value: 'all', label: 'All' },
 ]

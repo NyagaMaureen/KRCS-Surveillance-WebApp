@@ -25,7 +25,7 @@ DOCTYPE = "AI Output Review"
 SETTINGS = "AI Review Settings"
 COMPONENT = "AI triage: disease suggestions and risk score"
 PENDING = ("Waiting for verification", "Awaiting review")
-OPEN_STATUSES = ("New", "Verifying", "Verified")
+OPEN_STATUSES = ("New", "Verified")
 HIGH_LEVELS = ("High", "Very high")
 DEFAULTS = {"enabled": 1, "l1_high_hours": 4, "l1_standard_hours": 24, "l2_hours": 8,
 	"l2_roles": "Public Health Officer", "l3_roles": "Public Health HQ\nSystem Administrator", "escalate_from": None}
@@ -84,9 +84,10 @@ def _risk(doc):
 
 
 def _review_from(doc, refs):
-	if refs:
-		return doc.get("verification_on") or None   # field signals: once the CHA has confirmed the verification
-	return doc.creation
+	from surveillance.investigation import needs_cha
+	if refs or needs_cha(doc):   # field and CBS signals: once the CHA has confirmed the verification (KRCS 23 Nov 2026)
+		return doc.get("verification_on") or None
+	return doc.creation   # facility (EMR) data
 
 
 def _due(rec, cfg):

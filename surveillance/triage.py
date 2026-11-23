@@ -361,7 +361,7 @@ def get_triage(event):
 	from surveillance.events import allowed_steps
 	from surveillance.investigation import can_verify, officer_chose, verification_done
 	# Verification can no longer change: Confirm and save is done once (KRCS 19 Nov 2026)
-	locked = bool(doc.get("verification_on")) or officer_chose(doc) or doc.status not in ("New", "Verifying")
+	locked = bool(doc.get("verification_on")) or officer_chose(doc) or doc.status != "New"
 	verified = {"by": get_fullname(doc.verification_by) if doc.get("verification_by") else None,
 		"on": str(doc.verification_on)} if doc.get("verification_on") else None
 	if _is_cha():   # Verification only: the symptoms to ask, never the diseases (KRCS 19 Nov 2026)
@@ -376,7 +376,7 @@ def get_triage(event):
 			"tryChaAfter": TRY_CHA_AFTER}
 	queue = _queue_diseases()
 	diseases, conflict = _event_diseases(reports, queue)
-	if diseases and doc.status in ("New", "Verifying", "Verified"):   # the AI output's audit record (AUD-01)
+	if diseases and doc.status in ("New", "Verified"):   # the AI output's audit record (AUD-01)
 		frappe.enqueue("surveillance.ai_review.record_from_triage", queue="short", event=doc.name,
 			diseases=[{k: d.get(k) for k in ("key", "name", "level", "probability")} for d in diseases[:5]])
 	top = diseases[0]["key"] if diseases else None
@@ -417,10 +417,9 @@ def log_call(event, signal, outcome):
 			"checked_by": frappe.session.user, "checked_on": now_datetime()}, update_modified=False)
 	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user,
 		"action": CALL_REACHED if outcome == "reached" else CALL_NO_ANSWER, "note": f"{sig.name} | {who} ({cr.name})"})
-	if doc.status == "New":
-		doc.status = "Verifying"
+	if doc.status == "New" and not any(a.action == "Verification started" for a in doc.actions):
 		doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Verification started",
-			"note": "Reporter called in AI triage"})
+			"note": "Reporter called"})
 	doc.save(ignore_permissions=True)
 	return get_triage(doc.name)
 
@@ -482,7 +481,7 @@ def confirm_disease(event, disease, override_reason=None):
 	from surveillance.events import OPEN, _relabel_event, recompute_event
 	doc = _load(event, step=3)
 	require_capability(VERIFY)
-	if doc.status not in ("New", "Verifying", "Verified"):
+	if doc.status not in ("New", "Verified"):
 		frappe.throw(_("The disease is chosen in AI triage, before the field investigation."))
 	if not disease or not frappe.db.exists("Alert Threshold Config", disease):
 		frappe.throw(_("Choose a disease."))
@@ -523,26 +522,25 @@ def confirm_disease(event, disease, override_reason=None):
 	from surveillance.events import in_scope
 	priority = in_scope(disease, sub, "Field")
 	if priority:
-		if doc.status == "New":
-			doc.status = "Verifying"
 		doc.pathway = None
 		doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Disease confirmed by phone",
 			"note": f"{disease_name}: a priority disease. Answer its own questions, then start the field investigation."})
 		from surveillance.investigation import ensure_investigation
 		ensure_investigation(doc)   # the disease's own questions, without the ones the CHA already asked
 	else:
-		doc.pathway, doc.status = "Referral", "Confirmed"
-		doc.decision, doc.decision_reason = "Confirmed", f"{disease_name}, confirmed by phone with the reporter in AI triage."
-		doc.decided_by, doc.decided_on = frappe.session.user, now_datetime()
+		# not a priority disease: the officer asks a CHP to refer the patient, which closes the case (KRCS 20 Nov 2026)
+		doc.pathway = "Referral"
+		if doc.status == "New":
+			doc.status = "Verified"
 		doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Disease confirmed by phone",
-			"note": f"{disease_name}: not a priority disease. Referral pathway: refer the patient, follow up, then close."})
+			"note": f"{disease_name}: not a priority disease. Next: ask a CHP to refer the patient; that closes the case."})
 	doc.save(ignore_permissions=True)
 	ai_review.reviewed(doc, "Accepted the top AI suggestion" if not top or top == disease else "Chose a different disease",
 		disease, disease_name, override_reason if top and top != disease else None)
 	recompute_event(doc.name)
 	from surveillance.investigation import sync_reports
-	sync_reports(doc, "confirm" if not priority else "start", "")
-	return {"pathway": "Referral" if not priority else "Verification", "status": doc.status,
+	sync_reports(doc, "disease", "")   # the reports' status only: no feedback until something happens
+	return {"pathway": "Referral" if not priority else "Verification", "status": doc.status,   # Referral: refer in AI triage
 		"disease": disease, "diseaseName": disease_name}
 
 
@@ -555,7 +553,7 @@ def confirm_verification(event):
 	from surveillance.events import OPEN
 	from surveillance.investigation import CHA, ensure_investigation, officer_chose, stage_of
 	doc = _load_verify(event)
-	if doc.status not in OPEN or doc.status not in ("New", "Verifying"):
+	if doc.status != "New":
 		frappe.throw(_("Verification is already finished for this event."))
 	if doc.get("verification_on"):
 		frappe.throw(_("The verification was already confirmed and saved."))
@@ -584,6 +582,8 @@ def confirm_verification(event):
 		"action": "Verification confirmed",
 		"note": f"{reached} of {total} reporter(s) reached" if total else "Questions answered"})
 	doc.save(ignore_permissions=True)
+	from surveillance.investigation import sync_reports
+	sync_reports(doc, "verified", "")   # the reports show Verified; the CHP and the other CHAs are told
 	from surveillance.events import allowed_steps
 	if 3 not in allowed_steps():   # the CHA (or anyone without AI triage): the officers take it from here
 		from surveillance import notifications
@@ -637,35 +637,64 @@ def referral_people(event):
 	return out
 
 
+def _patients(doc):
+	"""People, age groups and the reports' places, from the reports themselves (KRCS 20 Nov 2026: not typed again)."""
+	people, ages, refs = 0, [], []
+	for s in _field_signals(doc.name):
+		cr = frappe.db.get_value("Case Report", s.ref, ["name", "affected_count", "age_group", "age_groups"], as_dict=True)
+		if not cr:
+			continue
+		refs.append(cr.name)
+		people += max(cint(cr.affected_count), 1)
+		for a in str(cr.get("age_groups") or cr.get("age_group") or "").replace("\n", ",").split(","):
+			if a.strip() and a.strip() not in ages:
+				ages.append(a.strip())
+	return {"people": people or cint(doc.people) or 1, "ageGroups": ages, "reports": refs}
+
+
+@frappe.whitelist()
+def referral_patients(event):
+	return _patients(_load(event, step=3))
+
+
 @frappe.whitelist(methods=["POST"])
-def refer(event, assigned_to, facility, due_date=None, urgency=None, instructions=None, people=None, age_group=None,
-		sex=None, followup_days=None):
-	"""Referral pathway: the CHP (or CHA) refers the patient to a facility; optionally one follow-up after N days.
-	Both are tasks for that person (Referrals / Follow-ups pages), with a notification."""
+def refer(event, assigned_to, due_date=None, instructions=None, followup_days=None):
+	"""Non-priority disease, in AI triage: the officer asks a CHP to refer the patient. The CHP chooses the nearest
+	health facility when they refer. The patients come from the reports. Sending it closes the case (outcome Referred);
+	the referral and the follow-up carry on with the CHP (KRCS 20 Nov 2026)."""
 	from surveillance.event_tasks import AGE_GROUPS, _insert, get_event_tasks, notify_assigned
-	doc = _load(event, step=6)
-	if doc.get("pathway") != "Referral" or doc.status != "Confirmed":
-		frappe.throw(_("Referrals are made after a disease that is not a priority disease is confirmed in AI triage."))
-	if age_group and age_group not in AGE_GROUPS:
-		frappe.throw(_("Unknown age group."))
-	if sex and sex not in ("Female", "Male"):
-		frappe.throw(_("Unknown sex."))
-	refs = [s.ref for s in _field_signals(doc.name)]
-	reason = (instructions or "").strip() or f"{doc.disease_name}: refer the patient to {facility}."
-	t = _insert(doc, "Referral", f"Refer to {(facility or '').strip()}", assigned_to, due_date or nowdate(), reason,
-		facility, urgency or "Routine")
-	t.db_set({"case_report": refs[0] if refs else None, "patient_age_group": age_group or None,
-		"patient_sex": sex or None, "people_referred": cint(people) or None, "reason": reason})
-	notes = [f"Referral to {facility} → {get_fullname(assigned_to)}"]
+	from surveillance.events import set_status   # noqa: F401 - same module the close goes through
+	from surveillance.investigation import sync_reports
+	doc = _load(event, step=3)
+	if doc.get("pathway") != "Referral" or doc.status not in ("New", "Verified"):
+		frappe.throw(_("Referrals are made after a disease that is not a priority disease is chosen in AI triage."))
+	if not assigned_to or not frappe.db.get_value("User", assigned_to, "enabled"):
+		frappe.throw(_("Choose who refers the patient."))
+	p = _patients(doc)
+	age = next((a for a in p["ageGroups"] if a in AGE_GROUPS), None) if len(p["ageGroups"]) == 1 else None
+	reason = (instructions or "").strip() or f"{doc.disease_name}: take the patient to the nearest health facility."
+	t = _insert(doc, "Referral", "Refer the patient to the nearest health facility", assigned_to, due_date or nowdate(), reason)
+	t.db_set({"case_report": p["reports"][0] if p["reports"] else None, "patient_age_group": age,
+		"people_referred": p["people"], "reason": reason})
+	notes = [f"Referral asked of {get_fullname(assigned_to)} for {p['people']} {'person' if p['people'] == 1 else 'people'}"]
 	days = cint(followup_days)
 	if days > 0:
-		f = _insert(doc, "Follow-up", f"Day {days} follow-up: did the patient reach {facility}, are they better, any new cases?",
+		f = _insert(doc, "Follow-up", f"Day {days} follow-up: did the patient reach the facility, are they better, any new cases?",
 			assigned_to, add_days(nowdate(), days), None)
 		notes.append(f"follow-up after {days} days")
 		notify_assigned(f.name)
-	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Referral made", "note": ", ".join(notes)})
+	now = now_datetime()
+	doc.append("actions", {"at": now, "user": frappe.session.user, "action": "Referral made", "note": ", ".join(notes)})
+	doc.status, doc.outcome = "Closed", "Referred"
+	doc.decision, doc.decision_reason = "Confirmed", f"{doc.disease_name}, confirmed by phone; referred to a health facility."
+	doc.decided_by, doc.decided_on, doc.closed_on = frappe.session.user, now, now
+	doc.append("actions", {"at": now, "user": frappe.session.user, "action": "Closed",
+		"note": "Referred: the referral and follow-up carry on with the CHP."})
 	doc.save(ignore_permissions=True)
+	sync_reports(doc, "refer", "")
 	notify_assigned(t.name)
+	from surveillance.alerts import sync_alert_for_event
+	sync_alert_for_event(doc)
 	return get_event_tasks(doc.name)
 
 
@@ -815,7 +844,7 @@ def get_referrals(limit=1000):
 		else:
 			follow = {"state": "done", "due": None}
 		open_task = r.status in OPEN_STATUSES
-		if ev and ev.status in ("Closed", "Discarded"):
+		if ev and ev.status == "Closed":
 			state = "closed"
 		elif open_task or (follow and follow["state"] != "done"):
 			state = "ongoing"

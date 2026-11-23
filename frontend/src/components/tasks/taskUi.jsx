@@ -21,8 +21,8 @@ const STATUS_STYLE = {
   Done: 'bg-green-600 text-white',
   'Could not complete': 'bg-gray-100 text-gray-400',
 }
-export function TaskStatusPill({ status }) {
-  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLE[status] || STATUS_STYLE.Assigned}`}>{status}</span>
+export function TaskStatusPill({ status, label }) {   // label: how a referral reads (To refer, Referred ...)
+  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLE[status] || STATUS_STYLE.Assigned}`}>{label || status}</span>
 }
 
 export const isOpen = (t) => t.status === 'Assigned' || t.status === 'In progress' || t.status === 'Blocked'

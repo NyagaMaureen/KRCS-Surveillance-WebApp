@@ -30,16 +30,17 @@ VIEW = "view_analytics"
 CHANNELS = ["Mobile", "Web", "WhatsApp", "CBS", "EMR"]   # SMS and USSD are not used (KRCS, 16 Nov 2026)
 CHANNEL_LABEL = {"Mobile": "Mobile app", "EMR": "EMR (facility)"}
 STATUSES = ["Awaiting review", "Investigating", "Closed", "Recorded"]
-REPORT_STATUS = {"Submitted": "Awaiting review", "Linked": "Awaiting review", "Reviewed": "Recorded",
+REPORT_STATUS = {"Submitted": "Awaiting review", "Linked": "Awaiting review", "Reviewed": "Recorded", "Verified": "Awaiting review",
+	"Confirmed": "Investigating", "Escalated": "Investigating",
 	"Not for review": "Recorded", "Investigating": "Investigating", "Closed": "Closed", "Recorded": "Recorded"}
-EVENT_STATUS = {"New": "Awaiting review", "Verifying": "Awaiting review", "Verified": "Awaiting review", "Investigating": "Investigating",
-	"Confirmed": "Investigating", "Escalated": "Investigating", "Closed": "Closed", "Discarded": "Closed"}
-OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
+EVENT_STATUS = {"New": "Awaiting review", "Verified": "Awaiting review", "Investigating": "Investigating",
+	"Confirmed": "Investigating", "Escalated": "Investigating", "Closed": "Closed"}
+OPEN = ["New", "Verified", "Investigating", "Confirmed", "Escalated"]
 SIGNAL_TYPES = ["Suspected Outbreak", "Community Signal", "Facility Signal"]
 SEV_ORDER = {"critical": 0, "high": 1, "standard": 2}
 CHA_ROLES = ["CHA", "Community Health Assistant"]
 USER_ROLES = ["CHP", "Facility Health Worker", "Public Health Officer", "HIS Officer", "Surveillance Officer", "SCDSC",
-	"CDSC", "Public Health HQ", "MOH DDSR", "Data & AI Administrator", "System Administrator"] + CHA_ROLES
+	"CDSC", "Public Health HQ", "County MOH / PHEOC", "MOH DDSR (National)", "Data & AI Administrator", "System Administrator"] + CHA_ROLES
 
 
 # ---------- filters ----------

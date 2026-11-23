@@ -4,7 +4,7 @@ import Dashboard from './Dashboard'
 
 // System Administrator sees the dashboard in tabs (KRCS, Nov 2026); other roles on the full menu keep the current dashboard.
 // To give another role the tabbed dashboard, add it here.
-const TABBED_DASHBOARD_ROLES = ['System Administrator', 'Administrator', 'System Manager', 'MOH DDSR']
+const TABBED_DASHBOARD_ROLES = ['System Administrator', 'Administrator', 'System Manager', 'County MOH / PHEOC', 'MOH DDSR (National)']
 
 export default function FullDashboard() {
   const { primaryRole, loading } = useCapabilities()

@@ -232,14 +232,14 @@ function TaskItem({ task: t, canAssign, editing, onEdit, onSaved, onRemove, onEr
           </p>
           {t.facility && (
             <p className="text-xs text-gray-500 mt-1 inline-flex items-center gap-1">
-              <Building2 className="w-3.5 h-3.5 text-gray-400" aria-hidden="true" /> {t.facility}{t.urgency ? ` · ${t.urgency}` : ''}
+              <Building2 className="w-3.5 h-3.5 text-gray-400" aria-hidden="true" /> {t.facility}
             </p>
           )}
           {t.instructions && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{t.instructions}</p>}
           {t.outcome && <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap"><span className="text-gray-400">Outcome: </span>{t.outcome}</p>}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <TaskStatusPill status={t.status} />
+          <TaskStatusPill status={t.status} label={t.statusLabel} />
           {canUpdate && (
             <button type="button" onClick={onEdit} className={LINK_BTN}>{editing ? 'Close' : 'Update'}</button>
           )}
@@ -315,7 +315,6 @@ function AssignDialog({ eventId, prefill, assignees, onClose, onSaved, onError }
   const [dueDate, setDueDate] = useState(todayISO(startType === 'Referral' ? 0 : 1))
   const [instructions, setInstructions] = useState('')
   const [facility, setFacility] = useState('')
-  const [urgency, setUrgency] = useState('Routine')
   const [saving, setSaving] = useState(false)
 
   // pre-select the CHP who reported the signal (not for sample collection: CHPs don't collect samples)
@@ -341,7 +340,6 @@ function AssignDialog({ eventId, prefill, assignees, onClose, onSaved, onError }
       const res = await createEventTask(eventId, {
         type, title, assignedTo, dueDate, instructions,
         facility: type === 'Referral' ? facility : '',
-        urgency: type === 'Referral' ? urgency : '',
         stepPhase: prefill.stepPhase, stepNo: prefill.stepNo,
       })
       const who = assignees?.find((a) => a.user === assignedTo)?.name || 'them'
@@ -353,7 +351,7 @@ function AssignDialog({ eventId, prefill, assignees, onClose, onSaved, onError }
     }
   }
 
-  const ready = title.trim() && assignedTo && dueDate && (type !== 'Referral' || facility.trim())
+  const ready = title.trim() && assignedTo && dueDate
   const typeInfo = TASK_TYPES.find((t) => t.key === type)
 
   return (
@@ -381,17 +379,9 @@ function AssignDialog({ eventId, prefill, assignees, onClose, onSaved, onError }
         </div>
 
         {type === 'Referral' && (
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-3">
-            <div>
-              <Label htmlFor="task-facility">Refer to facility</Label>
-              <input id="task-facility" value={facility} onChange={(e) => setFacility(e.target.value)} placeholder="e.g. Hagadera Hospital" className={INPUT} />
-            </div>
-            <div>
-              <Label htmlFor="task-urgency">Urgency</Label>
-              <select id="task-urgency" value={urgency} onChange={(e) => setUrgency(e.target.value)} className={INPUT}>
-                <option>Routine</option><option>Urgent</option><option>Emergency</option>
-              </select>
-            </div>
+          <div>
+            <Label htmlFor="task-facility" hint="Optional. Leave it empty and the CHP chooses the nearest facility when they refer.">Refer to facility</Label>
+            <input id="task-facility" value={facility} onChange={(e) => setFacility(e.target.value)} placeholder="e.g. Hagadera Hospital" className={INPUT} />
           </div>
         )}
 

@@ -19,16 +19,15 @@ const SEVERITIES = [
 const channelsOf = (e) => (e.channels && e.channels.length ? e.channels : (e.sources || []).map((x) => (x === 'Field' ? 'Field report' : x)))
 // Target time to start verification, by severity (same as the Epi Trends recommended actions)
 const TARGET_HOURS = { critical: 24, high: 48, standard: 72 }
-const WAITING_STATUSES = ['New', 'Verifying']
+const WAITING_STATUSES = ['New']
 
 const TABS = [
   { key: 'new', label: 'To review', statuses: ['New'] },
-  { key: 'verifying', label: 'Verifying', statuses: ['Verifying'] },
   { key: 'verified', label: 'Verified', statuses: ['Verified'] },   // Confirm and save done: waiting for AI triage
   { key: 'investigating', label: 'In the field', statuses: ['Investigating'] },
   { key: 'confirmed', label: 'Confirmed', statuses: ['Confirmed'] },
   { key: 'escalated', label: 'Escalated', statuses: ['Escalated'] },
-  { key: 'closed', label: 'Closed', statuses: ['Discarded', 'Closed'] },
+  { key: 'closed', label: 'Closed', statuses: ['Closed'] },
   { key: 'all', label: 'All', statuses: null },
 ]
 
@@ -82,16 +81,15 @@ const SELECT_SOFT = `h-9 bg-white border border-gray-200 rounded-lg px-3 text-sm
 
 const STATUS_STYLE = {
   New: 'bg-red-600 text-white',
-  Verifying: 'bg-gray-200 text-gray-700',
   Verified: 'bg-emerald-100 text-emerald-800',
   Investigating: 'bg-gray-200 text-gray-700',
   Confirmed: 'bg-sky-100 text-sky-800',
   Escalated: 'bg-red-100 text-red-700',
   Closed: 'bg-green-600 text-white',
-  Discarded: 'bg-gray-100 text-gray-400',
 }
-function StatusPill({ status }) {
-  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLE[status] || STATUS_STYLE.Discarded}`}>{statusLabel(status)}</span>
+function StatusPill({ status, outcome }) {
+  const style = status === 'Closed' && outcome === 'Discarded' ? 'bg-gray-100 text-gray-700' : STATUS_STYLE[status] || 'bg-gray-100 text-gray-700'
+  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${style}`}>{statusLabel(status, outcome)}</span>
 }
 
 function SkeletonRows() {
@@ -116,9 +114,9 @@ export default function AlertsSignalsQueue() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
 
-  // the county MOH (MOH DDSR) sees the cases escalated to them first (KRCS 17 Nov 2026)
+  // the county MOH (County MOH / PHEOC) sees the cases escalated to them first (KRCS 17 Nov 2026)
   const { primaryRole, workspace, has } = useCapabilities()
-  const isMoh = primaryRole === 'MOH DDSR'
+  const isMoh = primaryRole === 'County MOH / PHEOC'
   // the CHA verifies signals without being told the suspected disease (KRCS 19 Nov 2026)
   // set in Roles & Permissions: working the queue without See AI Triage and Diseases gives the CHA view
   const isCha = workspace === 'cha' || (has(['view_review_queue', 'act_on_events', 'step_signal', 'step_verification']) && !has('ai_triage'))
@@ -269,18 +267,17 @@ export default function AlertsSignalsQueue() {
   const lastPage = Math.max(0, Math.ceil(visibleEvents.length / PAGE) - 1)
   const pageRows = visibleEvents.slice(page * PAGE, page * PAGE + PAGE)
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000
-  const closedThisWeek = events.filter((e) => ['Closed', 'Discarded'].includes(e.status) && time(e.closedAt || e.modified || e.lastSeen) >= weekAgo).length
+  const closedThisWeek = events.filter((e) => e.status === 'Closed' && time(e.closedAt || e.modified || e.lastSeen) >= weekAgo).length
   const stats = [
     { key: 'all', label: 'All statuses', value: events.length },
     { key: 'new', label: 'To review', value: tabCount(TABS[0]) },
-    { key: 'verifying', label: 'Verifying', value: tabCount(TABS[1]) },
-    { key: 'verified', label: 'Verified', value: tabCount(TABS[2]) },
-    { key: 'investigating', label: 'In the field', value: tabCount(TABS[3]) },
+    { key: 'verified', label: 'Verified', value: tabCount(TABS[1]) },
+    { key: 'investigating', label: 'In the field', value: tabCount(TABS[2]) },
     { key: 'closed', label: 'Closed this week', value: closedThisWeek },
     { key: 'overdue', label: 'Overdue', value: overdueCount },
   ]
-  if (!isCha && !isMoh) {   // officers: Verified, then Verifying, right after All (an SO can verify too, KRCS 19 Nov 2026)
-    for (const [key, at] of [['verified', 1], ['verifying', 2]]) {
+  if (!isCha && !isMoh) {   // officers: Verified right after All (KRCS 19 Nov 2026)
+    for (const [key, at] of [['verified', 1]]) {
       const v = stats.findIndex((x) => x.key === key)
       if (v >= 0) stats.splice(at, 0, ...stats.splice(v, 1))
     }
@@ -437,7 +434,7 @@ export default function AlertsSignalsQueue() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-3.5"><StatusPill status={ev.status} />
+                          <td className="px-3 py-3.5"><StatusPill status={ev.status} outcome={ev.outcome} />
                             {ev.escalation && (
                               <span className="block text-xs text-gray-500 mt-1 whitespace-nowrap" title={ev.escalation.reason}>
                                 by {ev.escalation.by || '—'}{ev.escalation.on ? ` · ${relTime(ev.escalation.on)}` : ''}
@@ -452,7 +449,7 @@ export default function AlertsSignalsQueue() {
                               </Link>
                             ) : (
                               <>
-                                {!isCha && ['New', 'Verifying'].includes(ev.status) && (
+                                {!isCha && ev.status === 'New' && (
                                   <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: ev.status === 'New' ? '?step=2' : '' }} onClick={(e) => e.stopPropagation()}
                                     className={`mr-3 text-xs font-medium text-red-700 hover:text-red-800 hover:underline rounded ${FOCUS}`}>
                                     {ev.status === 'New' ? 'Start verification' : 'Continue'}

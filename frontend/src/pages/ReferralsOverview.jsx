@@ -16,8 +16,8 @@ const TABS = [
   { key: 'closed', label: 'Closed' },
 ]
 const TONE = {
-  Pending: 'bg-blue-50 text-blue-700', 'On the way': 'bg-blue-50 text-blue-700', Blocked: 'bg-amber-50 text-amber-800',
-  'Reached facility': 'bg-emerald-50 text-emerald-700', 'Not reached': 'bg-gray-100 text-gray-600', Overdue: 'bg-red-50 text-red-700',
+  'To refer': 'bg-amber-50 text-amber-800', Referred: 'bg-blue-50 text-blue-700', Blocked: 'bg-amber-50 text-amber-800',
+  'Reached facility': 'bg-emerald-50 text-emerald-700', 'Did not reach': 'bg-gray-100 text-gray-700', Overdue: 'bg-red-50 text-red-700',
 }
 const SELECT = 'border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white min-w-0 max-w-full'
 const fmt = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—')

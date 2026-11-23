@@ -8,8 +8,9 @@ import { STATUSES, CHANNELS } from '../data/formOptions'
 
 const PAGE_SIZES = [10, 25, 50]
 
-const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-600', Reviewed: 'bg-green-50 text-green-600', Linked: 'bg-red-50 text-red-700', Investigating: 'bg-blue-50 text-blue-600', Closed: 'bg-gray-100 text-gray-500', Recorded: 'bg-gray-100 text-gray-700' }
-const STATUS_LABEL = { Submitted: 'Awaiting review', Reviewed: 'Recorded', 'Not for review': 'Recorded', Linked: 'Awaiting review' }
+const STATUS_COLORS = { Submitted: 'bg-amber-50 text-amber-700', Linked: 'bg-amber-50 text-amber-700', Verified: 'bg-emerald-50 text-emerald-700', Reviewed: 'bg-gray-100 text-gray-700', Investigating: 'bg-blue-50 text-blue-700', Confirmed: 'bg-sky-50 text-sky-800', Escalated: 'bg-red-50 text-red-700', Closed: 'bg-gray-100 text-gray-700', Recorded: 'bg-gray-100 text-gray-700' }
+// a report shows its event's status (KRCS 20 Nov 2026): Submitted reads New
+const STATUS_LABEL = { Submitted: 'New', Reviewed: 'Recorded', 'Not for review': 'Recorded', Linked: 'New', Investigating: 'In the field' }
 const statusLabel = (s) => STATUS_LABEL[s] || s   // stored values stay as they are; this is what people see
 const CHANNEL_COLORS = { Mobile: 'bg-red-50 text-red-700', SMS: 'bg-green-50 text-green-600', USSD: 'bg-amber-50 text-amber-600', WhatsApp: 'bg-gray-100 text-gray-600', Web: 'bg-yellow-50 text-yellow-600' }
 const statusColor = (s) => STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'

@@ -111,7 +111,10 @@ LABELS = {
 			"Recorded": "Received",
 			"Reviewed": "Reviewed",
 			"Linked": "Linked to an alert",
+			"Verified": "Checked by the CHA",
 			"Investigating": "Under investigation",
+			"Confirmed": "Confirmed, response under way",
+			"Escalated": "Sent to the county",
 			"Closed": "Closed",
 		},
 		# Symptom.category, shown in everyday words. Frappe keeps the clinical name.
@@ -146,7 +149,10 @@ LABELS = {
 			"Recorded": "Imepokelewa",
 			"Reviewed": "Imekaguliwa",
 			"Linked": "Imeunganishwa na tahadhari",
+			"Verified": "Imethibitishwa na CHA",
 			"Investigating": "Inachunguzwa",
+			"Confirmed": "Imethibitishwa, hatua zinachukuliwa",
+			"Escalated": "Imepelekwa kaunti",
 			"Closed": "Imefungwa",
 		},
 		"symptom_group": {

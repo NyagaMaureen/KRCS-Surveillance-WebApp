@@ -52,7 +52,7 @@ MATRIX = {
 STATUSES = ["Pending", "Investigating", "Confirmed", "Resolved", "Rejected"]
 STATUS_LABELS = {"Pending": "New", "Investigating": "Under investigation", "Confirmed": "Confirmed",
 	"Resolved": "Resolved", "Rejected": "Dismissed"}
-EVENT_OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
+EVENT_OPEN = ["New", "Verified", "Investigating", "Confirmed", "Escalated"]
 CLOSED = {"Resolved", "Rejected"}
 RESPONSE = {
 	"critical": "Verify within 24 hours and notify the county surveillance team.",
@@ -208,7 +208,7 @@ def rebuild_case_report_counts():
 	from surveillance.review import is_unclassified
 	subs = {s.name: s for s in frappe.get_all("Sub County", fields=["name", "county", "sub_county_name"])}
 	# reports discarded as a false alarm in the Review Queue are not counted
-	discarded_events = set(frappe.get_all("Surveillance Event", filters={"status": "Discarded"}, pluck="name"))
+	discarded_events = set(frappe.get_all("Surveillance Event", filters={"status": "Closed", "outcome": "Discarded"}, pluck="name"))
 	false_alarms = {s.ref for s in frappe.get_all("Surveillance Signal", filters={"source": "Field",
 		"event": ["in", list(discarded_events) or [""]]}, fields=["ref"], limit_page_length=0)}
 	rows = []
@@ -718,9 +718,9 @@ def _related_events(doc):
 		merged.setdefault(target, []).append({"id": m.parent, "area": area or "", "on": str(m.at or "")})
 		names.discard(m.parent)
 	rows = frappe.get_all("Surveillance Event", filters={"name": ["in", list(names) or [""]]},
-		fields=["name", "title", "status", "severity", "reports", "people", "deaths", "last_reported", "from_alert"],
+		fields=["name", "title", "status", "outcome", "severity", "reports", "people", "deaths", "last_reported", "from_alert"],
 		order_by="last_reported desc")
-	return [{"id": r.name, "title": r.title, "status": r.status, "severity": r.severity, "reports": r.reports or 0,
+	return [{"id": r.name, "title": r.title, "status": r.status, "outcome": r.outcome or None, "severity": r.severity, "reports": r.reports or 0,
 		"people": r.people or 0, "deaths": r.deaths or 0, "lastSeen": str(r.last_reported or ""),
 		"fromTrend": r.from_alert == doc.name, "mergedIn": merged.get(r.name, [])} for r in rows]
 
@@ -807,7 +807,7 @@ def sync_alert(name):
 	doc = frappe.get_doc(DOCTYPE, name)
 	if doc.status == "Rejected" and doc.get("review_outcome"):
 		return
-	statuses = [e["status"] for e in _related_events(doc)]
+	statuses = ["Discarded" if e.get("outcome") == "Discarded" else e["status"] for e in _related_events(doc)]
 	if not statuses:
 		return
 	if any(s in ("Confirmed", "Escalated") for s in statuses) and any(s in EVENT_OPEN for s in statuses):

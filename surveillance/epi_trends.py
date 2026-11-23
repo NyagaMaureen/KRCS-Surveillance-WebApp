@@ -75,8 +75,8 @@ def _field_reports(first, last, subs):
 		return []
 	signals = {s.ref: s.event for s in frappe.get_all("Surveillance Signal",
 		filters={"source": "Field", "ref": ["in", [r.name for r in reports]]}, fields=["ref", "event"], limit_page_length=0)}
-	events = {e.name: e.status for e in frappe.get_all("Surveillance Event",
-		filters={"name": ["in", list({v for v in signals.values() if v}) or [""]]}, fields=["name", "status"],
+	events = {e.name: ("Discarded" if e.outcome == "Discarded" else e.status) for e in frappe.get_all("Surveillance Event",
+		filters={"name": ["in", list({v for v in signals.values() if v}) or [""]]}, fields=["name", "status", "outcome"],
 		limit_page_length=0)}
 	out = []
 	for r in reports:

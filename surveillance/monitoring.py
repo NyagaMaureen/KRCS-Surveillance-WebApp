@@ -219,7 +219,7 @@ def _events(f, date_field="creation", extra_fields=()):
 	if f.disease:
 		ef["disease"] = f.disease
 	fields = ["name", "creation", "title", "disease", "disease_name", "severity", "status", "sub_county", "area", "region",
-		"risk_score", "decision", "decided_on", "closed_on", "first_reported", "people", "reports", *extra_fields]
+		"risk_score", "decision", "decided_on", "closed_on", "first_reported", "people", "reports", "outcome", *extra_fields]
 	return [e for e in frappe.get_all("Surveillance Event", filters=ef, fields=fields, order_by="creation desc",
 		limit_page_length=0) if _event_in_sub(e, f)]
 
@@ -304,7 +304,7 @@ def _r35(f):
 			_counter_chart("risk", "Events by risk level", "bar", Counter(_risk_level(e.risk_score) for e in events),
 				keys=["Very high", "High", "Medium", "Low"], label="Events"),
 			_counter_chart("status", "Events by status", "bar", Counter(e.status for e in events),
-				keys=["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated", "Discarded", "Closed"], label="Events"),
+				keys=["New", "Verified", "Investigating", "Confirmed", "Escalated", "Closed"], label="Events"),
 			_chart("median_week", "Median hours to start verification, per week", "bar", [_wlabel(w) for w in f.weeks],
 				[{"label": "Median hours", "data": [round(median(per_week[w]), 1) if per_week.get(w) else None for w in f.weeks]}],
 				"Weeks with no verification started are empty"),
@@ -333,7 +333,7 @@ def _r35(f):
 def _closed_at(e, acts):
 	"""When the event was closed. Discarding closes an event too (at verification), but only "Close" sets closed_on,
 	so a discarded event uses its decision time, or the time of its Discarded / Closed action."""
-	if e.status not in ("Closed", "Discarded"):
+	if e.status != "Closed":
 		return None
 	if e.closed_on:
 		return e.closed_on
@@ -376,7 +376,7 @@ def _r36(f):
 		if user not in names_cache:
 			names_cache[user] = get_fullname(user)
 		return names_cache[user]
-	discarded = sum(1 for e in events if e.status == "Discarded")
+	discarded = sum(1 for e in events if e.get("outcome") == "Discarded")
 	return {
 		"cards": [
 			_card("events", "Events in the period", len(events)),

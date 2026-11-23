@@ -40,8 +40,8 @@ FIELDS = ["name", "event", "task_type", "title", "instructions", "assigned_to", 
 	"completed_on", "creation", "modified", "severity", "case_report", "patient_age_group", "patient_sex", "reason", "progress", "team"]
 
 # How a referral's status reads to people (stored statuses are the same as other tasks)
-REFERRAL_LABELS = {"Assigned": "Pending", "In progress": "On the way", "Done": "Reached facility",
-	"Could not complete": "Not reached"}
+REFERRAL_LABELS = {"Assigned": "To refer", "In progress": "Referred", "Done": "Reached facility",
+	"Could not complete": "Did not reach"}   # the CHP updates these (KRCS 20 Nov 2026)
 RECEIVE = "receive_tasks"
 
 
@@ -66,7 +66,7 @@ def _event(event, act=True, step6=False, referral=False):
 def _refer_after_discard(doc):
 	"""A discarded signal whose patient may still need care: people who verify (step 2) can give the CHP a referral."""
 	from surveillance.events import allowed_steps
-	return doc.status == "Discarded" and 2 in allowed_steps()
+	return doc.status == "Closed" and doc.get("outcome") == "Discarded" and 2 in allowed_steps()
 
 
 def _role_label(user):
@@ -93,7 +93,7 @@ def _shape(t, me=None):
 		"assignedTo": t.assigned_to, "assignedToName": get_fullname(t.assigned_to) if t.assigned_to else None,
 		"assignedBy": get_fullname(t.assigned_by) if t.assigned_by else None,
 		"dueDate": str(t.due_date) if t.due_date else None, "status": t.status,
-		"overdue": bool(_overdue(t)), "facility": t.facility or None, "urgency": t.urgency or None,
+		"overdue": bool(_overdue(t)), "facility": t.facility or None,
 		"disease": t.disease_name, "subCounty": t.sub_county, "area": t.area,
 		"stepPhase": t.step_phase or None, "stepNo": t.step_no or None,
 		"outcome": t.outcome or "", "completedOn": str(t.completed_on) if t.completed_on else None,
@@ -175,8 +175,7 @@ def _insert(doc, task_type, title, assigned_to, due_date, instructions=None, fac
 		frappe.throw(_("Choose who will do this task."))
 	if not due_date:
 		frappe.throw(_("Choose a due date."))
-	if task_type == "Referral" and not (facility or "").strip():
-		frappe.throw(_("Enter the facility the patient is referred to."))
+	# a referral without a facility: the CHP chooses the nearest one when they refer (KRCS 20 Nov 2026)
 	return frappe.get_doc({
 		"doctype": DOCTYPE, "event": doc.name, "task_type": task_type, "title": title.strip()[:140],
 		"instructions": (instructions or "").strip(), "assigned_to": assigned_to, "assigned_by": frappe.session.user,
@@ -217,7 +216,7 @@ def create_followups(event, assigned_to, days=None, instructions=None):
 
 
 @frappe.whitelist(methods=["POST"])
-def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None, progress=None, expected=None):
+def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None, progress=None, expected=None, facility=None):
 	"""The assignee updates status and outcome. Officers who can act on the event can also
 	change the due date, reassign, or update on someone's behalf."""
 	t = frappe.get_doc(DOCTYPE, task)
@@ -245,6 +244,15 @@ def update_task(task, status=None, outcome=None, due_date=None, assigned_to=None
 		t.completed_on = now_datetime() if status in ("Done", "Could not complete") else None
 	if outcome is not None:
 		t.outcome = outcome.strip()
+	# a referral: the CHP chooses the nearest health facility when they refer (KRCS 20 Nov 2026)
+	if t.task_type == "Referral" and (facility or "").strip() and (facility or "").strip() != (t.facility or ""):
+		t.facility = facility.strip()[:140]
+		t.title = f"Referral to {t.facility}"[:140]
+		changes.append(f"to {t.facility}")
+		from surveillance.fhw import on_referral_created
+		on_referral_created(t)   # the facility's FHWs are told
+	if t.task_type == "Referral" and t.status in ("In progress", "Done") and not (t.facility or "").strip():
+		frappe.throw(_("Choose the health facility the patient was referred to."))
 	if progress is not None and str(progress) != "":
 		p = max(0, min(100, cint(progress)))
 		if p != cint(t.get("progress")):
@@ -372,6 +380,13 @@ AGE_GROUPS = ("Under 1", "1-4 years", "5-14 years", "15+ years")
 
 
 @frappe.whitelist()
+def my_open_referrals():
+	"""The CHP's Referrals bell: referrals and follow-ups they still need to act on (KRCS 20 Nov 2026)."""
+	return frappe.db.count(DOCTYPE, {"assigned_to": frappe.session.user, "task_type": ["in", ["Referral", "Follow-up"]],
+		"status": ["in", OPEN_STATUSES]})
+
+
+@frappe.whitelist()
 def get_my_referable_reports():
 	"""The user's own recent reports, to link a referral to."""
 	require_capability(RECEIVE)
@@ -434,7 +449,7 @@ def create_referral(facility, reason, case_report=None, age_group=None, sex=None
 	t = frappe.get_doc({
 		"doctype": DOCTYPE, "event": event, "task_type": "Referral", "title": f"Referral to {facility}"[:140],
 		"assigned_to": user, "assigned_by": user, "due_date": nowdate(), "status": "Assigned",
-		"facility": facility, "urgency": urgency or "Routine", "reason": reason, "case_report": case_report or None,
+		"facility": facility, "reason": reason, "case_report": case_report or None,
 		"patient_age_group": age_group or None, "patient_sex": sex or None, "client_ref": ref, "people_referred": people, **ctx,
 	}).insert(ignore_permissions=True)
 	if event:
@@ -564,7 +579,7 @@ def send_assigned(task, count=1):
 		("Task", escape_html(t.title)), ("Type", t.task_type), ("Due", str(t.due_date)),
 		("Disease", "" if hide else escape_html(t.disease_name or "")),
 		("Place", escape_html(", ".join(x for x in [t.area, t.sub_county] if x))),
-		("Refer to", escape_html(t.facility or "")), ("Urgency", t.urgency or ""),
+		("Refer to", escape_html(t.facility or "The nearest health facility: you choose it")),
 		("Instructions", escape_html(t.instructions or "")), ("Assigned by", escape_html(get_fullname(t.assigned_by) or "")),
 	], t.name)
 

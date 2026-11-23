@@ -93,7 +93,7 @@ export const PRIORITY = {
   standard: { label: 'Standard', tone: 'gray' },
 }
 
-export const REFERRAL_TONE = { Pending: 'amber', 'On the way': 'blue', 'Reached facility': 'green', 'Not reached': 'red' }
+export const REFERRAL_TONE = { 'To refer': 'amber', Referred: 'blue', 'Reached facility': 'green', 'Did not reach': 'red' }   // KRCS 20 Nov 2026
 export const REPORT_TONE = { Submitted: 'softAmber', Recorded: 'gray', Reviewed: 'softGreen', Linked: 'softGreen', Investigating: 'softAmber', Closed: 'gray' }
 
 export function EmptyNote({ children }) {

@@ -41,3 +41,6 @@ surveillance.patches.event_step_permissions
 surveillance.patches.verified_status
 surveillance.patches.officer_sub_counties
 surveillance.patches.split_unclassified_events
+surveillance.patches.simpler_statuses
+surveillance.patches.moh_roles_split
+surveillance.patches.fhw_allan_role

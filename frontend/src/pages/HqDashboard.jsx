@@ -38,6 +38,7 @@ const TABS = [
 ]
 // dashboard title per workspace; officers, FHWs and CHAs see their assigned sub-county only
 const MOH_TITLE = 'County MOH Dashboard'
+const NATIONAL_TITLE = 'National MOH Overview'   // MOH DDSR (National): every county, overview only (KRCS 23 Nov 2026)
 const TITLES = { full: 'KRCS Admin Dashboard', officer: 'Surveillance Officer Dashboard', fhw: 'Facility Health Worker Dashboard', cha: 'CHA Dashboard' }
 
 const CARD_ICONS = {
@@ -90,8 +91,9 @@ function ago(v) {
 export default function HqDashboard() {
   const [params, setParams] = useSearchParams()
   const { has: can, workspace, primaryRole } = useCapabilities()
-  const isMoh = primaryRole === 'MOH DDSR'   // county MOH: their region only, no System Performance (KRCS 17 Nov 2026)
-  const scoped = workspace !== 'full' || isMoh
+  const isMoh = primaryRole === 'County MOH / PHEOC'   // county MOH: their region only, no System Performance (KRCS 17 Nov 2026)
+  const isNational = primaryRole === 'MOH DDSR (National)'
+  const scoped = workspace !== 'full' || isMoh || isNational   // no System Performance tab
   const tabs = TABS.filter((t) => (!t.requires || can(t.requires)) && !(t.hq && scoped))
   const tab = tabs.find((t) => t.key === params.get('tab')) || tabs[0]
   const [filters, setFilters] = useState(blankFilters)
@@ -131,7 +133,7 @@ export default function HqDashboard() {
     const where = options?.lockedSubCounty ? `${options.lockedSubCounty} sub-county` : picked ? `${picked} sub-county` : regionLabel || 'All regions'
     const text = [`${periodText(filters)} (${fmtDay(filters.from)} to ${fmtDay(filters.to)})`, where, channelLabel || 'All channels',
       statusLabel || 'All statuses', tab.category && filters.category ? filters.category : null].filter(Boolean).join(' · ')
-    return { dashboard: isMoh ? MOH_TITLE : TITLES[workspace] || TITLES.full, tab: tab.label, filters: text, user: currentUserFullName(), role: primaryRole }
+    return { dashboard: isMoh ? MOH_TITLE : isNational ? NATIONAL_TITLE : TITLES[workspace] || TITLES.full, tab: tab.label, filters: text, user: currentUserFullName(), role: primaryRole }
   }
   useEffect(() => { metaRef.current = buildMeta })
   const exportCtx = useMemo(() => ({ panels, setCards: (list) => { cards.current = list }, meta: () => metaRef.current() }), [])
@@ -155,11 +157,12 @@ export default function HqDashboard() {
     <AppShell>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="border-l-4 border-red-600 pl-3">
-          <h2 className="text-xl font-bold text-gray-900">{isMoh ? MOH_TITLE : TITLES[workspace] || TITLES.full}</h2>
+          <h2 className="text-xl font-bold text-gray-900">{isMoh ? MOH_TITLE : isNational ? NATIONAL_TITLE : TITLES[workspace] || TITLES.full}</h2>
           <p className="text-sm text-gray-900">
             {options?.lockedSubCounty ? `${options.lockedSubCounty} sub-county at a glance`
               : options?.pickSubCounty ? `${options.subCounties.map((x) => x.label).join(' and ')} sub-counties at a glance`
               : isMoh ? `${options?.regions?.length === 1 ? `${options.regions[0].label} region` : 'Your region'} at a glance`
+              : isNational ? 'Every region at a glance. Filter by region or sub-county.'
                 : 'Surveillance and system performance at a glance'}
           </p>
         </div>

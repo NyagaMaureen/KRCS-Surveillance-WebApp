@@ -20,7 +20,7 @@ import {
   getReportCandidates, getDiseaseOptions, setSuspectedDisease, retryTranscription,
   getTriage, logTriageCall, answerByPhone, confirmTriageDisease, getReferralPeople, referPatient, getReferralState,
   confirmVerification, getReferenceLabels,
-  closeReferralCase, getReferralFacilities,
+  closeReferralCase, getReferralPatients,
 } from '../api/frappe'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import ConsentQuestion, { consentOk, consentFields } from '../components/report/ConsentQuestion'
@@ -78,16 +78,17 @@ function computeSteps(event, inv) {
   let current = 3
   const verified = !!inv?.verificationDone   // step 2 confirmed (Confirm and save), or an older event already triaged
 
-  if (event.pathway === 'Referral') {   // non-priority disease confirmed in AI triage: refer, follow up, close
-    mark(3)
-    states[3] = states[4] = 'skipped'
-    states[5] = status === 'Closed' ? 'done' : 'current'
-    current = 6
-  } else if ((status === 'New' || status === 'Verifying') && !verified) {
+  const discarded = status === 'Closed' && event.outcome === 'Discarded'
+  if (event.pathway === 'Referral' && !discarded) {   // non-priority disease: the referral is sent from AI triage and
+    mark(2)                                          // closes the case; steps 4 to 6 are not needed (KRCS 20 Nov 2026)
+    states[2] = status === 'Closed' ? 'done' : 'current'
+    states[3] = states[4] = states[5] = 'skipped'
+    current = 3
+  } else if (status === 'New' && !verified) {
     mark(1)
     states[1] = 'current'
     current = 2
-  } else if (status === 'New' || status === 'Verifying' || status === 'Verified') {
+  } else if (status === 'New' || status === 'Verified') {
     mark(2)
     states[2] = 'current'
     current = 3
@@ -110,7 +111,7 @@ function computeSteps(event, inv) {
   } else if (status === 'Closed') {
     mark(6)
     current = 6
-  } else if (status === 'Discarded') {
+  } else if (discarded) {
     mark(1)
     const investigated = (inv?.investigationSteps || []).some((s) => s.outcome) || !!inv?.findings || (inv?.evidence || []).length > 0
     const at = investigated ? 4 : verified ? 3 : 2
@@ -543,18 +544,37 @@ const ANSWER_OPTIONS = ['Yes', 'No']   // "Didn't know" removed (KRCS 19 Nov 202
 const DOT = ['bg-emerald-500', 'bg-amber-400', 'bg-amber-400', 'bg-gray-300']
 const RISK_TONE = { 'Very high': 'bg-red-50 text-red-700', High: 'bg-red-50 text-red-700', Medium: 'bg-amber-50 text-amber-800', Low: 'bg-gray-100 text-gray-600' }
 
-// Why / why not, from the signs only: no reporter names (KRCS 19 Nov 2026)
-const _noWho = (x) => String(x).replace(/^.*?\bsaid no to\s+/i, 'No ').replace(/\s*\([^)]*\)\s*$/, '')
+// Why / why not in plain words, from the signs only: no reporter names (KRCS 19 and 20 Nov 2026)
+const _cap = (x) => { const t = String(x).trim(); return t ? t[0].toUpperCase() + t.slice(1) : t }
+const _clean = (x) => String(x).replace(/\s*\([^)]*\)\s*$/, '').trim()
+function _against(x) {
+  const m = String(x).match(/said no to\s+(.+)$/i)
+  return m ? `${_cap(_clean(m[1]).toLowerCase())} is absent (the reporter said no)` : _cap(_clean(x))
+}
 function diseaseWhy(d) {
   const signs = [...new Set(d.support.flatMap((s) => s.signs.map((x) => String(x).toLowerCase())))]
-  const why = [d.level + (signs.length ? `: ${signs.join(', ')}` : '')]
+  const why = []
+  if (signs.length) why.push(`Has ${signs.join(', ')}`)
+  why.push(d.level)
   if (d.ageFor) why.push(`More common at age ${d.ageFor} in past clinic visits`)
-  if (d.record != null) why.push(`Right about ${d.record} times in 10 in past clinic visits`)
-  const not = [...new Set(d.against.map(_noWho))]
+  if (d.record != null) why.push(`The AI model was right about ${d.record} times in 10 for this in past clinic visits`)
+  const not = [...new Set(d.against.map(_against))]
   if (d.ageAgainst) not.push(`Less common at age ${d.ageAgainst}`)
-  const unknown = [...new Set((d.unknown || []).map(_noWho))]
-  const ask = [...new Set(d.ask.map(_noWho))]
-  return { why, not, unknown, ask, rulesOut: d.rulesOut }
+  ;[...new Set((d.unknown || []).map((x) => _clean(x).toLowerCase()))].forEach((x) => not.push(`${_cap(x)}: not known (the reporter didn't know)`))
+  const ask = [...new Set(d.ask.map((x) => _clean(x).toLowerCase()))]
+  if (ask.length) not.push(`Not asked yet: ${ask.join(', ')}`)
+  if (d.rulesOut.length) not.push(`Would be ruled out by ${d.rulesOut.map((x) => String(x).toLowerCase()).join(', ')}`)
+  return { why, not }
+}
+
+// Every symptom of the event's reports in one line: reported, added on the call, and the ones the reporter said no to
+function symptomsSummary(reports) {
+  const low = (x) => String(x || '').toLowerCase()
+  const reported = [...new Set(reports.flatMap((r) => (r.symptoms || []).map(low)))]
+  const qs = reports.flatMap((r) => r.questions || [])
+  const added = [...new Set(qs.filter((q) => q.answer === 'Yes' && q.source === 'phone').map((q) => low(q.name)))].filter((x) => !reported.includes(x))
+  const no = [...new Set(qs.filter((q) => q.answer === 'No').map((q) => low(q.name)))].filter((x) => !reported.includes(x) && !added.includes(x))
+  return { reported, added, no }
 }
 
 function TriageDisease({ d, chosen, canChoose, onChoose }) {
@@ -570,13 +590,11 @@ function TriageDisease({ d, chosen, canChoose, onChoose }) {
           </div>
         </div>
       </td>
-      <td className="p-3 text-sm text-gray-900">{w.why.map((x) => <span key={x} className="block">{x}</span>)}</td>
       <td className="p-3 text-sm text-gray-900">
-        {w.not.length === 0 && w.unknown.length === 0 && w.ask.length === 0 && w.rulesOut.length === 0 && <span className="text-gray-500">—</span>}
-        {w.not.length > 0 && <span className="block">{w.not.join(', ')}</span>}
-        {w.unknown.length > 0 && <span className="block">Not known: {w.unknown.join(', ').toLowerCase()}</span>}
-        {w.ask.length > 0 && <span className="block text-gray-700">Not checked: {w.ask.join(', ').toLowerCase()}</span>}
-        {w.rulesOut.length > 0 && <span className="block text-gray-700">Ruled out if present: {w.rulesOut.join(', ').toLowerCase()}</span>}
+        <ul className="list-disc space-y-0.5 pl-4">{w.why.map((x) => <li key={x}>{x}</li>)}</ul>
+      </td>
+      <td className="p-3 text-sm text-gray-900">
+        {w.not.length === 0 ? <span>Nothing against it</span> : <ul className="list-disc space-y-0.5 pl-4">{w.not.map((x) => <li key={x}>{x}</li>)}</ul>}
       </td>
       <td className="p-3 text-right whitespace-nowrap">
         {chosen ? (
@@ -805,7 +823,7 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError, onDisc
   const cbs = signals.filter((s) => s.source === 'CBS')
   const questions = (inv.questions || []).filter((q) => q.stage === 'CHA')
   const chosen = !!data?.locked && reports.length > 0   // the officer chose the disease: answers are kept as they are
-  const open = ['New', 'Verifying'].includes(event.status) && !chosen
+  const open = event.status === 'New' && !chosen
   const editable = canVerify && open
   const tries = data?.tryChaAfter || 3
   const waiting = reports.filter((r) => !r.reached && r.noAnswer < tries)
@@ -968,7 +986,7 @@ function VerifiedSummary({ inv, reports, plain = false }) {
 
 // AI triage in four tabs (Elizabeth, 19 Nov 2026): 1. what the CHA found, 2. choose the disease, then for a priority
 // disease 3. its questions and 4. the next step (renderPart draws those two from VerificationPanel)
-function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDiscard, onSplit, busy: pageBusy, renderPart }) {
+function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDiscard, onSplit, onReferred, busy: pageBusy, renderPart }) {
   const [data, setDataRaw] = useState(null)
   const setData = useCallback((d) => { if (d) triageCache.set(event.id, { at: Date.now(), p: Promise.resolve(d) }); setDataRaw(d) }, [event.id])
   const [failed, setFailed] = useState('')
@@ -986,7 +1004,7 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
   useEffect(() => { getDiseaseOptions().then((o) => setOptions(o || [])).catch(() => {}) }, [])
 
   const reports = data?.reports || []
-  const open = ['New', 'Verifying', 'Verified'].includes(event.status)
+  const open = ['New', 'Verified'].includes(event.status)
   const queue = new Set(data?.queueDiseases || [])
 
   async function confirm() {
@@ -1010,8 +1028,9 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
   const overriding = !!(pending && data.aiTop && pending.key !== data.aiTop)
   const conflict = data.conflict
   const priorityChosen = !!data.confirmed && data.pathway !== 'Referral' && !!renderPart
-  const atTab = priorityChosen ? 'questions' : data.verificationDone ? 'disease' : 'cha'
-  const cur = ttab && (priorityChosen || !['questions', 'decide'].includes(ttab)) ? ttab : atTab
+  const referral = !!data.confirmed && data.pathway === 'Referral'   // non-priority disease: refer the patient here (KRCS 20 Nov 2026)
+  const atTab = priorityChosen ? 'questions' : referral ? 'refer' : data.verificationDone ? 'disease' : 'cha'
+  const cur = ttab && (priorityChosen || !['questions', 'decide'].includes(ttab)) && (referral || ttab !== 'refer') ? ttab : atTab
   const nextBtn = (to, label) => (
     <div className="mt-6 flex justify-end border-t border-gray-100 pt-5">
       <button type="button" onClick={() => setTtab(to)} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{label} →</button>
@@ -1031,7 +1050,9 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
       <CurvedTabs label="AI triage" value={cur} onChange={setTtab} tabs={[
         { key: 'cha', label: '1. Read what the CHA found', done: !!data.verificationDone },
         { key: 'disease', label: '2. Choose the disease', done: !!data.confirmed },
-        ...(data.pathway === 'Referral' ? [] : [
+        ...(data.pathway === 'Referral' ? [
+          { key: 'refer', label: '3. Refer the patient', disabled: !referral, why: 'Choose the disease first', done: event.status === 'Closed' },
+        ] : [
           { key: 'questions', label: '3. Answer its questions', disabled: !priorityChosen, why: 'Choose a priority disease first' },
           { key: 'decide', label: '4. Decide the next step', disabled: !priorityChosen, why: 'Choose a priority disease first' },
         ]),
@@ -1044,6 +1065,7 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
         </>
       )}
 
+      {cur === 'refer' && referral && <ReferralStep event={event} canAct={canAct} onError={onError} onSent={onReferred} />}
       {cur === 'questions' && priorityChosen && renderPart('questions', () => setTtab('decide'))}
       {cur === 'decide' && priorityChosen && (
         <>
@@ -1061,6 +1083,22 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
           Case definitions first, then the AI model's suggestions{reports.length > 1 ? `, from all ${reports.length} reports` : ''}.
           {!canChoose && open && !data.verificationDone && ' Choose once verification (step 2) is confirmed.'}
         </p>
+        {(() => {
+          const sx = symptomsSummary(reports)
+          if (!sx.reported.length && !sx.added.length && !sx.no.length) return null
+          return (
+            <table className="mt-3 w-full border-collapse border border-gray-200 text-sm">
+              <tbody>
+                <tr><th scope="row" className="w-48 border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">Symptoms reported</th>
+                  <td className="border border-gray-200 px-3 py-2 text-gray-900">{sx.reported.join(', ') || 'None'}</td></tr>
+                <tr><th scope="row" className="border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">Added on the call</th>
+                  <td className="border border-gray-200 px-3 py-2 text-gray-900">{sx.added.join(', ') || 'None'}</td></tr>
+                <tr><th scope="row" className="border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">The reporter said no to</th>
+                  <td className="border border-gray-200 px-3 py-2 text-gray-900">{sx.no.join(', ') || 'None'}</td></tr>
+              </tbody>
+            </table>
+          )
+        })()}
         {conflict && open && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 px-3 py-2 text-sm text-gray-900">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
@@ -1121,7 +1159,7 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
             {overriding && (
               <label className="mt-3 block">
                 <span className="block text-sm font-bold text-gray-900">Why not {aiTop?.name || 'the top suggestion'}? <span className="text-red-700">*</span></span>
-                <span className="block text-xs text-gray-700 mb-1.5">The top suggestion was {aiTop?.name || data.aiTop}. Your reason is kept in the Audit Log.</span>
+                <span className="block text-xs text-gray-700 mb-1.5">The top suggestion was {aiTop?.name || data.aiTop}. Your reason will help in model retraining</span>
                 <textarea rows={2} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} className={INPUT} />
               </label>
             )}
@@ -1142,7 +1180,7 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
           </button>
         ) : <span />}
         {data.pathway === 'Referral' ? (
-          <button type="button" onClick={() => onNext(6)} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Refer the patient →</button>
+          <button type="button" onClick={() => setTtab('refer')} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Next: refer the patient →</button>
         ) : data.confirmed ? (
           <span className="text-sm text-gray-700">Answer its questions next (tab 3).</span>
         ) : <span className="text-sm text-gray-700">{data.verificationDone ? 'Choose a disease to continue' : 'Waiting for verification (step 2)'}</span>}
@@ -1176,20 +1214,35 @@ function EscalationNotice({ esc }) {
   )
 }
 
-// ---------- referral pathway (step 6 when a non-priority disease was confirmed in AI triage) ----------
-const URGENCY = ['Routine', 'Urgent', 'Emergency']
-const AGE_GROUPS = ['Under 1', '1-4 years', '5-14 years', '15+ years']
+// ---------- referral pathway: a non-priority disease, referred from AI triage (KRCS 20 Nov 2026) ----------
+// The officer chooses who refers, by when, the instructions and the follow-up; the patients come from the reports;
+// the CHP chooses the nearest health facility when they refer. Sending it closes the case (outcome Referred).
 const plusDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+
+function ReferralStep({ event, canAct, onError, onSent }) {
+  if (event.status === 'Closed') {
+    return (
+      <section aria-label="Referral">
+        <p className="text-sm text-gray-900">
+          <b>Referred.</b> The case is closed. The CHP chooses the nearest health facility, then updates the referral
+          (referred, reached the facility or did not reach). The referral and follow-up are below and on the Referrals page.
+        </p>
+        <div className="mt-5"><EventTasksPanel /></div>
+      </section>
+    )
+  }
+  return canAct ? <ReferralForm event={event} onSent={onSent} onError={onError} />
+    : <p className="text-sm text-gray-900">An officer will ask a CHP to refer the patient.</p>
+}
 
 function ReferralForm({ event, onSent, onError }) {
   const [people, setPeople] = useState(null)
-  const [facilities, setFacilities] = useState(null)
-  const [f, setF] = useState({ assigned_to: '', facility: '', urgency: 'Routine', due_date: plusDays(1), people: event.people || 1,
-    age_group: '', sex: '', instructions: '', followup: true, followup_days: 14 })
+  const [patients, setPatients] = useState(null)
+  const [f, setF] = useState({ assigned_to: '', due_date: plusDays(1), instructions: '', followup: true, followup_days: 14 })
   const [saving, setSaving] = useState(false)
   useEffect(() => {
     getReferralPeople(event.id).then((p) => { setPeople(p); setF((x) => (x.assigned_to || !p.length ? x : { ...x, assigned_to: p[0].user })) }).catch(() => setPeople([]))
-    getReferralFacilities().then(setFacilities).catch(() => setFacilities([]))
+    getReferralPatients(event.id).then(setPatients).catch(() => setPatients(null))
   }, [event.id])
   const groups = useMemo(() => {
     const out = []
@@ -1202,85 +1255,66 @@ function ReferralForm({ event, onSent, onError }) {
   }, [people])
   async function send() {
     if (!f.assigned_to) { onError('Choose who refers the patient.'); return }
-    if (!f.facility.trim()) { onError('Choose the health facility.'); return }
     setSaving(true)
     try {
-      await referPatient(event.id, { assigned_to: f.assigned_to, facility: f.facility.trim(), urgency: f.urgency, due_date: f.due_date,
-        people: f.people, age_group: f.age_group, sex: f.sex, instructions: f.instructions,
+      await referPatient(event.id, { assigned_to: f.assigned_to, due_date: f.due_date, instructions: f.instructions,
         followup_days: f.followup ? f.followup_days : 0 })
       onSent()
     } catch (e) { onError(e.message || 'Could not send the referral') } finally { setSaving(false) }
   }
-  const L = 'block text-sm font-medium text-gray-700 mb-1.5'
+  const L = 'block text-sm font-bold text-gray-900 mb-1.5'
   return (
-    <div className="grid gap-4 md:grid-cols-2 max-w-3xl">
-      <div className="md:col-span-2">
-        <label className={L} htmlFor="ref-who">Who refers the patient</label>
-        <select id="ref-who" value={f.assigned_to} onChange={(e) => setF({ ...f, assigned_to: e.target.value })} className={INPUT} disabled={!people}>
-          {!people && <option>Loading...</option>}
-          {people && !people.length && <option value="">No CHP or CHA found for this area</option>}
-          {groups.map((g) => (
-            <optgroup key={g.name} label={g.name}>
-              {g.list.map((p) => <option key={p.user} value={p.user}>{p.name}{p.role ? ` · ${p.role}` : ''}{p.unit ? ` · ${p.unit}` : ''}{p.phone ? ` · ${p.phone}` : ''}</option>)}
-            </optgroup>
-          ))}
-        </select>
-        <p className="mt-1.5 text-xs text-gray-500">They get the referral on their Referrals page, with a notification.</p>
-      </div>
-      <div>
-        <label className={L} htmlFor="ref-fac">Health facility</label>
-        {facilities && facilities.length > 0 ? (
-          <select id="ref-fac" value={f.facility} onChange={(e) => setF({ ...f, facility: e.target.value })} className={INPUT}>
-            <option value="">Choose a facility</option>
-            {facilities.map((x) => <option key={x.name} value={x.name}>{x.name}{x.subCounty ? ` · ${x.subCounty}` : ''}</option>)}
+    <section aria-label="Refer the patient" className="max-w-3xl">
+      <p className="mb-4 text-sm text-gray-900">
+        {event.diseaseName || 'This disease'} is not a priority disease: ask a CHP to refer the patient to the nearest health facility.
+        Sending the referral closes the case; the referral and follow-up carry on with the CHP.
+      </p>
+      <table className="mb-5 w-full border-collapse border border-gray-200 text-sm">
+        <tbody>
+          <tr><th scope="row" className="w-48 border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">Patients</th>
+            <td className="border border-gray-200 px-3 py-2 text-gray-900">{patients ? patients.people : '…'} <span className="text-gray-700">(from the report{patients?.reports?.length > 1 ? 's' : ''})</span></td></tr>
+          <tr><th scope="row" className="border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">Age group</th>
+            <td className="border border-gray-200 px-3 py-2 text-gray-900">{patients ? (patients.ageGroups.join(', ') || 'Not given') : '…'}</td></tr>
+          <tr><th scope="row" className="border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">Health facility</th>
+            <td className="border border-gray-200 px-3 py-2 text-gray-900">The CHP chooses the nearest one when they refer</td></tr>
+        </tbody>
+      </table>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="md:col-span-2">
+          <label className={L} htmlFor="ref-who">Who refers the patient</label>
+          <select id="ref-who" value={f.assigned_to} onChange={(e) => setF({ ...f, assigned_to: e.target.value })} className={INPUT} disabled={!people}>
+            {!people && <option>Loading...</option>}
+            {people && !people.length && <option value="">No CHP or CHA found for this area</option>}
+            {groups.map((g) => (
+              <optgroup key={g.name} label={g.name}>
+                {g.list.map((p) => <option key={p.user} value={p.user}>{p.name}{p.role ? ` · ${p.role}` : ''}{p.unit ? ` · ${p.unit}` : ''}{p.phone ? ` · ${p.phone}` : ''}</option>)}
+              </optgroup>
+            ))}
           </select>
-        ) : (
-          <input id="ref-fac" value={f.facility} onChange={(e) => setF({ ...f, facility: e.target.value })} placeholder="Facility name" className={INPUT} />
-        )}
-      </div>
-      <div>
-        <span className={L}>Urgency</span>
-        <Seg label="Urgency" options={URGENCY.map((u) => ({ value: u, label: u }))} value={f.urgency} onChange={(v) => setF({ ...f, urgency: v })} />
-      </div>
-      <div>
-        <label className={L} htmlFor="ref-people">Patients</label>
-        <input id="ref-people" type="number" min={1} value={f.people} onChange={(e) => setF({ ...f, people: e.target.value })} className={INPUT} />
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className={L} htmlFor="ref-age">Age group</label>
-          <select id="ref-age" value={f.age_group} onChange={(e) => setF({ ...f, age_group: e.target.value })} className={INPUT}>
-            <option value="">—</option>{AGE_GROUPS.map((a) => <option key={a}>{a}</option>)}
-          </select>
+          <p className="mt-1.5 text-xs text-gray-700">They get the referral on their Referrals page, with a notification.</p>
         </div>
         <div>
-          <label className={L} htmlFor="ref-sex">Sex</label>
-          <select id="ref-sex" value={f.sex} onChange={(e) => setF({ ...f, sex: e.target.value })} className={INPUT}>
-            <option value="">—</option><option>Female</option><option>Male</option>
-          </select>
+          <label className={L} htmlFor="ref-due">Refer by</label>
+          <input id="ref-due" type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} className={INPUT} />
+        </div>
+        <div className="md:col-span-2">
+          <label className={L} htmlFor="ref-note">Instructions</label>
+          <textarea id="ref-note" rows={2} value={f.instructions} onChange={(e) => setF({ ...f, instructions: e.target.value })} placeholder="e.g. take the child to the nearest health facility today; give ORS on the way" className={INPUT} />
+        </div>
+        <div className="md:col-span-2 rounded-xl border border-gray-200 p-3">
+          <label className="flex flex-wrap items-center gap-2 text-sm text-gray-900">
+            <input type="checkbox" checked={f.followup} onChange={(e) => setF({ ...f, followup: e.target.checked })} className="h-4 w-4 rounded border-gray-300" />
+            Follow up after
+            <input type="number" min={1} max={30} value={f.followup_days} disabled={!f.followup} onChange={(e) => setF({ ...f, followup_days: e.target.value })}
+              aria-label="Follow-up after days" className="w-16 rounded-md border border-gray-300 px-2 py-0.5 text-sm disabled:opacity-50" /> days
+          </label>
+          <p className="ml-6 mt-1 text-xs text-gray-700">The same person checks on the patient: did they reach the facility, are they better, any new cases nearby?</p>
+        </div>
+        <div className="md:col-span-2">
+          <button type="button" disabled={saving} onClick={send} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{saving ? 'Sending...' : 'Send referral and close the case'}</button>
         </div>
       </div>
-      <div>
-        <label className={L} htmlFor="ref-due">Refer by</label>
-        <input id="ref-due" type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} className={INPUT} />
-      </div>
-      <div className="md:col-span-2">
-        <label className={L} htmlFor="ref-note">Instructions</label>
-        <textarea id="ref-note" rows={2} value={f.instructions} onChange={(e) => setF({ ...f, instructions: e.target.value })} placeholder="e.g. take the children to the facility today; give ORS on the way" className={INPUT} />
-      </div>
-      <div className="md:col-span-2 rounded-xl border border-gray-200 p-3">
-        <label className="flex flex-wrap items-center gap-2 text-sm text-gray-800">
-          <input type="checkbox" checked={f.followup} onChange={(e) => setF({ ...f, followup: e.target.checked })} className="h-4 w-4 rounded border-gray-300" />
-          Follow up after
-          <input type="number" min={1} max={30} value={f.followup_days} disabled={!f.followup} onChange={(e) => setF({ ...f, followup_days: e.target.value })}
-            aria-label="Follow-up after days" className="w-16 rounded-md border border-gray-300 px-2 py-0.5 text-sm disabled:opacity-50" /> days
-        </label>
-        <p className="ml-6 mt-1 text-xs text-gray-500">The same person checks on the patient: did they reach the facility, are they better, any new cases nearby?</p>
-      </div>
-      <div className="md:col-span-2">
-        <button type="button" disabled={saving} onClick={send} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{saving ? 'Sending...' : 'Send referral'}</button>
-      </div>
-    </div>
+    </section>
   )
 }
 
@@ -1483,7 +1517,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
   const questions = triaged ? all : all.filter((q) => q !== caseQ)
   const answered = questions.filter((q) => q.answer).length
   const unanswered = inv.gates?.unansweredQuestions || []
-  const open = ['New', 'Verifying', 'Verified'].includes(event.status)
+  const open = ['New', 'Verified'].includes(event.status)
   const action = inv.suggestion?.action
   const fromTrend = signals.length === 0 && !!event.fromAlert
   const reportsDone = triaged || (fromTrend ? !!caseQ?.answer : checkedCount > 0)
@@ -2140,7 +2174,7 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
 
 const DECISION_OPTIONS = [
   { value: 'confirm', title: 'Confirm event', hint: 'It is a real event. RCCE steps open next.', icon: Check, enabled: (s, g, inv) => s === 'Investigating' && g?.canConfirm && !inv?.mustEscalate },
-  { value: 'escalate', title: 'Escalate to County/MoH', hint: 'County or National MOH need to lead.', icon: ExternalLink, enabled: (s) => ['New', 'Verifying', 'Verified', 'Investigating', 'Confirmed'].includes(s) },
+  { value: 'escalate', title: 'Escalate to County/MoH', hint: 'County or National MOH need to lead.', icon: ExternalLink, enabled: (s) => ['New', 'Verified', 'Investigating', 'Confirmed'].includes(s) },
   { value: 'close_unconfirmed', title: 'Close: no event found', hint: 'The investigation found no event. Reporters are thanked.', icon: X, enabled: (s) => s === 'Investigating' },
 ]
 
@@ -2279,7 +2313,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
     <div className={card}>
       <PanelHeader title="Response & close" sub="Do the protocol's RCCE steps, then close and send feedback" />
 
-      {status === 'Discarded' && inv.decision && (
+      {status === 'Closed' && event.outcome === 'Discarded' && inv.decision && (
         <div className="rounded-xl bg-gray-50 border border-gray-100 p-4 mb-5">
           <p className="text-sm font-semibold text-gray-900">Decision: {inv.decision.decision}</p>
           {inv.decision.reason && <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap break-words">{inv.decision.reason}</p>}
@@ -2289,7 +2323,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
         </div>
       )}
 
-      {status !== 'Discarded' && (
+      {!(status === 'Closed' && event.outcome === 'Discarded') && (
         <div className="mb-6">
           {steps.length === 0 ? (
             <p className="text-sm text-gray-500">This protocol has no RCCE steps.</p>
@@ -2338,7 +2372,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
         </>
       )}
 
-      {editable && (status === 'Closed' || status === 'Discarded') && (
+      {editable && status === 'Closed' && (
         <button type="button" aria-label="Reopen" disabled={busy} onClick={() => onAction('reopen')} className={`${BTN} ${SECONDARY} ${FOCUS}`}>
           Reopen
         </button>
@@ -2972,8 +3006,8 @@ export default function EventDetail() {
   // escalated to the county / MOH: the event stops at AI triage, later steps are not shown (KRCS 20 Nov 2026)
   const allowed = (inv?.steps || [1, 2, 3, 4, 5, 6]).filter((n) => status !== 'Escalated' || n <= 3)
   const can = (n) => allowed.includes(n)
-  const canVerify = can(2) && ['New', 'Verifying', 'Investigating'].includes(status)
-  const canSplit = (can(2) || can(3)) && !['Closed', 'Discarded'].includes(status) && signals.length >= 2
+  const canVerify = can(2) && ['New', 'Investigating'].includes(status)
+  const canSplit = (can(2) || can(3)) && status !== 'Closed' && signals.length >= 2
   const fieldWithReporter = signals.filter((s) => s.source === 'Field' && s.reporter)
   const singleReporter = fieldWithReporter.length === 1 ? fieldWithReporter[0].reporter : null
   // a CHA works on Signal captured and Verification only (KRCS 19 Nov 2026)
@@ -2984,7 +3018,7 @@ export default function EventDetail() {
   // Tasks (KRCS 20 Nov 2026): assigned in Field investigation and Response & close, not in Decision; after a discard a
   // CHA can still refer the patient (a Referral task for the CHP), shown at the step the signal was discarded at
   const discardedAt = (stepInfo?.states || []).indexOf('discarded') + 1
-  const showTasks = (shown === 4 || shown === 6) ? inv?.tasks?.see !== false : status === 'Discarded' && shown === discardedAt
+  const showTasks = (shown === 4 || shown === 6) ? inv?.tasks?.see !== false : status === 'Closed' && event.outcome === 'Discarded' && shown === discardedAt
 
   // Signal captured's button goes to the step the event is at (KRCS 19 Nov 2026: after Confirm and save it no longer
   // says Continue to Verification)
@@ -3005,7 +3039,7 @@ export default function EventDetail() {
             event={event}
             signals={signals}
             canAct={can(1) || can(2)}
-            canAddVoice={(can(1) || can(2)) && !(isCha && inv?.locked) && ['New', 'Verifying', 'Verified'].includes(status)}
+            canAddVoice={(can(1) || can(2)) && !(isCha && inv?.locked) && ['New', 'Verified'].includes(status)}
             next={nextFromCapture}
             onNext={() => selectStep(nextFromCapture.n)}
           />
@@ -3053,8 +3087,8 @@ export default function EventDetail() {
             onConfirmed={(r) => {
               showToast(r.pathway === 'Referral' ? `${r.diseaseName} confirmed. Refer the patient next.` : `${r.diseaseName} confirmed. Answer its questions next.`)
               refreshEvent()
-              if (r.pathway === 'Referral') selectStep(6)
             }}
+            onReferred={() => { showToast('Referral sent. The case is closed; the CHP chooses the nearest facility and updates the referral.'); refreshEvent() }}
             renderPart={officerQuestions ? (part, onNextTab) => questionsPanel(part, onNextTab) : null}
           />
         ) : (
@@ -3074,7 +3108,7 @@ export default function EventDetail() {
                 onNextTab={onNextTab}
                 event={event}
                 inv={inv}
-                editable={can(3) && ['New', 'Verifying', 'Verified'].includes(status)}
+                editable={can(3) && ['New', 'Verified'].includes(status)}
                 busy={busy}
                 busyKey={busyKey}
                 signals={signals}
@@ -3195,7 +3229,7 @@ export default function EventDetail() {
                 </span>
               )}
               <span className="inline-flex items-center rounded-full border border-white/70 bg-white/10 px-3.5 py-1 text-xs font-medium">
-                {STATUS_LABELS[event.status] || event.status}
+                {event.status === 'Closed' && event.outcome ? `Closed · ${event.outcome}` : STATUS_LABELS[event.status] || event.status}
               </span>
             </div>
             <p className="text-sm font-medium text-white/90">

@@ -14,8 +14,8 @@ from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
 from surveillance.capabilities import has_capability
 
 VIEW_EVENTS = "view_review_queue"
-OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
-WAITING = ["New", "Verifying"]
+OPEN = ["New", "Verified", "Investigating", "Confirmed", "Escalated"]
+WAITING = ["New"]
 ESCALATED_ACTION = "Escalated to county / MoH"
 SEVERITY_ORDER = {"critical": 0, "high": 1, "standard": 2}
 TREND_SOURCES = {
@@ -119,7 +119,7 @@ def _event_sections(today, n_weeks=12, source="all", sub_county=None, disease=No
 	days = n_weeks * 7
 	start, prev_start = add_days(today, -days), add_days(today, -2 * days)
 	present = {r.disease_name for r in frappe.get_all("Surveillance Event",
-		filters=_events(names, status=["!=", "Discarded"], creation=[">=", start]), fields=["disease_name"]) if r.disease_name}
+		filters=_events(names, outcome=["!=", "Discarded"], creation=[">=", start]), fields=["disease_name"]) if r.disease_name}
 	if disease:
 		names = frappe.get_all("Surveillance Event", filters=_events(names, disease_name=disease), pluck="name")
 	count = lambda **f: frappe.db.count("Surveillance Event", _events(names, **f))
@@ -193,7 +193,7 @@ def _event_sections(today, n_weeks=12, source="all", sub_county=None, disease=No
 
 	# events by disease in the range (discarded left out), with change vs the range before
 	def by_disease(a, b=None):
-		f = {"status": ["!=", "Discarded"], "creation": [">=", a] if b is None else ["between", [a, b]]}
+		f = {"outcome": ["!=", "Discarded"], "creation": [">=", a] if b is None else ["between", [a, b]]}
 		res = defaultdict(int)
 		for r in frappe.get_all("Surveillance Event", filters=_events(names, **f), fields=["disease_name"]):
 			res[r.disease_name or "Unknown"] += 1

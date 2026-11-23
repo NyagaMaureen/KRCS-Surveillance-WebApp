@@ -101,7 +101,7 @@ after_migrate = [
 
 # Fixtures: shipped with the app and installed on every site on migrate
 SURVEILLANCE_ROLES = [
-	"System Administrator", "Public Health HQ", "CHP", "CDSC", "MOH DDSR",
+	"System Administrator", "Public Health HQ", "CHP", "CDSC", "County MOH / PHEOC", "MOH DDSR (National)",
 	"Surveillance Officer", "Public Health Officer", "HIS Officer", "Facility Health Worker", "Data & AI Administrator",
 	"Knowledge Base Client", "WhatsApp Bot",
 ]

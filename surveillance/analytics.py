@@ -26,7 +26,7 @@ VIEW = "view_analytics"
 SOURCES = {"community": ("Case Report", "CBS"), "facility": ("IDSR", "EMR"), "all": ("Case Report", "CBS", "IDSR", "EMR")}
 VERIFY_ACTION = "Verification started"
 ESCALATE_ACTION = "Escalated to county / MoH"
-DECIDED = {"Confirmed", "Discarded", "Escalated", "Closed"}
+DECIDED = {"Confirmed", "Escalated", "Closed"}
 TARGET_HOURS = {"critical": 24, "high": 48, "standard": 72}
 BASELINE_WEEKS = 8
 
@@ -278,7 +278,7 @@ def _summary(weeks, today):
 	start, prev_start = add_days(today, -7 * weeks), add_days(today, -14 * weeks)
 	cur_reports = len(_reports(start))
 	prev_reports = len(_reports(prev_start, start))
-	open_now = frappe.db.count("Surveillance Event", _event_filters(status=["in", ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]]))
+	open_now = frappe.db.count("Surveillance Event", _event_filters(status=["in", ["New", "Verified", "Investigating", "Confirmed", "Escalated"]]))
 	open_new = frappe.db.count("Surveillance Event", _event_filters(creation=[">=", start]))
 	open_prev = frappe.db.count("Surveillance Event", _event_filters(creation=["between", [prev_start, start]]))
 

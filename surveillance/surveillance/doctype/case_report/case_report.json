@@ -160,7 +160,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Submitted\nReviewed\nLinked\nInvestigating\nClosed\nRecorded"
+   "options": "Submitted\nVerified\nReviewed\nLinked\nInvestigating\nConfirmed\nEscalated\nClosed\nRecorded"
   },
   {
    "default": "Today",

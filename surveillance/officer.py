@@ -10,7 +10,7 @@ from frappe.utils import add_days, cint, get_datetime, get_fullname, getdate, no
 from surveillance.capabilities import has_capability, require_capability
 
 EVENT = "Surveillance Event"
-OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
+OPEN = ["New", "Verified", "Investigating", "Confirmed", "Escalated"]
 SEV_ORDER = {"critical": 0, "high": 1, "standard": 2}
 
 
@@ -56,7 +56,7 @@ def get_officer_dashboard():
 			"hint": "Events reported in the last 7 days, compared with the 7 days before", "link": "/alerts-signals?tab=all"},
 		{"key": "priority", "label": "Priority alerts", "value": count(status=["in", OPEN], severity=["in", ["critical", "high"]]),
 			"hint": "Open events of critical or high severity", "link": "/alerts-signals?tab=all"},
-		{"key": "verify", "label": "Awaiting verification", "value": count(status=["in", ["New", "Verifying"]]),
+		{"key": "verify", "label": "Awaiting verification", "value": count(status="New"),
 			"hint": "New events and events being verified", "link": "/alerts-signals"},
 		{"key": "investigating", "label": "Active investigations", "value": count(status="Investigating"),
 			"hint": "Events in field investigation", "link": "/alerts-signals?tab=investigating"},
@@ -135,7 +135,7 @@ def _followups_open(names):
 
 
 def _stage(e, monitoring):
-	return {"New": "Signal detected", "Verifying": "Verification", "Verified": "AI triage", "Investigating": "Investigation",
+	return {"New": "Signal detected", "Verified": "Verification",   # verified, waiting for AI triage "Investigating": "Investigation",
 		"Confirmed": "Response", "Escalated": "Response"}.get(e.status) or (
 		"Monitoring" if e.name in monitoring else "Closed")
 
@@ -152,7 +152,7 @@ def get_lifecycle(search=None, severity=None, stage=None, days=90):
 	if severity in SEV_ORDER:
 		filters["severity"] = severity
 	rows = frappe.get_all(EVENT, filters=filters, or_filters=or_filters,
-		fields=["name", "title", "disease_name", "status", "severity", "area", "sub_county", "people", "first_reported", "last_reported"],
+		fields=["name", "title", "disease_name", "status", "outcome", "severity", "area", "sub_county", "people", "first_reported", "last_reported"],
 		order_by="last_reported desc", limit_page_length=500)
 	rows = [r for r in rows if r.status in OPEN or (r.last_reported and getdate(r.last_reported) >= getdate(since))]
 	monitoring = _followups_open([r.name for r in rows if r.status == "Closed"])
@@ -166,7 +166,7 @@ def get_lifecycle(search=None, severity=None, stage=None, days=90):
 		days_open = (getdate(nowdate()) - getdate(r.first_reported)).days + 1 if r.first_reported else None
 		events.append({"id": r.name, "title": r.disease_name or r.title, "status": r.status, "stage": st,
 			"severity": r.severity, "place": ", ".join(x for x in [r.area, r.sub_county] if x),
-			"people": cint(r.people), "day": days_open, "discarded": r.status == "Discarded"})
+			"people": cint(r.people), "day": days_open, "discarded": r.outcome == "Discarded"})
 	return {"stages": [{"name": s, "count": counts[s], "help": STAGE_HELP[s]} for s in STAGES], "events": events}
 
 
@@ -189,7 +189,7 @@ def get_event_lifecycle(event):
 			"action": a.action, "note": a.note or ""})
 		seen.add(st)
 	reached = STAGES.index(current)
-	if doc.status == "Discarded":
+	if doc.get("outcome") == "Discarded":
 		steps = [{"name": s, "state": "done" if s == "Signal detected" or s in seen else "skipped"} for s in STAGES]
 	else:
 		steps = [{"name": s, "state": "done" if i < reached or (i == reached and s == "Closed") else

@@ -1418,6 +1418,7 @@ export async function updateEventTask(taskId, changes) {
   if (changes.dueDate) body.due_date = changes.dueDate
   if (changes.assignedTo) body.assigned_to = changes.assignedTo
   if (changes.progress != null) body.progress = changes.progress
+  if (changes.facility) body.facility = changes.facility
   return callMethodPost(`${TASKS}update_task`, body)
 }
 
@@ -1650,6 +1651,12 @@ export async function getReferralPeople(event) {
 }
 export async function referPatient(event, data) {
   return callMethodPost(`${TRIAGE}.refer`, { event, ...data })
+}
+export async function getReferralPatients(event) {   // people and age groups from the event's reports (KRCS 20 Nov 2026)
+  return callMethod(`${TRIAGE}.referral_patients?event=${encodeURIComponent(event)}`)
+}
+export async function getMyOpenReferrals() {   // the CHP's Referrals bell
+  return callMethod('/api/method/surveillance.event_tasks.my_open_referrals')
 }
 export async function getReportEvent(report) {   // {event: {id, status}} the Review Queue event a report is on
   return callMethod(`/api/method/surveillance.events.get_report_event?report=${encodeURIComponent(report)}`)

@@ -3,7 +3,7 @@ Surveillance & Response, map, Review Queue (escalations first), Signals Captured
 what is missing and removes nothing (change it later in Roles & Permissions). Their region is set on the user."""
 import frappe
 
-ROLE = "MOH DDSR"
+ROLE = "MOH DDSR"   # renamed County MOH / PHEOC by moh_roles_split (runs after this)
 CAPS = ["view_analytics", "view_alerts", "view_surveillance_map", "export_data", "view_review_queue", "view_reports",
 	"export_reports", "see_suspected_disease", "use_knowledge_base", "view_monitoring_reports", "export_monitoring_reports",
 	"view_data_quality", "view_response_protocols"]

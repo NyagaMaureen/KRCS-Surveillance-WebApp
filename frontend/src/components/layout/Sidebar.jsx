@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import * as icons from 'lucide-react'
 import { menuFor } from '../../data/sidebarMenu'
 import { useCapabilities } from '../../context/CapabilitiesContext'
-import { getReviewEvents } from '../../api/frappe'
+import { getReviewEvents, getMyOpenReferrals } from '../../api/frappe'
 
 function iconFor(name) {
   return icons[name] || icons.Circle
@@ -48,6 +48,18 @@ export default function Sidebar({ open = false, onClose }) {
     const timer = setInterval(load, 5 * 60 * 1000)
     return () => { active = false; clearInterval(timer) }
   }, [canSeeQueue])
+
+  // the CHP's Referrals bell: referrals and follow-ups they still need to act on (KRCS 20 Nov 2026)
+  const isChp = workspace === 'chp'
+  const [referralCount, setReferralCount] = useState(0)
+  useEffect(() => {
+    if (!isChp) return undefined
+    let active = true
+    const load = () => getMyOpenReferrals().then((n) => { if (active) setReferralCount(Number(n) || 0) }).catch(() => {})
+    load()
+    const timer = setInterval(load, 2 * 60 * 1000)
+    return () => { active = false; clearInterval(timer) }
+  }, [isChp, location.pathname])
 
   const [collapsed, setCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true')
   function toggle() {
@@ -164,6 +176,12 @@ export default function Sidebar({ open = false, onClose }) {
                   {item.page === 'alerts-signals' && newCount > 0 && (
                     <span className={['bg-red-600 text-white text-[10px] font-semibold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center', collapsed ? 'absolute top-1 right-1 ring-2 ring-white' : 'ml-auto'].join(' ')}>
                       {newCount > 99 ? '99+' : newCount}
+                    </span>
+                  )}
+                  {isChp && item.page === 'referrals' && referralCount > 0 && (
+                    <span title={`${referralCount} referral${referralCount === 1 ? '' : 's'} or follow-up${referralCount === 1 ? '' : 's'} to act on`}
+                      className={['inline-flex items-center gap-1 bg-red-600 text-white text-[10px] font-semibold rounded-full h-[18px] px-1.5', collapsed ? 'absolute top-1 right-1 ring-2 ring-white' : 'ml-auto'].join(' ')}>
+                      <icons.Bell className="w-3 h-3" aria-hidden="true" />{referralCount > 99 ? '99+' : referralCount}
                     </span>
                   )}
                 </Link>

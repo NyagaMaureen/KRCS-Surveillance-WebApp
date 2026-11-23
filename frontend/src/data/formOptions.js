@@ -1,4 +1,4 @@
-export const STATUSES = ['Submitted', 'Investigating', 'Closed', 'Recorded']   // Submitted is shown as 'Awaiting review'
+export const STATUSES = ['Submitted', 'Verified', 'Investigating', 'Confirmed', 'Escalated', 'Closed', 'Recorded']   // a report shows its event's status; Submitted is shown as New
 export const SEVERITIES = ['Mild', 'Moderate', 'Severe', 'Critical']
 export const AGE_BANDS = ['Under 5', '5-17', '18-59', '60+']
 export const CATEGORIES = ['Human Disease', 'Animal Disease']

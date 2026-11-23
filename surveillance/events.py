@@ -60,23 +60,25 @@ def in_scope(disease, sub_county, source=None):
 		return source == "Field"
 	return sub_county.strip().lower() in subs
 
-OPEN = ["New", "Verifying", "Verified", "Investigating", "Confirmed", "Escalated"]
-CLOSED = ["Discarded", "Closed"]
+OPEN = ["New", "Verified", "Investigating", "Confirmed", "Escalated"]   # fewer statuses (KRCS 20 Nov 2026)
+CLOSED = ["Closed"]   # why it closed is the outcome: Responded, Not confirmed, Discarded, Referred
 LEVELS = ["standard", "high", "critical"]   # same three levels as disease priority and Risk Alerts
 PRIORITY_SEVERITY = {"critical": "critical", "high": "high", "standard": "standard"}
 SOURCE_ORDER = ["EMR", "Field", "CBS"]
 
 # action -> (allowed from, new status, note required). Gates (answers, steps) are in investigation.check_gate.
 ACTIONS = {
-	"start": (["New"], "Verifying", False),
-	"investigate": (["Verifying", "Verified"], "Investigating", False),
+	"start": (["New"], "New", False),
+	"investigate": (["New", "Verified"], "Investigating", False),
 	"confirm": (["Investigating"], "Confirmed", True),
-	"escalate": (["New", "Verifying", "Verified", "Investigating", "Confirmed"], "Escalated", True),
-	"discard": (["New", "Verifying", "Verified"], "Discarded", True),          # only at verification (KRCS, 28 Oct 2026)
+	"escalate": (["New", "Verified", "Investigating", "Confirmed"], "Escalated", True),
+	"discard": (["New", "Verified"], "Closed", True),          # only at verification (KRCS, 28 Oct 2026)
 	"close": (["Confirmed", "Escalated"], "Closed", True),
 	"close_unconfirmed": (["Investigating"], "Closed", True),       # field investigation found no event
-	"reopen": (CLOSED, "Verifying", False),
+	"reopen": (CLOSED, "New", False),
 }
+# why a closed event ended (KRCS 20 Nov 2026)
+OUTCOMES = {"discard": "Discarded", "close": "Responded", "close_unconfirmed": "Not confirmed"}
 # Which event step each action belongs to (Roles & Permissions, KRCS 19 Nov 2026): any one of them is enough
 ACTION_STEPS = {"start": (2,), "investigate": (3,), "confirm": (5,), "escalate": (3, 4, 5), "discard": (1, 2, 3),
 	"close": (6,), "close_unconfirmed": (4, 5), "reopen": (6,)}
@@ -225,8 +227,9 @@ def _close_if_empty(event, note):
 	doc = frappe.get_doc("Surveillance Event", event)
 	if doc.status not in OPEN or doc.get("from_alert") or frappe.db.count("Surveillance Signal", {"event": event}):
 		return False
-	doc.status = "Discarded" if doc.status in ("New", "Verifying", "Verified") else "Closed"
-	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": doc.status, "note": note})
+	discarded = doc.status in ("New", "Verified")
+	doc.status, doc.outcome = "Closed", "Discarded" if discarded else "Responded"
+	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user, "action": "Discarded" if discarded else "Closed", "note": note})
 	doc.save(ignore_permissions=True)
 	return True
 
@@ -691,7 +694,7 @@ def _report_media(report):
 		for r in rows]
 
 
-FIELDS = ["name", "title", "disease", "disease_name", "priority", "severity", "status", "county", "sub_county",
+FIELDS = ["name", "title", "disease", "disease_name", "priority", "severity", "status", "outcome", "county", "sub_county",
 	"area", "region", "people", "deaths", "reports", "sources", "reason", "first_reported", "last_reported",
 	"linked_alert", "data_warning", "latitude", "longitude", "from_alert", "risk_score", "risk_breakdown", "pathway",
 	"decision", "decided_by", "decided_on", "decision_reason", "nearest_facility"]
@@ -751,7 +754,7 @@ def _shape(d, detail=False):
 	first = get_datetime(d.first_reported) if d.first_reported else None
 	out = {
 		"id": d.name, "title": d.title, "disease": d.disease, "diseaseName": d.disease_name,
-		"priority": d.priority, "severity": d.severity, "status": d.status,
+		"priority": d.priority, "severity": d.severity, "status": d.status, "outcome": d.get("outcome") or None,
 		"county": d.county, "subCounty": d.sub_county, "area": d.area, "region": d.region, "regionName": _region_name(d.region),
 		"people": d.people or 0, "deaths": d.deaths or 0, "reports": d.reports or 0,
 		"sources": [s.strip() for s in (d.sources or "").split(",") if s.strip()],
@@ -763,7 +766,7 @@ def _shape(d, detail=False):
 		"risk": _risk(d, detail),
 		"lat": d.latitude, "lng": d.longitude,
 		"pathway": d.get("pathway") or None,   # Referral: non-priority disease confirmed in AI triage (triage.py)
-		"escalation": _escalation(d),   # who escalated to the county MOH, when and why (MOH DDSR Review Queue)
+		"escalation": _escalation(d),   # who escalated to the county MOH, when and why (County MOH / PHEOC Review Queue)
 	}
 	if detail:
 		can_act = has_capability(ACT) or 2 in allowed_steps()   # whoever verifies calls the reporter
@@ -830,7 +833,7 @@ def _for_cha(out):
 
 @frappe.whitelist()
 def get_events(status=None, disease=None, region=None, source=None, search=None, limit=200):
-	"""List events for the Review Queue. status: New|Verifying|Investigating|Confirmed|Escalated|Discarded|Closed|All."""
+	"""List events for the Review Queue. status: New|Verified|Investigating|Confirmed|Escalated|Closed|All."""
 	scope = _scope_filters()
 	base = dict(scope)
 	if region and not scope:
@@ -923,6 +926,10 @@ def set_status(event, action, note=None, facility=None):
 		doc.nearest_facility = facility
 
 	doc.status = new_status
+	if action in OUTCOMES:
+		doc.outcome = OUTCOMES[action]
+	elif action == "reopen":
+		doc.outcome = None
 	investigation.after_status(doc, action, note)
 	doc.append("actions", {"at": now_datetime(), "user": frappe.session.user,
 		"action": ACTION_LABEL[action], "note": note})
@@ -968,7 +975,7 @@ def _dismiss_unclassified(event, note):
 @frappe.whitelist()
 def get_map_events(status="open", disease=None, days=30):
 	"""Review Queue events for the Surveillance Map (same region rules as the queue).
-	status: "open" (New, Verifying, Investigating, Confirmed, Escalated) | "all" | one status name.
+	status: "open" (New, Verified, Investigating, Confirmed, Escalated) | "all" | one status name.
 	Officers, FHWs and CHAs without the Review Queue permission see their own sub-county (their dashboard Maps tab)."""
 	from surveillance.user_scope import locked_area
 	area = locked_area()

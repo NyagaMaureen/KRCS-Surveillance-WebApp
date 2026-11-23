@@ -2,9 +2,9 @@
  {
   "docstatus": 0,
   "doctype": "Surveillance Role",
-  "modified": "2026-11-09 15:00:00.000000",
-  "name": "MOH DDSR",
-  "role": "MOH DDSR"
+  "modified": "2026-11-23 10:00:00.000000",
+  "name": "County MOH / PHEOC",
+  "role": "County MOH / PHEOC"
  },
  {
   "docstatus": 0,
@@ -82,5 +82,12 @@
   "modified": "2026-11-09 15:30:00.000000",
   "name": "WhatsApp Bot",
   "role": "WhatsApp Bot"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Surveillance Role",
+  "modified": "2026-11-23 10:00:00.000000",
+  "name": "MOH DDSR (National)",
+  "role": "MOH DDSR (National)"
  }
 ]

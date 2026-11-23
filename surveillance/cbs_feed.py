@@ -264,13 +264,18 @@ def _assigned_regions(client, assignments):
 @frappe.whitelist()
 def get_reporter_contact(signal):
 	"""Live lookup for one CBS signal. Returns {name, phone, assignedTo: [...]} or {available: False, why}."""
-	from surveillance.capabilities import require_capability
-	require_capability("act_on_events")
+	from surveillance.capabilities import has_capability
+	from surveillance.events import _check_access, allowed_steps
+	# officers who act on events, and CHAs who verify (step 2): CHAs verify CBS signals too (KRCS 23 Nov 2026)
+	if not (has_capability("act_on_events") or 2 in allowed_steps()):
+		frappe.throw("You do not have permission to see this contact.", frappe.PermissionError)
 	if not contact_enabled():
 		return {"available": False, "why": "Showing CBS volunteer contacts is switched off. Use the case number in CBS."}
-	s = frappe.db.get_value("Surveillance Signal", signal, ["source", "ref", "signal_date"], as_dict=True)
+	s = frappe.db.get_value("Surveillance Signal", signal, ["source", "ref", "signal_date", "event"], as_dict=True)
 	if not s or s.source != "CBS" or not s.ref:
 		frappe.throw("Not a CBS report")
+	if s.event:
+		_check_access(frappe.get_doc("Surveillance Event", s.event))
 	try:
 		client = CBSClient()
 		rep = _find_report(client, s.ref, s.signal_date)
