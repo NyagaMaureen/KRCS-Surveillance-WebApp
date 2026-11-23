@@ -2,11 +2,12 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Gauge, Sparkles, Plug, CircleDashed, RefreshCw, Users, KeyRound, ClipboardList, Lock, Wand2, BookOpen, Radar, HardDrive,
-  ArrowRight, Activity, Database, AlertTriangle, LogIn, Download, FileText, FileSpreadsheet, Image as ImageIcon, Clock,
+  ArrowRight, Activity, Database, AlertTriangle, LogIn, Download, Clock,
   RotateCcw, ListChecks, Cpu,
 } from 'lucide-react'
 import '../charts/chartSetup'
 import AppShell from '../components/layout/AppShell'
+import DownloadMenu from '../components/dashboard/DownloadMenu'
 import { Chart } from './MonitoringReports'
 import { downloadPanel, downloadTabPng, printTab, downloadTabExcel } from '../components/dashboard/dashExport'
 import { useCapabilities } from '../context/CapabilitiesContext'
@@ -157,12 +158,7 @@ export default function DataAiDashboard() {
           {tab.label}{tab.filters && <span className="font-normal"> · {periodText(filters)}</span>}
         </h3>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap items-center gap-2" aria-label="Download this tab">
-            <span className="text-xs font-semibold text-gray-900">Download</span>
-            <button type="button" disabled={!!busy} onClick={() => exportTab('png')} className={BTN_SMALL}><ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />{busy === 'png' ? 'Preparing…' : 'PNG'}</button>
-            <button type="button" disabled={!!busy} onClick={() => exportTab('pdf')} className={BTN_SMALL}><FileText className="h-3.5 w-3.5" aria-hidden="true" />PDF</button>
-            <button type="button" disabled={!!busy} onClick={() => exportTab('xlsx')} className={BTN_SMALL}><FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />{busy === 'xlsx' ? 'Preparing…' : 'Excel'}</button>
-          </div>
+          <DownloadMenu onPick={exportTab} busy={busy} />
           <button type="button" onClick={() => { setStamp((s) => s + 1); setUpdated(new Date()) }} className={BTN_SMALL}>
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh now
           </button>
@@ -277,7 +273,7 @@ const ACTIONS = [
   { key: 'audit', label: 'Audit Log', text: 'Every change, who made it and when', icon: ClipboardList, to: '/audit-log', cap: 'view_audit_log' },
   { key: 'security', label: 'Security Settings', text: 'Password rules, sign-in limits, open sessions', icon: Lock, to: '/settings?tab=security', cap: 'settings_security', count: (c) => `${c.sessions} open sessions` },
   { key: 'risk', label: 'AI Risk Engine', text: 'Risk score weights and red-flag symptoms', icon: Wand2, to: '/settings?tab=ai-config', cap: 'settings_ai_config' },
-  { key: 'kb', label: 'AI Knowledge Base', text: 'Documents the Data Assistant answers from', icon: BookOpen, to: '/knowledge-base', cap: ['manage_knowledge_base', 'approve_knowledge_base'], count: (c) => `${c.kb} documents` },
+  { key: 'kb', label: 'AI Knowledge Base', text: 'Documents the Data Assistant answers from', icon: BookOpen, to: '/knowledge-base', cap: ['view_knowledge_base', 'manage_knowledge_base', 'approve_knowledge_base'], count: (c) => `${c.kb} documents` },
   { key: 'channels', label: 'Reporting Channels', text: 'Mobile, WhatsApp, CBS and MOH 505 loads', icon: Radar, to: '/channels', cap: 'view_reporting_channels' },
   { key: 'data', label: 'Data and Database', text: 'Database size, background jobs and backups', icon: HardDrive, to: '/settings?tab=data', cap: 'settings_data' },
 ]

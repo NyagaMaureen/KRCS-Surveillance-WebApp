@@ -46,7 +46,7 @@ def _db_size_mb():
 
 def _report(key, from_d, to_d):
 	from surveillance.monitoring import _build
-	_r, _f, out = _build(key, {"from_date": str(from_d), "to_date": str(to_d)})
+	_r, _f, out = _build(key, {"from_date": str(from_d), "to_date": str(to_d)}, check=False)
 	return out
 
 

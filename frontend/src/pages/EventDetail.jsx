@@ -2,13 +2,13 @@ import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from 'rea
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, AlertTriangle, Check, Link2, ShieldAlert, Sparkles, X, ExternalLink,
-  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Calendar, Users, Building2, ChevronDown, CheckCircle2, Info } from 'lucide-react'
+  Camera, Mic, FileText, Paperclip, Phone, Scissors, MapPin, Building2, ChevronDown, CheckCircle2, Info } from 'lucide-react'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { EventTasksProvider, EventTasksPanel, StepTaskLink, useStepTask, OpenTasksNotice, useEventTasks } from '../components/tasks/EventTasks'
 import AppShell from '../components/layout/AppShell'
-import ContextPanel from '../components/context/ContextPanel'
+import ContextPanel, { Dot } from '../components/context/ContextPanel'
 import { RiskAssessment } from '../components/risk/RiskScore'
 import DiseaseInsight from '../components/risk/DiseaseInsight'
 import DiseaseChoices from '../components/risk/DiseaseChoices'
@@ -95,11 +95,11 @@ function computeSteps(event, inv) {
   } else if (status === 'Investigating') {
     if (canConfirm) { mark(4); states[4] = 'current'; current = 5 } else { mark(3); states[3] = 'current'; current = 4 }
   } else if (status === 'Escalated') {
-    // escalated to the county MOH (KRCS 17 Nov 2026): investigation, decision and response move to the MOH (later);
-    // for now those steps are greyed out
+    // escalated: handed to the County MOH / PHEOC, who work on steps 4 to 6; the officer's page stops at AI triage
+    // (KRCS 23 Nov 2026)
     mark(3)
-    states[3] = states[4] = states[5] = 'moh'
-    current = 3
+    states[3] = states[4] = states[5] = inv?.isMoh ? 'mine' : 'moh'
+    current = inv?.isMoh ? 4 : 3
   } else if (status === 'Confirmed') {
     mark(5)
     states[5] = 'current'
@@ -123,24 +123,24 @@ function computeSteps(event, inv) {
   return { states, current }
 }
 
-function Tracker({ event, states, openStep, onSelect, steps = STEPS, verifiedBy }) {
+function Tracker({ event, states, openStep, onSelect, steps = STEPS, verifiedBy, bare = false }) {
   const sources = (event.channels?.length ? event.channels : (event.sources || [])).join(', ')
   return (
-    <nav aria-label="Investigation progress" className="bg-white rounded-2xl border border-gray-100 px-4 sm:px-6 py-4 overflow-x-auto">
+    <nav aria-label="Investigation progress" className={bare ? 'overflow-x-auto' : 'bg-white rounded-2xl border border-gray-100 px-4 sm:px-6 py-4 overflow-x-auto'}>
       <ol className={`flex items-start ${steps.length > 3 ? 'min-w-[560px]' : ''}`}>
         {steps.map((s, i) => {
           const state = states[s.n - 1]
           const isOpen = openStep === s.n
           const info = false
-          const clickable = !info && (state === 'done' || state === 'current' || state === 'discarded')
+          const clickable = !info && (state === 'done' || state === 'current' || state === 'discarded' || state === 'mine')
           // Red = the step on screen. Green with its number = finished (KRCS 19 Nov 2026). Everything else grey.
           const circle =
             isOpen ? 'bg-red-600 text-white'
               : state === 'done' ? 'bg-emerald-500 text-white'
-                : state === 'current' ? 'bg-white text-gray-700 ring-1 ring-gray-300'
+                : state === 'current' || state === 'mine' ? 'bg-white text-gray-700 ring-1 ring-gray-300'
                   : 'bg-gray-100 text-gray-400'
-          const text = isOpen ? 'text-red-700 font-semibold' : state === 'done' || state === 'current' ? 'text-gray-800' : 'text-gray-400'
-          const sub = s.n === 2 && verifiedBy && state === 'done' ? `Verified by ${verifiedBy}` : state === 'discarded' ? 'Discarded' : state === 'skipped' ? 'Not needed' : state === 'moh' ? 'With county MOH' : s.n === 1 ? sources || 'Reports'
+          const text = isOpen ? 'text-red-700 font-semibold' : state === 'done' || state === 'current' || state === 'mine' ? 'text-gray-800' : 'text-gray-400'
+          const sub = s.n === 2 && verifiedBy && state === 'done' ? `Verified by ${verifiedBy}` : state === 'discarded' ? 'Discarded' : state === 'skipped' ? 'Not needed' : state === 'moh' ? 'With county MOH' : state === 'mine' ? 'Handed to you' : s.n === 1 ? sources || 'Reports'
             : state === 'current' && !isOpen ? 'Next step' : ''
           return (
             <li key={s.n} className="flex-1 relative">
@@ -577,31 +577,29 @@ function symptomsSummary(reports) {
   return { reported, added, no }
 }
 
-function TriageDisease({ d, chosen, canChoose, onChoose }) {
+function TriageDisease({ d, chosen, picked, canChoose, onPick, top }) {
   const w = diseaseWhy(d)
+  const id = `dz-${d.key}`
   return (
-    <tr className="border-t border-gray-200 align-top">
-      <td className="p-3">
-        <div className="flex items-start gap-2.5">
-          <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${DOT[d.rank] || DOT[3]}`} aria-hidden="true" />
-          <div>
-            <span className={`text-sm font-bold ${d.rank === 3 ? 'text-gray-600' : 'text-gray-900'}`}>{d.name}</span>
-            {d.priority && <span className="block text-xs font-semibold text-red-700">Priority</span>}
-          </div>
-        </div>
+    <tr className={`align-top ${picked ? 'bg-red-50/40' : ''} ${canChoose ? 'cursor-pointer' : ''}`} onClick={canChoose ? onPick : undefined}>
+      <td className="w-10 border border-gray-200 p-3 text-center">
+        {canChoose ? (
+          <input id={id} type="radio" name="triage-disease" checked={picked} onChange={onPick} className="h-4 w-4 accent-red-600" />
+        ) : chosen ? <Check className="mx-auto w-4 h-4 text-red-700" aria-label="Chosen" /> : null}
       </td>
-      <td className="p-3 text-sm text-gray-900">
+      <td className="border border-gray-200 p-3">
+        <label htmlFor={id} className={`text-sm font-bold ${d.rank === 3 ? 'text-gray-700' : 'text-gray-900'} ${canChoose ? 'cursor-pointer' : ''}`}>
+          <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle ${DOT[d.rank] || DOT[3]}`} aria-hidden="true" />{d.name}
+        </label>
+        {(top || d.priority || chosen) && (
+          <span className="mt-0.5 block text-xs font-semibold text-red-700">{[chosen && 'Chosen', top && 'Top suggestion', d.priority && 'Priority'].filter(Boolean).join(' · ')}</span>
+        )}
+      </td>
+      <td className="border border-gray-200 p-3 text-sm text-gray-900">
         <ul className="list-disc space-y-0.5 pl-4">{w.why.map((x) => <li key={x}>{x}</li>)}</ul>
       </td>
-      <td className="p-3 text-sm text-gray-900">
+      <td className="border border-gray-200 p-3 text-sm text-gray-900">
         {w.not.length === 0 ? <span>Nothing against it</span> : <ul className="list-disc space-y-0.5 pl-4">{w.not.map((x) => <li key={x}>{x}</li>)}</ul>}
-      </td>
-      <td className="p-3 text-right whitespace-nowrap">
-        {chosen ? (
-          <span className="inline-flex items-center gap-1 rounded-lg border border-red-300 px-3 py-1 text-xs font-semibold text-red-700"><Check className="w-3.5 h-3.5" aria-hidden="true" />Chosen</span>
-        ) : canChoose ? (
-          <button type="button" onClick={onChoose} className={`rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-900 hover:bg-gray-50 ${FOCUS}`}>Choose</button>
-        ) : null}
       </td>
     </tr>
   )
@@ -621,6 +619,7 @@ function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, on
   const [mediaOpen, setMediaOpen] = useState(false)
   const [adding, setAdding] = useState(false)
   const [labels, setLabels] = useState(null)
+  const [allQs, setAllQs] = useState(false)   // the first 3 symptoms, then the rest on request (KRCS 23 Nov 2026)
   const media = r.media || []
   const photos = media.filter((m) => m.type === 'Photo').length
   const voices = media.filter((m) => m.type === 'Voice Note').length
@@ -702,7 +701,7 @@ function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, on
         ) : (
           <table className="w-full border-collapse text-sm">
             <tbody>
-              {r.questions.map((q) => {
+              {(allQs ? r.questions : r.questions.slice(0, 3)).map((q) => {
                 const fromReport = q.source === 'report'
                 return (
                   <tr key={q.symptom} className={`border-t border-gray-100 ${fromReport ? 'bg-gray-50' : ''}`}>
@@ -719,6 +718,11 @@ function TriageReporter({ r, eventId, canAct, open, busy, busyKey, canAnswer, on
               })}
             </tbody>
           </table>
+        )}
+        {r.questions.length > 3 && (
+          <button type="button" onClick={() => setAllQs((v) => !v)} className={`mt-2 text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
+            {allQs ? 'Show fewer' : `Show all ${r.questions.length} symptoms`}
+          </button>
         )}
         {askable && (adding ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -743,7 +747,7 @@ function TriageRisk({ risk, event }) {
   const [open, setOpen] = useState(false)
   if (!risk) return null
   return (
-    <div className="shrink-0">
+    <div className="relative shrink-0">
       <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 ${FOCUS}`}>
         <span className="text-gray-500">Risk</span><span className="font-semibold tabular-nums text-gray-900">{risk.score}</span>
@@ -751,7 +755,7 @@ function TriageRisk({ risk, event }) {
         <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
       {open && (
-        <div className="absolute right-6 sm:right-7 z-20 mt-2 w-[min(92vw,560px)] rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+        <div className="absolute left-0 sm:left-auto sm:right-0 z-20 mt-2 w-[min(88vw,560px)] rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
           <ul className="grid gap-3 sm:grid-cols-2">
             {(risk.parts || []).map((p) => (
               <li key={p.key} className="text-sm">
@@ -761,7 +765,7 @@ function TriageRisk({ risk, event }) {
             ))}
           </ul>
           {risk.action && <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm"><span className="text-xs text-gray-500">Recommended action: </span>{risk.action}</p>}
-          <p className="mt-3 text-xs text-gray-700">What the local context means for this disease is under "4. Decide the next step".</p>
+          <p className="mt-3 text-xs text-gray-700">What the local context means for this disease: Context, at the top of the page.</p>
         </div>
       )}
     </div>
@@ -804,7 +808,7 @@ function CurvedTabs({ label, tabs, value, onChange }) {
   )
 }
 
-function VerificationStep({ event, inv, signals, onInv, onSaved, onError, onDiscard, discardBusy }) {
+function VerificationStep({ event, inv, signals, onInv, onSaved, onError, onDiscard, discardBusy, next, onNext }) {
   const [data, setDataRaw] = useState(null)
   const setData = useCallback((d) => { if (d) triageCache.set(event.id, { at: Date.now(), p: Promise.resolve(d) }); setDataRaw(d) }, [event.id])
   const [failed, setFailed] = useState('')
@@ -849,6 +853,9 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError, onDisc
 
   if (failed) return <div className={card}><PanelHeader title="Verification" /><p className="text-sm text-red-700">{failed}</p></div>
   if (!data) return <div className={card}><PanelHeader title="Verification" /><p className="text-sm text-gray-700">Loading the reports…</p></div>
+
+  // nothing to do here (verified, or not this user's step): the short read-only view (KRCS 23 Nov 2026)
+  if (!editable) return <VerifiedCompact inv={inv} reports={reports} cbs={cbs} next={next} onNext={onNext} />
 
   const left = [
     waiting.length ? `speak to ${waiting.map((r) => _firstName(r.reporter?.name)).join(', ')} (or try ${tries} times with no answer)` : null,
@@ -939,54 +946,88 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError, onDisc
   )
 }
 
-// What step 2 found, read only, at the top of AI triage (KRCS 19 Nov 2026)
-const _redFlagQ = (q) => q.redFlag ?? String(q.kind || '').toLowerCase().includes('red')
-function VerifiedSummary({ inv, reports, plain = false }) {
-  const questions = (inv.questions || []).filter((q) => q.stage === 'CHA')
-  const th = 'w-2/5 border-r border-gray-200 p-3 text-sm font-bold text-gray-900'
+// A short list: the first 3, then the rest on request (KRCS 23 Nov 2026)
+function FirstThree({ items, noun = 'answers' }) {
+  const [all, setAll] = useState(false)
+  if (!items.length) return null
+  const shown = all ? items : items.slice(0, 3)
   return (
-    <section aria-label="What the CHA found">
-      {!plain && <h3 className="text-base font-bold text-gray-900">What the CHA found</h3>}
-      <p className="text-sm text-gray-900">{inv.verified ? <>Verified by <b>{inv.verified.by || '—'}</b> on {fmtDateTime(inv.verified.on)}</> : 'Not verified yet: see step 2.'}</p>
-      <table className="mt-3 w-full border border-gray-200 text-sm">
+    <>
+      {shown.map((x, i) => <Fragment key={i}>{i > 0 && ' · '}{x}</Fragment>)}
+      {items.length > 3 && (
+        <button type="button" onClick={() => setAll((v) => !v)} className={`ml-2 font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
+          {all ? 'Show fewer' : `Show all ${items.length} ${noun}`}
+        </button>
+      )}
+    </>
+  )
+}
+
+// What Verification found, read only and short (KRCS 23 Nov 2026): who verified and whom they spoke to, the
+// symptoms asked on the call (first 3, then the rest) and the answer to each question about the signal.
+const _redFlagQ = (q) => q.redFlag ?? String(q.kind || '').toLowerCase().includes('red')
+function VerifiedCompact({ inv, reports, cbs = [], next, onNext }) {
+  const questions = (inv.questions || []).filter((q) => q.stage === 'CHA')
+  const one = reports.length === 1 ? reports[0] : null
+  const TH = 'w-2/5 border border-gray-200 bg-gray-50 px-3 py-2.5 text-left align-top font-bold text-gray-900'
+  const call = (r) => {
+    const first = _firstName(r.reporter?.name)
+    return r.reached ? `Spoke to ${first}` : r.noAnswer ? `${first} did not answer after ${r.noAnswer} ${r.noAnswer === 1 ? 'try' : 'tries'}` : `${first} not called yet`
+  }
+  return (
+    <div className={card}>
+      <h2 className="text-xl font-semibold text-gray-900">Verification</h2>
+      <p className="mt-1 mb-4 text-sm text-gray-900">
+        {inv.verified
+          ? <><b className="text-emerald-700">✓ Verified</b> by <b>{inv.verified.by || '—'}</b> on {fmtDateTime(inv.verified.on)}.{one ? ` ${call(one)}.` : ''}</>
+          : 'Not verified yet. The CHA calls the reporter and answers the questions below.'}
+      </p>
+      <table className="w-full border-collapse text-sm">
         <tbody>
           {reports.map((r) => {
-            const asked = r.questions.filter((q) => q.answer && q.source === 'phone')
-            const said = r.questions.filter((q) => q.answer && q.source === 'report')
+            const asked = (r.questions || []).filter((q) => q.answer && q.source === 'phone')
             return (
               <Fragment key={r.ref}>
-                <tr className="border-b border-gray-200 align-top">
-                  <th scope="row" className={`${th} text-left`}>Reporter{reports.length > 1 ? ` (${r.ref})` : ''}</th>
-                  <td className="p-3 text-gray-900">{r.reporter?.name || '—'} ({r.ref}) · <b>{r.reached ? 'Reached' : r.noAnswer ? `Not reached after ${r.noAnswer} ${r.noAnswer === 1 ? 'try' : 'tries'}` : 'Not called'}</b></td>
-                </tr>
-                <tr className="border-b border-gray-200 align-top">
-                  <th scope="row" className={`${th} text-left`}>Symptoms checked</th>
-                  <td className="p-3 text-gray-900">
-                    {asked.length ? asked.map((q) => `${q.name}: ${q.answer}`).join(' · ') : 'None asked by phone'}
-                    {said.length > 0 && <span className="block text-gray-700">Said when reporting: {said.map((q) => `${q.name}: ${q.answer}`).join(' · ')}</span>}
+                {!one && (
+                  <tr><th scope="row" className={TH}>Call ({r.ref})</th><td className={TD}>{call(r)}</td></tr>
+                )}
+                <tr>
+                  <th scope="row" className={TH}>Asked on the call{one ? '' : ` (${r.ref})`}</th>
+                  <td className={TD}>
+                    {asked.length
+                      ? <FirstThree noun="symptoms" items={asked.map((q) => <>{q.name}: <b>{q.answer}</b></>)} />
+                      : 'No symptoms asked on the call'}
                   </td>
                 </tr>
               </Fragment>
             )
           })}
+          {cbs.map((sg) => (
+            <tr key={sg.id}><th scope="row" className={TH}>CBS case {sg.ref || '—'}</th><td className={TD}>Checked through CBS (the volunteer's contact is in CBS)</td></tr>
+          ))}
           {questions.map((q) => {
             const red = q.answer === 'Yes' && _redFlagQ(q)
             return (
-              <tr key={q.n} className="border-b border-gray-200 last:border-0 align-top">
-                <th scope="row" className={`${th} text-left`}>{q.question.split('(')[0].replace('?', '').trim()}</th>
-                <td className={`p-3 font-semibold ${red ? 'text-red-700' : 'text-gray-900'}`}>{q.answer || '—'}{red && ' · red flag'}</td>
+              <tr key={q.n}>
+                <th scope="row" className={TH}>{q.question.split('(')[0].replace('?', '').trim()}</th>
+                <td className={`${TD} ${red ? 'text-red-700' : ''}`}><b>{q.answer || 'Not answered'}</b>{red && ' · red flag'}</td>
               </tr>
             )
           })}
         </tbody>
       </table>
-    </section>
+      {next && (
+        <div className="mt-6 flex justify-end">
+          <button type="button" onClick={onNext} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{next} →</button>
+        </div>
+      )}
+    </div>
   )
 }
 
 // AI triage in four tabs (Elizabeth, 19 Nov 2026): 1. what the CHA found, 2. choose the disease, then for a priority
 // disease 3. its questions and 4. the next step (renderPart draws those two from VerificationPanel)
-function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDiscard, onSplit, onReferred, busy: pageBusy, renderPart }) {
+function TriagePanel({ event, canAct, onConfirmed, onNext, onError, onDiscard, onSplit, onReferred, busy: pageBusy, renderPart }) {
   const [data, setDataRaw] = useState(null)
   const setData = useCallback((d) => { if (d) triageCache.set(event.id, { at: Date.now(), p: Promise.resolve(d) }); setDataRaw(d) }, [event.id])
   const [failed, setFailed] = useState('')
@@ -1010,7 +1051,7 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
   async function confirm() {
     setBusy(true)
     try {
-      const res = await confirmTriageDisease(event.id, pending.key, overriding ? overrideReason.trim() : '')
+      const res = await confirmTriageDisease(event.id, picked.key, overriding ? overrideReason.trim() : '')
       setPending(null)
       setOverrideReason('')
       await load()
@@ -1025,11 +1066,14 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
   // the disease is chosen once Verification (step 2) is confirmed (KRCS 19 Nov 2026)
   const canChoose = data.canChoose && open && !!data.verificationDone
   const aiTop = (data.diseases || []).find((d) => d.key === data.aiTop)
-  const overriding = !!(pending && data.aiTop && pending.key !== data.aiTop)
+  // the AI's top suggestion is picked to start with; the officer can pick another row (KRCS 23 Nov 2026)
+  const topRow = aiTop || (data.diseases || [])[0]
+  const picked = pending || (canChoose && !data.confirmed && topRow ? { key: topRow.key, name: topRow.name } : null)
+  const overriding = !!(picked && data.aiTop && picked.key !== data.aiTop)
   const conflict = data.conflict
   const priorityChosen = !!data.confirmed && data.pathway !== 'Referral' && !!renderPart
   const referral = !!data.confirmed && data.pathway === 'Referral'   // non-priority disease: refer the patient here (KRCS 20 Nov 2026)
-  const atTab = priorityChosen ? 'questions' : referral ? 'refer' : data.verificationDone ? 'disease' : 'cha'
+  const atTab = priorityChosen ? 'questions' : referral ? 'refer' : 'disease'
   const cur = ttab && (priorityChosen || !['questions', 'decide'].includes(ttab)) && (referral || ttab !== 'refer') ? ttab : atTab
   const nextBtn = (to, label) => (
     <div className="mt-6 flex justify-end border-t border-gray-100 pt-5">
@@ -1039,66 +1083,42 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
 
   return (
     <div className={`${card} relative`}>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900">AI triage</h2>
-          <p className="text-sm text-gray-900 mt-0.5">Read what the CHA found, choose the disease, answer its questions, then decide the next step.</p>
-        </div>
-        <TriageRisk risk={event.risk} event={event} />
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold text-gray-900">AI triage</h2>
+        <p className="text-sm text-gray-900 mt-0.5">Choose the disease, answer its questions, then decide the next step. What the CHA found is in Verification (step 2).</p>
       </div>
 
       <CurvedTabs label="AI triage" value={cur} onChange={setTtab} tabs={[
-        { key: 'cha', label: '1. Read what the CHA found', done: !!data.verificationDone },
-        { key: 'disease', label: '2. Choose the disease', done: !!data.confirmed },
+        { key: 'disease', label: '1. Choose the disease', done: !!data.confirmed },
         ...(data.pathway === 'Referral' ? [
-          { key: 'refer', label: '3. Refer the patient', disabled: !referral, why: 'Choose the disease first', done: event.status === 'Closed' },
+          { key: 'refer', label: '2. Refer the patient', disabled: !referral, why: 'Choose the disease first', done: event.status === 'Closed' },
         ] : [
-          { key: 'questions', label: '3. Answer its questions', disabled: !priorityChosen, why: 'Choose a priority disease first' },
-          { key: 'decide', label: '4. Decide the next step', disabled: !priorityChosen, why: 'Choose a priority disease first' },
+          { key: 'questions', label: '2. Answer its questions', disabled: !priorityChosen, why: 'Choose a priority disease first' },
+          { key: 'decide', label: '3. Decide the next step', disabled: !priorityChosen, why: 'Choose a priority disease first' },
         ]),
       ]} />
 
-      {cur === 'cha' && (
-        <>
-          <VerifiedSummary inv={inv} reports={reports} plain />
-          {nextBtn('disease', 'Next: choose the disease')}
-        </>
-      )}
-
       {cur === 'refer' && referral && <ReferralStep event={event} canAct={canAct} onError={onError} onSent={onReferred} />}
       {cur === 'questions' && priorityChosen && renderPart('questions', () => setTtab('decide'))}
-      {cur === 'decide' && priorityChosen && (
-        <>
-          {renderPart('decide')}
-          <div className="mt-8 border-t border-gray-200 pt-6">
-            <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} bare />
-          </div>
-        </>
-      )}
+      {cur === 'decide' && priorityChosen && renderPart('decide')}
 
       {cur === 'disease' && (
       <>
       <section aria-label="Choose the disease">
-        <p className="text-sm text-gray-900">
-          Case definitions first, then the AI model's suggestions{reports.length > 1 ? `, from all ${reports.length} reports` : ''}.
-          {!canChoose && open && !data.verificationDone && ' Choose once verification (step 2) is confirmed.'}
-        </p>
         {(() => {
           const sx = symptomsSummary(reports)
           if (!sx.reported.length && !sx.added.length && !sx.no.length) return null
           return (
-            <table className="mt-3 w-full border-collapse border border-gray-200 text-sm">
-              <tbody>
-                <tr><th scope="row" className="w-48 border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">Symptoms reported</th>
-                  <td className="border border-gray-200 px-3 py-2 text-gray-900">{sx.reported.join(', ') || 'None'}</td></tr>
-                <tr><th scope="row" className="border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">Added on the call</th>
-                  <td className="border border-gray-200 px-3 py-2 text-gray-900">{sx.added.join(', ') || 'None'}</td></tr>
-                <tr><th scope="row" className="border border-gray-200 bg-gray-50 px-3 py-2 text-left font-bold text-gray-900">The reporter said no to</th>
-                  <td className="border border-gray-200 px-3 py-2 text-gray-900">{sx.no.join(', ') || 'None'}</td></tr>
-              </tbody>
-            </table>
+            <p className="text-sm text-gray-900">
+              <b>Symptoms:</b> {sx.reported.join(', ') || 'none reported'}{sx.reported.length ? ' (reported)' : ''}
+              {sx.added.length > 0 && <> · {sx.added.join(', ')} (added on the call)</>}
+              {sx.no.length > 0 && <> · <b>said no to:</b> {sx.no.join(', ')}</>}
+            </p>
           )
         })()}
+        {!data.verificationDone && open && (
+          <p className="mt-2 text-sm font-semibold text-gray-900">Waiting for verification (step 2). You can choose the disease once the CHA confirms.</p>
+        )}
         {conflict && open && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 px-3 py-2 text-sm text-gray-900">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
@@ -1115,18 +1135,19 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
         )}
         {data.diseases.length ? (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full border border-gray-200 text-left">
+            <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="text-sm text-gray-900">
-                  <th className="p-3 font-bold">Disease</th>
-                  <th className="p-3 font-bold">Why</th>
-                  <th className="p-3 font-bold">Why not</th>
-                  <th className="p-3"><span className="sr-only">Choose</span></th>
+                  <th className="w-10 border border-gray-200 bg-gray-50 p-3"><span className="sr-only">Pick</span></th>
+                  <th className="border border-gray-200 bg-gray-50 p-3 font-bold">Disease</th>
+                  <th className="border border-gray-200 bg-gray-50 p-3 font-bold">Why</th>
+                  <th className="border border-gray-200 bg-gray-50 p-3 font-bold">Why not</th>
                 </tr>
               </thead>
               <tbody>
                 {data.diseases.map((d) => (
-                  <TriageDisease key={d.key} d={d} chosen={data.current === d.key && data.confirmed} canChoose={canChoose} onChoose={() => setPending({ key: d.key, name: d.name })} />
+                  <TriageDisease key={d.key} d={d} top={d.key === data.aiTop} chosen={data.current === d.key && data.confirmed}
+                    picked={picked?.key === d.key} canChoose={canChoose} onPick={() => setPending({ key: d.key, name: d.name })} />
                 ))}
               </tbody>
             </table>
@@ -1137,36 +1158,37 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
             </p>
           </div>
         ) : <p className="mt-3 text-sm text-gray-700">No suggestions yet. Choose from all diseases.</p>}
-        {canChoose && (other ? (
+        {canChoose && (other || !data.diseases.length ? (
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <select autoFocus defaultValue="" aria-label="Choose another disease" onChange={(e) => { const o = options.find((x) => x.key === e.target.value); if (o) setPending({ key: o.key, name: o.name }); setOther(false) }}
-              className="w-full sm:w-72 bg-gray-50 rounded-lg px-3 py-2 text-sm">
+            <select autoFocus={other} value={picked && !data.diseases.some((d) => d.key === picked.key) ? picked.key : ''} aria-label="Choose another disease"
+              onChange={(e) => { const o = options.find((x) => x.key === e.target.value); if (o) setPending({ key: o.key, name: o.name }) }}
+              className="w-full sm:w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
               <option value="" disabled>Select a disease...</option>
               {options.map((o) => <option key={o.key} value={o.key}>{o.name}</option>)}
             </select>
-            <button type="button" onClick={() => setOther(false)} className="text-xs font-medium text-gray-500 hover:text-gray-900">Cancel</button>
+            {data.diseases.length > 0 && <button type="button" onClick={() => { setOther(false); setPending(null) }} className="text-xs font-medium text-gray-700 hover:text-gray-900">Cancel</button>}
           </div>
         ) : (
           <button type="button" onClick={() => setOther(true)} className="mt-2 text-sm font-medium text-red-700 hover:underline">None of these? Choose another disease</button>
         ))}
-        {pending && (
-          <div className="mt-3 rounded-xl border border-red-300 p-4">
-            <p className="text-sm text-gray-900"><b>{pending.name}</b> for this event?</p>
-            <p className="text-sm text-gray-700 mt-1">
-              {queue.has(pending.key) ? 'A priority disease: answer its questions next, then decide the next step.'
-                : 'Not a priority disease: refer the patient, follow up, then close. It is still counted in Epi Trends.'}
-            </p>
+
+        {/* the choice and Confirm are always here; a reason is asked only when it is not the top suggestion (KRCS 23 Nov 2026) */}
+        {canChoose && (
+          <div className="mt-5 border-t border-gray-200 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-gray-900">
+                {picked ? <><b>Your choice: {picked.name}</b>{' '}— {queue.has(picked.key) ? 'a priority disease: its questions come next.' : 'not a priority disease: you refer the patient next (still counted in Epi Trends).'}</>
+                  : 'Pick a disease above.'}
+              </p>
+              <button type="button" disabled={busy || !picked || (overriding && !overrideReason.trim())} onClick={confirm} className={`${BTN} ${PRIMARY} ${FOCUS}`}>{busy ? 'Saving...' : 'Confirm'}</button>
+            </div>
             {overriding && (
               <label className="mt-3 block">
                 <span className="block text-sm font-bold text-gray-900">Why not {aiTop?.name || 'the top suggestion'}? <span className="text-red-700">*</span></span>
-                <span className="block text-xs text-gray-700 mb-1.5">The top suggestion was {aiTop?.name || data.aiTop}. Your reason will help in model retraining</span>
-                <textarea rows={2} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} className={INPUT} />
+                <textarea rows={2} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} className={`${INPUT} mt-1`}
+                  placeholder="Your reason will help in model retraining" />
               </label>
             )}
-            <div className="mt-3 flex gap-2">
-              <button type="button" disabled={busy || (overriding && !overrideReason.trim())} onClick={confirm} className={`${BTN} ${PRIMARY} ${FOCUS} px-4 py-2`}>{busy ? 'Saving...' : 'Confirm'}</button>
-              <button type="button" disabled={busy} onClick={() => { setPending(null); setOverrideReason('') }} className={`${BTN} ${SECONDARY} ${FOCUS} px-4 py-2`}>Cancel</button>
-            </div>
           </div>
         )}
       </section>
@@ -1179,11 +1201,9 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
             Duplicate, wrong number or not a real case? Discard with a reason
           </button>
         ) : <span />}
-        {data.pathway === 'Referral' ? (
+        {data.confirmed && data.pathway === 'Referral' ? (
           <button type="button" onClick={() => setTtab('refer')} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Next: refer the patient →</button>
-        ) : data.confirmed ? (
-          <span className="text-sm text-gray-700">Answer its questions next (tab 3).</span>
-        ) : <span className="text-sm text-gray-700">{data.verificationDone ? 'Choose a disease to continue' : 'Waiting for verification (step 2)'}</span>}
+        ) : <span />}
       </div>
       )}
       {canAct && open && discarding && <DiscardBox busy={pageBusy} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
@@ -1194,7 +1214,23 @@ function TriagePanel({ event, inv, canAct, onConfirmed, onNext, onError, onDisca
 }
 
 // ---------- escalated to the county MOH ----------
-function EscalationNotice({ esc }) {
+// What was decided at the end of AI triage, once it is done (KRCS 23 Nov 2026): no suggestion any more
+function DecidedLine({ event, inv }) {
+  const esc = event.escalation
+  if (event.status === 'Escalated' || inv.decision?.decision === 'Escalated') {
+    return (
+      <p className="rounded-xl border border-gray-200 p-4 text-sm text-gray-900">
+        <b>Decided: escalated to the County MOH / PHEOC</b>
+        {esc?.by || inv.decision?.by ? ` by ${esc?.by || inv.decision.by}` : ''}{esc?.on ? `, ${fmtDateTime(esc.on)}` : ''}.
+        {(esc?.reason || inv.decision?.reason) && <> Reason: {esc?.reason || inv.decision.reason}</>}
+      </p>
+    )
+  }
+  const what = event.status === 'Closed' ? `Closed${event.outcome ? ` (${event.outcome})` : ''}` : 'Sent to field investigation'
+  return <p className="rounded-xl border border-gray-200 p-4 text-sm text-gray-900"><b>Decided: {what}.</b></p>
+}
+
+function EscalationNotice({ esc, isMoh }) {
   return (
     <section aria-label="Escalated to the county MOH" className="rounded-2xl border border-red-200 bg-red-50/60 px-6 py-5">
       <div className="flex items-start gap-3">
@@ -1207,7 +1243,9 @@ function EscalationNotice({ esc }) {
           <p className="mt-1 text-sm text-gray-700">
             {[esc.facility ? `Nearest health facility: ${esc.facility}` : null, esc.phone ? `Escalated by ${esc.by}: ${esc.phone}` : null].filter(Boolean).join(' · ')}
           </p>
-          <p className="mt-2 text-xs text-gray-500">Field investigation, the decision and the response are now with the county MOH.</p>
+          <p className="mt-2 text-xs text-gray-700">{isMoh
+            ? 'Handed to you: do the field investigation (step 4) and the response, then close the event in Response & close (step 6).'
+            : 'Field investigation, the decision and the response are now with the county MOH.'}</p>
         </div>
       </div>
     </section>
@@ -1368,111 +1406,119 @@ function ReferralPanel({ event, canAct, onToast, onClosed }) {
 const ANIMAL_LABEL = { 'Bite or scratch': 'Bitten or scratched', 'Handled sick or dead animal': 'Handled a sick or dead animal' }
 const fmtDay = (v) => { const d = parseDate(v); return d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : v }
 
-// The details of one report from its View report page, in the same order, kept short (KRCS 18 Nov 2026)
-function ReportFacts({ s }) {
+const TH = 'w-44 border border-gray-200 bg-gray-50 px-3 py-2.5 text-left align-top font-bold text-gray-900'
+const TD = 'border border-gray-200 px-3 py-2.5 align-top text-gray-900'
+
+// One report as a table, in the order of the old Case overview (KRCS 23 Nov 2026): what, how many, where, who.
+// Only what was reported: symptoms present, not the ones checked and absent.
+function ReportTable({ event, s, canAct, canAddVoice, onChanged }) {
   const d = s.details || {}
-  const rows = [
-    ['Date of onset', d.onset && fmtDay(d.onset)],
-    ['Age group', d.ages],
-    ['Animal exposure', d.animal && (ANIMAL_LABEL[d.animal] || d.animal)],
-  ].filter(([, v]) => v)
-  if (!rows.length) return null
+  const kind = [d.category, d.type].filter(Boolean).join(' · ')
+  const media = s.media || []
+  const gps = s.lat != null && s.lng != null && (Number(s.lat) || Number(s.lng))
+  const affected = [
+    countLabel(s.people, s.disease),
+    d.ages && `age group ${d.ages}`,
+    d.onset && `onset ${fmtDay(d.onset)}`,
+  ].filter(Boolean)
   return (
-    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-      {rows.map(([k, v]) => (
-        <Fragment key={k}><dt className="font-semibold text-gray-900">{k}</dt><dd className="text-gray-900">{v}</dd></Fragment>
-      ))}
-    </dl>
+    <table className="w-full border-collapse text-sm">
+      <tbody>
+        <tr>
+          <th scope="row" className={TH}>Report</th>
+          <td className={TD}>
+            {s.source === 'Field' && s.ref
+              ? <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
+              : <b>{s.source === 'CBS' ? `CBS case ${s.ref || '—'}` : (s.ref || '—')}</b>}
+            {' · '}{s.channel || d.channel || s.source}{' · '}<span title={relTime(s.date)}>{fmtDateTime(s.date)}</span>{kind ? ` · ${kind}` : ''}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" className={TH}>Symptoms present</th>
+          <td className={`${TD} font-semibold`}>{String(s.reported || '').split(';').map((x) => x.trim()).filter((x) => x && !x.startsWith('Animal exposure')).join('; ') || '—'}</td>
+        </tr>
+        <tr>
+          <th scope="row" className={TH}>Affected</th>
+          <td className={TD}>{affected.join(' · ')}{s.deaths > 0 && <span className="font-semibold text-red-700"> · {s.deaths} {s.deaths === 1 ? 'death' : 'deaths'}</span>}</td>
+        </tr>
+        {d.animal && (
+          <tr>
+            <th scope="row" className={TH}>Animal exposure</th>
+            <td className={TD}>{ANIMAL_LABEL[d.animal] || d.animal}</td>
+          </tr>
+        )}
+        <tr>
+          <th scope="row" className={TH}>Where</th>
+          <td className={TD}>
+            {d.location || s.area || '—'}
+            {gps ? (
+              <> ({Number(s.lat).toFixed(5)}, {Number(s.lng).toFixed(5)}){' '}
+                <a href={`https://www.google.com/maps?q=${s.lat},${s.lng}`} target="_blank" rel="noopener noreferrer"
+                  className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>View on map</a></>
+            ) : <span className="text-gray-700"> · no GPS recorded</span>}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" className={TH}>Reported by</th>
+          <td className={TD}><ReporterContact signal={s} canAct={canAct} inline /></td>
+        </tr>
+        {d.notes && (
+          <tr>
+            <th scope="row" className={TH}>{d.channel === 'WhatsApp' ? 'WhatsApp message' : 'Notes'}</th>
+            <td className={`${TD} whitespace-pre-line`}>{d.notes}</td>
+          </tr>
+        )}
+        {media.length > 0 && (
+          <tr>
+            <th scope="row" className={TH}>Voice notes and photos</th>
+            <td className={TD}>
+              <SignalMedia eventId={event.id} signalId={s.id} media={media} canAct={canAct} canAdd={canAddVoice}
+                report={s.source === 'Field' ? s.ref : null} onChanged={onChanged} fromRef={s.ref} />
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
   )
 }
 
 function SignalCapturePanel({ event, signals, canAct, canAddVoice, next, onNext, onChanged }) {
   const [showAll, setShowAll] = useState(false)
-  const rows = showAll ? signals : signals.slice(0, 8)
+  const [mapOpen, setMapOpen] = useState(false)
+  const FIRST = 3
+  const rows = showAll ? signals : signals.slice(0, FIRST)
+  const field = signals.filter((s) => s.source === 'Field').length
+  const intro = signals.length === 1
+    ? `1 report${field ? ' from the field' : ''}. Nothing to answer here.`
+    : `${signals.length} reports, newest first. Nothing to answer here.`
   return (
     <div className={card}>
-      <PanelHeader title="Signal captured" sub="The reports behind this event, as they came in. Nothing to answer here." />
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">Signal captured</h2>
+          <p className="mt-0.5 text-sm text-gray-700">{signals.length ? intro : 'No individual reports are linked to this event.'}</p>
+        </div>
+        {signals.some(hasGps) && (
+          <button type="button" aria-expanded={mapOpen} onClick={() => setMapOpen((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-900 hover:bg-gray-50 ${FOCUS}`}>
+            <MapPin className="w-3.5 h-3.5" aria-hidden="true" /> {mapOpen ? 'Hide map' : 'Show on map'}
+          </button>
+        )}
+      </div>
+      {mapOpen && <div className="mb-4"><ReportsMap signals={signals} /></div>}
       {signals.length === 0 ? (
-        <p className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">{event.reason || 'No individual reports are linked to this event.'}</p>
+        event.reason && <p className="text-sm text-gray-900">{event.reason}</p>
       ) : (
-        <>
-          <div className="border border-gray-100 rounded-xl overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-xs text-gray-900 border-b border-gray-100">
-                  <th className="px-3 py-2.5 font-bold">Report</th>
-                  <th className="px-3 py-2.5 font-bold">What was reported</th>
-                  <th className="px-3 py-2.5 font-bold">Where</th>
-                  <th className="px-3 py-2.5 font-bold">Reporter</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((s, i) => {
-                  const d = s.details || {}
-                  const kind = [d.category, d.type].filter(Boolean).join(' · ')
-                  const hasMedia = (s.media || []).length > 0
-                  return (
-                  <Fragment key={s.id || i}>
-                  <tr className={`${i > 0 ? 'border-t-2 border-gray-300' : 'border-t border-gray-200'} align-top ${checkStatus(s) === 'Not a case' ? 'bg-gray-50' : ''}`}>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      {s.source === 'Field' && s.ref ? (
-                        <Link to={`/reports/${encodeURIComponent(s.ref)}`} className={`text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{s.ref}</Link>
-                      ) : (
-                        <div className="text-sm font-semibold text-gray-900">{s.source === 'CBS' ? `CBS case ${s.ref || '—'}` : (s.ref || '—')}</div>
-                      )}
-                      <div className="text-sm text-gray-900">{s.channel || s.source}</div>
-                      {kind && <div className="text-sm text-gray-900">{kind}</div>}
-                      <div className="text-sm text-gray-900" title={relTime(s.date)}>{fmtDateTime(s.date)}</div>
-                    </td>
-                    <td className="px-3 py-3 text-sm text-gray-900 min-w-[240px]">
-                      <div className="font-semibold text-gray-900">{countLabel(s.people, s.disease)}{s.deaths > 0 && <span className="text-red-700"> · {s.deaths} {s.deaths === 1 ? 'death' : 'deaths'}</span>}</div>
-                      <div className="mt-0.5 text-gray-900">{s.reported || '—'}</div>
-                      <ReportFacts s={s} />
-                    </td>
-                    <td className="px-3 py-3 text-sm text-gray-900 min-w-[150px]">
-                      <div>{d.location || s.area || '—'}</div>
-                      {s.lat != null && s.lng != null && (Number(s.lat) || Number(s.lng)) ? (
-                        <>
-                          <div className="mt-1 tabular-nums">{Number(s.lat).toFixed(5)}, {Number(s.lng).toFixed(5)}</div>
-                          <a href={`https://www.google.com/maps?q=${s.lat},${s.lng}`} target="_blank" rel="noopener noreferrer"
-                            className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>View on map</a>
-                        </>
-                      ) : <div className="mt-1 text-gray-700">No GPS recorded</div>}
-                    </td>
-                    <td className="px-3 py-3 text-sm min-w-[150px]">
-                      <ReporterContact signal={s} canAct={canAct} />
-                    </td>
-                  </tr>
-                  {(d.notes || hasMedia) && (
-                    <tr className="align-top">
-                      <td colSpan={4} className="px-3 pb-4">
-                        {d.notes && (
-                          <div className="mb-3 max-w-3xl">
-                            <div className="text-xs font-semibold text-gray-900">
-                              {d.channel === 'WhatsApp' ? 'WhatsApp message from community member' : 'Additional notes'}{s.ref ? ` (${s.ref})` : ''}
-                            </div>
-                            <p className="mt-0.5 whitespace-pre-line text-sm text-gray-900">{d.notes}</p>
-                          </div>
-                        )}
-                        {hasMedia && (
-                          <SignalMedia eventId={event.id} signalId={s.id} media={s.media} canAct={canAct} canAdd={canAddVoice}
-                            report={s.source === 'Field' ? s.ref : null} onChanged={onChanged} fromRef={s.ref} />
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                  </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          {signals.length > 8 && (
-            <button type="button" onClick={() => setShowAll(!showAll)} className={`mt-2 text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
-              {showAll ? 'Show fewer' : `Show ${signals.length - 8} more`}
+        <div className="flex flex-col gap-4">
+          {rows.map((s) => (
+            <ReportTable key={s.id} event={event} s={s} canAct={canAct} canAddVoice={canAddVoice} onChanged={onChanged} />
+          ))}
+          {signals.length > FIRST && (
+            <button type="button" onClick={() => setShowAll(!showAll)} className={`self-start text-sm font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
+              {showAll ? 'Show fewer' : `Show the other ${signals.length - FIRST} reports`}
             </button>
           )}
-        </>
+        </div>
       )}
       {next && (
         <div className="mt-6 flex justify-end">
@@ -1704,6 +1750,8 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
       {part !== 'questions' && (
       <section aria-label="Decide the next step">
         {!part && <h3 className="mb-3 text-base font-bold text-gray-900">{triaged ? '4. ' : ''}Decide the next step</h3>}
+        {!open ? <DecidedLine event={event} inv={inv} /> : (
+        <>
         <KeyCheckLine check={inv.gates?.keyCheck} />
         <div className="rounded-xl border border-gray-200">
         {inv.suggestion && (
@@ -1752,6 +1800,8 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
         )}
         {!(editable && open) && !inv.suggestion && <p className="p-4 text-sm text-gray-700">Nothing to decide here.</p>}
         </div>
+        </>
+        )}
         {editable && open && discarding && <DiscardBox busy={busy} initial={discardReason} onDiscard={onDiscard} onCancel={() => setDiscarding(false)} />}
       </section>
       )}
@@ -2076,23 +2126,16 @@ function EvidenceGrid({ evidence, editable, busyKey, onRemove, onOpenPhoto }) {
   )
 }
 
-function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProtocols, onSetOutcome, onSaveFindings, onUpload, onText, onRemove, onGoDecision, onError }) {
+function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProtocols, onSetOutcome, onSaveFindings, onUpload, onText, onRemove, onGoDecision, onGoResponse, onError }) {
   const steps = inv.investigationSteps || []
   const open = inv.gates?.openInvestigationSteps || []
   const doneCount = steps.length - open.length
   const [findings, setFindings] = useState(inv.findings || '')
-  const [saved, setSaved] = useState(false)
   const [lightbox, setLightbox] = useState(null)
-  const savedTimer = useRef(null)
-  useEffect(() => () => clearTimeout(savedTimer.current), [])
+  const changed = findings.trim() !== (inv.findings || '').trim()
 
   async function save() {
-    const ok = await onSaveFindings(findings)
-    if (ok) {
-      setSaved(true)
-      clearTimeout(savedTimer.current)
-      savedTimer.current = setTimeout(() => setSaved(false), 2000)
-    }
+    await onSaveFindings(findings)
   }
 
   const link = `text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`
@@ -2137,7 +2180,11 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
             <button type="button" aria-label="Save findings" disabled={busyKey === 'findings'} onClick={save} className={`${BTN} ${PRIMARY} ${FOCUS}`}>
               {busyKey === 'findings' ? 'Saving...' : 'Save'}
             </button>
-            {saved && <span role="status" className="text-sm text-emerald-600">Saved</span>}
+            {/* where it went, so the save is clear (KRCS 23 Nov 2026) */}
+            <span role="status" className="text-sm text-gray-900">
+              {changed ? 'Not saved yet.'
+                : inv.findings ? <><b className="text-emerald-700">✓ Saved on this event.</b> Everyone working on it sees it here.</> : ''}
+            </span>
           </span>
         )}
       </label>
@@ -2167,6 +2214,13 @@ function InvestigationPanel({ event, inv, editable, busy, busyKey, canManageProt
           )}
         </div>
       )}
+      {/* escalated: the County MOH / PHEOC goes on to Response & close (KRCS 23 Nov 2026) */}
+      {editable && event.status === 'Escalated' && onGoResponse && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" onClick={onGoResponse} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Continue to Response &amp; close →</button>
+          {changed && <span className="text-sm text-gray-900">Save your findings first.</span>}
+        </div>
+      )}
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   )
@@ -2178,7 +2232,7 @@ const DECISION_OPTIONS = [
   { value: 'close_unconfirmed', title: 'Close: no event found', hint: 'The investigation found no event. Reporters are thanked.', icon: X, enabled: (s) => s === 'Investigating' },
 ]
 
-function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit }) {
+function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit, onGoResponse }) {
   const [reason, setReason] = useState('')
   const [facility, setFacility] = useState(inv.nearestFacility || '')
   const [preview, setPreview] = useState(null)
@@ -2199,18 +2253,25 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
   return (
     <div className={card}>
       <PanelHeader title="Decision" sub="Confirm the event, escalate it, or close it if the investigation found no event. Your sign-off is recorded." />
-      {inv.suggestion?.text && (
+      {inv.suggestion?.text && !inv.decision && event.status !== 'Escalated' && (
         <p className="text-sm text-gray-600 mb-5">
           Suggestion: {inv.suggestion.text} <span className="font-medium text-gray-900">Final decision is yours.</span>
         </p>
       )}
       {inv.decision && (
         <div className="rounded-xl bg-gray-50 border border-gray-100 p-4 mb-5">
-          <p className="text-sm font-semibold text-gray-900">Decision: {inv.decision.decision}</p>
+          <p className="text-sm font-semibold text-gray-900">Decision: {inv.decision.decision === 'Escalated' ? 'Escalated to the County MOH / PHEOC' : inv.decision.decision}</p>
           {inv.decision.reason && <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap break-words">{inv.decision.reason}</p>}
           <p className="text-xs text-gray-400 mt-1">
             by {inv.decision.by}, <span title={fmtDateTime(inv.decision.on)}>{relTime(inv.decision.on)}</span>
           </p>
+        </div>
+      )}
+      {/* escalated to the County MOH / PHEOC: they record the response and close it in step 6 (KRCS 23 Nov 2026) */}
+      {event.status === 'Escalated' && inv.isMoh && onGoResponse && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 p-4">
+          <p className="text-sm text-gray-900">The officer escalated this event to you. Do the response steps, then close the event in Response &amp; close.</p>
+          <button type="button" onClick={onGoResponse} className={`${BTN} ${PRIMARY} ${FOCUS}`}>Go to Response &amp; close →</button>
         </div>
       )}
       {inv.mustEscalate && event.status !== 'Escalated' && (
@@ -2277,11 +2338,11 @@ function DecisionPanel({ event, inv, editable, busy, choice, onChoose, onSubmit 
                 {!preview ? (
                   <p className="text-gray-400">Loading…</p>
                 ) : preview.contacts.length === 0 ? (
-                  <p className="text-amber-700">No active County / National MOH contacts. Add them under Escalation Contacts first, or nobody will be emailed.</p>
+                  <p className="text-amber-700">No County MOH / PHEOC user for this region yet. Add one in Users, or nobody will be emailed.</p>
                 ) : (
                   <ul className="text-gray-600 space-y-0.5">
                     {preview.contacts.map((c, i) => (
-                      <li key={i}>{c.name} · {c.level}{c.county ? ` (${c.county})` : ''}{!c.hasEmail ? ' · no email' : ''}</li>
+                      <li key={i}>{c.name} · {c.level}{c.county ? ` (${c.county})` : ''}{!c.hasEmail ? ' · no email' : ''} · email and in the app</li>
                     ))}
                   </ul>
                 )}
@@ -2368,7 +2429,7 @@ function ResponsePanel({ event, inv, editable, busy, busyKey, onSetOutcome, onAc
           {!inv.gates?.canClose && open.length > 0 && (
             <p className="text-xs text-gray-500 mt-2">Record response step {open.join(', ')} to close, or hand {open.length === 1 ? 'it' : 'them'} to a field worker.</p>
           )}
-          <p className="text-xs text-gray-400 mt-2">Field reporters get an in-app notification. CBS reporters cannot be contacted from here.</p>
+          <p className="text-xs text-gray-400 mt-2">Field reporters get an in-app notification.</p>
         </>
       )}
 
@@ -2574,24 +2635,6 @@ function Skeleton() {
   )
 }
 
-function Field({ label, value, danger, icon: Icon }) {
-  const text = (
-    <div className="min-w-0">
-      <dt className="text-sm text-gray-500">{label}</dt>
-      <dd className={`text-sm font-medium break-words ${danger ? 'text-red-700' : 'text-gray-900'}`}>{value}</dd>
-    </div>
-  )
-  if (!Icon) return text
-  return (
-    <div className="flex items-center gap-3 min-w-0">
-      <span className="w-10 h-10 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center shrink-0" aria-hidden="true">
-        <Icon className="w-4 h-4" />
-      </span>
-      {text}
-    </div>
-  )
-}
-
 // Event opened from Epi Trends: the CBS reports behind the trend, fetched live from CBS (nothing saved).
 function TrendCbsReports({ eventId }) {
   const [data, setData] = useState(null)
@@ -2656,11 +2699,14 @@ function CbsContact({ signal: s, canAct }) {
   )
 }
 
-function ReporterContact({ signal: s, canAct }) {
+function ReporterContact({ signal: s, canAct, inline = false }) {
   if (s.source === 'CBS') return <CbsContact signal={s} canAct={canAct} />
   if (s.source !== 'Field') return <span className="text-xs">Contact through {s.source} (ref {s.ref || '—'})</span>
   const unit = s.unit && <span className="text-sm text-gray-900">Health unit: {s.unit}</span>   // the CHP's CHU
   if (!s.reporter) return unit || '—'   // the server sends contacts to officers who act and on escalated events
+  if (inline) {   // one line in the Signal captured table (KRCS 23 Nov 2026)
+    return <>{[s.reporter.name || '—', s.unit, s.reporter.phone || 'no phone on profile'].filter(Boolean).join(' · ')}</>
+  }
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-gray-900">{s.reporter.name || '—'}</span>
@@ -2720,6 +2766,138 @@ function DecisionNotice({ notice, onClose }) {
   )
 }
 
+// ---------- the page header (KRCS 23 Nov 2026): one card instead of the coloured banner, the Case overview and the
+// list of related events. Title, status, risk; the place under the title; a small Context chip; the steps.
+function ContextChip({ ctx, open, onToggle }) {
+  const rows = (ctx?.rows || []).filter((r) => r.mark === 'supports')
+  if (!rows.length) return null   // shown only when the context points towards this disease
+  return (
+    <div className="flex max-w-md flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900">
+      <b>Context</b>
+      {rows.slice(0, 2).map((r) => (
+        <span key={r.key} className="inline-flex items-center"><Dot mark="supports" />{r.factor}: {String(r.headline || '').replace(/\.$/, '')}</span>
+      ))}
+      {rows.length > 2 && <span>+{rows.length - 2} more</span>}
+      <button type="button" aria-expanded={open} onClick={onToggle} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
+        {open ? 'Hide' : 'Details'}
+      </button>
+    </div>
+  )
+}
+
+function EventHeader({ event, isCha, ctx, canAct, onMerge, children }) {
+  const [ctxOpen, setCtxOpen] = useState(false)
+  const [relOpen, setRelOpen] = useState(false)
+  const place = [event.area, event.subCounty].filter(Boolean).join(', ')
+  const related = event.related || []
+  const facts = [
+    event.units?.length ? event.units.join(', ') : null,
+    countLabel(event.people, event.disease),
+  ].filter(Boolean)
+  const channels = (event.channels?.length ? event.channels : (event.sources || [])).join(', ')
+  return (
+    <div className="overflow-visible rounded-2xl border border-gray-200 bg-white">
+      <div className={`flex flex-wrap items-start justify-between gap-4 rounded-t-2xl p-5 text-white sm:p-6 ${isCha ? BANNER.standard : BANNER[event.severity] || BANNER.standard}`}>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{event.diseaseName || String(event.title || '').split(' · ')[0]}</h1>
+            <span className="inline-flex items-center rounded-full border border-white/70 bg-white/10 px-3 py-0.5 text-xs font-semibold">
+              {event.status === 'Closed' && event.outcome ? `Closed · ${event.outcome}` : STATUS_LABELS[event.status] || event.status}
+            </span>
+            {!isCha && (
+              <span className="inline-flex items-center rounded-full border border-white/70 bg-white/20 px-3 py-0.5 text-xs font-semibold">{SEVERITY_LABELS[event.severity] || SEVERITY_LABELS.standard} priority</span>
+            )}
+            {!isCha && <TriageRisk risk={event.risk} event={event} />}
+          </div>
+          <p className="mt-2 text-sm">
+            <MapPin className="mr-1 inline w-4 h-4 -mt-0.5" aria-hidden="true" />
+            <b>{place || 'Location missing'}</b>
+            {' · '}{facts.join(' · ')}
+            {event.deaths > 0 && <b> · {event.deaths} {event.deaths === 1 ? 'death' : 'deaths'}</b>}
+          </p>
+          <p className="mt-0.5 text-xs text-white/90">
+            {event.id}{channels ? ` · ${channels}` : ''} · {event.reports > 1
+              ? `${event.reports} reports, first ${fmtDateTime(event.firstSeen)}, latest ${fmtDateTime(event.lastSeen)}`
+              : `Reported ${fmtDateTime(event.firstSeen)}`}
+          </p>
+        </div>
+        <ContextChip ctx={ctx} open={ctxOpen} onToggle={() => setCtxOpen((v) => !v)} />
+      </div>
+      <div className="px-5 pb-5 pt-1 sm:px-6 sm:pb-6">
+
+      {ctxOpen && (
+        <div className="mt-4">
+          <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} bare />
+        </div>
+      )}
+
+      {(event.dataWarning || event.linkedAlert || related.length > 0) && (
+        <div className="mt-3 flex flex-col gap-1.5 text-sm text-gray-900">
+          {event.dataWarning && (
+            <p><AlertTriangle className="mr-1.5 inline w-4 h-4 -mt-0.5 text-amber-500" aria-hidden="true" />{event.dataWarning}</p>
+          )}
+          {event.linkedAlert && (
+            <p>Part of an Epi Trends alert:{' '}
+              <Link to={`/epi-trends/${event.linkedAlert.id}`} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
+                rise in {event.linkedAlert.place || event.subCounty}{event.linkedAlert.week ? `, ${event.linkedAlert.week}` : ''}
+              </Link>
+            </p>
+          )}
+          {related.length > 0 && (
+            <div>
+              <p>
+                <AlertTriangle className="mr-1.5 inline w-4 h-4 -mt-0.5 text-amber-500" aria-hidden="true" />
+                <b>{related.length} other {related.length === 1 ? 'event' : 'events'} nearby may be the same outbreak.</b>{' '}
+                <button type="button" aria-expanded={relOpen} onClick={() => setRelOpen((v) => !v)} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
+                  {relOpen ? 'Hide' : canAct ? 'Review and merge' : 'Show them'}
+                </button>
+              </p>
+              {relOpen && (
+                <table className="mt-2 w-full border-collapse text-sm">
+                  <tbody>
+                    {related.map((r) => (
+                      <tr key={r.id}>
+                        <td className={TD}><Link to={`/alerts-signals/${r.id}`} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{r.id}</Link></td>
+                        <td className={TD}>{STATUS_LABELS[r.status] || r.status} · {r.reports} {r.reports === 1 ? 'report' : 'reports'}, last {fmtDateTime(r.lastSeen)}</td>
+                        <td className={`${TD} text-right`}>
+                          {canAct && <button type="button" onClick={() => onMerge(r)} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>Merge into this event</button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {children && <div className="mt-5">{children}</div>}
+      </div>
+    </div>
+  )
+}
+
+// After a CHA confirms Verification, an officer escalates, or an event closes: say so clearly, then back to the
+// Review Queue (KRCS 23 Nov 2026). Goes back by itself after a few seconds.
+function DoneScreen({ done, onBack }) {
+  const [left, setLeft] = useState(5)
+  useEffect(() => {
+    if (left <= 0) { onBack(); return undefined }
+    const t = setTimeout(() => setLeft((n) => n - 1), 1000)
+    return () => clearTimeout(t)
+  }, [left, onBack])
+  return (
+    <div role="status" className="mx-auto mt-6 max-w-lg rounded-2xl border border-gray-200 bg-white p-8 text-center">
+      <CheckCircle2 className="mx-auto mb-3 w-12 h-12 text-emerald-600" aria-hidden="true" />
+      <h2 className="text-xl font-semibold text-gray-900">{done.title}</h2>
+      <p className="mt-2 text-sm text-gray-900">{done.body}</p>
+      <button type="button" onClick={onBack} className={`${BTN} ${PRIMARY} ${FOCUS} mt-6`}>Back to the Review Queue</button>
+      <p className="mt-3 text-xs text-gray-700">Going back in {left} second{left === 1 ? '' : 's'}…</p>
+    </div>
+  )
+}
+
 export default function EventDetail() {
   const { id } = useParams()
   const location = useLocation()
@@ -2745,9 +2923,8 @@ export default function EventDetail() {
   const [splitting, setSplitting] = useState(false)
   const [mergeTarget, setMergeTarget] = useState(null)
   const [merging, setMerging] = useState(false)
-  const [mapOpen, setMapOpen] = useState(false)
-  const [reasonOpen, setReasonOpen] = useState(false)
   const [contextSummary, setContextSummary] = useState(null)
+  const [done, setDone] = useState(null)   // {title, body}: the confirmation shown before going back to the queue
 
   const showToast = useCallback((message, isError = false, ms = isError ? 10000 : 6000) => {
     setToast({ show: true, message, error: isError })
@@ -2893,9 +3070,17 @@ export default function EventDetail() {
     triageCache.delete(event.id)   // the status changes what Verification and AI triage show
     try {
       const updated = await setEventStatus(event.id, action, text || '', facility || '')
-      // closed: back to the queue list (Elizabeth, 19 Nov 2026); a CHA who discards stays, to refer the patient if needed
+      // closed or escalated: say so, then back to the queue (KRCS 23 Nov 2026); a CHA who discards stays, to refer
+      // the patient if needed
+      const what = `${event.id} · ${event.title}`
+      if (action === 'escalate') {
+        setDone({ title: 'Escalated to the County MOH / PHEOC', notice: `${event.id} escalated.`,
+          body: `${what}. The County MOH / PHEOC team has been emailed and told in the app. They take the investigation from here.` })
+        return true
+      }
       if (CLOSING.has(action) && !(action === 'discard' && isCha)) {
-        backToQueue(`${event.id} ${action === 'discard' ? 'discarded' : 'closed'}.`)
+        setDone({ title: action === 'discard' ? 'Signal discarded' : 'Event closed', notice: `${event.id} ${action === 'discard' ? 'discarded' : 'closed'}.`,
+          body: `${what}. ${action === 'discard' ? 'The reporter is told in the app.' : 'Field reporters are told in the app.'}` })
         return true
       }
       setEvent(updated)
@@ -3000,21 +3185,29 @@ export default function EventDetail() {
     p.delete('step')
     navigate({ pathname: '/alerts-signals', search: p.toString() ? `?${p}` : '' }, { state: { notice } })
   }
-  const place = event ? [event.area, event.subCounty].filter(Boolean).join(', ') || 'Location missing' : ''
   const canAct = !!inv?.canAct
   // the steps this user sees and works on, from the step boxes in Roles & Permissions (KRCS 19 Nov 2026)
   // escalated to the county / MOH: the event stops at AI triage, later steps are not shown (KRCS 20 Nov 2026)
-  const allowed = (inv?.steps || [1, 2, 3, 4, 5, 6]).filter((n) => status !== 'Escalated' || n <= 3)
+  // escalated: the officer stops at AI triage; the County MOH / PHEOC it was handed to works on steps 4 to 6
+  const allowed = (inv?.steps || [1, 2, 3, 4, 5, 6]).filter((n) => status !== 'Escalated' || n <= 3 || inv?.isMoh)
   const can = (n) => allowed.includes(n)
   const canVerify = can(2) && ['New', 'Investigating'].includes(status)
   const canSplit = (can(2) || can(3)) && status !== 'Closed' && signals.length >= 2
-  const fieldWithReporter = signals.filter((s) => s.source === 'Field' && s.reporter)
-  const singleReporter = fieldWithReporter.length === 1 ? fieldWithReporter[0].reporter : null
   // a CHA works on Signal captured and Verification only (KRCS 19 Nov 2026)
   const isCha = !!inv?.isCha
   const wanted = openStep || currentStep || (isCha ? 2 : 3)
   // a step the role cannot see opens the nearest one before it (or the first it can see)
   const shown = can(wanted) ? wanted : [...allowed].reverse().find((n) => n < wanted) || allowed[0] || null
+  // the address keeps ?step= in step with the step on screen, so a refresh or a shared link opens the same step
+  // (KRCS 23 Nov 2026)
+  const eventId = event?.id
+  useEffect(() => {
+    if (!shown || !eventId) return
+    const p = new URLSearchParams(window.location.search)
+    if (p.get('step') === String(shown)) return
+    p.set('step', String(shown))
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${p}`)
+  }, [shown, eventId])
   // Tasks (KRCS 20 Nov 2026): assigned in Field investigation and Response & close, not in Decision; after a discard a
   // CHA can still refer the patient (a Referral task for the CHP), shown at the step the signal was discarded at
   const discardedAt = (stepInfo?.states || []).indexOf('discarded') + 1
@@ -3056,12 +3249,19 @@ export default function EventDetail() {
             onSaved={(confirmed) => {
               refreshEvent()
               if (confirmed) {
-                showToast(isCha ? 'Saved. The surveillance officer has been told.' : 'Verification confirmed. Choose the disease next.')
-                if (!isCha) selectStep(3)
+                if (isCha) {
+                  setDone({ title: 'Verified and sent to the officer', notice: `${event.id} verified.`,
+                    body: `${event.id} · ${event.title}. The surveillance officer has been told and chooses the disease next.` })
+                } else {
+                  showToast('Verification confirmed. Choose the disease next.')
+                  selectStep(3)
+                }
               }
             }}
             onDiscard={can(2) ? (reason) => runAction('discard', reason) : null}
             discardBusy={busy}
+            next={!isCha && can(3) ? (stepInfo?.states?.[2] === 'current' ? 'Next: AI triage' : 'View AI triage') : null}
+            onNext={() => selectStep(3)}
           />
         )
       case 3: {
@@ -3070,7 +3270,6 @@ export default function EventDetail() {
           <TriagePanel
             key={`${event.id}-${reportVersion}`}
             event={event}
-            inv={inv}
             canAct={can(3)}
             busy={busy}
             onError={(m) => showToast(m, true)}
@@ -3096,9 +3295,7 @@ export default function EventDetail() {
             <PanelHeader title="AI analysis & risk assessment" sub="A quick check of how urgent this looks" />
             <RiskAssessment risk={event.risk} disease={
               <DiseaseInsight eventId={event.id} diseaseName={event.disease === 'unclassified-illness' ? '' : event.diseaseName} eventReason={event.disease === 'unclassified-illness' ? '' : event.reason} onOpenCapture={() => selectStep(1)} />
-            }>
-              <ContextPanel subCounty={event.subCounty} county={event.county} people={event.people} disease={event.disease} />
-            </RiskAssessment>
+            } />
           </div>
         )
         function questionsPanel(part, onNextTab) {
@@ -3138,7 +3335,7 @@ export default function EventDetail() {
             key={inv.findings}
             event={event}
             inv={inv}
-            editable={can(4) && status === 'Investigating'}
+            editable={can(4) && (status === 'Investigating' || (status === 'Escalated' && !!inv.isMoh))}
             busy={busy}
             busyKey={busyKey}
             canManageProtocols={canManageProtocols}
@@ -3148,6 +3345,7 @@ export default function EventDetail() {
             onText={addTextEvidence}
             onRemove={removeEvidenceItem}
             onGoDecision={() => selectStep(5)}
+            onGoResponse={can(6) ? () => selectStep(6) : null}
             onError={(m) => showToast(m, true)}
           />
         )
@@ -3161,6 +3359,7 @@ export default function EventDetail() {
             choice={choice}
             onChoose={setChoice}
             onSubmit={runAction}
+            onGoResponse={can(6) ? () => selectStep(6) : null}
           />
         )
       case 6:
@@ -3207,119 +3406,27 @@ export default function EventDetail() {
             Retry
           </button>
         </div>
+      ) : done ? (
+        <DoneScreen done={done} onBack={() => backToQueue(done.notice)} />
       ) : event && inv && (
         <div className="flex flex-col gap-6">
-          <p className="text-sm text-gray-700 -mb-2">{isCha
-            ? 'A signal from the field. Call the reporter, check the symptoms and answer the questions, then Confirm and save.'
-            : 'One reported event from the field. Work through the steps below: the CHA verifies the reports, you choose the disease in AI triage, then investigate (priority diseases) or refer the patient (other diseases).'}</p>
           {event.mergedInto && (
-            <div className="flex items-center gap-2 rounded-xl bg-gray-100 border border-gray-200 px-4 py-3 text-sm text-gray-700">
+            <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900">
               <Link2 className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span>This event was merged into{' '}
                 <Link to={`/alerts-signals/${event.mergedInto}`} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{event.mergedInto}</Link>
               </span>
             </div>
           )}
-          <div className={`rounded-2xl p-6 sm:p-7 text-white ${isCha ? BANNER.standard : BANNER[event.severity] || BANNER.standard}`}>
-            <div className="flex items-center gap-3 flex-wrap mb-1.5">
-              <h1 className="text-xl sm:text-2xl font-semibold leading-tight">{event.title}</h1>
-              {!isCha && (
-                <span className="inline-flex items-center rounded-full border border-white/70 bg-white/20 px-3.5 py-1 text-xs font-medium tracking-wide">
-                  {SEVERITY_LABELS[event.severity] || SEVERITY_LABELS.standard}
-                </span>
-              )}
-              <span className="inline-flex items-center rounded-full border border-white/70 bg-white/10 px-3.5 py-1 text-xs font-medium">
-                {event.status === 'Closed' && event.outcome ? `Closed · ${event.outcome}` : STATUS_LABELS[event.status] || event.status}
-              </span>
-            </div>
-            <p className="text-sm font-medium text-white/90">
-              Event {event.id}{(event.channels?.length ? event.channels : (event.sources || [])).length ? ` · ${(event.channels?.length ? event.channels : event.sources).join(', ')}` : ''} · {event.reports > 1
-                ? `${event.reports} reports · first ${fmtDateTime(event.firstSeen)} · latest ${fmtDateTime(event.lastSeen)}`
-                : `Reported ${fmtDateTime(event.firstSeen)}`}
-            </p>
-            {event.linkedAlert && (
-              <Link
-                to={`/epi-trends/${event.linkedAlert.id}`}
-                className="inline-flex items-center mt-4 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2"
-              >
-                Epi Trends alert: rise in {event.linkedAlert.place || event.subCounty}{event.linkedAlert.week ? `, ${event.linkedAlert.week}` : ''} →
-              </Link>
-            )}
-            {event.dataWarning && (
-              <div className="mt-5 flex items-start gap-3 rounded-xl bg-white border border-amber-400 p-4 text-sm text-gray-800">
-                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
-                <p>{event.dataWarning}</p>
-              </div>
-            )}
-          </div>
 
-          {event.related?.length > 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col gap-2">
-              {event.related.map((r) => (
-                <div key={r.id} className="flex items-center justify-between gap-3 flex-wrap text-sm">
-                  <p className="text-gray-800">
-                    <AlertTriangle className="inline w-4 h-4 text-amber-500 mr-1.5 -mt-0.5" aria-hidden="true" />
-                    Possibly the same outbreak:{' '}
-                    <Link to={`/alerts-signals/${r.id}`} className={`font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>{r.id}</Link>
-                    <span className="text-gray-500"> · {STATUS_LABELS[r.status] || r.status} · {r.reports} {r.reports === 1 ? 'report' : 'reports'}, last {fmtDateTime(r.lastSeen)}</span>
-                  </p>
-                  {canAct && (
-                    <button type="button" onClick={() => setMergeTarget(r)} className={`text-sm font-medium text-red-700 hover:underline rounded ${FOCUS}`}>Merge into this event</button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {!allowed.length && <p className="text-sm text-gray-500">Your role cannot see the steps of this event. Ask your administrator if you need them.</p>}
-
-          <div className={card}>
-            <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
-              <h2 className="text-xl font-semibold text-gray-900">Case overview</h2>
-              <button
-                type="button"
-                aria-expanded={mapOpen}
-                onClick={() => setMapOpen((v) => !v)}
-                className={`inline-flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 ${FOCUS}`}
-              >
-                <MapPin className="w-3.5 h-3.5" aria-hidden="true" /> {mapOpen ? 'Hide map' : 'Show on map'}
-              </button>
-            </div>
-            <dl className="grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-5">
-              <Field icon={MapPin} label="Location" value={place} />
-              <Field icon={Users} label="Affected" value={
-                <>
-                  {countLabel(event.people, event.disease)}
-                  {event.deaths > 0 && <span className="text-red-700"> · {event.deaths} {event.deaths === 1 ? 'death' : 'deaths'}</span>}
-                </>
-              } />
-              <Field icon={Calendar} label={event.reports > 1 ? 'Latest report' : 'Reported'} value={fmtDateTime(event.reports > 1 ? event.lastSeen : event.firstSeen)} />
-              {singleReporter && (
-                <Field
-                  icon={Phone}
-                  label="Reported by"
-                  value={
-                    <>
-                      {singleReporter.name || '—'}
-                      {singleReporter.phone && (
-                        <a href={`tel:${singleReporter.phone}`} className={`block text-xs font-medium text-red-700 hover:underline rounded ${FOCUS}`}>
-                          Call {singleReporter.phone}
-                        </a>
-                      )}
-                    </>
-                  }
-                />
-              )}
-              {event.units?.length > 0 && (
-                <Field icon={Building2} label={event.units.length > 1 ? 'Health units' : 'Health unit'} value={event.units.join(', ')} />
-              )}
-            </dl>
-            {mapOpen && <ReportsMap signals={signals} />}
-          </div>
+          <EventHeader event={event} isCha={isCha} ctx={contextSummary} canAct={canAct} onMerge={setMergeTarget}>
+            {allowed.length > 0
+              ? <Tracker bare event={event} states={stepInfo.states} openStep={shown} onSelect={selectStep} steps={STEPS.filter((st) => can(st.n))} verifiedBy={inv?.verified?.by} />
+              : <p className="text-sm text-gray-900">Your role cannot see the steps of this event. Ask your administrator if you need them.</p>}
+          </EventHeader>
 
           <EventTasksProvider eventId={event.id} eventStatus={event.status} onChanged={refreshEvent} onToast={showToast}>
-            {event.escalation && <EscalationNotice esc={event.escalation} />}
-            {allowed.length > 0 && <Tracker event={event} states={stepInfo.states} openStep={shown} onSelect={selectStep} steps={STEPS.filter((st) => can(st.n))} verifiedBy={inv?.verified?.by} />}
+            {event.escalation && <EscalationNotice esc={event.escalation} isMoh={!!inv.isMoh} />}
 
             <DecisionNotice notice={notice} onClose={() => setNotice(null)} />
 

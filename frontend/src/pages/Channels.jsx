@@ -14,7 +14,7 @@ const CHANNELS = [
   { value: 'Web', label: 'Web App', icon: Globe, color: '#F2C94C', description: 'Browser-based reporting and review.' },
 ]
 const SOURCES = [
-  { value: 'CBS', label: 'Community-Based Surveillance (CBS)', icon: Users, color: '#2563EB', description: 'Weekly signal counts from the KRCS CBS system, loaded in batches.' },
+  { value: 'CBS', label: 'Community-Based Surveillance (CBS)', icon: Users, color: '#2563EB', description: 'Weekly signal counts from the KRCS CBS system.' },
   { value: 'IDSR', label: 'Facility weekly reports (MOH 505)', icon: Building2, color: '#7C3AED', description: 'Weekly IDSR cases from facility exports in KHIS.' },
 ]
 const PERIODS = [7, 30, 90]

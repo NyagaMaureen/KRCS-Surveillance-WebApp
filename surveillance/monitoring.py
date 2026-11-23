@@ -15,8 +15,9 @@ R43 summary and detail views.  R44 exports: CSV and Excel here (export_report); 
 and logged with log_export. Exports need Export Monitoring Reports.  R46 every generation and export is logged
 (Report Run Log) and shows in the Audit Log.  R45 (scheduled reports) comes later.
 
-Access: View Monitoring Reports. Users limited to a region see that region; Surveillance Officers, FHWs and CHAs see
-their own sub-county only (user_scope.locked_area) and do not get R40 / R40b (system-wide).
+Access: one permission per report, ticked in Roles & Permissions (KRCS 23 Nov 2026); with none ticked the page is
+hidden. Users limited to a region see that region; Surveillance Officers, FHWs and CHAs see their own sub-county only
+(user_scope.locked_area).
 
 AI measures (R38, also on the dashboard's System Performance tab):
   Disease suggestions  the list of possible diseases shown to the officer (case definitions, possible diseases and the
@@ -40,7 +41,6 @@ from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetim
 from surveillance.capabilities import has_capability, require_capability
 from surveillance.user_scope import locked_area
 
-VIEW = "view_monitoring_reports"
 EXPORT = "export_monitoring_reports"
 PUSH = "push_model_metrics"
 RUN_LOG = "Report Run Log"
@@ -73,26 +73,35 @@ REPORT_MAP = {r["key"]: r for r in REPORTS}
 # ---------- access and filters ----------
 
 def _require(report=None):
-	require_capability(VIEW)
+	if not _allowed_keys():
+		frappe.throw("You do not have permission to see Monitoring Reports.", frappe.PermissionError)
 	if report is None:
 		return None
 	r = REPORT_MAP.get(report)
 	if not r:
 		frappe.throw("Unknown report.")
-	if r.get("hq") and locked_area():
-		frappe.throw("This report is for HQ users.", frappe.PermissionError)
 	if not _report_allowed(r):
-		frappe.throw("This report is not part of your workspace.", frappe.PermissionError)
+		frappe.throw("Your role cannot see this report. Ask your administrator to tick it in Roles & Permissions.",
+			frappe.PermissionError)
 	return r
 
 
-# Data & AI Administrators run the system and see no surveillance figures (KRCS 18 Nov 2026)
-SYSTEM_REPORTS = ("R37", "R38", "R40", "R40b")
+# One permission per report, ticked in Roles & Permissions (KRCS 23 Nov 2026); none ticked: no Monitoring Reports
+def _cap(code):
+	return "monitoring_" + code.lower()
+
+
+def _allowed_keys():
+	from surveillance.capabilities import get_user_capabilities
+	caps = get_user_capabilities()
+	return {r["key"] for r in REPORTS if _cap(r["key"]) in caps}
 
 
 def _report_allowed(r):
-	from surveillance.user_scope import user_workspace
-	return r["key"] in SYSTEM_REPORTS or user_workspace() != "dataai"
+	return r["key"] in _allowed_keys()
+
+
+SYSTEM_REPORTS = ("R37", "R38", "R40", "R40b")   # the Data & AI Admin dashboard's tabs: no case figures
 
 
 def _parse(filters):
@@ -1187,8 +1196,9 @@ BUILDERS = {"R34": _r34, "R35": _r35, "R36": _r36, "R37": _r37, "R38": _r38, "R3
 
 # ---------- API ----------
 
-def _build(report, filters):
-	r = _require(report)
+def _build(report, filters, check=True):
+	"""check=False: the Data & AI dashboard tabs, which have their own permission (system_admin.DASHBOARD)."""
+	r = _require(report) if check else REPORT_MAP[report]
 	f = _filters(filters)
 	out = BUILDERS[report](f)
 	rows = out.pop("rows")
@@ -1251,9 +1261,8 @@ def _options():
 @frappe.whitelist()
 def list_reports():
 	_require()
-	hq = not locked_area()
-	return {"reports": [{k: r[k] for k in ("key", "title", "description", "filters")} for r in REPORTS
-		if (hq or not r.get("hq")) and _report_allowed(r)],
+	keys = _allowed_keys()
+	return {"reports": [{k: r[k] for k in ("key", "title", "description", "filters")} for r in REPORTS if r["key"] in keys],
 		"canExport": has_capability(EXPORT), "options": _options()}
 
 

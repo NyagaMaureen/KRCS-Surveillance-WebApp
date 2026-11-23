@@ -562,7 +562,14 @@ def _shape(doc):
 		"canAct": has_capability(ACT),
 		"isCha": False, "canVerify": can_verify(), "verified": verified, "verificationDone": verification_done(doc),
 		"steps": allowed_steps(), "tasks": tasks_access(),
+		# an escalated event is handed to the County MOH / PHEOC: they work on steps 4 to 6 (KRCS 23 Nov 2026)
+		"isMoh": _is_moh(),
 	}
+
+
+def _is_moh():
+	from surveillance.notifications import MOH_ROLES
+	return bool(set(frappe.get_roles()) & set(MOH_ROLES)) or "System Manager" in frappe.get_roles()
 
 
 @frappe.whitelist()

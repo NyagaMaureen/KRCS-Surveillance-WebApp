@@ -59,6 +59,7 @@ from surveillance.kb_access import KBAccessDenied  # noqa: F401  (re-exported fo
 DOCTYPE = "Knowledge Document"
 CAPABILITY = "manage_knowledge_base"
 APPROVE_CAPABILITY = "approve_knowledge_base"
+VIEW_CAPABILITY = "view_knowledge_base"   # see the page and download (KRCS 23 Nov 2026)
 SEARCH_CAPABILITY = "use_knowledge_base"
 SERVICE_CAPABILITY = "kb_service"
 APPROVAL_STATUSES = ("Draft", "Approved", "Retired")
@@ -569,8 +570,8 @@ def _row(d):
 
 @frappe.whitelist()
 def list_documents():
-	if not (has_capability(CAPABILITY) or has_capability(APPROVE_CAPABILITY)):
-		require_capability(CAPABILITY)
+	if not (has_capability(VIEW_CAPABILITY) or has_capability(CAPABILITY) or has_capability(APPROVE_CAPABILITY)):
+		require_capability(VIEW_CAPABILITY)
 	return [_row(d) for d in frappe.get_all(DOCTYPE, fields=["*"], order_by="creation desc")]
 
 
@@ -1654,7 +1655,7 @@ def _readable(name):
 	doc = frappe.get_doc(DOCTYPE, name)
 	if not doc.file:
 		frappe.throw(_("This document has no file."), frappe.DoesNotExistError)
-	if not (has_capability(CAPABILITY) or has_capability(APPROVE_CAPABILITY)):
+	if not (has_capability(VIEW_CAPABILITY) or has_capability(CAPABILITY) or has_capability(APPROVE_CAPABILITY)):
 		if not _visible(_access_payload(doc), _access_context()):
 			frappe.throw(_("This document is not available to you."), frappe.PermissionError)
 	return doc, frappe.get_doc("File", {"file_url": doc.file})

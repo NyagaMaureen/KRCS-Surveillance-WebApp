@@ -2,7 +2,8 @@
 
 1. New event   -> the CHA and SCDSC assigned to that sub-county (User.assigned_sub_county, or one of an officer's
                   other sub-counties).
-2. Escalation  -> County and National MOH contacts (Escalation Contact list, managed by KRCS),
+2. Escalation  -> the County MOH / PHEOC users in the system for that region, by email and in-app (KRCS 23 Nov 2026;
+                  the Escalation Contact list is no longer used),
                   with what they need to act: disease, signs and symptoms,
                   cases and deaths, dates, location, nearest health facility, reporter contacts,
                   and the officer escalating with their reason. The CHA/SCDSC also get an in-app copy.
@@ -98,12 +99,15 @@ def moh_users(region):
 	return out
 
 
-def escalation_contacts(county):
-	"""Active National contacts, plus County contacts for this county (or with no county set)."""
-	rows = frappe.get_all("Escalation Contact", filters={"active": 1},
-		fields=["contact_name", "level", "county", "email", "phone"])
-	county = (county or "").strip().lower()
-	return [r for r in rows if r.level == "National" or not r.county or r.county.strip().lower() == county]
+def escalation_contacts(region):
+	"""Who an escalation goes to: the County MOH / PHEOC users of this region (KRCS 23 Nov 2026). Same fields as the
+	old Escalation Contact list, which is kept in the database but no longer used."""
+	out = []
+	for u in moh_users(region):
+		row = frappe.db.get_value("User", u, ["full_name", "email", "mobile_no"], as_dict=True) or {}
+		out.append(frappe._dict(contact_name=row.get("full_name") or u, level="County", county=None,
+			email=row.get("email") or u, phone=row.get("mobile_no")))
+	return out
 
 
 def _rows(pairs):
@@ -448,7 +452,7 @@ def send_escalation(event_name, reason, escalated_by):
 	event = event_name
 	try:
 		doc = frappe.get_doc("Surveillance Event", event)
-		contacts = escalation_contacts(doc.county)
+		contacts = escalation_contacts(doc.region)
 		signs, reporters = _report_lines(event)
 		officer = frappe.db.get_value("User", escalated_by, ["full_name", "email", "mobile_no"], as_dict=True) or {}
 		gps = _gps(doc)
@@ -491,8 +495,9 @@ def send_escalation(event_name, reason, escalated_by):
 		team = [u.name for u in _officers(sub_county_users(doc.sub_county, doc.name))]   # not the CHAs
 		_in_app(team + moh_users(doc.region), f"Escalated to County/MOH: {doc.title}", doc.name)
 		doc.append("actions", {"at": now_datetime(), "user": "Administrator", "action": "Escalation sent",
-			"note": f"Emailed {len([c for c in contacts if c.email])} County/National MOH contact(s)"
-				+ (": " + ", ".join(c.contact_name for c in contacts) if contacts else ". No active Escalation Contacts: add them in Settings.")})
+			"note": f"Emailed {len([c for c in contacts if c.email])} County MOH / PHEOC user(s)"
+				+ (": " + ", ".join(c.contact_name for c in contacts) if contacts
+					else ". No County MOH / PHEOC user for this region: add one in Users.")})
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
 	except Exception:
@@ -512,8 +517,8 @@ def get_escalation_preview(event):
 	used = frappe.get_all("Surveillance Event", filters={"sub_county": doc.sub_county, "nearest_facility": ["is", "set"]},
 		pluck="nearest_facility", distinct=True, limit_page_length=50)
 	return {
-		"contacts": [{"name": c.contact_name, "level": c.level, "county": c.county, "hasEmail": bool(c.email),
-			"hasPhone": bool(c.phone)} for c in escalation_contacts(doc.county)],
+		"contacts": [{"name": c.contact_name, "level": "County MOH / PHEOC", "county": None, "hasEmail": bool(c.email),
+			"hasPhone": bool(c.phone)} for c in escalation_contacts(doc.region)],
 		"facilities": sorted({f for f in used if f}),
 		"nearestFacility": doc.nearest_facility or None,
 	}

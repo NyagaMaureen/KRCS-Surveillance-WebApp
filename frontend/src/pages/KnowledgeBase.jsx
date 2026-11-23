@@ -848,7 +848,7 @@ function TestSearch() {
 const EMPTY_SOURCE = { name: null, sourceName: '', website: '', kind: 'Website', enabled: true, notes: '', allowedRoles: [] }
 const PUBLIC_AUDIENCE = 'Public (WhatsApp community)'
 
-function TrustedSources({ onToast, roleOptions = [] }) {
+function TrustedSources({ onToast, roleOptions = [], canEdit = true }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [form, setForm] = useState(EMPTY_SOURCE)
@@ -884,6 +884,7 @@ function TrustedSources({ onToast, roleOptions = [] }) {
 
   return (
     <div className="space-y-5">
+      {canEdit && (
       <div className="rounded-xl border border-gray-200 bg-white p-5">
         <h3 className="text-base font-bold text-gray-900">{form.name ? 'Edit trusted source' : 'Add a trusted source'}</h3>
         <p className="mt-1 text-sm text-gray-900">Websites the assistant may quote when approved KRCS documents do not answer a question. Every such answer names the website, says it is not KRCS-approved, and the question still goes to the supervisor.</p>
@@ -914,6 +915,7 @@ function TrustedSources({ onToast, roleOptions = [] }) {
           </div>
         </form>
       </div>
+      )}
 
       {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
@@ -938,15 +940,15 @@ function TrustedSources({ onToast, roleOptions = [] }) {
                     <td className="px-3 py-3 text-xs text-gray-900">{r.allowedRoles?.length ? r.allowedRoles.join(', ') : 'Everyone'}</td>
                     <td className="px-3 py-3">
                       <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-900">
-                        <input type="checkbox" checked={r.enabled} onChange={() => toggle(r)} className="h-4 w-4 accent-red-600" />
+                        <input type="checkbox" checked={r.enabled} disabled={!canEdit} onChange={() => toggle(r)} className="h-4 w-4 accent-red-600" />
                         {r.enabled ? 'Yes' : 'No'}
                       </label>
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex items-center justify-end gap-3">
+                      {canEdit && <div className="flex items-center justify-end gap-3">
                         <button type="button" onClick={() => setForm({ ...r })} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"><Pencil className="h-3.5 w-3.5" />Edit</button>
                         <button type="button" onClick={() => remove(r)} className="inline-flex items-center gap-1 text-xs font-medium text-gray-900 hover:underline"><Trash2 className="h-3.5 w-3.5" />Remove</button>
-                      </div>
+                      </div>}
                     </td>
                   </tr>
                 ))}
@@ -1047,6 +1049,7 @@ export default function KnowledgeBase() {
   const { has } = useCapabilities()
   const canManage = has('manage_knowledge_base')
   const canApprove = has('approve_knowledge_base')
+  const canView = has('view_knowledge_base') || canApprove   // see the page and download (KRCS 23 Nov 2026)
 
   const showToast = useCallback((message, error = false) => {
     setToast({ show: true, message, error })
@@ -1249,7 +1252,7 @@ export default function KnowledgeBase() {
         <StatCard icon={Database} label="Knowledge Size" value={stats.sizeLabel} sub={`${stats.sizePct}% of 2 GB workspace`} />
       </div>
 
-      {canManage && (
+      {(canManage || canView) && (
         <div className="flex gap-6 border-b border-gray-100 mb-5">
           {[{ key: 'documents', label: 'Documents' }, { key: 'sources', label: 'Trusted sources' }].map((t) => (
             <button
@@ -1264,8 +1267,8 @@ export default function KnowledgeBase() {
         </div>
       )}
 
-      {tab === 'sources' && canManage ? (
-        <TrustedSources onToast={showToast} roleOptions={roleOptions} />
+      {tab === 'sources' && (canManage || canView) ? (
+        <TrustedSources onToast={showToast} roleOptions={roleOptions} canEdit={canManage} />
       ) : (
         <>
           <div className="flex items-center gap-3 flex-wrap mb-4">

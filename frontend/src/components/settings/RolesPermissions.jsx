@@ -12,8 +12,8 @@ const shortName = (name) => String(name || '').replace(/^[^:]{2,20}:\s*/, '')
 // roles grouped by level, field to national, so similar roles sit together; anything else goes under Other
 const LEVELS = [
   ['Field', ['CHP', 'CHA', 'Community Health Assistant', 'Facility Health Worker']],
-  ['Facility', ['Public Health Officer', 'HIS Officer']],
-  ['Sub-county and county', ['Surveillance Officer', 'SCDSC', 'CDSC', 'County MOH / PHEOC']],
+  ['Facility', ['HIS Officer']],
+  ['Sub-county and county', ['Surveillance Officer', 'SCDSC', 'County MOH / PHEOC']],
   ['National', ['Public Health HQ', 'MOH DDSR (National)']],
   ['System', ['Data & AI Administrator', 'System Administrator']],
 ]

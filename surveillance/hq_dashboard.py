@@ -39,8 +39,8 @@ OPEN = ["New", "Verified", "Investigating", "Confirmed", "Escalated"]
 SIGNAL_TYPES = ["Suspected Outbreak", "Community Signal", "Facility Signal"]
 SEV_ORDER = {"critical": 0, "high": 1, "standard": 2}
 CHA_ROLES = ["CHA", "Community Health Assistant"]
-USER_ROLES = ["CHP", "Facility Health Worker", "Public Health Officer", "HIS Officer", "Surveillance Officer", "SCDSC",
-	"CDSC", "Public Health HQ", "County MOH / PHEOC", "MOH DDSR (National)", "Data & AI Administrator", "System Administrator"] + CHA_ROLES
+USER_ROLES = ["CHP", "Facility Health Worker", "HIS Officer", "Surveillance Officer", "SCDSC",
+	"Public Health HQ", "County MOH / PHEOC", "MOH DDSR (National)", "Data & AI Administrator", "System Administrator"] + CHA_ROLES
 
 
 # ---------- filters ----------

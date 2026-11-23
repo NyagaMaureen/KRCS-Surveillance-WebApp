@@ -20,6 +20,16 @@ STEP_GRANTS = {"Surveillance Event": ["read", "write"], "Surveillance Signal": [
 
 # key -> definition. "grants" = Frappe permissions this capability gives on each DocType.
 # Grants on DocTypes that don't exist yet are skipped and applied automatically once the DocType exists.
+# Monitoring Reports, one permission each (key, report code, title): monitoring.REPORTS uses the same codes
+MONITORING_REPORT_CAPS = [
+	("monitoring_r34", "R34", "Surveillance Signal Summary"), ("monitoring_r35", "R35", "Alert and Triage"),
+	("monitoring_r36", "R36", "Investigation and Response"), ("monitoring_r37", "R37", "Data Quality"),
+	("monitoring_r38", "R38", "AI Performance"), ("monitoring_r39", "R39", "Operational KPI"),
+	("monitoring_r40", "R40", "Integration Health"), ("monitoring_r40b", "R40b", "System Health"),
+]
+MONITORING_KEYS = [k for k, _, _ in MONITORING_REPORT_CAPS]
+SYSTEM_MONITORING_KEYS = ["monitoring_r37", "monitoring_r38", "monitoring_r40", "monitoring_r40b"]
+
 CAPABILITIES = [
 	# Case Reports
 	{"key": "view_reports", "name": "View Reports", "category": "Case Reports",
@@ -148,9 +158,12 @@ CAPABILITIES = [
 	 "description": "Upload MOH 505 (IDSR) exports from KHIS and manage the reporting facility list",
 	 "grants": {"Reporting Facility": ["read"], "IDSR Upload": ["read"]}},
 
-	# Knowledge Base
+	# Knowledge Base: View, Upload, Approve (KRCS 23 Nov 2026)
+	{"key": "view_knowledge_base", "name": "View Knowledge Base", "category": "Knowledge Base",
+	 "description": "Open the AI Knowledge Base page and download its documents and trusted sources",
+	 "grants": {"Knowledge Document": ["read"]}},
 	{"key": "manage_knowledge_base", "name": "Manage Knowledge Base", "category": "Knowledge Base",
-	 "description": "Upload, reindex and delete AI knowledge base documents", "grants": {"Knowledge Document": ["read", "write", "create", "delete"]}},
+	 "description": "Upload documents (and reindex or delete them) and add trusted sources", "grants": {"Knowledge Document": ["read", "write", "create", "delete"]}},
 	{"key": "approve_knowledge_base", "name": "Approve Knowledge Base", "category": "Knowledge Base",
 	 "description": "Approve or retire knowledge base documents", "grants": {"Knowledge Document": ["read", "write"]}},
 	{"key": "use_knowledge_base", "name": "Use Knowledge Base", "category": "Knowledge Base",
@@ -205,9 +218,9 @@ CAPABILITIES += [
 	{"key": "settings_security", "name": "Settings: Security", "category": "Settings",
 	 "description": "See the Security tab in Settings", "grants": {}},
 	# Monitoring Reports (SRS D.5, KRCS 16 Nov 2026)
-	{"key": "view_monitoring_reports", "name": "View Monitoring Reports", "category": "Monitoring Reports",
-	 "description": "Open Monitoring Reports (R34 to R40b) for the user's own area: HQ their region or national; officers, FHWs and CHAs their sub-county",
-	 "grants": {}},
+	# one tick per report (KRCS 23 Nov 2026): with none ticked the Monitoring Reports page is hidden
+] + [{"key": key, "name": title, "category": "Monitoring Reports", "grants": {},
+	"description": f"See the {title} report ({code}) for the user's own area"} for key, code, title in MONITORING_REPORT_CAPS] + [
 	{"key": "export_monitoring_reports", "name": "Export Monitoring Reports", "category": "Monitoring Reports",
 	 "description": "Export Monitoring Reports as Excel, CSV, PDF or JPEG (every export is recorded in the Audit Log)", "grants": {}},
 	{"key": "push_model_metrics", "name": "Send AI Model Measures", "category": "Monitoring Reports",
@@ -238,7 +251,7 @@ MENU_LABELS = {
 	"view_sensitive_kb": ("KRCS Data Assistant", "See Sensitive Content"),
 	"kb_national_scope": ("KRCS Data Assistant", "National Scope"),
 	"kb_service": ("KRCS Data Assistant", "Service Access (chatbot)"),
-	"view_monitoring_reports": ("Monitoring Reports", "View Monitoring Reports"),
+	**{k: ("Monitoring Reports", f"{t} ({c})") for k, c, t in MONITORING_REPORT_CAPS},
 	"export_monitoring_reports": ("Monitoring Reports", "Export Monitoring Reports"),
 	"push_model_metrics": ("Monitoring Reports", "Send AI Model Measures"),
 	"view_data_quality": ("Data Quality", "View Data Quality"),
@@ -247,8 +260,9 @@ MENU_LABELS = {
 	"upload_facility_data": ("MOH 505 Facility Reports", "Upload MOH 505 Files"),
 	"view_context_data": ("Context Data", "View Context Data"), "manage_context_data": ("Context Data", "Manage Context Data"),
 	"settings_ai_config": ("AI Risk Engine", "AI Risk Engine Settings"),
-	"manage_knowledge_base": ("AI Knowledge Base", "Manage Knowledge Base"),
-	"approve_knowledge_base": ("AI Knowledge Base", "Approve Knowledge Base"),
+	"view_knowledge_base": ("AI Knowledge Base", "View"),
+	"manage_knowledge_base": ("AI Knowledge Base", "Upload"),
+	"approve_knowledge_base": ("AI Knowledge Base", "Approve"),
 	"view_chatbot_logs": ("AI Assistant Query Log", "View Query Log"),
 	"handle_chatbot_escalations": ("AI Assistant Query Log", "Handle Escalations"),
 	"settings_alert_thresholds": ("Alert Thresholds", "Open Alert Thresholds"),
@@ -290,9 +304,9 @@ WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_
 # (AI, data, integrations, users, roles, security, settings) and sees no case or patient data. Set by data_ai_admin_setup.
 DATA_AI_CAPABILITIES = ["dataai_workspace", "view_users", "manage_users", "manage_roles", "view_audit_log",
 	"settings_security", "settings_data", "settings_ai_config", "settings_alert_thresholds", "manage_alert_thresholds",
-	"settings_notifications", "settings_system", "manage_reference_data", "manage_knowledge_base", "approve_knowledge_base",
+	"settings_notifications", "settings_system", "manage_reference_data", "view_knowledge_base", "manage_knowledge_base", "approve_knowledge_base",
 	"use_knowledge_base", "kb_national_scope", "view_chatbot_logs", "view_reporting_channels", "upload_facility_data",
-	"view_context_data", "manage_context_data", "view_data_quality", "view_monitoring_reports", "export_monitoring_reports",
+	"view_context_data", "manage_context_data", "view_data_quality", *SYSTEM_MONITORING_KEYS, "export_monitoring_reports",
 	"view_feedback", "view_all_regions"]   # national: the region set on the user (required by the form) does not limit it
 
 # Capabilities set for the CHP role by setup_chp_role (run once; adjust later in Roles & Permissions)

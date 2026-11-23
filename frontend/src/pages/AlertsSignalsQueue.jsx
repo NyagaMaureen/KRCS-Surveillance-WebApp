@@ -257,9 +257,8 @@ export default function AlertsSignalsQueue() {
     p.set('step', String(step))
     return `?${p}`
   }
-  // officers: a verified signal opens straight on AI triage (KRCS 19 Nov 2026)
-  const triageNext = (ev) => !isCha && ev.status === 'Verified'
-  const open = (ev) => navigate({ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: detailsSearch(triageNext(ev) ? 3 : 1) })
+  // every event opens on Signal captured, so officers go through the steps in order (KRCS 23 Nov 2026)
+  const open = (ev) => navigate({ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: detailsSearch(1) })
 
   const [page, setPage] = useState(0)
   useEffect(() => setPage(0), [tab, q, disease, channel, unit, sevFilter, overdueOnly, sort])
@@ -381,7 +380,7 @@ export default function AlertsSignalsQueue() {
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Channel</th>
                     <th className="px-3 py-2.5 font-medium hidden lg:table-cell">Health unit</th>
                     <th className="px-3 py-2.5 font-medium hidden md:table-cell">Location</th>
-                    <th className="px-3 py-2.5 font-medium">{isCha ? 'Waiting' : 'Risk'}</th>
+                    <th className="px-3 py-2.5 font-medium">Risk</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
                     <th className="px-3 py-2.5 font-medium rounded-r-lg"><span className="sr-only">Actions</span></th>
                   </tr>
@@ -426,7 +425,7 @@ export default function AlertsSignalsQueue() {
                           <td className="px-3 py-3.5 hidden md:table-cell text-gray-600">{place || <span className="text-amber-600">Location missing</span>}</td>
                           <td className="px-3 py-3.5 whitespace-nowrap">
                             <span className="inline-flex items-center gap-1.5 flex-nowrap">
-                              {!isCha && <RiskPill risk={ev.risk} severity={ev.severity} />}
+                              <RiskPill risk={ev.risk} severity={ev.severity} />   {/* CHAs too (KRCS 23 Nov 2026) */}
                             </span>
                             {w && w.state !== 'ok' && (
                               <span className={`block text-xs mt-1 ${w.state === 'over' ? 'text-red-700' : 'text-amber-600'}`} title={`Target: start verification within ${w.target} h`}>
@@ -442,25 +441,10 @@ export default function AlertsSignalsQueue() {
                             )}
                           </td>
                           <td className="px-3 py-3.5 text-right whitespace-nowrap">
-                            {triageNext(ev) ? (
-                              <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: detailsSearch(3) }} onClick={(e) => e.stopPropagation()}
-                                className={`inline-flex items-center h-8 px-3 rounded-lg bg-red-600 text-xs font-semibold text-white hover:bg-red-700 ${FOCUS}`}>
-                                Proceed to AI triage
-                              </Link>
-                            ) : (
-                              <>
-                                {!isCha && ev.status === 'New' && (
-                                  <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: ev.status === 'New' ? '?step=2' : '' }} onClick={(e) => e.stopPropagation()}
-                                    className={`mr-3 text-xs font-medium text-red-700 hover:text-red-800 hover:underline rounded ${FOCUS}`}>
-                                    {ev.status === 'New' ? 'Start verification' : 'Continue'}
-                                  </Link>
-                                )}
-                                <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: detailsSearch() }} onClick={(e) => e.stopPropagation()}
-                                  className={`inline-flex items-center h-8 px-3 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-white ${FOCUS}`}>
-                                  View details
-                                </Link>
-                              </>
-                            )}
+                            <Link to={{ pathname: `/alerts-signals/${encodeURIComponent(ev.id)}`, search: detailsSearch() }} onClick={(e) => e.stopPropagation()}
+                              className={`inline-flex items-center h-8 px-3 rounded-lg ${!isCha && ev.status === 'Verified' ? 'bg-red-600 text-white hover:bg-red-700' : 'border border-gray-200 text-gray-700 hover:bg-white'} text-xs font-medium ${FOCUS}`}>
+                              View details
+                            </Link>
                           </td>
                         </tr>
                       )

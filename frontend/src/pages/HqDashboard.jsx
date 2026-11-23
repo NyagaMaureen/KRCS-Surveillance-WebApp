@@ -5,13 +5,14 @@ import {
   Gauge, ShieldCheck, TrendingUp, Activity, Map as MapIcon, RefreshCw, Clock, RotateCcw,
   Radio, CheckCheck, ArrowUpRight, Hourglass, Wifi, Search, Footprints, ArrowRightLeft, ListChecks,
   Users, UserRound, UserCheck, MessageCircle, Smartphone, Bot, Percent, Sparkles,
-  Download, FileSpreadsheet, FileText, Image as ImageIcon,
+  Download,
 } from 'lucide-react'
 import { DashExportContext, downloadPanel, downloadTabPng, printTab, downloadTabExcel } from '../components/dashboard/dashExport'
 import '../charts/chartSetup'
 import { CHART_FONT } from '../charts/chartSetup'
 import AppShell from '../components/layout/AppShell'
 import Embedded from '../components/layout/Embedded'
+import DownloadMenu from '../components/dashboard/DownloadMenu'
 import EpiTrends from './EpiTrends'
 import SurveillanceMap from './SurveillanceMap'
 import { useCapabilities } from '../context/CapabilitiesContext'
@@ -194,14 +195,6 @@ export default function HqDashboard() {
           {tab.filters && <span className="font-normal"> · {periodText(filters)}{options?.lockedSubCounty ? ` · ${options.lockedSubCounty}` : ''}</span>}
         </h3>
         <div className="flex flex-wrap items-center gap-3">
-          {tab.filters && (
-            <div className="flex flex-wrap items-center gap-2" aria-label="Download this tab">
-              <span className="text-xs font-semibold text-gray-900">Download</span>
-              <button type="button" disabled={!!busy} onClick={() => exportTab('png')} className={`${BTN_SMALL} ${FOCUS}`}><ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />{busy === 'png' ? 'Preparing…' : 'PNG'}</button>
-              <button type="button" disabled={!!busy} onClick={() => exportTab('pdf')} className={`${BTN_SMALL} ${FOCUS}`}><FileText className="h-3.5 w-3.5" aria-hidden="true" />PDF</button>
-              <button type="button" disabled={!!busy} onClick={() => exportTab('xlsx')} className={`${BTN_SMALL} ${FOCUS}`}><FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />{busy === 'xlsx' ? 'Preparing…' : 'Excel'}</button>
-            </div>
-          )}
           <button type="button" onClick={() => setStamp((s) => s + 1)}
             className={`inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-50 ${FOCUS}`}>
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh now
@@ -214,7 +207,7 @@ export default function HqDashboard() {
       </div>
       {tab.filters && (
         <FilterBar filters={filters} set={set} options={options} category={tab.category} changed={changed}
-          clear={() => setFilters(blankFilters())} />
+          clear={() => setFilters(blankFilters())} download={<DownloadMenu onPick={exportTab} busy={busy} />} />
       )}
 
       <DashExportContext.Provider value={exportCtx}>
@@ -249,7 +242,7 @@ function SyncStatus({ status }) {
   )
 }
 
-function FilterBar({ filters, set, options, category, changed, clear }) {
+function FilterBar({ filters, set, options, category, changed, clear, download }) {
   const subs = (options?.subCounties || []).filter((s) => !filters.region || s.region === filters.region)
   return (
     <div className="mb-5 flex flex-wrap items-end justify-end gap-3 rounded-xl border border-gray-200 bg-white p-3">
@@ -297,6 +290,8 @@ function FilterBar({ filters, set, options, category, changed, clear }) {
           {(options?.statuses || []).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </Field>
+      {/* one Download button next to Status: PNG, PDF or Excel (KRCS 23 Nov 2026) */}
+      {download && <Field label="Download this tab">{download}</Field>}
       {category && (
         <Field label="Human or animal">
           <select className={SELECT} value={filters.category} onChange={(e) => set('category', e.target.value)}>

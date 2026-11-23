@@ -17,22 +17,8 @@
   "docstatus": 0,
   "doctype": "Surveillance Role",
   "modified": "2026-11-09 15:00:00.000000",
-  "name": "Public Health Officer",
-  "role": "Public Health Officer"
- },
- {
-  "docstatus": 0,
-  "doctype": "Surveillance Role",
-  "modified": "2026-11-09 15:00:00.000000",
   "name": "Surveillance Officer",
   "role": "Surveillance Officer"
- },
- {
-  "docstatus": 0,
-  "doctype": "Surveillance Role",
-  "modified": "2026-11-09 15:20:00.000000",
-  "name": "CDSC",
-  "role": "CDSC"
  },
  {
   "docstatus": 0,

@@ -796,7 +796,7 @@ def _shape(d, detail=False):
 		out["mergedInto"] = merged.split(" ")[2] if merged and merged.startswith("Merged into ") else None
 	from surveillance.investigation import viewer_is_cha
 	if viewer_is_cha():
-		_for_cha(out)
+		_for_cha(out, detail)
 	return out
 
 
@@ -822,10 +822,12 @@ def get_report_event(report):
 	return {"event": {"id": doc.name, "status": doc.status}}
 
 
-def _for_cha(out):
-	"""A CHA sees the suspected disease but not the risk score (KRCS 20 Nov 2026, Allan; on 19 Nov the disease was
-	hidden too). The timeline keeps to the verification entries."""
-	out.update({"risk": None})
+def _for_cha(out, detail=True):
+	"""A CHA sees the suspected disease. The risk score shows in their Review Queue (KRCS 23 Nov 2026), so they
+	verify the most urgent first; the event page keeps it out (KRCS 20 Nov 2026, Allan). The timeline keeps to the
+	verification entries."""
+	if detail:
+		out.update({"risk": None})
 	if "timeline" in out:
 		out["timeline"] = [t for t in out["timeline"] if t["action"] in CHA_TIMELINE]
 	return out

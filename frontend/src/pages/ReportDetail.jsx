@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon, History } from 'lucide-react'
+import { ArrowLeft, Pencil, Camera, Mic, FileText, Paperclip, X, Loader2, File as FileIcon } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import { getUnitOptions, getReport, updateReport, uploadFile, getReferenceLabels, getDiseaseOptions, getReportCandidates, getReportEvent, sendReportToQueue, getReporterRole, getSubCounties, getRegions, getVoicePicked } from '../api/frappe'
 import VoicePicked from '../components/report/VoicePicked'
@@ -89,45 +89,6 @@ function Cell({ label, wide = false, span = false, children }) {
 }
 
 const OPEN_EVENT = ['New', 'Verified', 'Investigating', 'Confirmed', 'Escalated']
-
-// Every update made on Signals Captured: when, who, and each field from -> to (Case Report Change rows)
-function UpdateHistory({ changes }) {
-  const groups = useMemo(() => {
-    const out = []
-    for (const c of changes || []) {
-      const key = `${c.at}|${c.user}`
-      let g = out.find((x) => x.key === key)
-      if (!g) { g = { key, at: c.at, by: c.by_name || c.user, rows: [] }; out.push(g) }
-      g.rows.push(c)
-    }
-    return out.sort((a, b) => String(b.at).localeCompare(String(a.at)))
-  }, [changes])
-  if (!groups.length) return null
-  return (
-    <div className="pt-6 border-t border-gray-100 mb-8">
-      <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3"><History className="w-4 h-4 text-gray-500" aria-hidden="true" /> Update history</h3>
-      <ol className="space-y-3">
-        {groups.map((g) => (
-          <li key={g.key} className="rounded-lg border border-gray-100 bg-gray-50/60 px-4 py-3">
-            <p className="text-xs text-gray-500 mb-1.5">{formatDateTime(g.at)} · <span className="font-medium text-gray-700">{g.by}</span></p>
-            <ul className="space-y-1">
-              {g.rows.map((r, i) => (
-                <li key={i} className="text-sm text-gray-800">
-                  <span className="font-medium">{r.field_label}:</span>{' '}
-                  {r.new_value === 'removed'
-                    ? <><span className="line-through text-gray-500">{r.old_value}</span> removed</>
-                    : r.old_value === '—' && String(r.new_value || '').startsWith('added ')
-                      ? <>{r.new_value}</>
-                      : <><span className="text-gray-500">{r.old_value}</span> <span aria-hidden="true">→</span><span className="sr-only">changed to</span> <span className="font-medium">{r.new_value}</span></>}
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ol>
-    </div>
-  )
-}
 
 export default function ReportDetail() {
   const { id } = useParams()
@@ -406,7 +367,6 @@ export default function ReportDetail() {
                           ))}
                         </div>
                       ) : 'None'}
-                      {report.absent_symptom_tags && <p className="mt-2 text-xs text-gray-600">Checked, not present: {report.absent_symptom_tags}</p>}
                     </Cell>
                     <Cell label="Date of onset">{report.onset_date ? formatReadableDate(report.onset_date) : '—'}</Cell>
                     <Cell label="Affected age group">{report.age_groups || (AGE_GROUPS.find((g) => g.value === report.age_group) || {}).label || '—'}</Cell>
@@ -480,7 +440,6 @@ export default function ReportDetail() {
 
                   </dl>
 
-                  {!isChp && <UpdateHistory changes={report.changes} />}
 
                 </>
               ) : (

@@ -75,7 +75,9 @@ def _may_use(roles_text, ctx):
 
 @frappe.whitelist()
 def list_sources():
-	require_capability(CAPABILITY)
+	from surveillance.capabilities import has_capability
+	if not any(has_capability(k) for k in ("view_knowledge_base", "approve_knowledge_base")):
+		require_capability(CAPABILITY)
 	return [_row(frappe.get_doc(DOCTYPE, n)) for n in frappe.get_all(DOCTYPE, pluck="name", order_by="source_name asc")]
 
 

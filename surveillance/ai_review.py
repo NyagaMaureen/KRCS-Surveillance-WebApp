@@ -28,7 +28,7 @@ PENDING = ("Waiting for verification", "Awaiting review")
 OPEN_STATUSES = ("New", "Verified")
 HIGH_LEVELS = ("High", "Very high")
 DEFAULTS = {"enabled": 1, "l1_high_hours": 4, "l1_standard_hours": 24, "l2_hours": 8,
-	"l2_roles": "Public Health Officer", "l3_roles": "Public Health HQ\nSystem Administrator", "escalate_from": None}
+	"l2_roles": "County MOH / PHEOC", "l3_roles": "Public Health HQ\nSystem Administrator", "escalate_from": None}
 
 
 def settings():

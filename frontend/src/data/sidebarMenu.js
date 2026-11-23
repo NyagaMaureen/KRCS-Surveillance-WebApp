@@ -14,7 +14,7 @@ export const SIDEBAR_MENU = [
   ]},
   { section: 'DATA AND INSIGHTS', items: [
     { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: ['use_knowledge_base', 'manage_knowledge_base'] },
-    { label: 'Monitoring Reports', icon: 'FileBarChart', page: 'monitoring-reports', requiresCapability: 'view_monitoring_reports' },
+    { label: 'Monitoring Reports', icon: 'FileBarChart', page: 'monitoring-reports', requiresCapability: ['monitoring_r34', 'monitoring_r35', 'monitoring_r36', 'monitoring_r37', 'monitoring_r38', 'monitoring_r39', 'monitoring_r40', 'monitoring_r40b'] },
     { label: 'Data Quality Monitoring', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
   ]},
   { section: 'DATA MANAGEMENT', items: [
@@ -24,7 +24,7 @@ export const SIDEBAR_MENU = [
   ]},
   { section: 'SYSTEM SETTINGS', items: [
     { label: 'AI Risk Engine', icon: 'Wand2', page: 'settings', query: 'tab=ai-config', requiresCapability: 'settings_ai_config' },
-    { label: 'AI Knowledge Base', icon: 'BookOpen', page: 'knowledge-base', requiresCapability: ['manage_knowledge_base', 'approve_knowledge_base'] },
+    { label: 'AI Knowledge Base', icon: 'BookOpen', page: 'knowledge-base', requiresCapability: ['view_knowledge_base', 'manage_knowledge_base', 'approve_knowledge_base'] },
     { label: 'AI Assistant Query Log', icon: 'MessagesSquare', page: 'chatbot-query-log', requiresCapability: 'view_chatbot_logs' },
     { label: 'Alert Thresholds', icon: 'Clock', page: 'settings', query: 'tab=alert-thresholds', requiresCapability: 'settings_alert_thresholds' },
     { label: 'Reporting Channels', icon: 'Radar', page: 'channels', requiresCapability: 'view_reporting_channels' },

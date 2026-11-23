@@ -44,3 +44,4 @@ surveillance.patches.split_unclassified_events
 surveillance.patches.simpler_statuses
 surveillance.patches.moh_roles_split
 surveillance.patches.fhw_allan_role
+surveillance.patches.allan_roles_reports_kb

@@ -47,7 +47,7 @@
    "fieldname": "l2_roles",
    "fieldtype": "Small Text",
    "label": "L2 roles (one per line)",
-   "default": "Public Health Officer"
+   "default": "County MOH / PHEOC"
   },
   {
    "fieldname": "l3_roles",
