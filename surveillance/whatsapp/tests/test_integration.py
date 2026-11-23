@@ -16,8 +16,13 @@ from pypdf import PdfWriter
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
-from surveillance.whatsapp import data, jobs, sessions, setup, webhook
-from surveillance.whatsapp.client import MediaTooLarge
+from surveillance import chatbot_log
+from surveillance.whatsapp import data, jobs, retention, sessions, setup, webhook
+from surveillance.whatsapp.redact import pseudonym
+from surveillance.whatsapp.client import MediaTooLarge, WhatsAppError
+from surveillance.whatsapp.content import PRIVACY_VERSION
+from surveillance.whatsapp.conversation import AttrDict, new_session
+from surveillance.whatsapp.knowledge import KnowledgeBase
 
 PHONE = "254799111222"
 STAFF_PHONE = "254711000222"
@@ -30,6 +35,11 @@ QUESTION_FOR_DESK_FIXED_TEXT = (
 	"Please contact this person directly on the number above."
 )
 DISEASE = "wa-test-disease"
+
+
+def queue_hi(message_id):
+	ev = {"id": message_id, "from": PHONE, "input": {"type": "text", "text": "hi"}}
+	frappe.cache.rpush(jobs.INBOX.format(PHONE), json.dumps(ev))
 
 
 class FakeWhatsApp:
@@ -104,6 +114,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 				"verify_token": "verify-me",
 				"notify_numbers": DESK,
 				"notify_template": "",
+				"answer_questions": 0,  # tests that ask turn it on
 			}
 		).save()
 		cls.sub_county = frappe.get_all(
@@ -136,6 +147,16 @@ class TestWhatsAppIntegration(FrappeTestCase):
 				"primary_role": "CHP",
 			},
 		)
+		# A CHP belongs to one Community Health Unit in their sub-county (health_units.validate_user).
+		unit = frappe.db.get_value(
+			"Community Health Unit", {"health_unit_name": "WhatsApp Test Unit", "sub_county": cls.sub_county.name}
+		) or frappe.get_doc(
+			{"doctype": "Community Health Unit", "health_unit_name": "WhatsApp Test Unit", "sub_county": cls.sub_county.name}
+		).insert(ignore_permissions=True).name
+		user = frappe.get_doc("User", STAFF_USER)
+		if [r.health_unit for r in user.get("health_units") or []] != [unit]:
+			user.set("health_units", [{"health_unit": unit}])
+			user.save(ignore_permissions=True)
 		data.clear_staff_cache()
 		data.clear_catalog_cache()
 
@@ -143,6 +164,8 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		for phone in (PHONE, STAFF_PHONE):
 			sessions.clear(phone)
 			frappe.cache.delete_value(jobs.INBOX.format(phone))
+			# Agreed already; test_first_contact_is_recorded_before_anything_is_taken starts from nothing.
+			sessions.save(AttrDict(new_session(phone), privacy_version=PRIVACY_VERSION))
 		self.wa = FakeWhatsApp()
 		patches = [
 			patch.object(jobs, "whatsapp_client", return_value=self.wa),
@@ -192,6 +215,52 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertIn("choose your preferred language", self.wa.sent[-1][1]["body"])
 		self.assertEqual(sessions.load(PHONE).state, "lang")
 
+	def test_menu_refused_by_meta_is_sent_again_as_numbered_text(self):
+		refused = []
+
+		def send(to, msg):
+			if msg["kind"] in ("buttons", "list") and not refused:
+				refused.append(msg)
+				raise WhatsAppError("WhatsApp API 400 (code 131009): Parameter value is not valid")
+			self.wa.sent.append((to, msg))
+			return {}
+
+		with patch.object(self.wa, "send", side_effect=send):
+			self.receive({"type": "text", "text": "hi"})
+		self.assertTrue(refused)
+		self.assertTrue(any("\n1. " in m.get("body", "") for _, m in self.wa.sent))
+		self.receive({"type": "text", "text": "1"})  # the typed number picks the first option shown
+		self.assertNotEqual(sessions.load(PHONE).state, "welcome")
+
+	def test_failure_outside_the_conversation_still_gets_an_answer(self):
+		queue_hi("m1")
+		# The job rolls back after a failure; here that would undo the class fixtures.
+		with (
+			patch.object(jobs, "make_context", side_effect=RuntimeError("settings broken")),
+			patch("frappe.db.rollback"),
+		):
+			jobs.process_inbox(PHONE)
+		self.assertIn("something went wrong", self.wa.sent[-1][1]["body"])
+
+	def test_messages_behind_a_stale_lock_are_answered(self):
+		lock = frappe.cache.make_key(jobs.LOCK.format(PHONE))
+		frappe.cache.set(lock, 1, ex=60)  # left by a worker that died
+		queue_hi("m1")
+		with patch.object(jobs.time, "sleep", side_effect=lambda _: frappe.cache.delete(lock)):
+			jobs.process_inbox(PHONE)
+		self.assertEqual(frappe.cache.llen(jobs.INBOX.format(PHONE)), 0)
+		self.assertTrue(self.wa.sent)
+		# A second job for the same number doesn't wait while one already does.
+		frappe.cache.set(lock, 1, ex=60)
+		frappe.cache.set(frappe.cache.make_key(jobs.WAITER.format(PHONE)), 1, ex=60)
+		queue_hi("m2")
+		with patch.object(jobs.time, "sleep") as sleep:
+			jobs.process_inbox(PHONE)
+		sleep.assert_not_called()
+		for k in (lock, frappe.cache.make_key(jobs.WAITER.format(PHONE))):
+			frappe.cache.delete(k)
+		frappe.cache.delete_value(jobs.INBOX.format(PHONE))
+
 	def test_staff_matched_by_mobile_number_in_any_format(self):
 		st = data.find_staff(STAFF_PHONE)
 		self.assertEqual((st["user"], st["role"], st["region"]), (STAFF_USER, "CHP", self.sub_county.region))
@@ -203,6 +272,7 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		self.assertIsNone(data.find_staff(STAFF_PHONE))
 		user.reload()
 		user.account_status = "Active"
+		user.enabled = 1  # suspending also disabled the account (account.user_status_rules)
 		user.save(ignore_permissions=True)
 		self.assertIsNotNone(data.find_staff(STAFF_PHONE))
 
@@ -214,9 +284,32 @@ class TestWhatsAppIntegration(FrappeTestCase):
 		)
 		self.assertEqual(frappe.session.user, "Administrator")
 		self.assertEqual(data.my_reports(user=STAFF_USER, limit=1)[0]["name"], report["name"])
-		dup = data.find_duplicate(self.sub_county.region, [self.symptom])
-		self.assertEqual(dup["name"], report["name"])
-		self.assertIsNone(data.find_duplicate(self.sub_county.region, []))
+		self.assertIsNone(data.find_duplicate(self.sub_county.name, []))
+
+	def test_duplicates_are_the_same_sub_county_with_the_same_disease_or_two_symptoms(self):
+		symptoms = frappe.get_all("Symptom", pluck="name", limit=3)
+		doc = self.case_report(STAFF_USER, STAFF_PHONE)
+		doc["symptoms"] = [{"symptom": x} for x in symptoms[:2]]
+		report = data.create_report(doc)
+		disease = frappe.db.get_value("Case Report", report["name"], "suspected_disease")
+		with patch("surveillance.case_definitions.classify_detailed", return_value=[]):
+			dup = data.find_duplicate(self.sub_county.name, symptoms[:2])
+			self.assertEqual((dup["name"], dup["match"]), (report["name"], "symptoms"))
+			self.assertIsNone(data.find_duplicate(self.sub_county.name, symptoms[:1]))  # one in common
+			other = frappe.db.get_value("Sub County", {"name": ["!=", self.sub_county.name]})
+			self.assertIsNone(data.find_duplicate(other, symptoms[:2]))
+		if disease:
+			with patch("surveillance.case_definitions.classify_detailed", return_value=[{"disease": disease}]):
+				dup = data.find_duplicate(self.sub_county.name, symptoms[2:3])
+				self.assertEqual(dup["match"], "disease")
+
+	def test_an_officer_gets_their_sub_counties_and_field_staff_none(self):
+		frappe.db.set_value("User", STAFF_USER, "assigned_sub_county", self.sub_county.name)
+		self.assertEqual(data.find_staff(STAFF_PHONE)["sub_counties"], [])  # a CHP is locked to their area
+		with patch.object(data, "is_field_staff", return_value=False):
+			mine = data.find_staff(STAFF_PHONE)["sub_counties"]
+		self.assertEqual(mine[0]["name"], self.sub_county.name)
+		self.assertEqual(mine[0]["region"], self.sub_county.region)
 
 	def test_delivery_updates_are_logged_and_failures_reach_the_error_log(self):
 		body = json.dumps(
@@ -463,6 +556,329 @@ class TestWhatsAppIntegration(FrappeTestCase):
 
 		self.assertEqual(data.my_reports(phone=PHONE, limit=1)[0]["name"], name)
 		self.assertEqual(data.get_report(name)["phone_number"], f"+{PHONE}")
+
+	def community_report(self):
+		"""Through the real conversation, with a photo: the Case Report and its attachment."""
+		sent_media = False
+		self.receive({"type": "text", "text": "hi"})
+		for _ in range(40):
+			state = sessions.load(PHONE).state
+			if state == "r_done":
+				break
+			if state == "r_extra" and not sent_media:
+				sent_media = True
+				self.receive(
+					{"type": "media", "kind": "image", "media_id": "m1", "mime_type": "image/png", "caption": "x"}
+				)
+				continue
+			self.receive(self.answer(state))
+		name = self.last_report()
+		[call] = [c for c in self.enqueue.call_args_list if c.args[0].endswith("after_submit")]
+		jobs.after_submit(**{k: v for k, v in call.kwargs.items() if k != "queue"})
+		return name
+
+	def test_first_contact_is_recorded_before_anything_is_taken(self):
+		sessions.clear(PHONE)
+		frappe.db.delete("WhatsApp Consent Log", {"phone": PHONE})
+		self.receive({"type": "text", "text": "5 children have diarrhoea"})
+		self.assertIn("Kenya Red Cross collects", self.wa.sent[-1][1]["body"])
+		self.assertEqual(frappe.db.count("WhatsApp Consent Log", {"phone": PHONE}), 0)
+		self.assertEqual(frappe.db.count("Case Report", {"phone_number": f"+{PHONE}", "status": "Draft"}), 0)
+
+		self.receive({"type": "reply", "id": "agree"})
+		log = frappe.get_all(
+			"WhatsApp Consent Log",
+			filters={"phone": PHONE},
+			fields=["event", "notice_version", "message_id", "recorded_on"],
+		)
+		self.assertEqual([(r.event, r.notice_version) for r in log], [("Accepted", PRIVACY_VERSION)])
+		self.assertTrue(log[0].message_id and log[0].recorded_on)
+		self.assertEqual(sessions.load(PHONE).privacy_version, PRIVACY_VERSION)
+
+		self.receive({"type": "text", "text": "privacy"})
+		self.assertIn("Why:", " ".join(m[1].get("body", "") for m in self.wa.sent[-2:]))
+		self.receive({"type": "reply", "id": "request"})
+		[call] = [c for c in self.enqueue.call_args_list if c.args[0].endswith("send_escalation")]
+		self.assertEqual(call.kwargs["reason"], "privacy_request")
+		self.assertEqual(frappe.db.count("WhatsApp Consent Log", {"phone": PHONE, "event": "Data Request"}), 1)
+
+		self.receive({"type": "text", "text": "privacy"})
+		self.receive({"type": "reply", "id": "withdraw"})
+		self.assertEqual(frappe.db.count("WhatsApp Consent Log", {"phone": PHONE, "event": "Withdrawn"}), 1)
+		self.assertIsNone(sessions.load(PHONE).privacy_version)
+
+	def test_consent_log_is_read_only_for_everyone(self):
+		meta = frappe.get_meta("WhatsApp Consent Log")
+		self.assertTrue(all(f.read_only for f in meta.fields if f.fieldtype != "Column Break"))
+		[perm] = meta.permissions
+		self.assertEqual((perm.role, perm.read, perm.write, perm.create, perm.delete), ("System Manager", 1, 0, 0, 0))
+
+	def test_voice_note_setting_uses_the_sites_speech_service(self):
+		settings = frappe.get_doc("WhatsApp Settings")
+		settings.update({"voice_transcription": 1, "transcription_timeout": 7})
+		self.wa.files["v1"] = (b"ogg bytes", "audio/ogg")
+		stt = {"stt_url": "http://stt.test/", "stt_token": "tok"}
+		with patch.dict(frappe.conf, stt), patch("surveillance.whatsapp.transcribe.requests.post") as post:
+			post.return_value.json.return_value = {"text": " watoto wanaharisha ", "language": "sw"}
+			heard = jobs.voice_transcriber(settings)({"media_id": "v1", "mime_type": "audio/ogg"})
+			self.assertEqual(heard, {"text": "watoto wanaharisha", "language": "sw"})
+			self.assertEqual(post.call_args.args[0], "http://stt.test/transcribe")
+			# the request surveillance.transcription sends; WhatsApp doesn't ask the language, so it is detected
+			self.assertEqual(post.call_args.kwargs["files"], {"file": ("voice-note", b"ogg bytes", "audio/ogg")})
+			self.assertEqual(post.call_args.kwargs["data"], {"language": "auto"})
+			self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer tok")
+			self.assertEqual(post.call_args.kwargs["timeout"], 7)
+
+			post.return_value.json.return_value = {"text": "  ", "language": "sw"}
+			self.assertIsNone(jobs.voice_transcriber(settings)({"media_id": "v1"}))  # nothing heard
+			with patch.dict(frappe.conf, {"stt_mixed_language": "sw"}):
+				jobs.voice_transcriber(settings)({"media_id": "v1"})
+			self.assertEqual(post.call_args.kwargs["data"], {"language": "sw"})
+
+			settings.voice_transcription = 0
+			self.assertIsNone(jobs.voice_transcriber(settings))
+		settings.voice_transcription = 1
+		with patch.dict(frappe.conf, {"stt_url": None}):
+			self.assertIsNone(jobs.voice_transcriber(settings))  # no speech service on this site
+
+	def test_a_voice_note_read_in_the_conversation_is_not_transcribed_again(self):
+		from surveillance import transcription
+
+		name = data.create_report(self.case_report(STAFF_USER, STAFF_PHONE))["name"]
+		self.wa.files = {"read": (b"OggS read", "audio/ogg"), "unread": (b"OggS unread", "audio/ogg")}
+		media = [
+			{"kind": "audio", "media_id": "read", "mime_type": "audio/ogg", "consent": "No one",
+				"transcript": "Watoto watano wanaharisha", "transcript_language": "sw"},
+			{"kind": "audio", "media_id": "unread", "mime_type": "audio/ogg", "consent": "No one"},
+		]
+		with patch.dict(frappe.conf, {"stt_url": "http://stt.test", "stt_token": "tok"}), patch.object(
+			transcription, "_queue"
+		) as queued:
+			jobs.after_submit(name, media, PHONE, lang="sw")
+		read, unread = frappe.get_doc("Case Report", name).attachments[:2]
+		self.assertEqual((read.attachment_type, read.transcript, read.transcript_status, read.transcript_language),
+			("Voice Note", "Watoto watano wanaharisha", "Done", "sw"))
+		self.assertTrue(read.transcribed_on)
+		self.assertFalse(unread.transcript)
+		self.assertEqual([c.args[0] for c in queued.call_args_list], [unread.name])  # officers still get its text
+
+	def test_community_member_is_a_pseudonym_to_the_ai_services_and_logs(self):
+		ctx = jobs.make_context(frappe.get_doc("WhatsApp Settings"))
+		self.assertEqual(ctx.pseudonym_key, jobs.get_encryption_key())
+		self.assertTrue(ctx.pseudonym_key)
+
+	def test_media_past_its_retention_period_is_removed_from_whatsapp_reports_only(self):
+		name = self.community_report()
+		status = frappe.db.get_value("Case Report", name, "status")
+		row = frappe.get_doc("Case Report", name).attachments[0]
+		file_url = row.file
+		self.assertTrue(frappe.db.exists("File", {"file_url": file_url}))
+		frappe.db.set_value("Case Report Attachment", row.name, {"transcript": "Watoto watatu wana homa", "transcript_status": "Done"})
+
+		retention.daily()  # no period set: nothing is touched
+		self.assertTrue(frappe.db.exists("File", {"file_url": file_url}))
+		self.assertEqual(retention.purge_media(30), 0)  # too recent
+
+		frappe.db.set_value(
+			"Case Report Attachment", row.name, "creation", frappe.utils.add_days(frappe.utils.now(), -31)
+		)
+		self.assertGreaterEqual(retention.purge_media(30), 1)
+		self.assertFalse(frappe.db.exists("File", {"file_url": file_url}))
+		row.reload()
+		self.assertFalse(row.file)
+		self.assertIn("retention period", row.text_content)
+		self.assertFalse(row.transcript)
+		self.assertEqual(frappe.get_doc("Case Report", name).status, status)  # the report itself is left as it was
+
+	def test_anonymise_reporter_removes_identifiers_and_keeps_the_surveillance_figures(self):
+		frappe.db.delete("WhatsApp Consent Log", {"phone": PHONE, "event": "Data Removed"})
+		name = self.community_report()
+		before = frappe.get_doc("Case Report", name)
+		file_url = before.attachments[0].file
+		frappe.db.set_value("Case Report Attachment", before.attachments[0].name, "transcript", "Mimi ni Amina wa Kakuma")
+		frappe.db.set_value(
+			"Case Report",
+			name,
+			{"latitude": 1.23456, "longitude": 38.76543, "extraction_details": 'Message: "Mimi ni Amina wa Kakuma"'},
+		)
+		centre = frappe.db.get_value("Sub County", before.sub_county, ["latitude", "longitude"])
+		frappe.get_doc(
+			{
+				"doctype": "Version",
+				"ref_doctype": "Case Report",
+				"docname": name,
+				"data": json.dumps({"changed": [["phone_number", "x", f"+{PHONE}"]]}),
+			}
+		).insert(ignore_permissions=True)
+
+		self.assertEqual(retention.anonymise_reporter(f"0{PHONE[3:]}"), [name])
+
+		doc = frappe.get_doc("Case Report", name)
+		self.assertEqual((doc.reporter_name, doc.phone_number, doc.location_name), ("Removed", "Removed", "Removed"))
+		self.assertFalse(doc.additional_notes)
+		self.assertFalse(doc.extraction_details)
+		self.assertEqual((doc.latitude, doc.longitude), (centre[0] or 0, centre[1] or 0))
+		self.assertFalse(doc.attachments[0].file)
+		self.assertFalse(doc.attachments[0].transcript)
+		self.assertFalse(frappe.db.exists("File", {"file_url": file_url}))
+		self.assertFalse(frappe.db.exists("Version", {"ref_doctype": "Case Report", "docname": name}))
+		self.assertEqual((doc.affected_count, doc.region, doc.sub_county), (12, before.region, before.sub_county))
+		self.assertTrue(doc.symptom_tags)
+		self.assertEqual(frappe.db.count("WhatsApp Consent Log", {"phone": PHONE, "event": "Data Removed"}), 1)
+		self.assertEqual(data.my_reports(phone=PHONE), [])
+
+	def test_anonymise_reporter_is_for_system_managers(self):
+		frappe.set_user(STAFF_USER)
+		self.addCleanup(frappe.set_user, "Administrator")
+		# only_for lets everything through while tests run.
+		with patch.dict(frappe.flags, {"in_test": False}), self.assertRaises(frappe.PermissionError):
+			retention.anonymise_reporter(PHONE)
+
+	def chat_request(self, message="cholera steps?"):
+		request_id = frappe.generate_hash()
+		self.addCleanup(frappe.db.delete, "Chatbot Query Log", {"correlation_id": request_id})
+		return {
+			"request_id": request_id,
+			"message": message,
+			"roles": ["Guest"],
+			"language": "en",
+			"location": None,
+			"selected_protocol_id": None,
+			"user_ref": pseudonym(PHONE, jobs.get_encryption_key()),
+		}
+
+	def query_log(self, request):
+		return frappe.get_doc("Chatbot Query Log", {"correlation_id": request["request_id"]})
+
+	def test_questions_reach_the_chatbot_query_log_and_count_in_its_metrics(self):
+		session = sessions.load(PHONE)
+		request = self.chat_request()
+		answer = {"outcome": "escalate", "reason": "no_match", "message": "Passed on.", "escalate": True}
+		jobs.log_chatbot(request, answer, session)
+		row = self.query_log(request)
+		self.assertEqual(
+			(row.level, row.channel, row.user_ref, row.query_text, row.actor_class, row.outcome),
+			("Conversation", "WhatsApp", request["user_ref"], "cholera steps?", "Public", "Escalated"),
+		)
+		self.assertEqual(row.escalated_to_human, 1)
+		self.assertEqual(row.escalation_status, "Open")
+
+		metrics = chatbot_log.get_metrics(channel="WhatsApp")
+		self.assertGreaterEqual(metrics["by_channel"]["WhatsApp"]["questions"], 1)
+
+	def test_a_later_escalation_updates_the_same_record(self):
+		session = sessions.load(PHONE)
+		request = self.chat_request()
+		jobs.log_chatbot(request, {"outcome": "clarify", "reason": "ambiguous", "message": "Which?"}, session)
+		self.assertEqual(self.query_log(request).escalated_to_human, 0)
+		jobs.on_escalate("cholera steps?", session, request, "user_asked")
+		self.assertEqual(self.query_log(request).escalated_to_human, 1)
+
+	def test_a_service_outage_is_logged_as_an_error(self):
+		request = self.chat_request()
+		jobs.on_escalate("cholera steps?", sessions.load(PHONE), request, "service_unavailable", error="timeout")
+		row = self.query_log(request)
+		self.assertEqual((row.outcome, row.reason, row.escalated_to_human), ("Error", "service_unavailable", 1))
+
+	def test_a_matched_passage_links_to_its_knowledge_document(self):
+		document = frappe.get_doc(
+			{"doctype": "Knowledge Document", "title": "WA log test", "category": "Guideline"}
+		).insert(ignore_permissions=True, ignore_mandatory=True)
+		self.addCleanup(frappe.delete_doc, "Knowledge Document", document.name, force=True, ignore_permissions=True)
+		request = self.chat_request()
+		answer = {
+			"outcome": "reference",
+			"message": "From the guideline.",
+			"documents": [{"id": "KBP-1", "doc": document.name, "confidence": "high", "version": "1"}],
+		}
+		jobs.log_chatbot(request, answer, sessions.load(PHONE))
+		row = self.query_log(request)
+		self.assertEqual((row.outcome, row.matched_document), ("Matched", document.name))
+
+	def test_anonymise_reporter_clears_their_questions_and_keeps_the_outcomes(self):
+		request = self.chat_request()
+		jobs.log_chatbot(request, {"outcome": "clarify", "reason": "ambiguous", "message": "Which?"}, sessions.load(PHONE))
+		chatbot_log.log(
+			level="Retrieval",
+			channel="WhatsApp",
+			correlation_id=request["request_id"],
+			query_text="cholera steps?",
+			outcome="No Match",
+		)
+		someone_else = self.chat_request()
+		someone_else["user_ref"] = "whatsapp:someoneelse"
+		jobs.log_chatbot(someone_else, {"outcome": "clarify", "message": "Which?"}, sessions.load(PHONE))
+
+		retention.anonymise_reporter(PHONE)
+
+		rows = frappe.get_all(
+			"Chatbot Query Log",
+			filters={"correlation_id": request["request_id"]},
+			fields=["level", "query_text", "user_ref", "outcome"],
+		)
+		self.assertEqual({r.level for r in rows}, {"Conversation", "Retrieval"})
+		self.assertTrue(all(r.query_text == "Removed" and not r.user_ref for r in rows))
+		self.assertEqual({r.outcome for r in rows}, {"Clarify", "No Match"})
+		self.assertEqual(self.query_log(someone_else).query_text, "cholera steps?")
+
+	def test_the_knowledge_base_is_asked_as_the_staff_member_or_for_a_pseudonym(self):
+		seen = []
+
+		def ask(**kwargs):
+			seen.append((frappe.session.user, kwargs))
+			return {"mode": "verbatim", "answer": "Approved text [1]"}
+
+		before = frappe.session.user
+		with patch("surveillance.knowledge_base.ask", side_effect=ask):
+			KnowledgeBase().ask("cholera steps?", "sw", user=STAFF_USER, conversation_id="c1", request_id="r1")
+			KnowledgeBase().ask("cholera steps?", "en", public_ref="abc123", conversation_id="c2", request_id="r2")
+		self.assertEqual(frappe.session.user, before)
+		(staff_user, staff_call), (public_user, public_call) = seen
+		self.assertEqual((staff_user, staff_call["on_behalf_of"]), (STAFF_USER, None))
+		self.assertEqual((public_user, public_call["on_behalf_of"]), ("Administrator", "whatsapp:abc123"))
+		self.assertEqual((staff_call["language"], public_call["language"]), ("Kiswahili", "English"))
+		self.assertEqual({c["channel"] for _, c in seen}, {"WhatsApp"})
+		self.assertTrue(all("mode" not in c for _, c in seen))  # the Knowledge Base decides, as in the app
+		self.assertEqual((staff_call["correlation_id"], staff_call["conversation_id"]), ("r1", "c1"))
+
+	def test_a_question_the_knowledge_base_refuses_is_logged_once_and_passed_on(self):
+		frappe.db.set_single_value("WhatsApp Settings", "answer_questions", 1)
+		self.addCleanup(frappe.db.set_single_value, "WhatsApp Settings", "answer_questions", 0)
+		frappe.clear_document_cache("WhatsApp Settings", "WhatsApp Settings")
+		ref = "whatsapp:" + pseudonym(PHONE, jobs.get_encryption_key())
+		with (
+			patch.dict(frappe.conf, {"kb_public_enabled": 0}),
+			patch("frappe.db.rollback"),  # a refusal rolls back; here that would undo the class fixtures
+		):
+			self.receive({"type": "text", "text": "hi"})
+			self.receive({"type": "reply", "id": "ask"})
+			self.receive({"type": "text", "text": "how is cholera spread?"})
+		self.assertIn("passed to", self.wa.sent[-1][1]["body"])
+		rows = frappe.get_all(
+			"Chatbot Query Log", filters={"user_ref": ref, "level": "Conversation"}, fields=["name", "escalated_to_human"]
+		)
+		self.assertEqual(len(rows), 1)  # the Knowledge Base's own record, not a second one from the bot
+		self.assertEqual(rows[0].escalated_to_human, 1)
+
+		retention.anonymise_reporter(PHONE)
+		self.assertEqual(frappe.db.get_value("Chatbot Query Log", rows[0].name, "query_text"), "Removed")
+
+	def test_answer_questions_is_turned_on_once_for_a_site_that_never_saved_it(self):
+		frappe.db.sql(
+			"delete from tabSingles where doctype = 'WhatsApp Settings' and field = 'answer_questions'"
+		)
+		setup.default_new_settings()
+		self.assertEqual(frappe.db.get_single_value("WhatsApp Settings", "answer_questions"), 1)
+		frappe.db.set_single_value("WhatsApp Settings", "answer_questions", 0)
+		setup.default_new_settings()
+		self.assertEqual(frappe.db.get_single_value("WhatsApp Settings", "answer_questions"), 0)
+
+	def test_session_retention_comes_from_settings(self):
+		s = sessions.load(PHONE)
+		with patch.object(data, "settings", return_value=frappe._dict(session_retention_days=7)):
+			with patch.object(frappe.cache, "set_value") as save:
+				sessions.save(s)
+		self.assertEqual(save.call_args.kwargs["expires_in_sec"], 7 * 24 * 3600)
 
 	def receive(self, inp):
 		jobs.process_event({"id": frappe.generate_hash(), "from": PHONE, "name": "Amina", "input": inp})

@@ -28,6 +28,7 @@
   "notify_template_language",
   "escalation_template",
   "chatbot_section",
+  "answer_questions",
   "chatbot_url",
   "chatbot_timeout",
   "column_break_chatbot",
@@ -35,7 +36,22 @@
   "extraction_section",
   "extraction_url",
   "column_break_extraction",
-  "extraction_token"
+  "extraction_token",
+  "voice_section",
+  "voice_transcription",
+  "column_break_voice",
+  "transcription_timeout",
+  "retention_section",
+  "session_retention_days",
+  "column_break_retention",
+  "media_retention_days",
+  "cbs_section",
+  "cbs_writeback",
+  "cbs_writeback_url",
+  "cbs_project",
+  "column_break_cbs",
+  "cbs_writeback_email",
+  "cbs_writeback_password"
  ],
  "fields": [
   {
@@ -149,7 +165,7 @@
    "label": "Desk Alert Numbers"
   },
   {
-   "description": "Questions the chatbot cannot answer go here, one per line. Empty: the desk alert numbers.",
+   "description": "Questions with no approved answer go here, one per line. Empty: the desk alert numbers.",
    "fieldname": "escalation_numbers",
    "fieldtype": "Small Text",
    "label": "Escalation Numbers"
@@ -181,10 +197,17 @@
    "collapsible": 1,
    "fieldname": "chatbot_section",
    "fieldtype": "Section Break",
-   "label": "Response Support Chatbot"
+   "label": "Questions"
   },
   {
-   "description": "Optional, e.g. http://10.0.0.5:8100. Empty: \"Ask a question\" is not offered.",
+   "default": "1",
+   "description": "Offer \"Ask a question\". Answers are approved Knowledge Base text, quoted as it is, as in the web and mobile assistant: staff see what their account may see; community members see Public documents only (site config kb_public_enabled). No approved answer: the question goes to the Escalation Numbers.",
+   "fieldname": "answer_questions",
+   "fieldtype": "Check",
+   "label": "Answer Questions"
+  },
+  {
+   "description": "Optional, e.g. http://10.0.0.5:8100: the chatbot service tells a report sent as a question apart from a question (POST /classify-intent) and reads free-text reports (POST /extract). Empty: every question goes to the Knowledge Base.",
    "fieldname": "chatbot_url",
    "fieldtype": "Data",
    "label": "Chatbot URL"
@@ -223,12 +246,98 @@
    "fieldname": "extraction_token",
    "fieldtype": "Password",
    "label": "Extraction Token"
+  },
+  {
+   "fieldname": "voice_section",
+   "fieldtype": "Section Break",
+   "label": "Voice Notes"
+  },
+  {
+   "default": "0",
+   "description": "Community reports: read a voice note during the conversation and fill in the report from it, using the speech-to-text service in the site config (stt_url, stt_token), the same one that transcribes voice notes for officers. The language is detected (site config stt_mixed_language, default auto). Turn on only after its word error rate is 25% or better on real CHP voice notes (AI/ML spec 7.2).",
+   "fieldname": "voice_transcription",
+   "fieldtype": "Check",
+   "label": "Transcribe Voice Notes"
+  },
+  {
+   "fieldname": "column_break_voice",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "45",
+   "description": "Seconds. After this the reporter is asked to type instead.",
+   "fieldname": "transcription_timeout",
+   "fieldtype": "Int",
+   "label": "Transcription Timeout"
+  },
+  {
+   "fieldname": "retention_section",
+   "fieldtype": "Section Break",
+   "label": "Retention"
+  },
+  {
+   "default": "30",
+   "description": "Days an unfinished report and conversation state are kept after the last message.",
+   "fieldname": "session_retention_days",
+   "fieldtype": "Int",
+   "label": "Conversation Retention (days)"
+  },
+  {
+   "fieldname": "column_break_retention",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Days before photos, voice notes and files on WhatsApp reports are deleted. 0 keeps them. Set the period KRCS approves.",
+   "fieldname": "media_retention_days",
+   "fieldtype": "Int",
+   "label": "Media Retention (days)"
+  },
+  {
+   "description": "Community members' reports are created in CBS and escalated there; staff reports stay in Frappe. See surveillance/whatsapp/cbs.py.",
+   "fieldname": "cbs_section",
+   "fieldtype": "Section Break",
+   "label": "CBS Write-back"
+  },
+  {
+   "default": "0",
+   "description": "Leave off until this site is linked to CBS (a CBS account that can create reports, and the CBS feed changed so these reports are not counted twice). Off: community reports stay in Frappe and alert the WhatsApp desk, as staff reports do.",
+   "fieldname": "cbs_writeback",
+   "fieldtype": "Check",
+   "label": "Send Community Reports to CBS"
+  },
+  {
+   "description": "Blank: the CBS feed's site config (cbs_base_url, cbs_email, cbs_password). Set it for a CBS staging server, with its own account below.",
+   "fieldname": "cbs_writeback_url",
+   "fieldtype": "Data",
+   "label": "CBS URL"
+  },
+  {
+   "description": "Blank: the account's first CBS project, as the CBS feed uses.",
+   "fieldname": "cbs_project",
+   "fieldtype": "Data",
+   "label": "CBS Project ID"
+  },
+  {
+   "fieldname": "column_break_cbs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Must be allowed to create reports in CBS (CBS API keys can only read).",
+   "fieldname": "cbs_writeback_email",
+   "fieldtype": "Data",
+   "label": "CBS Account Email"
+  },
+  {
+   "fieldname": "cbs_writeback_password",
+   "fieldtype": "Password",
+   "label": "CBS Account Password"
   }
  ],
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-04 15:00:00.000000",
+ "modified": "2026-11-20 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Surveillance",
  "name": "WhatsApp Settings",

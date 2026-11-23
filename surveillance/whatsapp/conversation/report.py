@@ -43,6 +43,30 @@ from surveillance.whatsapp.extract import extract_report
 from surveillance.whatsapp.messages import text
 
 
+def transcribed(s, inp, ctx):
+	"""The words of a voice note (AI/ML §6.3), which then go the way typed words do. None: the reporter is asked to type.
+	The menu language is not sent: someone reading Kiswahili menus may speak English or a mix, so the service detects
+	it (jobs.voice_transcriber). The words are kept on the note in the draft, so they are saved on its row and
+	the background transcription for officers skips it."""
+	transcribe = getattr(ctx, "transcribe", None)
+	if inp.get("kind") != "audio" or not transcribe:
+		return None
+	try:
+		heard = transcribe(inp) or ""
+	except Exception:
+		if getattr(ctx, "log_error", None):
+			ctx.log_error("WhatsApp voice note could not be transcribed")
+		return None
+	words, language = (heard.get("text") or "", heard.get("language")) if isinstance(heard, dict) else (heard, None)
+	words = words.strip()
+	if len(normalize(words)) < 3:
+		return None
+	for m in s.draft.media or []:
+		if m.get("media_id") == inp.get("media_id"):
+			m["transcript"], m["transcript_language"] = words, language
+	return words
+
+
 class RDescribe(State):
 	"""Community members first describe what is happening in their own words (AI/ML §1.4, SRS H.12)."""
 
@@ -66,6 +90,12 @@ class RDescribe(State):
 			s.draft.media.append(to_media(inp))
 			if len(normalize(inp.get("caption"))) >= 3:
 				return describe(s, inp["caption"], ctx)
+			words = transcribed(s, inp, ctx)
+			if words:
+				s.draft.transcribed = True
+				res = describe(s, words, ctx)
+				res["say"].insert(0, text(t(s)["heard"](_clip(words, 800))))
+				return res
 			body = t(s)["describeVoice"] if inp.get("kind") == "audio" else t(s)["describeMedia"]
 			return quiet(choose(s, body, self.options(s, ctx)))
 		if inp["type"] == "location":
@@ -106,12 +136,7 @@ class RReview(State):
 			return go(missing[0], text(t(s)["incomplete"](", ".join(step_name(s, m) for m in missing))))
 		if needs_consent(s):
 			return go("r_consent")
-		if not s.draft.skip_duplicate_check:
-			dup = ctx.data.find_duplicate(s.draft.region, s.draft.symptoms)
-			if dup:
-				s.draft.duplicate_of = dup
-				return go("r_duplicate")
-		return submit(s, ctx)
+		return duplicate_check(s, ctx) or submit(s, ctx)
 
 
 CONSENT_CHOICES = {
@@ -168,34 +193,52 @@ class RConsent(State):
 			note = []
 		else:
 			return None
-		if not s.draft.skip_duplicate_check:
-			dup = ctx.data.find_duplicate(s.draft.region, s.draft.symptoms)
-			if dup:
-				s.draft.duplicate_of = dup
-				return go("r_duplicate", *note)
-		return submit(s, ctx)
+		return duplicate_check(s, ctx, *note) or submit(s, ctx)
+
+
+def duplicate_check(s, ctx, *say):
+	"""Staff only: a community member can't know what others reported, and a second report of the same incident
+	costs the desk little. Same sub-county, last 3 days, same suspected disease or two symptoms in common
+	(data.find_duplicate)."""
+	d = s.draft
+	if d.skip_duplicate_check or s.mode != "staff" or not s.staff:
+		return None
+	dup = ctx.data.find_duplicate(d.sub_county, d.symptoms, d.age_group, d.animal_exposure)
+	if not dup:
+		return None
+	d.duplicate_of = dup
+	return go("r_duplicate", *say)
 
 
 class RDuplicate(State):
+	"""The other report is never named: it is someone else's. Both answers send the report; "Same incident" tells
+	the desk which report it may repeat."""
+
 	def options(self, s, ctx):
 		return [
 			{
 				"id": "submit",
 				"title": t(s)["submitAnyway"],
-				"aliases": ["submit", "yes", "new", "tuma", "ndiyo"],
+				"aliases": ["submit", "yes", "new", "tuma", "ndiyo", "jipya"],
 			},
-			{"id": "cancel", "title": t(s)["cancel"], "aliases": ["no", "discard", "hapana"]},
+			{
+				"id": "same",
+				"title": t(s)["sameIncident"],
+				"aliases": ["same", "no", "hapana", "sawa", "lilelile"],
+			},
 		]
 
 	def prompt(self, s, ctx):
 		return [choose(s, t(s)["duplicate"](s.draft.duplicate_of), self.options(s, ctx))]
 
 	def on(self, s, inp, choice, ctx):
-		if choice == "cancel":
-			s.draft = None
-			return go("r_done", text(t(s)["cancelled"]))
-		if choice != "submit":
+		if choice not in ("submit", "same"):
 			return None
+		if choice == "same":
+			s.draft.duplicate_note = (
+				f"Possible duplicate of {s.draft.duplicate_of['name']}: "
+				"the reporter said it is the same incident."
+			)
 		s.draft.skip_duplicate_check = True
 		# Something may have been attached while this question was showing.
 		return go("r_consent") if needs_consent(s) else submit(s, ctx)
@@ -360,7 +403,7 @@ def build_doc(s, ctx):
 		# Additional Notes: only what the reporter wrote (their message, then any notes they typed). What was filled
 		# in from the message stays with the report as extraction_details (KRCS 17 Nov 2026).
 		"additional_notes": "\n\n".join(x for x in [d.description, *d.notes] if x) or None,
-		"extraction_details": extraction_note(s),
+		"extraction_details": "\n".join(x for x in [extraction_note(s), d.duplicate_note] if x) or None,
 		"channel": "WhatsApp",
 		"status": "Submitted",
 		"client_ref": _client_ref(ctx),
@@ -384,7 +427,7 @@ def submit(s, ctx):
 			ctx.log_error("WhatsApp report could not be saved")
 		return quiet(text(t(s)["saveFailed"]))
 	# SRS R10: community reporters get advice for what they reported; staff get the mobile app's next steps.
-	advice = next_steps(s, report, ctx) if s.mode == "staff" else [text(advice_for(s, ctx))]
+	advice = next_steps(s, report, ctx) if s.mode == "staff" else [text(advice_for(s, ctx, report.get("suspected_disease")))]
 	draft = s.draft
 	s.draft = None
 	if draft.description:

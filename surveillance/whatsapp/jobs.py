@@ -1,28 +1,36 @@
-"""Background jobs: answering messages, attaching media to reports, desk alerts and escalations.
+"""Background jobs: answering messages, attaching media to reports, desk alerts, CBS write-back and escalations.
 
 Messages from one number are answered one at a time and in order: the webhook appends each message
 to that number's inbox (a Redis list) and enqueues process_inbox; whichever worker holds the number's
-lock empties the inbox, so two quick taps never race on the same session.
+lock empties the inbox, so two quick taps never race on the same session. If the lock is held by a worker
+that has died, it expires after LOCK_SECONDS; one job per number waits that long so the messages still get an answer.
 Needs the background workers (bench worker) and Redis to be running.
 """
 
 import json
+import re
 import time
 from types import SimpleNamespace
 
 import frappe
 from frappe.utils import cint, now_datetime
+from frappe.utils.password import get_encryption_key
 
-from surveillance.whatsapp import data, sessions
+from surveillance import chatbot_log
+from surveillance.whatsapp import cbs, data, sessions
 from surveillance.whatsapp.chatbot import ChatbotClient
-from surveillance.whatsapp.client import MediaTooLarge, WhatsAppClient
+from surveillance.whatsapp.client import MediaTooLarge, WhatsAppClient, WhatsAppError
 from surveillance.whatsapp.content import T
 from surveillance.whatsapp.conversation import MEDIA_TYPES, AttrDict, format_phone, handle
 from surveillance.whatsapp.extract import ExtractionClient
-from surveillance.whatsapp.messages import text, validate
+from surveillance.whatsapp.knowledge import KnowledgeBase
+from surveillance.whatsapp.messages import as_text, sendable, text
+from surveillance.whatsapp.redact import redact
+from surveillance.whatsapp.transcribe import TranscriptionClient
 
 INBOX = "whatsapp:inbox:{}"
 LOCK = "whatsapp:lock:{}"
+WAITER = "whatsapp:waiter:{}"
 LOCK_SECONDS = 120  # longer than one message can take (chatbot: 2 tries x timeout)
 DAY = 24 * 3600
 
@@ -34,10 +42,17 @@ ESCALATION_REASONS = {
 	"not_a_report": "Message was not a health report",
 	"service_unavailable": "Assistant was unavailable",
 	"no_match": "No approved answer found",
+	"no_results": "No approved answer found",
+	"not_found": "No approved answer found",
+	"below_score_floor": "No confident answer found",
+	"model_not_in_sources": "No approved answer found",
+	"public_safety": "Approved answer not suitable for the public",
+	"conflict": "Approved documents disagree",
 	"low_confidence": "No confident answer found",
 	"ambiguous": "Question could mean several things",
 	"missing_capability": "Asker lacks access to this answer",
 	"count_disease_unknown": "Disease in the question not recognised",
+	"privacy_request": "Privacy request: pass to the Data Protection Officer",
 }
 
 
@@ -72,6 +87,40 @@ def extraction_client(st):
 	return ExtractionClient(url, st.get_password(token_field, raise_exception=False), timeout=8)
 
 
+def voice_transcriber(st):
+	"""ctx.transcribe when Transcribe Voice Notes is on: POST /transcribe on the speech service in the site config
+	(`stt_url`, `stt_token`), the one surveillance.transcription uses. WhatsApp doesn't ask which language the note is
+	in, so it goes as a note marked "Both" does there: `stt_mixed_language`, default auto. The note stays on the
+	report, attached as usual, with this text on its row, so the background job doesn't transcribe it again."""
+	url = frappe.conf.get("stt_url")
+	if not st.voice_transcription or not url:
+		return None
+	client = TranscriptionClient(url, frappe.conf.get("stt_token"), timeout=cint(st.transcription_timeout) or 45)
+	language = frappe.conf.get("stt_mixed_language") or "auto"
+
+	def transcribe(inp):
+		content, mime = whatsapp_client(st).download_media(inp["media_id"])
+		return client.transcribe(content, mime or inp.get("mime_type"), inp.get("filename"), language)
+
+	return transcribe
+
+
+def record_privacy(phone, event, version, language=None, message_id=None):
+	"""Committed at once: the person is treated as having agreed, or having withdrawn, right after this."""
+	frappe.get_doc(
+		{
+			"doctype": "WhatsApp Consent Log",
+			"phone": phone,
+			"event": event,
+			"notice_version": version,
+			"language": language,
+			"message_id": message_id,
+			"recorded_on": now_datetime(),
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()  # nosemgrep
+
+
 def numbers(value):
 	"""One number per line (or comma-separated), digits only."""
 	return [
@@ -97,17 +146,54 @@ def process_inbox(phone):
 	while frappe.cache.llen(inbox):
 		# SET NX EX is the atomic lock; `lock` is site-prefixed by make_key, so sites don't share it.
 		if not frappe.cache.set(lock, 1, nx=True, ex=LOCK_SECONDS):  # nosemgrep
-			return  # another worker is answering this number and will take these messages too
+			if not wait_for_lock(phone, inbox, lock):
+				return  # the worker holding the lock takes these messages too
+			continue
 		try:
 			while raw := frappe.cache.lpop(inbox):
 				frappe.cache.expire(lock, LOCK_SECONDS)
+				ev = json.loads(raw)
 				try:
-					process_event(json.loads(raw))
+					process_event(ev)
 				except Exception:
 					frappe.db.rollback()
 					frappe.log_error(title="WhatsApp message failed")
+					tell_failed(ev)
 		finally:
 			frappe.cache.delete(lock)
+
+
+def wait_for_lock(phone, inbox, lock, poll=2):
+	"""Another worker holds this number's lock. A live one empties the inbox within seconds of a message arriving;
+	one that died leaves the lock until it expires, and without a job waiting the messages would sit there until
+	the person wrote again. One job per number waits. True: the lock is free and messages are left."""
+	waiter = frappe.cache.make_key(WAITER.format(phone))
+	if not frappe.cache.set(waiter, 1, nx=True, ex=LOCK_SECONDS + 30):  # nosemgrep
+		return False
+	try:
+		deadline = time.monotonic() + LOCK_SECONDS + 5
+		while time.monotonic() < deadline:
+			if not frappe.cache.llen(inbox):
+				return False
+			if frappe.cache.get(lock) is None:  # raw get: `lock` already carries the site prefix
+				return True
+			time.sleep(poll)
+		logger().warning(f"inbox lock for {phone} still held after {LOCK_SECONDS}s")
+		return False
+	finally:
+		frappe.cache.delete(waiter)
+
+
+def tell_failed(ev):
+	"""process_event failed outside the conversation (which answers its own errors), so nothing was sent."""
+	try:
+		lang = sessions.load(ev["from"]).lang
+	except Exception:
+		lang = None
+	try:
+		whatsapp_client().send(ev["from"], text((T.get(lang) or T["en"])["errorGeneric"]))
+	except Exception:
+		frappe.log_error(title="WhatsApp reply could not be sent")
 
 
 def process_event(ev):
@@ -124,15 +210,30 @@ def process_event(ev):
 	ctx.message_id = ev.get("id")   # becomes the report's client_ref, so a redelivered message never creates a second report
 	replies = handle(session, ev["input"], ctx)
 	sessions.save(session)
+	send_replies(wa, ev["from"], replies, (T.get(session.lang) or T["en"])["typeNumber"])
+
+
+def send_replies(wa, to, replies, hint):
+	"""In order. A menu Meta refuses goes again as numbered text; if a message can't be sent at all the rest
+	are not sent either, since they would make no sense without it."""
 	for msg in replies:
-		problems = validate(msg)
-		if problems:
-			logger().warning(f"message over WhatsApp limits: {'; '.join(problems)}")
-		try:
-			wa.send(ev["from"], msg)
-		except Exception:
-			frappe.log_error(title="WhatsApp reply could not be sent")
-			break
+		for part in sendable(msg, hint=hint):
+			try:
+				wa.send(to, part)
+			except WhatsAppError:
+				if part["kind"] not in ("buttons", "list"):
+					frappe.log_error(title="WhatsApp reply could not be sent")
+					return
+				frappe.log_error(title="WhatsApp menu refused, sent as text")
+				try:
+					for t in as_text(part, hint=hint):
+						wa.send(to, t)
+				except Exception:
+					frappe.log_error(title="WhatsApp reply could not be sent")
+					return
+			except Exception:
+				frappe.log_error(title="WhatsApp reply could not be sent")
+				return
 
 
 def make_context(st):
@@ -142,8 +243,12 @@ def make_context(st):
 			idle_minutes=cint(st.idle_minutes) or 15, welcome_image_url=st.welcome_image_url or None
 		),
 		now=time.time,
+		knowledge=KnowledgeBase() if cint(st.answer_questions) else None,
 		chatbot=chatbot_client(st),
 		extractor=extraction_client(st),
+		transcribe=voice_transcriber(st),
+		pseudonym_key=get_encryption_key(),
+		on_privacy=record_privacy,
 		on_submit=on_submit,
 		on_extract=log_extraction,
 		on_report_stats=log_report_stats,
@@ -170,7 +275,10 @@ def after_submit(report, media, phone, reporter_role=None, danger_signs=None, la
 	failed = attach_media(report, media) if media else 0
 	if failed:
 		tell_reporter_media_failed(report, phone, failed, lang)
-	notify_desk(report, phone, reporter_role, danger_signs)
+	if cbs.writes_back(report):  # a community report: CBS escalates it (cbs.py)
+		cbs.queue(report, danger_signs)
+	else:
+		notify_desk(report, phone, reporter_role, danger_signs)
 
 
 def tell_reporter_media_failed(report, phone, failed, lang=None):
@@ -253,6 +361,9 @@ def attach_media(report, media):
 			).insert(ignore_permissions=True)
 			kind = ATTACHMENT_TYPES.get(m.get("kind"), "Attachment")
 			row = {"attachment_type": kind, "file": f.file_url, "text_content": m.get("caption")}
+			if m.get("transcript"):  # read in the conversation: surveillance.transcription skips rows with a status
+				row.update({"transcript": m["transcript"], "transcript_status": "Done",
+					"transcript_language": m.get("transcript_language"), "transcribed_on": frappe.utils.now_datetime()})
 			if m.get("consent"):  # answered in the bot (RConsent)
 				row.update({"people_shown": m.get("people_shown") or 0, "consent": m["consent"],
 					"consent_recorded_on": frappe.utils.now_datetime()})
@@ -331,38 +442,37 @@ def notify_desk(report, phone, reporter_role=None, danger_signs=None):
 
 
 def log_chatbot(request, response, session):
-	"""One line per question in logs/whatsapp.log, until Frappe has a Chatbot Query Log DocType
-	(agents/chatbot/docs/frappe_interface.md §5). Contains personal data: keep the logs private."""
-	protocol = response.get("protocol")
-	logger().info(
-		"[chatbot] "
-		+ json.dumps(
-			{
-				"request_id": response.get("request_id") or request["request_id"],
-				"user": request["user_ref"],
-				"roles": request["roles"],
-				"region": request["location"],
-				"language": request["language"],
-				"channel": "WhatsApp",
-				"question": request["message"],
-				"selected": request["selected_protocol_id"],
-				"route": response.get("route"),
-				"outcome": response.get("outcome"),
-				"reason": response.get("reason"),
-				"protocol": f"{protocol['protocol_id']}:{protocol['language']}:{protocol['source_version']}"
-				if protocol
-				else None,
-				"document": ((response.get("documents") or [{}])[0]).get("id"),
-				"latency_ms": response.get("latency_ms"),
-				"trace": response.get("trace"),
-			},
-			default=str,
-		)
+	"""A question answered without the Knowledge Base (refused, a report, a count question, a greeting) still gets
+	its Chatbot Query Log record, the source of the SRS acceptance metrics; knowledge_base.ask writes the others.
+	The question is redacted and a community member's number is a pseudonym. Read access needs view_chatbot_logs."""
+	chatbot_log.log_conversation(
+		request,
+		response,
+		channel="WhatsApp",
+		user=(session.staff or {}).get("user"),
+		escalated_to=_escalation_target(),
 	)
+
+
+def _escalation_target():
+	st = data.settings()
+	to = numbers(st.escalation_numbers) or numbers(st.notify_numbers)
+	return ", ".join(to) if to else "WhatsApp escalation desk (no number set)"
 
 
 def on_escalate(question, session, request, reason, error=None, response=None):
 	staff = session.staff or {}
+	logged = chatbot_log.find_by_correlation(request.get("request_id"))
+	if error and not logged:  # failed before knowledge_base.ask wrote its record
+		chatbot_log.log_conversation(
+			request, None, channel="WhatsApp", user=staff.get("user"), error=error, escalated_to=_escalation_target()
+		)
+	else:
+		chatbot_log.update(
+			logged,
+			escalated_to_human=1,
+			escalated_to=_escalation_target(),
+		)
 	if staff:
 		who = staff.get("full_name") + (f" ({staff['role']})" if staff.get("role") else "")
 	else:
@@ -375,7 +485,7 @@ def on_escalate(question, session, request, reason, error=None, response=None):
 				"user": request["user_ref"],
 				"reason": reason,
 				"error": error,
-				"question": question,
+				"question": redact(question),
 			}
 		)
 	)
@@ -396,7 +506,9 @@ def format_time(when):
 
 
 def reason_label(reason):
-	"""Unknown reasons still read as words: the chatbot service can add new ones."""
+	"""Unknown reasons still read as words: the Knowledge Base can add new ones. Its details after ":" or "|"
+	(document names, trusted sources) stay in the Chatbot Query Log."""
+	reason = re.split(r"[:|]", reason or "")[0]
 	return ESCALATION_REASONS.get(reason) or (reason or "—").replace("_", " ")
 
 

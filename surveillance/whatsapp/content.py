@@ -26,7 +26,22 @@ KEYWORDS = {
 	"language": {"language", "lugha"},
 	"back": {"back", "rudi"},
 	"emergency": {"emergency", "emergencies", "dharura"},  # anywhere in a message, not only on its own
+	"privacy": {"privacy", "faragha"},
 }
+
+# Draft for approval by the KRCS Data Protection Officer, from the DPIA review. Change the version when the wording
+# changes in substance: everyone is then asked again, and the WhatsApp Consent Log shows which text each person saw.
+PRIVACY_VERSION = "2026-11-draft"
+PRIVACY_NOTICE = f"""*Your privacy / Faragha yako*
+
+Kenya Red Cross collects what you send here to detect and respond to disease outbreaks. Your number, name and report are stored in Kenya and seen only by authorised KRCS staff. WhatsApp (Meta) carries these messages and processes them outside Kenya. Type *PRIVACY* at any time for your rights, or call *{HOTLINE}*.
+
+Kenya Red Cross hukusanya unachotuma hapa ili kugundua na kukabili milipuko ya magonjwa. Nambari, jina na taarifa yako huhifadhiwa Kenya na huonekana kwa wafanyakazi wa KRCS walioidhinishwa pekee. WhatsApp (Meta) hubeba ujumbe huu na kuuchakata nje ya Kenya. Andika *FARAGHA* wakati wowote kujua haki zako, au piga *{HOTLINE}*.
+
+Do you agree? / Je, unakubali?"""
+PRIVACY_DECLINED = f"""We have not taken a report. You can still report by calling *{HOTLINE}* _(free)_ or by telling your Community Health Promoter. If someone's life is in danger, call *999* or *112*.
+
+Hatujapokea taarifa. Bado unaweza kuripoti kwa kupiga *{HOTLINE}* _(bure)_ au kumwambia Mhudumu wako wa Afya ya Jamii. Ikiwa maisha ya mtu yako hatarini, piga *999* au *112*."""
 
 HELP_EN = f"""*KRCS Surveillance Support & Hotlines*
 
@@ -276,6 +291,7 @@ ADVICE = {
 		"animals": "*Sick or dead animals:* do not slaughter, eat, sell or touch sick or dead animals, their meat or their milk. Keep sick animals apart and tell the local veterinary officer.",
 		"bite": "*Animal bite or scratch:* wash the wound with soap and running water for 15 minutes, and go to a health facility today.",
 		"general": "*If the person gets worse* (cannot drink, very weak, confused, bleeding or struggling to breathe), go to the nearest health facility at once.",
+		"next": "*What happens next:* the KRCS surveillance team reviews every report. A health worker may call you on this number to check the details or tell you what to do.",
 		"close": f"KRCS toll-free: *{HOTLINE}*. Emergency: *999* / *112*.",
 	},
 	"sw": {
@@ -289,6 +305,7 @@ ADVICE = {
 		"animals": "*Wanyama wagonjwa au waliokufa:* usichinje, usile, usiuze wala kugusa wanyama wagonjwa au waliokufa, nyama yao au maziwa yao. Watenge wanyama wagonjwa na umjulishe afisa wa mifugo.",
 		"bite": "*Kuumwa au kukwaruzwa na mnyama:* osha jeraha kwa sabuni na maji yanayotiririka kwa dakika 15, na uende kituo cha afya leo.",
 		"general": "*Hali ya mgonjwa ikizidi kuwa mbaya* (hawezi kunywa, ni dhaifu sana, amechanganyikiwa, anatokwa na damu au anapumua kwa shida), nenda kituo cha afya kilicho karibu mara moja.",
+		"next": "*Kinachofuata:* timu ya ufuatiliaji ya KRCS hukagua kila taarifa. Mhudumu wa afya anaweza kukupigia kwenye nambari hii kuthibitisha maelezo au kukueleza la kufanya.",
 		"close": f"Nambari ya bure ya KRCS: *{HOTLINE}*. Dharura: *999* / *112*.",
 	},
 }
@@ -376,6 +393,7 @@ T = {
 		"invalid": "Sorry, I didn't understand that. Please choose one of the options, or type *menu*.",
 		"emergency": f"If someone's life is in danger, call *999* or *112* now. KRCS toll-free: *{HOTLINE}* _(free, 24 hours)_.",
 		"errorGeneric": f"Sorry, something went wrong on our side. Type *menu* to start again, or call *{HOTLINE}*.",
+		"typeNumber": "Reply with the number of your choice.",
 		"welcome": "*Welcome to Kenya Red Cross Society*\n\nI'm the KRCS Health Surveillance & Community Alert Assistant.\n\n"
 		"_Serving both authorised health workers and community members across Kenya._\n\nPlease choose an option:",
 		"roleCommunity": "Community member",
@@ -392,13 +410,24 @@ T = {
 		"menuHelp": "Help & support",
 		"submitReport": "Submit a report",
 		"backToMenu": "Main menu",
-		# Response Support Chatbot. Answers are the service's own text (approved protocols or fixed templates).
+		# Questions: answers are approved Knowledge Base text, quoted as it is (knowledge.py), or the fixed replies below.
 		"menuAsk": "Ask a question",
 		"askPrompt": "*Ask a question*\nType your question, e.g. _What should I do if I suspect cholera?_\n\n"
 		"Answers come only from approved KRCS guidance. Type *menu* to go back.",
 		"askPromptCommunity": "*Ask a question*\nType your question. If there is no approved answer, it is passed to the KRCS team.\n\n"
 		"For an emergency call *999* or *112*. Type *menu* to go back.",
-		"askClarify": "Which of these did you mean? Choose one, or type your question again.",
+		"askNotFound": lambda contact: f"I couldn't find approved guidance that answers this, so I have not guessed. Your question has been passed to {contact}. "
+		"If this is an emergency, follow your usual emergency reporting procedure.",
+		"askSources": "Source",
+		"askBlocked": "I can only answer questions from approved KRCS guidance. Please type your question about a health concern, or type *menu*.",
+		"askClinical": "I can't recommend medicines, doses or a diagnosis. A health worker must examine the person: go to the nearest health facility. "
+		"If someone is very unwell, call *999* or *112*.",
+		"askGreeting": "Hello. Type your question about a health concern, e.g. _How does cholera spread?_",
+		"routeAsk": "This sounds like a report. Is it part of the report you are writing, or a new one?",
+		"routeAdd": "Add to this report",
+		"routeNew": "Start a new report",
+		"routeBack": "Continue my report",
+		"routeAdded": "Added to your report's notes.",
 		"askRouted": "This sounds like a report of people who are sick. Please send it as a report so the surveillance team receives it.",
 		"askMixed": "If people are sick now, please also send a report.",
 		"askCount": "Report counts are not available on WhatsApp. Please use the *Reports* page of the KRCS surveillance app.",
@@ -478,6 +507,7 @@ T = {
 		"deathsInvalid": "Please type the number of deaths (0 or more), or tap *None*.",
 		"region": lambda n, t: f"{_step_en(n, t, 'Where is it happening?')}\nSelect the region:",
 		"regionYours": "Your assigned region",
+		"subCountyYours": "Your sub-county",
 		"subCounty": lambda n, t, region: f"{_step_en(n, t, 'Sub-county')}\nWhich sub-county of *{region}*?",
 		"place": lambda n,
 		t: f"{_step_en(n, t, 'Exact location')} _(optional)_\nShare your location, type the village, camp block or landmark, or skip.",
@@ -517,8 +547,27 @@ T = {
 		"Type in English or Kiswahili. Prefer to answer one question at a time? Tap *Step by step*.",
 		"describeGuided": "Step by step",
 		"describeMedia": "Photo saved with your report. Please also type a short description of what is happening, or tap *Step by step*.",
-		"describeVoice": "Voice note saved with your report. Voice notes cannot be read automatically yet, so please also type a short "
+		"describeVoice": "Voice note saved with your report. It could not be read automatically, so please also type a short "
 		"description, or tap *Step by step*.",
+		"heard": lambda words: f'*From your voice note:*\n_"{words}"_\n\nPlease check the answers below, as the words may not be exact.',
+		"clinicalBoundary": "I can't confirm what illness someone has, or advise on medicines or doses. A health worker needs to examine "
+		"the person, so please take them to the nearest health facility.",
+		"privacyFull": "*Your privacy*\n\n*Who:* Kenya Red Cross Society is responsible for your information. "
+		f"Phone {CONTACT['phone']}, {CONTACT['emails'][0]}, {CONTACT['office']}.\n\n"
+		"*Why:* to detect and respond to disease outbreaks.\n\n"
+		"*Who sees it:* authorised KRCS health staff, who may share what is needed with the Ministry of Health. WhatsApp (Meta) "
+		"carries these messages and processes them outside Kenya. KRCS's own systems, in Kenya, read your words to fill in your "
+		"report and answer your questions.\n\n"
+		"*Your rights:* you can ask to see, correct or delete your information, object to its use, or withdraw your agreement at "
+		f"any time, here or by calling *{HOTLINE}*. A Community Health Promoter can do this with you.\n\n"
+		"*Complaints:* contact KRCS, or the Office of the Data Protection Commissioner.\n\n"
+		"Please do not send photos or recordings of people without their permission.",
+		"privacyAsk": "What would you like to do?",
+		"privacyWithdraw": "Withdraw agreement",
+		"privacyRequest": "See or delete data",
+		"privacyWithdrawn": "Your agreement is withdrawn and any unfinished report has been deleted. We will not take reports from "
+		f"this number unless you agree again. To have reports you already sent deleted, type *PRIVACY* or call *{HOTLINE}*.",
+		"privacyRequested": "Your request has been passed to the KRCS team, who will contact you on this number.",
 		"describeLocation": "Location saved. Now type a short description of what is happening, or tap *Step by step*.",
 		"noted": _noted_en,
 		"urgent": "*This may be serious.* If anyone is very sick, unconscious, bleeding or struggling to breathe, take them to the "
@@ -537,9 +586,12 @@ T = {
 		"editPrompt": "*Which section would you like to edit?*",
 		"editBack": "Back to review",
 		"incomplete": lambda what: f"Please complete: *{what}*",
-		"duplicate": lambda r: f"*Potential duplicate report detected*\n\n*{r['name']}* – {r.get('symptom_tags') or 'same symptoms'}, "
-		f"reported on {r.get('report_date')}, is still open in this region.\n\nIs this a separate incident?",
+		"duplicate": lambda r: "*A similar report was sent recently*\n\nA report "
+		+ ("of the same suspected disease" if r.get("match") == "disease" else "with at least two of the same signs")
+		+ f" was sent from this sub-county on {r.get('report_date')} and is still open.\n\n"
+		"Is yours a new incident, or the same one? Either way your report is sent.",
 		"submitAnyway": "New incident",
+		"sameIncident": "Same incident",
 		"consentAsk": "*Attachments*\n\nDoes any photo, video, voice note or file show or record a person? If yes, did they (or a parent or guardian, for a child) agree?",
 		"consentNone": "No person in them",
 		"consentPerson": "Person agreed",
@@ -586,6 +638,7 @@ T = {
 		"invalid": "Samahani, sijaelewa. Tafadhali chagua mojawapo ya chaguo, au andika *menyu*.",
 		"emergency": f"Ikiwa maisha ya mtu yako hatarini, piga *999* au *112* sasa. Nambari ya bure ya KRCS: *{HOTLINE}* _(bure, saa 24)_.",
 		"errorGeneric": f"Samahani, kuna hitilafu upande wetu. Andika *menyu* kuanza upya, au piga *{HOTLINE}*.",
+		"typeNumber": "Jibu kwa namba ya chaguo lako.",
 		"welcome": "*Karibu Kenya Red Cross Society*\n\nMimi ni Msaidizi wa Ufuatiliaji wa Afya na Tahadhari za Jamii wa KRCS.\n\n"
 		"_Nikihudumia wahudumu wa afya walioidhinishwa na wanajamii kote Kenya._\n\nTafadhali chagua:",
 		"roleCommunity": "Mwanajamii",
@@ -607,7 +660,18 @@ T = {
 		"Majibu yanatoka tu kwenye miongozo iliyoidhinishwa na KRCS. Andika *menyu* kurudi.",
 		"askPromptCommunity": "*Uliza swali*\nAndika swali lako. Kama hakuna jibu lililoidhinishwa, litatumwa kwa timu ya KRCS.\n\n"
 		"Kwa dharura piga *999* au *112*. Andika *menyu* kurudi.",
-		"askClarify": "Ulimaanisha lipi kati ya haya? Chagua moja, au andika swali lako tena.",
+		"askNotFound": lambda contact: f"Sikupata mwongozo ulioidhinishwa unaojibu swali hili, kwa hivyo sijakisia. Swali lako limetumwa kwa {contact}. "
+		"Ikiwa ni dharura, fuata utaratibu wako wa kawaida wa kuripoti dharura.",
+		"askSources": "Chanzo",
+		"askBlocked": "Ninaweza kujibu maswali kutoka kwenye miongozo iliyoidhinishwa na KRCS pekee. Tafadhali andika swali lako kuhusu tatizo la afya, au andika *menyu*.",
+		"askClinical": "Siwezi kupendekeza dawa, vipimo vya dawa au kutambua ugonjwa. Mhudumu wa afya lazima amchunguze mgonjwa: nenda kwenye kituo cha afya kilicho karibu. "
+		"Ikiwa mtu ni mgonjwa sana, piga *999* au *112*.",
+		"askGreeting": "Habari. Andika swali lako kuhusu tatizo la afya, k.m. _Kipindupindu huenezwa vipi?_",
+		"routeAsk": "Hii inaonekana kuwa taarifa. Je, ni sehemu ya taarifa unayoandika, au ni mpya?",
+		"routeAdd": "Ongeza kwa taarifa",
+		"routeNew": "Anza taarifa mpya",
+		"routeBack": "Endelea na taarifa",
+		"routeAdded": "Imeongezwa kwenye maelezo ya taarifa yako.",
 		"askRouted": "Hii inaonekana kuwa taarifa ya watu walio wagonjwa. Tafadhali itume kama taarifa ili timu ya ufuatiliaji iipokee.",
 		"askMixed": "Kama kuna watu wagonjwa sasa, tafadhali tuma pia taarifa.",
 		"askCount": "Idadi ya ripoti haipatikani kwenye WhatsApp. Tafadhali tumia ukurasa wa *Ripoti* kwenye programu ya ufuatiliaji ya KRCS.",
@@ -677,6 +741,7 @@ T = {
 		"deathsInvalid": "Tafadhali andika idadi ya vifo (0 au zaidi), au bonyeza *Hakuna*.",
 		"region": lambda n, t: f"{_step_sw(n, t, 'Linatokea wapi?')}\nChagua eneo:",
 		"regionYours": "Eneo lako",
+		"subCountyYours": "Kaunti ndogo yako",
 		"subCounty": lambda n,
 		t,
 		region: f"{_step_sw(n, t, 'Kaunti ndogo')}\nKaunti ndogo ipi ya *{region}*?",
@@ -717,8 +782,27 @@ T = {
 		"describeGuided": "Hatua kwa hatua",
 		"describeMedia": "Picha imehifadhiwa na taarifa yako. Tafadhali pia andika maelezo mafupi ya kinachotokea, au bonyeza "
 		"*Hatua kwa hatua*.",
-		"describeVoice": "Ujumbe wa sauti umehifadhiwa na taarifa yako. Ujumbe wa sauti bado hauwezi kusomwa kiotomatiki, kwa hivyo "
+		"describeVoice": "Ujumbe wa sauti umehifadhiwa na taarifa yako. Haukuweza kusomwa kiotomatiki, kwa hivyo "
 		"tafadhali pia andika maelezo mafupi, au bonyeza *Hatua kwa hatua*.",
+		"heard": lambda words: f'*Kutoka kwenye ujumbe wako wa sauti:*\n_"{words}"_\n\nTafadhali kagua majibu hapa chini, kwani maneno huenda yasiwe sahihi kabisa.',
+		"clinicalBoundary": "Siwezi kuthibitisha ugonjwa wa mtu, wala kushauri kuhusu dawa au vipimo vyake. Mhudumu wa afya anahitaji "
+		"kumchunguza mtu huyo, kwa hivyo tafadhali mpeleke kituo cha afya kilicho karibu.",
+		"privacyFull": "*Faragha yako*\n\n*Nani:* Shirika la Msalaba Mwekundu la Kenya linawajibika kwa taarifa zako. "
+		f"Simu {CONTACT['phone']}, {CONTACT['emails'][0]}, {CONTACT['office']}.\n\n"
+		"*Kwa nini:* kugundua na kukabili milipuko ya magonjwa.\n\n"
+		"*Nani anaziona:* wafanyakazi wa afya wa KRCS walioidhinishwa, ambao wanaweza kushiriki kinachohitajika na Wizara ya Afya. "
+		"WhatsApp (Meta) hubeba ujumbe huu na kuuchakata nje ya Kenya. Mifumo ya KRCS, iliyoko Kenya, husoma maneno yako ili "
+		"kujaza taarifa yako na kujibu maswali yako.\n\n"
+		"*Haki zako:* unaweza kuomba kuona, kusahihisha au kufuta taarifa zako, kupinga matumizi yake, au kuondoa idhini yako "
+		f"wakati wowote, hapa au kwa kupiga *{HOTLINE}*. Mhudumu wa Afya ya Jamii anaweza kukusaidia.\n\n"
+		"*Malalamiko:* wasiliana na KRCS, au Ofisi ya Kamishna wa Ulinzi wa Data.\n\n"
+		"Tafadhali usitume picha au sauti za watu bila ruhusa yao.",
+		"privacyAsk": "Ungependa kufanya nini?",
+		"privacyWithdraw": "Ondoa idhini",
+		"privacyRequest": "Ona au futa data",
+		"privacyWithdrawn": "Idhini yako imeondolewa na taarifa yoyote ambayo haijakamilika imefutwa. Hatutapokea taarifa kutoka nambari "
+		f"hii isipokuwa ukikubali tena. Kufuta taarifa ulizokwisha tuma, andika *FARAGHA* au piga *{HOTLINE}*.",
+		"privacyRequested": "Ombi lako limetumwa kwa timu ya KRCS, ambayo itawasiliana nawe kupitia nambari hii.",
 		"describeLocation": "Mahali pamehifadhiwa. Sasa andika maelezo mafupi ya kinachotokea, au bonyeza *Hatua kwa hatua*.",
 		"noted": _noted_sw,
 		"urgent": "*Hali hii inaweza kuwa hatari.* Kama kuna mtu aliye mgonjwa sana, aliyepoteza fahamu, anayetokwa na damu au "
@@ -737,9 +821,12 @@ T = {
 		"editPrompt": "*Ungependa kubadilisha sehemu gani?*",
 		"editBack": "Rudi kukagua",
 		"incomplete": lambda what: f"Tafadhali kamilisha: *{what}*",
-		"duplicate": lambda r: f"*Huenda taarifa hii tayari ipo*\n\n*{r['name']}* – {r.get('symptom_tags') or 'dalili zilezile'}, "
-		f"iliyotumwa {r.get('report_date')}, bado iko wazi katika eneo hili.\n\nJe, hili ni tukio tofauti?",
+		"duplicate": lambda r: "*Taarifa inayofanana ilitumwa hivi karibuni*\n\nTaarifa "
+		+ ("ya ugonjwa uleule unaoshukiwa" if r.get("match") == "disease" else "yenye angalau dalili mbili zilezile")
+		+ f" ilitumwa kutoka kaunti ndogo hii tarehe {r.get('report_date')} na bado iko wazi.\n\n"
+		"Je, yako ni tukio jipya, au ni lilelile? Kwa vyovyote vile taarifa yako itatumwa.",
 		"submitAnyway": "Tukio jipya",
+		"sameIncident": "Tukio lilelile",
 		"consentAsk": "*Viambatisho*\n\nJe, picha, video, sauti au faili yoyote inaonyesha au inarekodi mtu? Kama ndiyo, je alikubali (au mzazi au mlezi, kwa mtoto)?",
 		"consentNone": "Hakuna mtu",
 		"consentPerson": "Mtu alikubali",

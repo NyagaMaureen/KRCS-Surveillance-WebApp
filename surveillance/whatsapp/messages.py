@@ -2,6 +2,7 @@
 
 A message is a plain dict, e.g. {"kind": "buttons", "body": ..., "buttons": [...]}; client.to_payload()
 turns it into a Cloud API request. menu() picks reply buttons (<= 3) or a list (<= 10 rows).
+sendable() is what jobs.process_event sends: the message cut to fit, or as plain text when it still doesn't.
 """
 
 import re
@@ -119,3 +120,75 @@ def validate(msg):
 				f'row description too long: "{r.get("description")}"',
 			)
 	return problems
+
+
+def _cut(value, limit):
+	value = value or ""
+	return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
+
+
+def shorten(msg):
+	"""The message with titles, descriptions, header and footer cut to WhatsApp's limits, so Meta doesn't
+	refuse it. An interactive body that is too long goes first as its own text message."""
+	if msg["kind"] not in ("buttons", "list"):
+		return [msg]
+	msg = dict(msg)
+	before = []
+	if len(msg["body"]) > LIMITS["body"]:
+		before = [text(msg["body"])]
+		msg["body"] = "👇"
+	for k in ("header", "footer"):
+		if msg.get(k):
+			msg[k] = _cut(msg[k], LIMITS[k])
+	if msg["kind"] == "buttons":
+		msg["buttons"] = [{**b, "title": _cut(b["title"], LIMITS["button_title"])} for b in msg["buttons"]]
+	else:
+		msg["button"] = _cut(msg["button"], LIMITS["list_button"])
+		msg["sections"] = [
+			{
+				"title": _cut(sec["title"], LIMITS["section_title"]),
+				"rows": [
+					{
+						**r,
+						"title": _cut(r["title"], LIMITS["row_title"]),
+						**(
+							{"description": _cut(r["description"], LIMITS["row_desc"])}
+							if r.get("description")
+							else {}
+						),
+					}
+					for r in sec["rows"]
+				],
+			}
+			for sec in msg["sections"]
+		]
+	return [*before, msg]
+
+
+def options_of(msg):
+	if msg["kind"] == "buttons":
+		return [(b["title"], None) for b in msg["buttons"]]
+	if msg["kind"] == "list":
+		return [(r["title"], r.get("description")) for s in msg["sections"] for r in s["rows"]]
+	return []
+
+
+def as_text(msg, hint="Reply with the number of your choice."):
+	"""A menu as numbered plain text. The conversation accepts a typed number for the rows it last showed
+	(core.resolve_choice), so the person can still answer."""
+	lines = [x for x in (f"*{msg['header']}*" if msg.get("header") else None, msg.get("body")) if x]
+	options = options_of(msg)
+	if options:
+		lines.append("\n".join(f"{i}. {t}" + (f" ({d})" if d else "") for i, (t, d) in enumerate(options, 1)))
+		lines.append(f"_{hint}_")
+	body = "\n\n".join(lines)
+	limit = LIMITS["text"]
+	return [text(body[i : i + limit]) for i in range(0, len(body), limit)] or [text("…")]
+
+
+def sendable(msg, **hint):
+	"""What to send for one reply: the message cut to fit, or plain text when it would still be refused."""
+	parts = shorten(msg)
+	if all(not validate(m) for m in parts):
+		return parts
+	return as_text(msg, **hint) if msg["kind"] in ("text", "buttons", "list") else parts

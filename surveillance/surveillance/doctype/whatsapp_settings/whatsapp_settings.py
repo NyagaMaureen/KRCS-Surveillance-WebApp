@@ -26,6 +26,8 @@ class WhatsAppSettings(Document):
 			)
 		if self.welcome_image_url and not self.welcome_image_url.startswith("https://"):
 			frappe.throw(_("Welcome Image URL must start with https://"))
+		if self.cbs_writeback_url and not self.cbs_writeback_url.startswith(("https://", "http://")):
+			frappe.throw(_("CBS URL must start with https:// or http://"))
 
 	def on_update(self):
 		from surveillance.whatsapp.data import clear_staff_cache

@@ -11,9 +11,14 @@ Case Report with channel = WhatsApp, so it shows in the dashboard, map, alerts a
 	data.py          reads and writes in Frappe (lists, staff lookup, Case Reports)
 	sessions.py      conversation state per phone number, in Redis
 	client.py        Cloud API payloads, sending, media download, webhook parsing
-	chatbot.py       KRCS Response Support Chatbot client (agents/chatbot)
+	knowledge.py     questions answered from the Knowledge Base (surveillance.knowledge_base.ask), verbatim
+	chatbot.py       chatbot service client (agents/chatbot): what kind of message a question is
 	extract.py       free-text reports: extraction client (POST /extract), keyword fallback, checks against Frappe
-	setup.py         after_migrate: the community reporter account
+	transcribe.py    voice notes: speech-to-text client (POST /transcribe)
+	redact.py        personal details taken out before text reaches the AI services and logs
+	retention.py     media past its retention period; removing a reporter's details on request
+	cbs.py           community reports created in CBS, which escalates them (AI/ML §6.6); retries
+	setup.py         after_migrate: the community reporter account, defaults for settings added later
 
 Configuration: the WhatsApp Settings DocType (System Manager only).
 """
