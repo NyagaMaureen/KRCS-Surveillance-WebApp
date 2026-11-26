@@ -129,10 +129,10 @@ const TABS = [
 const TAB_BAR = 62   // height of the tab bar, in px
 // questions to start from, like the ones under Query Surveillance Data (KRCS 26 Nov 2026)
 const KB_EXAMPLES = [
-  'What is the case definition for suspected cholera?',
-  'How should a suspected measles case be reported and followed up?',
-  'What are the danger signs of severe malaria in a child?',
-  'When should a CHP refer a patient to a health facility?',
+  'What is the lay case definition for cholera?',
+  'What is the standard case definition of measles?',
+  'What are the symptoms of mpox?',
+  'What are the response steps for acute flaccid paralysis (polio)?',
 ]
 
 // a question about figures rather than documents ("cholera cases in the last 4 weeks")
