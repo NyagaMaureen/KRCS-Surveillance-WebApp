@@ -852,6 +852,16 @@ export async function exportDataExplorer(params) {
   return callMethodPost('/api/method/surveillance.data_explorer.export', { params: JSON.stringify(params) })
 }
 
+// KRCS Data Assistant, Surveillance data tab: a question becomes a checked query on the user's own area (KRCS 26 Nov 2026)
+export async function askSurveillanceData(question) {
+  return callMethodPost('/api/method/surveillance.data_questions.ask', { question })
+}
+
+// the same answer with other choices from the controls under it (By, Split by, Measure)
+export async function rerunSurveillanceData(form) {
+  return callMethodPost('/api/method/surveillance.data_questions.rerun', { form: JSON.stringify(form) })
+}
+
 /*
 |--------------------------------------------------------------------------
 | AI Governance & Monitoring Dashboard (Data & AI Administrator)

@@ -129,6 +129,8 @@ CAPABILITIES = [
 	# Analytics
 	{"key": "view_analytics", "name": "View Analytics", "category": "Analytics",
 	 "description": "View analytics dashboards", "grants": {}},
+	{"key": "view_data_explorer", "name": "View Data Explorer", "category": "Analytics",
+	 "description": "Search, filter and chart surveillance data for the user's own area (KRCS 26 Nov 2026)", "grants": {}},
 	{"key": "view_surveillance_map", "name": "View Surveillance Map", "category": "Analytics",
 	 "description": "View the surveillance map", "grants": {}},
 	{"key": "export_data", "name": "Export Data", "category": "Analytics",
@@ -168,6 +170,9 @@ CAPABILITIES = [
 	 "description": "Approve or retire knowledge base documents", "grants": {"Knowledge Document": ["read", "write"]}},
 	{"key": "use_knowledge_base", "name": "Use Knowledge Base", "category": "Knowledge Base",
 	 "description": "Search approved knowledge base documents for your own role", "grants": {}},
+	{"key": "ask_surveillance_data", "name": "Ask About Surveillance Data", "category": "Knowledge Base",
+	 "description": "Ask questions about surveillance figures in the Data Assistant (Surveillance data tab); answers come "
+		"from the database for the user's own area, never from the AI model (KRCS 26 Nov 2026)", "grants": {}},
 	{"key": "kb_service", "name": "Knowledge Base Service Access", "category": "Knowledge Base",
 	 "description": "Search on behalf of another role (chatbot service account only)", "grants": {}},
 	{"key": "view_sensitive_kb", "name": "View Sensitive Knowledge Base Content", "category": "Knowledge Base",
@@ -213,6 +218,9 @@ CAPABILITIES += [
 	 "description": "See the Alert Thresholds tab (changing them needs Manage Alert Thresholds)", "grants": {}},
 	{"key": "settings_ai_config", "name": "Settings: AI Config", "category": "Settings",
 	 "description": "See the AI Config tab (risk score weights, red-flag symptoms)", "grants": {}},
+	{"key": "view_ai_performance", "name": "View AI Performance", "category": "Settings",
+	 "description": "Open AI Performance: how often each AI part agreed with people, and the models in use (KRCS 26 Nov 2026)",
+	 "grants": {}},
 	{"key": "settings_data", "name": "Settings: Data", "category": "Settings",
 	 "description": "See the Data tab in Settings", "grants": {}},
 	{"key": "settings_security", "name": "Settings: Security", "category": "Settings",
@@ -232,6 +240,7 @@ CAPABILITIES += [
 STEPS_TAB = "Event Steps & Tasks"   # the event page's steps and Tasks section (KRCS 19 Nov 2026)
 MENU_LABELS = {
 	"view_analytics": ("Dashboard", "View Dashboard"), "view_alerts": ("Dashboard", "View Epidemiological Trends"),
+	"view_data_explorer": ("Data Explorer", "View Data Explorer"),
 	"view_surveillance_map": ("Dashboard", "View Surveillance Map"), "export_data": ("Dashboard", "Export Data"),
 	"view_reports": ("Signals Captured", "View All Signals"), "view_own_reports": ("Signals Captured", "View Own Signals"),
 	"create_reports": ("Signals Captured", "Create Reports"), "edit_reports": ("Signals Captured", "Update Signals"),
@@ -247,6 +256,7 @@ MENU_LABELS = {
 	"receive_referrals": ("Review Queue", "Confirm Referrals to My Facility"),
 	"investigate_alerts": ("Review Queue", "Investigate Alerts"),
 	"use_knowledge_base": ("KRCS Data Assistant", "Use the Data Assistant"),
+	"ask_surveillance_data": ("KRCS Data Assistant", "Ask About Surveillance Data"),
 	"view_restricted_kb": ("KRCS Data Assistant", "See Restricted Content"),
 	"view_sensitive_kb": ("KRCS Data Assistant", "See Sensitive Content"),
 	"kb_national_scope": ("KRCS Data Assistant", "National Scope"),
@@ -260,6 +270,7 @@ MENU_LABELS = {
 	"upload_facility_data": ("MOH 505 Facility Reports", "Upload MOH 505 Files"),
 	"view_context_data": ("Context Data", "View Context Data"), "manage_context_data": ("Context Data", "Manage Context Data"),
 	"settings_ai_config": ("AI Risk Engine", "AI Risk Engine Settings"),
+	"view_ai_performance": ("AI Performance", "View AI Performance"),
 	"view_knowledge_base": ("AI Knowledge Base", "View"),
 	"manage_knowledge_base": ("AI Knowledge Base", "Upload"),
 	"approve_knowledge_base": ("AI Knowledge Base", "Approve"),
@@ -279,8 +290,8 @@ MENU_LABELS = {
 	"settings_notifications": ("Notifications and System", "Notification Settings"),
 	"settings_system": ("Notifications and System", "System Settings"),
 }
-CATEGORY_ORDER = ["Dashboard", "Signals Captured", "Review Queue", STEPS_TAB, "KRCS Data Assistant", "Monitoring Reports", "Data Quality",
-	"Response Protocols", "MOH 505 Facility Reports", "Context Data", "AI Risk Engine", "AI Knowledge Base",
+CATEGORY_ORDER = ["Dashboard", "Signals Captured", "Review Queue", STEPS_TAB, "KRCS Data Assistant", "Data Explorer", "Monitoring Reports",
+	"Data Quality", "Response Protocols", "MOH 505 Facility Reports", "Context Data", "AI Risk Engine", "AI Performance", "AI Knowledge Base",
 	"AI Assistant Query Log", "Alert Thresholds", "Reporting Channels", "Data and Database", "Users and Roles", "Audit Log",
 	"Security Settings", "Feedback Received", "Notifications and System", "Workspaces"]
 for _c in CAPABILITIES:
@@ -304,7 +315,7 @@ WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_
 # (AI, data, integrations, users, roles, security, settings) and sees no case or patient data. Set by data_ai_admin_setup.
 DATA_AI_CAPABILITIES = ["dataai_workspace", "view_users", "manage_users", "manage_roles", "view_audit_log",
 	"settings_security", "settings_data", "settings_ai_config", "settings_alert_thresholds", "manage_alert_thresholds",
-	"settings_notifications", "settings_system", "manage_reference_data", "view_knowledge_base", "manage_knowledge_base", "approve_knowledge_base",
+	"settings_notifications", "settings_system", "view_ai_performance", "manage_reference_data", "view_knowledge_base", "manage_knowledge_base", "approve_knowledge_base",
 	"use_knowledge_base", "kb_national_scope", "view_chatbot_logs", "view_reporting_channels", "upload_facility_data",
 	"view_context_data", "manage_context_data", "view_data_quality", *SYSTEM_MONITORING_KEYS, "export_monitoring_reports",
 	"view_feedback", "view_all_regions"]   # national: the region set on the user (required by the form) does not limit it

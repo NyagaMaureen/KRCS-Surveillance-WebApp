@@ -39,7 +39,7 @@ DEFAULT_DISEASES = [
 	("meningococcal-meningitis", "Suspected Meningococcal Meningitis", "Human", "immediate"),
 	("yellow-fever", "Suspected Yellow Fever", "Human", "IHR notifiable"),
 	("afp-polio", "Suspected Acute Flaccid Paralysis (AFP) / Poliomyelitis", "Human", "IHR notifiable"),
-	("awd-cholera", "Acute Watery Diarrhoea (AWD) / Cholera", "Human", "immediate"),
+	("awd-cholera", "Suspected Acute Watery Diarrhoea (AWD) / Cholera", "Human", "immediate"),
 	("mpox", "Suspected Mpox", "Human", ""),
 	("measles", "Suspected Measles", "Human", ""),
 	("vhf", "Suspected Viral Haemorrhagic Fever (Ebola/Marburg/Lassa/CCHF)", "Human", "immediate, IHR notifiable"),

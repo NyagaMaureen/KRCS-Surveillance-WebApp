@@ -215,30 +215,50 @@ DQ_KINDS = {
 }
 
 
-def _report_filters(since):
-	f = {"creation": [">=", since]}
-	region = _region()
-	if region:
-		f["region"] = region
-	return f
+def _dq_reports(since):
+	"""Case Reports for Data Quality: only those this user may open (David, 26 Nov 2026). frappe.get_list applies
+	report_access.case_report_query (own reports, sub-county, CHU, region), so the list, the duplicate check and the
+	counts follow the same rule as Signals Captured. Users who cannot read Case Reports at all (Data & AI Admin) get none."""
+	if not frappe.has_permission("Case Report", "read"):
+		return []
+	return frappe.get_list("Case Report", filters={"creation": [">=", since]},
+		fields=["name", "location_name", "sub_county", "latitude", "longitude", "onset_date", "creation", "suspected_disease",
+			"review_outcome", "symptom_tags", "reported_by", "owner", "channel"], order_by="creation desc", limit_page_length=3000)
+
+
+def _dq_sub_counties():
+	"""Lower-case sub-county names for MOH 505 completeness: the user's own sub-counties when they are limited to them,
+	else their region's, else None (every sub-county)."""
+	from surveillance.user_scope import locked_area
+	area = locked_area()
+	if area:
+		return {(n or "").strip().lower() for n in area.sub_counties}
+	return _region_sub_counties()
 
 
 @frappe.whitelist()
 def get_data_quality(days=30):
 	require_capability("view_data_quality")
 	since = add_days(nowdate(), -cint(days or 30))
-	dismissed = set(frappe.get_all(DQ_DISMISS, pluck="issue_key")) if frappe.db.table_exists(DQ_DISMISS) else set()
-	issues = []
+	# a checked issue is hidden for everyone who can see it, and listed under "Checked" with who and when
+	# (KRCS 26 Nov 2026). Issues belong to one report, signal or facility, so this is per area in practice.
+	dismissed = {d.issue_key: d for d in frappe.get_all(DQ_DISMISS, fields=["issue_key", "dismissed_by", "dismissed_on", "note"])} \
+		if frappe.db.table_exists(DQ_DISMISS) else {}
+	issues, checked = [], []
 
 	def add(kind, key, title, detail, link, at=None, source=None):
 		k = f"{kind}:{key}"
-		if k not in dismissed:
-			issues.append({"key": k, "kind": kind, "kindLabel": DQ_KINDS[kind], "title": title, "detail": detail,
-				"link": link, "at": str(at) if at else None, "source": source})
+		row = {"key": k, "kind": kind, "kindLabel": DQ_KINDS[kind], "title": title, "detail": detail,
+			"link": link, "at": str(at) if at else None, "source": source}
+		d = dismissed.get(k)
+		if d:
+			row.update({"checkedBy": get_fullname(d.dismissed_by) if d.dismissed_by else "", "checkedOn": str(d.dismissed_on or ""),
+				"checkNote": d.note or ""})
+			checked.append(row)
+		else:
+			issues.append(row)
 
-	reports = frappe.get_all("Case Report", filters=_report_filters(since),
-		fields=["name", "location_name", "sub_county", "latitude", "longitude", "onset_date", "creation", "suspected_disease",
-			"review_outcome", "symptom_tags", "reported_by", "owner", "channel"], order_by="creation desc", limit_page_length=3000)
+	reports = _dq_reports(since)
 	for r in reports:
 		if not r.sub_county:
 			add("location", r.name, f"{r.name}: no sub-county", f"Place given: {r.location_name or 'none'}. Officers can't scope or map it.",
@@ -266,9 +286,12 @@ def get_data_quality(days=30):
 					"Same reporter, place and symptoms within 24 hours. Check if it was sent twice.", f"/reports/{b.name}", b.creation)
 
 	# CBS signals in the Review Queue: missing place or no disease matched (KRCS review: data quality from all sources)
+	# scoped like the Review Queue: only signals on events this user can see (sub-county, CHU, region)
+	from surveillance.events import _scope_filters
 	cbs_filters = {"source": "CBS", "signal_date": [">=", since]}
-	if _region():
-		cbs_filters["region"] = _region()
+	scope = _scope_filters(check=False)
+	if scope.get("name"):
+		cbs_filters["event"] = scope["name"]
 	for s in frappe.get_all("Surveillance Signal", filters=cbs_filters,
 			fields=["ref", "disease", "sub_county", "area", "signal_date", "event"], limit_page_length=3000):
 		link = f"/alerts-signals/{s.event}" if s.event else "/epi-trends"
@@ -279,15 +302,14 @@ def get_data_quality(days=30):
 				s.signal_date, "CBS")
 
 	# open events flagged "confirm the number"
-	from surveillance.events import _scope_filters
-	for e in frappe.get_all(EVENT, filters={**_scope_filters(check=False), "status": ["in", OPEN], "data_warning": ["is", "set"]},
+	for e in frappe.get_all(EVENT, filters={**scope, "status": ["in", OPEN], "data_warning": ["is", "set"]},
 			fields=["name", "disease_name", "data_warning", "first_reported"]):
 		add("warning", e.name, f"{e.name}: {e.disease_name or 'event'}", e.data_warning, f"/alerts-signals/{e.name}", e.first_reported)
 
 	# MOH 505 (IDSR) reporting completeness, last 4 weeks
 	try:
 		from surveillance.analytics import _completeness
-		subs = _region_sub_counties()
+		subs = _dq_sub_counties()
 		if subs is None:
 			subs = {(s or "").strip().lower() for s in frappe.get_all("Sub County", pluck="sub_county_name")}
 		comp = _completeness(4, subs)
@@ -302,14 +324,14 @@ def get_data_quality(days=30):
 
 	# where each issue came from, for the source filter: the report's channel, CBS, or MOH 505 (facility completeness)
 	channel_of = {r.name: (r.channel or "Web") for r in reports}
-	for i in issues:
+	for i in issues + checked:
 		if i["source"] is None:
 			if i["kind"] == "completeness":
 				i["source"] = "MOH 505"
 			elif i["link"].startswith("/reports/"):
 				i["source"] = channel_of.get(i["link"].rsplit("/", 1)[-1])
 	counts = {k: sum(1 for i in issues if i["kind"] == k) for k in DQ_KINDS}
-	return {"issues": issues, "counts": counts, "kinds": DQ_KINDS, "days": cint(days or 30),
+	return {"issues": issues, "checked": checked, "counts": counts, "kinds": DQ_KINDS, "days": cint(days or 30),
 		"reportsChecked": len(reports), "canDismiss": has_capability("view_data_quality"),
 		"sources": ["Mobile", "WhatsApp", "Web", "CBS", "MOH 505", "EMR"]}
 

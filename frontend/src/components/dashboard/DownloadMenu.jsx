@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Download, FileSpreadsheet, FileText, Image as ImageIcon } from 'lucide-react'
+import { ChevronDown, Download, FileSpreadsheet, FileText, FileJson, Image as ImageIcon } from 'lucide-react'
 import { FOCUS } from '../../data/eventHelpers'
 
 // One Download button with the format to choose: PNG, PDF or Excel (KRCS 23 Nov 2026).
-// onPick('png' | 'pdf' | 'xlsx'); busy: the format being prepared, if any.
-const FORMATS = [
-  { key: 'png', label: 'PNG image', icon: ImageIcon },
-  { key: 'pdf', label: 'PDF (print)', icon: FileText },
-  { key: 'xlsx', label: 'Excel', icon: FileSpreadsheet },
-]
+// onPick('png' | 'pdf' | 'xlsx' | 'csv' | 'json'); busy: the format being prepared, if any.
+// formats: which of them to offer (default PNG, PDF, Excel).
+const ALL_FORMATS = {
+  png: { key: 'png', label: 'PNG image', icon: ImageIcon },
+  pdf: { key: 'pdf', label: 'PDF (print)', icon: FileText },
+  xlsx: { key: 'xlsx', label: 'Excel', icon: FileSpreadsheet },
+  csv: { key: 'csv', label: 'CSV (Excel)', icon: FileSpreadsheet },
+  json: { key: 'json', label: 'JSON', icon: FileJson },
+}
 
-export default function DownloadMenu({ onPick, busy, label = 'Download', className = '' }) {
+export default function DownloadMenu({ onPick, busy, label = 'Download', className = '', formats = ['png', 'pdf', 'xlsx'] }) {
+  const FORMATS = formats.map((k) => ALL_FORMATS[k]).filter(Boolean)
   const [open, setOpen] = useState(false)
   const box = useRef(null)
   useEffect(() => {

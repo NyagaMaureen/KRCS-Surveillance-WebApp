@@ -131,7 +131,7 @@ def get_overview():
 @frappe.whitelist()
 def get_tab(report, from_date=None, to_date=None):
 	"""One Monitoring Report (R37, R38, R40, R40b) for a dashboard tab; not logged as a report view."""
-	_require(*DASHBOARD)
+	_require(*DASHBOARD, *(("view_ai_performance",) if report == "R38" else ()))   # AI Performance page (KRCS 26 Nov 2026)
 	from surveillance.monitoring import SYSTEM_REPORTS
 	if report not in SYSTEM_REPORTS:
 		frappe.throw("Unknown report.")
@@ -172,7 +172,7 @@ def _model_label(model):
 def get_models(from_date=None, to_date=None):
 	"""Models in use: the measures the AI server sent from MLflow (AI Model Metric) and how often the disease
 	classifier was used (AI Prediction), one row per model."""
-	_require(*DASHBOARD)
+	_require(*DASHBOARD, "view_ai_performance")
 	from_d, to_d = _period(from_date, to_date)
 	start, end = get_datetime(f"{from_d} 00:00:00"), get_datetime(f"{to_d} 23:59:59")
 	models = {}
@@ -200,7 +200,7 @@ def get_models(from_date=None, to_date=None):
 				m["note"] = f"Serving version {serving}; the measures are from version {m['version']}"
 			m["version"] = m["version"] or serving
 			if not m["measures"]:
-				m["note"] = "No measures sent yet: run push_model_metrics.py on the AI server"
+				m["note"] = "No measures received from MLflow for this model yet"
 			m["source"] = "MLflow and the AI server"
 	rows = sorted(models.values(), key=lambda m: (m["model"] != "Disease classifier", m["model"].lower()))
 	for m in rows:

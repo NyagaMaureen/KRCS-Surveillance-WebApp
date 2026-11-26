@@ -2,26 +2,29 @@
 
 Two datasets:
   counts   Weekly Count: one row per source, disease, sub-county and week. Covers every source:
-           Field reports (Case Report), CBS and MOH 505 (IDSR). No personal data.
+           Reports (web, mobile, WhatsApp; Case Report), CBS and MOH 505 (IDSR). No personal data.
   reports  Individual field Case Reports (web, mobile, WhatsApp). Reporter names, phone numbers
            and free-text notes are never returned.
 
-Access: capability view_analytics; export needs export_data.
-Region: officers see the sub-counties of their region; users with View All Regions or no region see
-everything. "Pilot sites only" (default on) limits to the Review Queue sub-counties.
+Access: capability view_data_explorer; export needs export_data.
+Area (KRCS 26 Nov 2026): CHAs, Surveillance Officers and FHWs see their own sub-county or sub-counties (the same as
+their Review Queue); users limited to a region see that region; users with View All Regions see everything.
+"Pilot sites only" (default on) limits to the sub-counties in our Sub County list (the Dadaab and Kalobeyei regions).
+Charts: weeks and months with nothing reported are shown as 0 (not skipped), the smaller split groups are added up
+as "Other" so the bars still add up to the totals, and a pie always shows totals.
 """
 import json
 from collections import OrderedDict
 
 import frappe
 
-from frappe.utils import cint, getdate
+from frappe.utils import add_days, cint, getdate
 
 from surveillance.capabilities import has_capability, require_capability
 
-VIEW = "view_analytics"
+VIEW = "view_data_explorer"
 EXPORT = "export_data"
-SOURCES = OrderedDict([("Case Report", "Field reports"), ("CBS", "Community (CBS)"), ("IDSR", "Health facilities (MOH 505)")])
+SOURCES = OrderedDict([("Case Report", "Reports (web, mobile, WhatsApp)"), ("CBS", "CBS"), ("IDSR", "MOH 505")])
 GROUPS = {"disease", "week", "month", "sub_county", "county", "source", "status", "channel"}
 METRICS = {"count", "affected", "deaths"}
 MAX_EXPORT = 20000
@@ -45,15 +48,39 @@ def _disease_names():
 	return {d.name: d.disease_name or d.name for d in frappe.get_all("Alert Threshold Config", fields=["name", "disease_name"])}
 
 
-def _allowed_sub_counties(pilot_only):
-	"""Lower-case sub-county names this user may see, or None for no limit."""
-	from surveillance.events import _scope, _user_region
-	allowed = None
+def _area():
+	"""(lower-case sub-county names this user is limited to or None, words for it). Sub-county users (CHA, officer,
+	FHW) first, then a region, else everything."""
+	from surveillance.events import _user_region
+	from surveillance.user_scope import locked_area
+	area = locked_area()
+	if area:
+		names = sorted({(n or "").strip() for n in area.sub_counties if n})
+		return {n.lower() for n in names}, "your sub-count" + ("ies" if len(names) > 1 else "y") + f" ({', '.join(names)})"
 	region = _user_region()
 	if region:
-		allowed = {(n or "").strip().lower() for n in frappe.get_all("Sub County", filters={"region": region}, pluck="sub_county_name")}
+		subs = frappe.get_all("Sub County", filters={"region": region}, pluck="sub_county_name")
+		names = sorted({(n or "").strip() for n in subs if n})
+		return {n.lower() for n in names}, f"your region ({_region_label(region)}: {', '.join(names)})"
+	return None, ""
+
+
+def _region_label(region):
+	title = frappe.get_meta("Region").title_field
+	return (frappe.get_cached_value("Region", region, title) if title else None) or region
+
+
+def _pilot():
+	"""Pilot sites (KRCS 26 Nov 2026): the sub-counties in our Sub County list, i.e. the Dadaab and Kalobeyei regions
+	(Dadaab, Fafi, Liboi, Lokichogio, Turkana West). CBS also sends other counties (Migori, Makueni...): left out."""
+	return {(n or "").strip().lower() for n in frappe.get_all("Sub County", filters={"is_active": 1}, pluck="sub_county_name") if n}
+
+
+def _allowed_sub_counties(pilot_only):
+	"""Lower-case sub-county names this user may see, or None for no limit."""
+	allowed, _words = _area()
 	if pilot_only:
-		pilot, _ = _scope()
+		pilot = _pilot()
 		allowed = pilot if allowed is None else allowed & pilot
 	return allowed
 
@@ -97,12 +124,9 @@ def _select_options(field):
 def get_options():
 	require_capability(VIEW)
 	names = _disease_names()
-	from surveillance.events import _user_region
-	region = _user_region()
-	sc_filters = {"is_active": 1}
-	if region:
-		sc_filters["region"] = region
-	subs = frappe.get_all("Sub County", filters=sc_filters, fields=["name", "sub_county_name", "county"], order_by="county, sub_county_name")
+	allowed, words = _area()
+	subs = [s for s in frappe.get_all("Sub County", filters={"is_active": 1}, fields=["name", "sub_county_name", "county"],
+		order_by="county, sub_county_name") if allowed is None or (s.sub_county_name or "").strip().lower() in allowed]
 	bounds = frappe.db.sql("select min(week_start), max(week_start) from `tabWeekly Count`")[0]
 	return {
 		"diseases": [{"value": k, "label": v} for k, v in sorted(names.items(), key=lambda x: (x[1] or "").lower().removeprefix("suspected ")) if k in _active()],
@@ -113,7 +137,8 @@ def get_options():
 		"channels": _select_options("channel"),
 		"firstWeek": str(bounds[0]) if bounds[0] else None,
 		"lastWeek": str(bounds[1]) if bounds[1] else None,
-		"limitedToRegion": bool(region),
+		"limitedToRegion": allowed is not None,
+		"limitedTo": words,
 		"canExport": has_capability(EXPORT),
 	}
 
@@ -185,11 +210,11 @@ def _query_counts(a, names, paged=True):
 def _chart_counts(a, names, where, values):
 	group = a.group_by if a.group_by in COUNT_COLS else "disease"
 	split = a.split_by if a.split_by in COUNT_COLS and a.split_by != group else None
-	metric = {"count": "signals", "affected": "affected", "deaths": "deaths"}.get(a.metric or "count", "signals")
+	metric = {"count": "signals", "affected": "affected", "deaths": "deaths"}.get(a.metric or "affected", "affected")
 	gcol, scol = COUNT_COLS[group], COUNT_COLS[split] if split else "''"
 	rows = frappe.db.sql(f"""select {gcol} g, {scol} s, coalesce(sum({metric}),0) v from `tabWeekly Count`
 		where {where} group by g, s""", values, as_dict=True)
-	return _build_chart(rows, group, split, names)
+	return _build_chart(rows, group, split, names, a)
 
 
 # ---------- individual field reports ----------
@@ -267,31 +292,106 @@ def _chart_reports(a, names, where, values):
 	scol = REPORT_COLS[split] if split else "''"
 	rows = frappe.db.sql(f"""select {REPORT_COLS[group]} g, {scol} s, {metric} v from {REPORT_FROM}
 		where {where} group by g, s""", values, as_dict=True)
-	return _build_chart(rows, group, split, names)
+	return _build_chart(rows, group, split, names, a)
 
 
 # ---------- chart shaping ----------
 
-def _build_chart(rows, group, split, names):
-	keys = sorted({r.g for r in rows}, key=lambda k: (k is None, str(k)))
-	if group not in ("week", "month"):
-		totals = {}
-		for r in rows:
-			totals[r.g] = totals.get(r.g, 0) + float(r.v or 0)
-		keys = sorted(keys, key=lambda k: -totals.get(k, 0))[:30]   # biggest first, at most 30 bars
-	series_keys = [""]
+def _time_keys(keys, group, a):
+	"""Every week (Monday) or month between the first and last, so weeks with nothing reported show as 0 and a line
+	never jumps over a gap. Uses the date filter when one is set."""
+	if group == "week":
+		have = [getdate(k) for k in keys if k]
+		start = getdate(a.date_from) if a.date_from else (min(have) if have else None)
+		end = getdate(a.date_to) if a.date_to else (max(have) if have else None)
+		if not start or not end:
+			return keys
+		start = add_days(start, -start.weekday())
+		out, d = [], start
+		while d <= end and len(out) < 260:
+			out.append(d)
+			d = add_days(d, 7)
+		return out
+	have = sorted(str(k) for k in keys if k)
+	start = str(a.date_from)[:7] if a.date_from else (have[0] if have else None)
+	end = str(a.date_to)[:7] if a.date_to else (have[-1] if have else None)
+	if not start or not end:
+		return keys
+	out, (y, m) = [], (int(start[:4]), int(start[5:7]))
+	while f"{y:04d}-{m:02d}" <= end and len(out) < 120:
+		out.append(f"{y:04d}-{m:02d}")
+		y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+	return out
+
+
+def _fill(a, col):
+	"""What a chart always lists, at 0 when nothing was reported (KRCS 26 Nov 2026): every sub-county (or county) the
+	user can see within the filters, so a CHA sees their sub-county and a County MOH all the sub-counties of their
+	region; and every data source chosen. None for the other groupings (only what was reported is listed)."""
+	if col in ("sub_county", "county"):
+		allowed = _allowed_sub_counties(cint(a.pilot_only) if a.pilot_only is not None else 1)
+		want = {x.lower() for x in _list(a.sub_counties)}
+		subs = [x for x in frappe.get_all("Sub County", filters={"is_active": 1}, fields=["sub_county_name", "county"])
+			if x.sub_county_name and (allowed is None or x.sub_county_name.strip().lower() in allowed)
+			and (not want or x.sub_county_name.strip().lower() in want) and (not a.county or x.county == a.county)]
+		return sorted({(x.sub_county_name.strip() if col == "sub_county" else x.county) for x in subs
+			if col == "sub_county" or x.county})
+	if col == "source":
+		return [x for x in (_list(a.sources) or list(SOURCES)) if x in SOURCES]
+	return None
+
+
+def _build_chart(rows, group, split, names, a=None):
+	a = a or frappe._dict()
+	time = group in ("week", "month")
+	gfill = _fill(a, group)
+	sfill = _fill(a, split) if split else None
+	gcanon = {str(k).lower(): k for k in gfill or []}
+	scanon = {str(k).lower(): k for k in sfill or []}
+
+	def norm(k):
+		if group == "week":
+			return getdate(k) if k else None
+		return gcanon.get(str(k).lower(), str(k)) if k is not None else None
+
+	totals = {k: 0 for k in gfill or []}
+	for r in rows:
+		r.g = norm(r.g)
+		if split and r.s is not None:
+			r.s = scanon.get(str(r.s).lower(), r.s)
+		totals[r.g] = totals.get(r.g, 0) + float(r.v or 0)
+	if time:
+		keys = _time_keys(list(totals), group, a)
+		truncated = False
+	elif group == "source" and gfill:   # sources in their usual order
+		keys = [k for k in gfill] + [k for k in totals if k not in gfill]
+		truncated = False
+	else:
+		keys = sorted(totals, key=lambda k: (-totals[k], str(k)))
+		truncated = len(keys) > 30
+		keys = keys[:30]   # biggest first, at most 30 bars
+	series_keys, other = [""], False
 	if split:
-		stot = {}
+		stot = {k: 0 for k in sfill or []}
 		for r in rows:
 			stot[r.s] = stot.get(r.s, 0) + float(r.v or 0)
-		series_keys = sorted(stot, key=lambda k: -stot[k])[:MAX_SERIES]
-	data = {(r.g, r.s if split else ""): float(r.v or 0) for r in rows}
+		ordered = list(sfill) + [k for k in sorted(stot, key=lambda k: -stot[k]) if k not in sfill] if split == "source" and sfill \
+			else sorted(stot, key=lambda k: (-stot[k], str(k)))
+		series_keys, other = ordered[:MAX_SERIES], len(ordered) > MAX_SERIES
+	data = {}
+	for r in rows:
+		s_key = (r.s if r.s in series_keys else "__other") if split else ""
+		data[(r.g, s_key)] = data.get((r.g, s_key), 0) + float(r.v or 0)
+	series = [{"name": _bucket_label(split, s, names) if split else "Total", "data": [int(data.get((k, s), 0)) for k in keys]}
+		for s in series_keys]
+	if other:   # the rest added up, so the stacks still match the totals
+		series.append({"name": "Other", "data": [int(data.get((k, "__other"), 0)) for k in keys]})
 	return {
 		"groupBy": group, "splitBy": split,
 		"labels": [_bucket_label(group, str(k) if k is not None else None, names) for k in keys],
-		"series": [{"name": _bucket_label(split, s, names) if split else "Total",
-			"data": [int(data.get((k, s), 0)) for k in keys]} for s in series_keys],
-		"truncated": group not in ("week", "month") and len({r.g for r in rows}) > 30,
+		"series": series,
+		"totals": [int(totals.get(k, 0)) for k in keys],
+		"truncated": truncated,
 	}
 
 

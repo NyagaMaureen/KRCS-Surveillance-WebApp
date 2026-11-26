@@ -9,6 +9,7 @@ import '../charts/chartSetup'
 import AppShell from '../components/layout/AppShell'
 import DownloadMenu from '../components/dashboard/DownloadMenu'
 import { Chart } from './MonitoringReports'
+import { AiGlance, ModelsTable, MeasuresTable } from './AiPerformance'
 import { downloadPanel, downloadTabPng, printTab, downloadTabExcel } from '../components/dashboard/dashExport'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { getAdminOverview, getAdminTab, getAdminModels, currentUserFullName } from '../api/frappe'
@@ -384,44 +385,29 @@ function ReportTab({ report, range, stamp, link, children }) {
   )
 }
 
+// AI Performance tab: the same layout as the AI Performance page (KRCS 26 Nov 2026), in Panels so the tab downloads
+// still include every part
 function AiTab({ range, stamp }) {
-  const { data } = useLoad(() => getAdminModels(range.from, range.to), [range.from, range.to, stamp])
+  const { data: models } = useLoad(() => getAdminModels(range.from, range.to), [range.from, range.to, stamp])
+  const { data, error } = useLoad(() => getAdminTab('R38', range.from, range.to), [range.from, range.to, stamp])
+  if (!data) return <Loading error={error} />
+  const s = data.summary
   return (
-    <>
-      <div className="mb-8 grid gap-5 xl:grid-cols-2">
-        <Panel title="Models in use" icon={Cpu} wide
-          note={`Each model's latest measures from MLflow, and how often the disease classifier was used${data ? ` · ${data.period}` : ''}`}>
-          {!data ? <div className="h-20 animate-pulse rounded-lg bg-gray-100" /> : !data.models.length ? (
-            <p className="p-8 text-center text-sm text-gray-600">No model measures yet. They appear when the AI server sends them.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="red-head w-full border-collapse text-sm">
-                <thead><tr className="text-left text-xs">
-                  <th className="px-3 py-2">Model</th><th className="px-3 py-2">Version</th><th className="px-3 py-2">Latest measures</th>
-                  <th className="px-3 py-2">Used in the period</th><th className="px-3 py-2">Last updated</th>
-                </tr></thead>
-                <tbody>
-                  {data.models.map((m) => (
-                    <tr key={m.model} className="align-top">
-                      <td className="px-3 py-2.5 font-semibold text-gray-900">{m.model}<span className="block text-[11px] font-normal text-gray-600">{m.source}</span></td>
-                      <td className="px-3 py-2.5 text-gray-900">{m.version || '—'}</td>
-                      <td className="px-3 py-2.5 text-gray-900">
-                        {m.measures.length ? m.measures.map((x) => `${x.metric} ${x.value}`).join(' · ') : '—'}
-                        {m.more > 0 && <span className="block text-[11px] text-gray-600">{m.more} more measures in MLflow</span>}
-                        {m.note && <span className="block text-xs text-amber-800">{m.note}</span>}
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums text-gray-900">{m.used == null ? '—' : `${m.used.toLocaleString()} predictions`}</td>
-                      <td className="px-3 py-2.5 text-gray-900">{when(m.lastUsed || m.updated)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+    <div className="grid gap-5 xl:grid-cols-2">
+      <Panel title="At a glance" icon={Sparkles} note={data.period} wide><AiGlance cards={s.cards} inShort={s.inShort} /></Panel>
+      <Panel title="Models in use" icon={Cpu} note="Each model's latest measures from MLflow, and how often it was used in the period" wide>
+        {!models ? <div className="h-20 animate-pulse rounded-lg bg-gray-100" /> : <ModelsTable models={models.models} />}
+      </Panel>
+      <Panel title="How each AI part did" icon={ListChecks} note="Each measure compares what the AI suggested with what people decided" wide
+        action={<Link to="/monitoring-reports?report=R38" className={`text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>Full report</Link>}>
+        <MeasuresTable measures={s.measures} />
+      </Panel>
+      {(s.charts || []).map((c) => (
+        <Panel key={c.key} title={c.title} note={c.note} icon={CHART_ICONS[c.type]}>
+          <div className="relative" style={{ height: c.type === 'hbar' ? Math.max(240, c.labels.length * 34) : 260 }}><Chart chart={c} /></div>
         </Panel>
-      </div>
-      <ReportTab report="R38" range={range} stamp={stamp} link={{ to: '/monitoring-reports?report=R38', label: 'Open the full AI Performance report' }} />
-    </>
+      ))}
+    </div>
   )
 }
 

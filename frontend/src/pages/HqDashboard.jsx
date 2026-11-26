@@ -479,12 +479,18 @@ function GlanceTab({ filters, stamp }) {
           ) : <p className="py-8 text-center text-sm text-gray-900">No open critical or high events.</p>}
         </Panel>
         <Panel title="Signals by signal type" icon={Radio}><VBar series={data.signalType} color={NAVY} /></Panel>
-        <Panel title="Disease distribution" icon={Activity} note="All active diseases in the period" height={has(dist) ? null : 'h-72'}>
-          <HBar series={dist} color={NAVY} grow />
+        <Panel title="Suspected disease distribution" icon={Activity} note="All active diseases in the period" height={has(dist) ? null : 'h-72'}>
+          <HBar series={plainNames(dist)} color={NAVY} grow />
         </Panel>
       </div>
     </>
   )
+}
+
+// "Suspected" is said once, in the chart title, so the labels are plain disease names (KRCS 26 Nov 2026)
+function plainNames(series) {
+  if (!series?.labels) return series
+  return { ...series, labels: series.labels.map((l) => String(l).replace(/^suspected\s+/i, '')) }
 }
 
 // ---------- Surveillance & Response ----------
@@ -502,8 +508,8 @@ function SurveillanceTab({ filters, stamp }) {
       <Cards cards={data.cards} />
       <div className="grid gap-5 xl:grid-cols-2">
         <Panel title="New events per week" icon={TrendingUp}><VBar series={data.newEvents} label="New events" /></Panel>
-        <Panel title="Disease distribution" icon={Activity} note="Events that started in the period" height={has(data.eventDiseases) ? null : 'h-72'}>
-          <HBar series={data.eventDiseases} color={NAVY} label="Events" grow />
+        <Panel title="Suspected disease distribution" icon={Activity} note="Events that started in the period" height={has(data.eventDiseases) ? null : 'h-72'}>
+          <HBar series={plainNames(data.eventDiseases)} color={NAVY} label="Events" grow />
         </Panel>
         <Panel title="Observed vs usual level" icon={TrendingUp} note={exp ? `${exp.diseaseName}: cases each week against the usual level (average of the 8 weeks before)` : ''}
           action={(

@@ -45,3 +45,5 @@ surveillance.patches.simpler_statuses
 surveillance.patches.moh_roles_split
 surveillance.patches.fhw_allan_role
 surveillance.patches.allan_roles_reports_kb
+surveillance.patches.awd_suspected_name
+surveillance.patches.explorer_assistant_ai_perf

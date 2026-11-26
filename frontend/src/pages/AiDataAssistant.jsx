@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Plus, Trash2, Sparkles, Mic, ArrowUp, Search, PanelLeft, PanelLeftClose, X } from 'lucide-react'
+import { Plus, Trash2, Sparkles, Mic, ArrowUp, Search, PanelLeft, PanelLeftClose, X, BookOpen, Database, Info } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import KbAnswer from '../components/assistant/KbAnswer'
+import SurveillanceData from '../components/assistant/SurveillanceData'
+import { useCapabilities } from '../context/CapabilitiesContext'
 import {
   askKnowledgeBase, currentUserId,
   listAssistantChats, getAssistantChat, saveAssistantChat, deleteAssistantChat,
@@ -117,7 +119,64 @@ function Avatar() {
   )
 }
 
+// Two tabs (KRCS 26 Nov 2026): Knowledge base (documents, the chat below) and Surveillance data (figures from the
+// database, for the user's own area). Each shows only with its permission.
+// Each tab says what it answers from, so the two are not mixed up (KRCS 26 Nov 2026).
+const TABS = [
+  { key: 'kb', label: 'Knowledge base', hint: 'Guidelines, protocols, case definitions', icon: BookOpen, cap: ['use_knowledge_base', 'manage_knowledge_base'] },
+  { key: 'data', label: 'Surveillance data', hint: 'Figures from reports, CBS and MOH 505 · tables and charts', icon: Database, cap: 'ask_surveillance_data' },
+]
+const TAB_BAR = 62   // height of the tab bar, in px
+
+// a question about figures rather than documents ("cholera cases in the last 4 weeks")
+const FIGURES = /\b(how many|number of|cases|deaths|died|trends?|statistics|figures|totals?|counts?|by (week|month|sub-?county|county|disease|source)|(last|past) \d+ (days|weeks|months)|this (week|month|year))\b/i
+const DOCUMENTS = /\b(definition|define|what is|what are|how (do|to|should)|protocol|guideline|treat|treatment|symptoms? of|manage|prevent)\b/i
+const looksLikeFigures = (q) => FIGURES.test(q || '') && !DOCUMENTS.test(q || '')
+
 export default function AiDataAssistant() {
+  const { has } = useCapabilities()
+  const tabs = TABS.filter((t) => has(t.cap))
+  const [tab, setTab] = useState(() => {
+    const want = new URLSearchParams(window.location.search).get('tab')
+    return tabs.some((t) => t.key === want) ? want : tabs[0]?.key || 'kb'
+  })
+  const both = tabs.length > 1
+  const [toData, setToData] = useState(null)   // {question, n}: a figures question sent over from Knowledge base
+  function askInData(question) {
+    setTab('data')
+    setToData((x) => ({ question, n: (x?.n || 0) + 1 }))
+  }
+  return (
+    <AppShell>
+      {both && (
+        <div role="tablist" aria-label="Data Assistant" style={{ height: TAB_BAR }}
+          className="-mx-4 -mt-4 flex gap-8 border-b border-gray-200 bg-white px-4 lg:-mx-8 lg:-mt-8 lg:px-8">
+          {tabs.map((t) => (
+            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
+              className={`-mb-px flex flex-col justify-center border-b-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 ${tab === t.key ? 'border-red-600' : 'border-transparent opacity-70 hover:opacity-100'}`}>
+              <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                <t.icon className={`h-4 w-4 ${tab === t.key ? 'text-red-700' : 'text-gray-700'}`} aria-hidden="true" />{t.label}
+              </span>
+              <span className="hidden text-xs text-gray-700 sm:block">{t.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {/* both stay open, so switching tabs keeps each one's answers */}
+      {has(TABS[1].cap) && (
+        <div hidden={tab !== 'data'} className={`-mx-4 -mb-4 lg:-mx-8 lg:-mb-8 ${both ? '' : '-mt-4 lg:-mt-8'}`}
+          style={{ height: both ? `calc(100vh - 80px - ${TAB_BAR}px)` : 'calc(100vh - 80px)' }}>
+          <SurveillanceData incoming={toData} />
+        </div>
+      )}
+      {has(TABS[0].cap) && (
+        <div hidden={tab !== 'kb'}><KnowledgeChat tabs={both} onAskData={has(TABS[1].cap) ? askInData : null} /></div>
+      )}
+    </AppShell>
+  )
+}
+
+function KnowledgeChat({ tabs = false, onAskData = null }) {
   const [chats, setChats] = useState([])
   const [chatsLoaded, setChatsLoaded] = useState(false)
   const [search, setSearch] = useState('')
@@ -277,6 +336,8 @@ export default function AiDataAssistant() {
     persist(next)
   }
 
+  const lastQuestion = [...messages].reverse().find((m) => m.role === 'user')?.content || ''
+
   function send() {
     const question = inputText.trim()
     if (!question || isLoading) return
@@ -345,8 +406,8 @@ export default function AiDataAssistant() {
   )
 
   return (
-    <AppShell>
-      <div className="relative -m-4 flex h-[calc(100vh-80px)] overflow-hidden bg-white lg:-m-8">
+    <>
+      <div className={`relative -mx-4 -mb-4 flex overflow-hidden bg-white lg:-mx-8 lg:-mb-8 ${tabs ? '' : '-mt-4 lg:-mt-8'}`} style={{ height: tabs ? `calc(100vh - 80px - ${TAB_BAR}px)` : 'calc(100vh - 80px)' }}>
         {/* chat list */}
         {panelOpen && <button type="button" aria-label="Close chats" onClick={() => setPanelOpen(false)} className="absolute inset-0 z-20 bg-black/20 md:hidden" />}
         <aside
@@ -440,9 +501,9 @@ export default function AiDataAssistant() {
           {!messages.length ? (
             <div className="flex flex-1 flex-col items-center justify-center px-4 pb-16">
               <div className="w-full max-w-2xl">
-                <h1 className="mb-6 text-center text-3xl font-medium text-gray-900">What can I help you with today?</h1>
+                <h1 className="mb-2 text-center text-3xl font-medium text-gray-900">Ask about guidelines and protocols</h1>
+                <p className="mb-6 text-center text-sm text-gray-900">Answers come from approved KRCS documents and trusted sources, with a link to each source.</p>
                 {composer}
-                <p className="mt-3 text-center text-xs text-gray-400">Answers come from approved KRCS documents and trusted sources, with a link to each source.</p>
               </div>
             </div>
           ) : (
@@ -484,6 +545,16 @@ export default function AiDataAssistant() {
                     </div>
                   ))}
 
+                  {!isLoading && onAskData && looksLikeFigures(lastQuestion) && (
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-900">
+                      <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      This looks like a question about figures. The Knowledge base answers from documents.
+                      <button type="button" onClick={() => onAskData(lastQuestion)} className="font-semibold text-red-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
+                        Ask it in Surveillance data
+                      </button>
+                    </p>
+                  )}
+
                   {isLoading && (
                     <div className="flex gap-3">
                       <Avatar />
@@ -512,6 +583,6 @@ export default function AiDataAssistant() {
           )}
         </section>
       </div>
-    </AppShell>
+    </>
   )
 }

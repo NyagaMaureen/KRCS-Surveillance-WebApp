@@ -47,16 +47,18 @@ export default function DataQuality() {
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(10)
   const [data, setData] = useState(null)
+  const [showChecked, setShowChecked] = useState(false)   // the issues already checked, with who and when (KRCS 26 Nov 2026)
   const [toast, setToast] = useState({ text: '' })
 
   const load = useCallback(() => getDataQuality(days).then(setData).catch((e) => setToast({ text: e.message, error: true })), [days])
   useEffect(() => { setData(null); load() }, [load])
-  useEffect(() => setPage(0), [kind, source, days, pageSize])
+  useEffect(() => setPage(0), [kind, source, days, pageSize, showChecked])
 
   async function dismiss(issue) {
     try {
       await dismissDataIssue(issue.key)
-      setData((d) => ({ ...d, issues: d.issues.filter((i) => i.key !== issue.key) }))
+      setData((d) => ({ ...d, issues: d.issues.filter((i) => i.key !== issue.key),
+        checked: [{ ...issue, checkedBy: 'You', checkedOn: new Date().toISOString() }, ...(d.checked || [])] }))
       setToast({ text: 'Marked as checked' })
       setTimeout(() => setToast({ text: '' }), 2000)
     } catch (e) {
@@ -66,8 +68,10 @@ export default function DataQuality() {
 
   // the cards count the chosen source; the list also follows the chosen issue type
   const fromSource = useMemo(() => (data?.issues || []).filter((i) => !source || i.source === source), [data, source])
+  const checkedRows = useMemo(() => (data?.checked || []).filter((i) => (!source || i.source === source) && (!kind || i.kind === kind)), [data, source, kind])
   const counts = useMemo(() => fromSource.reduce((c, i) => ({ ...c, [i.kind]: (c[i.kind] || 0) + 1 }), {}), [fromSource])
-  const issues = useMemo(() => fromSource.filter((i) => !kind || i.kind === kind), [fromSource, kind])
+  const open = useMemo(() => fromSource.filter((i) => !kind || i.kind === kind), [fromSource, kind])
+  const issues = showChecked ? checkedRows : open
   const kinds = data?.kinds || {}
   const filtersOn = !!(kind || source || days !== 30)
   const lastPage = Math.max(0, Math.ceil(issues.length / pageSize) - 1)
@@ -126,14 +130,23 @@ export default function DataQuality() {
 
       <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4">
-          <h3 className="text-sm font-semibold text-gray-900">{kind ? kinds[kind] : 'All issues'}{data ? ` (${issues.length})` : ''}</h3>
-          {kind && <p className="text-xs text-gray-500">{KIND_HELP[kind]}</p>}
+          <div className="flex flex-wrap items-center gap-4" role="tablist" aria-label="Issues to check or already checked">
+            <button type="button" role="tab" aria-selected={!showChecked} onClick={() => setShowChecked(false)}
+              className={`text-sm font-semibold ${!showChecked ? 'text-gray-900 underline decoration-red-600 decoration-2 underline-offset-8' : 'text-gray-600 hover:text-gray-900'} ${FOCUS}`}>
+              {kind ? kinds[kind] : 'To check'}{data ? ` (${open.length})` : ''}
+            </button>
+            <button type="button" role="tab" aria-selected={showChecked} onClick={() => setShowChecked(true)}
+              className={`text-sm font-semibold ${showChecked ? 'text-gray-900 underline decoration-red-600 decoration-2 underline-offset-8' : 'text-gray-600 hover:text-gray-900'} ${FOCUS}`}>
+              Checked{data ? ` (${checkedRows.length})` : ''}
+            </button>
+          </div>
+          <p className="text-xs text-gray-600">{showChecked ? 'Marked as checked by someone in your area. Hidden from everyone\'s list.' : kind ? KIND_HELP[kind] : ''}</p>
         </div>
         {!data ? <div className="p-5"><Skeleton /></div> : !issues.length ? (
           <div className="border-t border-gray-100 p-12 text-center">
             <Check className="mx-auto h-6 w-6 text-emerald-600" aria-hidden="true" />
-            <p className="mt-2 text-sm font-medium text-gray-900">No issues found</p>
-            <p className="text-sm text-gray-500">Data for this period looks clean{filtersOn ? ' for these filters' : ''}.</p>
+            <p className="mt-2 text-sm font-medium text-gray-900">{showChecked ? 'Nothing checked yet' : 'No issues found'}</p>
+            <p className="text-sm text-gray-500">{showChecked ? 'Issues marked as checked show here, with who checked them.' : `Data for this period looks clean${filtersOn ? ' for these filters' : ''}.`}</p>
           </div>
         ) : (
           <>
@@ -146,7 +159,8 @@ export default function DataQuality() {
                   <p className="mt-1 text-xs text-gray-500">{i.detail}</p>
                   <div className="mt-2 flex items-center gap-3">
                     {canOpen(i.link) && <Link to={i.link} className={`text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>Open</Link>}
-                    {data.canDismiss && <button type="button" onClick={() => dismiss(i)} className={`text-xs text-gray-600 underline underline-offset-2 ${FOCUS}`}>Mark checked</button>}
+                    {i.checkedBy ? <span className="text-xs text-gray-700">Checked by {i.checkedBy}, {shortDate(i.checkedOn)}</span>
+                      : data.canDismiss && <button type="button" onClick={() => dismiss(i)} className={`text-xs text-gray-600 underline underline-offset-2 ${FOCUS}`}>Mark checked</button>}
                   </div>
                 </li>
               ))}
@@ -182,7 +196,8 @@ export default function DataQuality() {
                         <td className="whitespace-nowrap px-4 py-3">
                           <div className="flex items-center justify-end gap-3">
                             {canOpen(i.link) && <Link to={i.link} className={`inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 ${FOCUS}`}>Open</Link>}
-                            {data.canDismiss && <button type="button" onClick={() => dismiss(i)} className={`text-xs font-medium text-gray-700 underline underline-offset-2 hover:text-gray-900 ${FOCUS}`}>Mark checked</button>}
+                            {i.checkedBy ? <span className="text-xs text-gray-900">Checked by <b>{i.checkedBy}</b>, {shortDate(i.checkedOn)}</span>
+                              : data.canDismiss && <button type="button" onClick={() => dismiss(i)} className={`text-xs font-medium text-gray-700 underline underline-offset-2 hover:text-gray-900 ${FOCUS}`}>Mark checked</button>}
                           </div>
                         </td>
                       </tr>

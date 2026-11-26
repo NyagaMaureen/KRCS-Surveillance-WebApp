@@ -5,6 +5,7 @@ import ResetPassword from '../pages/ResetPassword'
 import KbDocumentView from '../pages/KbDocumentView'
 import Analytics from '../pages/Analytics'
 import DataExplorer from '../pages/DataExplorer'
+import AiPerformance from '../pages/AiPerformance'
 import Reports from '../pages/Reports'
 import ReportDetail from '../pages/ReportDetail'
 import RecordHealthSignal from '../pages/RecordHealthSignal'
@@ -74,6 +75,7 @@ const rawRoutes = [
   { path: '/surveillance-map', name: 'surveillance-map', element: SurveillanceMap },
   { path: '/analytics', name: 'analytics', element: Analytics },
   { path: '/data-explorer', name: 'data-explorer', element: DataExplorer },
+  { path: '/ai-performance', name: 'ai-performance', element: AiPerformance },
   { path: '/reports', name: 'reports', element: Reports },
   { path: '/reports/:id', name: 'report-detail', element: ReportDetail },
   { path: '/record-health-signal', name: 'record-health-signal', element: RecordHealthSignal },
@@ -112,7 +114,7 @@ Object.values(MENUS).flatMap((menu) => flatItems(menu)).forEach((item) => {
 })
 CAPABILITY_BY_PAGE['report-detail'] = CAPABILITY_BY_PAGE.reports
 // pages no longer in the main menu (now dashboard tabs, or removed for now) keep needing their permission
-const OFF_MENU = { analytics: 'view_analytics', 'data-explorer': 'view_analytics', 'surveillance-map': 'view_surveillance_map',
+const OFF_MENU = { analytics: 'view_analytics', 'surveillance-map': 'view_surveillance_map',
   'epi-trends': 'view_alerts', response: 'view_review_queue', 'event-lifecycle': 'view_review_queue' }
 Object.entries(OFF_MENU).forEach(([page, cap]) => {
   if (!OPEN_PAGES.has(page) && !CAPABILITY_BY_PAGE[page]) CAPABILITY_BY_PAGE[page] = new Set([cap])

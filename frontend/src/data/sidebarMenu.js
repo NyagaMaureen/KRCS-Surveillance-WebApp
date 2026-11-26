@@ -13,7 +13,9 @@ export const SIDEBAR_MENU = [
     { label: 'Referrals', icon: 'ArrowRightLeft', page: 'referrals-overview', requiresCapability: 'view_review_queue' },
   ]},
   { section: 'DATA AND INSIGHTS', items: [
-    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: ['use_knowledge_base', 'manage_knowledge_base'] },
+    { label: 'KRCS Data Assistant', icon: 'Sparkles', page: 'ai-data-assistant', requiresCapability: ['use_knowledge_base', 'manage_knowledge_base', 'ask_surveillance_data'] },
+    // back in the menu, for the user's own area from CHA up (KRCS 26 Nov 2026)
+    { label: 'Data Explorer', icon: 'TableProperties', page: 'data-explorer', requiresCapability: 'view_data_explorer' },
     { label: 'Monitoring Reports', icon: 'FileBarChart', page: 'monitoring-reports', requiresCapability: ['monitoring_r34', 'monitoring_r35', 'monitoring_r36', 'monitoring_r37', 'monitoring_r38', 'monitoring_r39', 'monitoring_r40', 'monitoring_r40b'] },
     { label: 'Data Quality Monitoring', icon: 'CircleDashed', page: 'data-quality', requiresCapability: 'view_data_quality' },
   ]},
@@ -24,6 +26,7 @@ export const SIDEBAR_MENU = [
   ]},
   { section: 'SYSTEM SETTINGS', items: [
     { label: 'AI Risk Engine', icon: 'Wand2', page: 'settings', query: 'tab=ai-config', requiresCapability: 'settings_ai_config' },
+    { label: 'AI Performance', icon: 'Gauge', page: 'ai-performance', requiresCapability: 'view_ai_performance' },   // KRCS 26 Nov 2026
     { label: 'AI Knowledge Base', icon: 'BookOpen', page: 'knowledge-base', requiresCapability: ['view_knowledge_base', 'manage_knowledge_base', 'approve_knowledge_base'] },
     { label: 'AI Assistant Query Log', icon: 'MessagesSquare', page: 'chatbot-query-log', requiresCapability: 'view_chatbot_logs' },
     { label: 'Alert Thresholds', icon: 'Clock', page: 'settings', query: 'tab=alert-thresholds', requiresCapability: 'settings_alert_thresholds' },
@@ -120,7 +123,7 @@ const CAPABILITY_PAGES = {
 }
 
 // pages a workspace covers in its own way (CHPs see their tasks as Follow-ups and Referrals)
-const NOT_ADDED = { chp: ['my-tasks'], officer: ['data-explorer'] }   // officers have Data Explorer as Trends
+const NOT_ADDED = { chp: ['my-tasks'] }
 
 // Every linkable item of a menu, children included (groups themselves have no page)
 export const flatItems = (menu) => menu.flatMap((g) => g.items.flatMap((i) => i.children || [i])).filter((i) => i.page)
