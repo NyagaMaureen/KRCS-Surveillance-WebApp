@@ -1399,7 +1399,8 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 		if ext:
 			return finish(ext["answer"], "trusted_source", ext["sources"], [s["n"] for s in ext["sources"]], trace,
 				reason=f"{reason}|trusted:{','.join(ext['names'])}", outcome="Escalated", escalate=True)
-		answer = kb_grounding.NO_MATCH[language].format(contact=escalation_contact())
+		contact = escalation_contact()
+		answer = kb_grounding.NO_MATCH[language].format(contact=contact) if contact else kb_grounding.NO_MATCH_NO_DESK[language]
 		return finish(answer, "not_found", [], [], trace, reason=reason, escalate=True)
 
 	if not ranked:
@@ -1423,7 +1424,8 @@ def ask(query, language=None, history=None, stream_id=None, category=None, disea
 	scored = list(zip(ranked, dense))
 	scored, dropped, unresolved = kb_grounding.resolve_conflicts(scored, key=lambda x: x[0][1].payload)
 	if unresolved:
-		answer = kb_grounding.CONFLICT[language].format(contact=escalation_contact())
+		contact = escalation_contact()
+		answer = kb_grounding.CONFLICT[language].format(contact=contact) if contact else kb_grounding.CONFLICT_NO_DESK[language]
 		return finish(answer, "conflict", [], [], trace, reason=f"conflict:{unresolved[0]}|{unresolved[1]}",
 			outcome="Conflict", escalate=True)
 	sources = [_source(i, rs, d, p, t) for i, ((rs, p), d) in enumerate(scored, 1)]
@@ -1522,14 +1524,18 @@ def summary_allowed(ctx):
 
 
 def escalation_contact():
-	"""Who a no-match or conflict is passed to (site config kb_escalation_contact, else the WhatsApp desk)."""
+	"""Who a no-match or conflict is passed to (site config kb_escalation_contact, else the WhatsApp desk).
+	None when neither is set: the question is still logged for review, but the user is not told it was passed on."""
 	if frappe.conf.get("kb_escalation_contact"):
 		return frappe.conf.get("kb_escalation_contact")
 	try:
-		from surveillance.whatsapp.jobs import _escalation_target
-		return _escalation_target()
+		from surveillance.whatsapp import data as wa_data
+		from surveillance.whatsapp.jobs import numbers
+		st = wa_data.settings()
+		to = numbers(st.escalation_numbers) or numbers(st.notify_numbers)
+		return f"the WhatsApp escalation desk ({', '.join(to)})" if to else None
 	except Exception:
-		return _("your supervisor")
+		return None
 
 
 @frappe.whitelist()

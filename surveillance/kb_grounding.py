@@ -46,6 +46,19 @@ NO_MATCH = {
 	"Kiswahili": "Sikupata mwongozo ulioidhinishwa unaojibu swali hili, kwa hivyo sijakisia. "
 		"Swali lako limetumwa kwa {contact}. Katika dharura, fuata maagizo ya msimamizi wako.",
 }
+# the same when no escalation desk number is set: nobody would get the question, so do not say it was passed on
+NO_MATCH_NO_DESK = {
+	"English": "I couldn't find approved guidance that answers this, so I have not guessed. "
+		"Please ask your supervisor. In an emergency, follow your supervisor's instructions.",
+	"Kiswahili": "Sikupata mwongozo ulioidhinishwa unaojibu swali hili, kwa hivyo sijakisia. "
+		"Tafadhali muulize msimamizi wako. Katika dharura, fuata maagizo ya msimamizi wako.",
+}
+CONFLICT_NO_DESK = {
+	"English": "Two approved documents of equal standing give different guidance on this, so I have not chosen "
+		"between them. Please ask your supervisor.",
+	"Kiswahili": "Nyaraka mbili zilizoidhinishwa zenye hadhi sawa zinatoa mwongozo tofauti kuhusu hili, kwa hivyo "
+		"sijachagua. Tafadhali muulize msimamizi wako.",
+}
 CONFLICT = {
 	"English": "Two approved documents of equal standing give different guidance on this, so I have not chosen "
 		"between them. Your question has been passed to {contact}.",
@@ -179,18 +192,22 @@ def level_of(question, roles=()):
 
 def pick_level(text, level):
 	"""The block of a protocol section for one level ("Immediate Response - CHP/CHV & CHA (Community Level):" and the
-	lines under it). The text is returned unchanged when it has no such blocks."""
+	lines under it). The text is returned unchanged when it has no such blocks. What comes before the first block
+	(the disease name, case definitions, signs) is for everyone and always kept (KRCS 26 Nov 2026: a CHP asking for
+	the measles case definition got only the response steps, so the answer said no guidance was found)."""
 	lines = (text or "").splitlines()
-	blocks, current = [], None
+	before, blocks, current = [], [], None
 	for ln in lines:
 		if LEVEL_LABEL.match(ln.strip()):
 			current = [ln]
 			blocks.append(current)
 		elif current is not None:
 			current.append(ln)
+		else:
+			before.append(ln)
 	want = COMMUNITY if level == "community" else FACILITY
 	keep = [b for b in blocks if want.search(b[0])]
-	return "\n".join(ln for b in keep for ln in b) if keep else text
+	return "\n".join(before + [ln for b in keep for ln in b]) if keep else text
 
 
 def verbatim(sources, language="English", count=2):

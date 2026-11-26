@@ -151,7 +151,7 @@ export default function KbAnswer({ result, onFeedback }) {
           {BADGE[result.mode]}
         </div>
       )}
-      {result?.escalated && !external && (
+      {result?.escalated && result?.escalated_to && !external && (
         <div className="mb-2 flex items-center gap-1.5 text-xs text-amber-700">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           Passed to {result.escalated_to || 'a person'} for a reply.
