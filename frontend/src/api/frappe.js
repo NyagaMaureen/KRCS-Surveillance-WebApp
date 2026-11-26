@@ -1143,8 +1143,12 @@ export const getKbHealth = () => callMethod('/api/method/surveillance.kb_ops.hea
 export const runKbReconcile = () => callMethodPost('/api/method/surveillance.kb_ops.run_reconcile', {})
 
 // AI Data Assistant chats, stored on the server per user (surveillance.assistant_chats)
-export const listAssistantChats = (search = '') =>
-  callMethod(`/api/method/surveillance.assistant_chats.list_chats${search ? `?search=${encodeURIComponent(search)}` : ''}`)
+export const listAssistantChats = (search = '', kind = '') => {
+  const p = new URLSearchParams()
+  if (search) p.set('search', search)
+  if (kind) p.set('kind', kind)   // 'sd': Query Surveillance Data history
+  return callMethod(`/api/method/surveillance.assistant_chats.list_chats${p.toString() ? `?${p}` : ''}`)
+}
 export const getAssistantChat = (id) => callMethod(`/api/method/surveillance.assistant_chats.get_chat?chat_id=${encodeURIComponent(id)}`)
 export const saveAssistantChat = ({ id, title, messages }) =>
   callMethodPost('/api/method/surveillance.assistant_chats.save_chat', { chat_id: id, title, messages: JSON.stringify(messages) })

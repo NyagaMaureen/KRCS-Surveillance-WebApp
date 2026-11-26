@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Bar, Line, Pie } from 'react-chartjs-2'
-import { ArrowUp, BarChart3, Database, Download, ExternalLink, LineChart, PieChart } from 'lucide-react'
+import { ArrowUp, BarChart3, Database, Download, ExternalLink, History, LineChart, PieChart, Plus, Search, Trash2, X } from 'lucide-react'
 import '../../charts/chartSetup'
 import { CHART_FONT } from '../../charts/chartSetup'
-import { askSurveillanceData, rerunSurveillanceData, exportCsv } from '../../api/frappe'
+import { askSurveillanceData, rerunSurveillanceData, exportCsv, listAssistantChats, getAssistantChat, saveAssistantChat, deleteAssistantChat } from '../../api/frappe'
 
 // KRCS Data Assistant, Surveillance data tab (KRCS 26 Nov 2026): ask about figures ("trends of cholera in my region in the
 // last 4 weeks") and get a table and a chart. The server reads the question into a fixed form, checks it, limits it to
@@ -187,14 +187,90 @@ function Answer({ a, onRerun, busy }) {
   )
 }
 
+// History (Elizabeth, 26 Nov 2026): earlier questions, like Recent chats in the Knowledge base. Only the questions and
+// the checked choices are kept (assistant_chats, ids starting "sd:"); opening one runs it again, so the figures are
+// always today's and still limited to the user's area.
+function toDate(v) { return new Date(String(v || '').replace(' ', 'T')) }
+function groupChats(list) {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const day = 86400000
+  const groups = [['Today', []], ['Yesterday', []], ['Previous 7 days', []], ['Older', []]]
+  list.forEach((c) => {
+    const t = toDate(c.updatedAt).getTime()
+    groups[t >= start.getTime() ? 0 : t >= start.getTime() - day ? 1 : t >= start.getTime() - 7 * day ? 2 : 3][1].push(c)
+  })
+  return groups.filter(([, items]) => items.length)
+}
+
 export default function SurveillanceData({ incoming = null }) {
   const [items, setItems] = useState([])   // {question, answer?, error?}
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const [chatId, setChatId] = useState(null)
+  const [chats, setChats] = useState(null)
+  const [search, setSearch] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)   // the history list on small screens
+  const dirty = useRef(false)   // something new to save
   const end = useRef(null)
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [items.length, busy])   // not when a chart is changed
 
+  function loadChats(term = search) {
+    return listAssistantChats(term.trim(), 'sd').then(setChats).catch(() => setChats([]))
+  }
+  useEffect(() => {
+    const t = setTimeout(() => { loadChats(search) }, 250)
+    return () => clearTimeout(t)
+  }, [search])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // save after a new answer or a changed chart
+  useEffect(() => {
+    if (!dirty.current || !chatId || busy || items.some((it) => it.busy || (!it.answer && !it.error))) return
+    dirty.current = false
+    const messages = items.filter((it) => it.answer).map((it) => ({ role: 'user', content: it.question, form: it.answer.form }))
+    if (!messages.length) return
+    saveAssistantChat({ id: chatId, title: messages[0].content.slice(0, 80), messages }).then(() => loadChats()).catch(() => {})
+  }, [items, busy, chatId])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  function newChat() {
+    setItems([])
+    setChatId(null)
+    setPanelOpen(false)
+  }
+
+  async function openChat(id) {
+    if (busy) return
+    setPanelOpen(false)
+    let saved
+    try {
+      saved = await getAssistantChat(id)
+    } catch {
+      return
+    }
+    const list = (saved.messages || []).filter((m) => m.role === 'user' && m.content)
+    dirty.current = false
+    setChatId(id)
+    setItems(list.map((m) => ({ question: m.content, busy: true })))
+    // run each one again: today's figures, checked against the user's area again
+    list.forEach((m, index) => {
+      const run = m.form ? rerunSurveillanceData({ ...m.form, question: m.content }) : askSurveillanceData(m.content)
+      run.then((answer) => setItems((x) => x.map((it, i) => (i === index ? { ...it, answer, busy: false } : it))))
+        .catch((e) => setItems((x) => x.map((it, i) => (i === index ? { ...it, busy: false, error: e.message || 'Could not answer that.' } : it))))
+    })
+  }
+
+  async function removeChat(id) {
+    try {
+      await deleteAssistantChat(id)
+    } catch {
+      return
+    }
+    if (id === chatId) newChat()
+    loadChats()
+  }
+
   async function rerun(index, form) {
+    dirty.current = true
     setItems((x) => x.map((it, i) => (i === index ? { ...it, busy: true, rerunError: '' } : it)))
     try {
       const answer = await rerunSurveillanceData(form)
@@ -209,6 +285,8 @@ export default function SurveillanceData({ incoming = null }) {
     if (!question || busy) return
     setText('')
     setBusy(true)
+    if (!chatId) setChatId(`sd:${crypto.randomUUID()}`)
+    dirty.current = true
     setItems((x) => [...x, { question }])
     try {
       const answer = await askSurveillanceData(question)
@@ -243,8 +321,60 @@ export default function SurveillanceData({ incoming = null }) {
     </form>
   )
 
+  const grouped = groupChats(chats || [])
+  const history = (
+    <>
+      <div className="space-y-3 p-3">
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={newChat}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-red-700 ${FOCUS}`}>
+            <Plus className="h-4 w-4" aria-hidden="true" /> New question
+          </button>
+          <button type="button" onClick={() => setPanelOpen(false)} aria-label="Close history" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 md:hidden">
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search history" aria-label="Search history"
+            className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-100" />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 pb-4">
+        <div className="px-2 pb-1 pt-2 text-xs font-bold text-gray-900">History</div>
+        {chats && !chats.length && (
+          <p className="px-2 py-4 text-sm text-gray-700">{search.trim() ? 'Nothing matches your search.' : 'Your questions will appear here.'}</p>
+        )}
+        {grouped.map(([label, list]) => (
+          <div key={label} className="mb-2">
+            <div className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</div>
+            {list.map((c) => (
+              <div key={c.id} className={`group flex items-center rounded-lg ${c.id === chatId ? 'bg-white shadow-sm ring-1 ring-gray-100' : 'hover:bg-gray-100'}`}>
+                <button type="button" onClick={() => openChat(c.id)} title={c.title} className={`min-w-0 flex-1 truncate px-2.5 py-2 text-left text-sm text-gray-900 ${FOCUS}`}>{c.title}</button>
+                <button type="button" onClick={() => removeChat(c.id)} aria-label={`Delete: ${c.title}`}
+                  className="mr-1 shrink-0 rounded p-1.5 text-gray-400 opacity-0 hover:text-red-700 focus:opacity-100 group-hover:opacity-100">
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
+  )
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 bg-white">
+      {panelOpen && <button type="button" aria-label="Close history" onClick={() => setPanelOpen(false)} className="absolute inset-0 z-20 bg-black/20 md:hidden" />}
+      <aside className={`z-30 w-72 shrink-0 flex-col border-r border-gray-100 bg-gray-50 ${panelOpen ? 'absolute inset-y-0 left-0 flex shadow-xl' : 'hidden'} md:static md:flex md:shadow-none`}>
+        {history}
+      </aside>
+    <div className="flex h-full min-w-0 flex-1 flex-col">
+      <div className="flex items-center gap-2 px-4 pt-3 md:hidden">
+        <button type="button" onClick={() => setPanelOpen(true)} className={`inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-900 ${FOCUS}`}>
+          <History className="h-4 w-4" aria-hidden="true" /> History
+        </button>
+      </div>
       {!items.length ? (
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 pb-10">
           <div className="w-full max-w-2xl">
@@ -286,6 +416,7 @@ export default function SurveillanceData({ incoming = null }) {
           <div className="px-4 pb-5 pt-2"><div className="mx-auto max-w-4xl">{composer}</div></div>
         </>
       )}
+    </div>
     </div>
   )
 }

@@ -31,7 +31,6 @@ const isAnimal = (disease) => String(disease || '').includes('animal')
 const countLabel = (n, disease) => `${n ?? 0} ${isAnimal(disease) ? (n === 1 ? 'case' : 'cases') : (n === 1 ? 'person' : 'people')}`
 
 const BANNER = { critical: 'bg-red-600', high: 'bg-amber-500', standard: 'bg-blue-500' }
-const SEVERITY_LABELS = { critical: 'Critical', high: 'High', standard: 'Standard' }
 const STATUS_LABELS = { Investigating: 'In the field' }
 
 const PRIMARY = 'bg-red-600 text-white hover:bg-red-700 border-red-600'
@@ -2804,9 +2803,6 @@ function EventHeader({ event, isCha, ctx, canAct, onMerge, children }) {
             <span className="inline-flex items-center rounded-full border border-white/70 bg-white/10 px-3 py-0.5 text-xs font-semibold">
               {event.status === 'Closed' && event.outcome ? `Closed · ${event.outcome}` : STATUS_LABELS[event.status] || event.status}
             </span>
-            {!isCha && (
-              <span className="inline-flex items-center rounded-full border border-white/70 bg-white/20 px-3 py-0.5 text-xs font-semibold">{SEVERITY_LABELS[event.severity] || SEVERITY_LABELS.standard} priority</span>
-            )}
             {!isCha && <TriageRisk risk={event.risk} event={event} />}
           </div>
           <p className="mt-2 text-sm">

@@ -124,9 +124,16 @@ function Avatar() {
 // Each tab says what it answers from, so the two are not mixed up (KRCS 26 Nov 2026).
 const TABS = [
   { key: 'kb', label: 'Knowledge base', hint: 'Guidelines, protocols, case definitions', icon: BookOpen, cap: ['use_knowledge_base', 'manage_knowledge_base'] },
-  { key: 'data', label: 'Surveillance data', hint: 'Figures from reports, CBS and MOH 505 · tables and charts', icon: Database, cap: 'ask_surveillance_data' },
+  { key: 'data', label: 'Query Surveillance Data', hint: 'Figures from reports, CBS and MOH 505 · tables and charts', icon: Database, cap: 'ask_surveillance_data' },
 ]
 const TAB_BAR = 62   // height of the tab bar, in px
+// questions to start from, like the ones under Query Surveillance Data (KRCS 26 Nov 2026)
+const KB_EXAMPLES = [
+  'What is the case definition for suspected cholera?',
+  'How should a suspected measles case be reported and followed up?',
+  'What are the danger signs of severe malaria in a child?',
+  'When should a CHP refer a patient to a health facility?',
+]
 
 // a question about figures rather than documents ("cholera cases in the last 4 weeks")
 const FIGURES = /\b(how many|number of|cases|deaths|died|trends?|statistics|figures|totals?|counts?|by (week|month|sub-?county|county|disease|source)|(last|past) \d+ (days|weeks|months)|this (week|month|year))\b/i
@@ -338,8 +345,8 @@ function KnowledgeChat({ tabs = false, onAskData = null }) {
 
   const lastQuestion = [...messages].reverse().find((m) => m.role === 'user')?.content || ''
 
-  function send() {
-    const question = inputText.trim()
+  function send(q) {
+    const question = (typeof q === 'string' ? q : inputText).trim()
     if (!question || isLoading) return
     const base = current || { id: crypto.randomUUID(), title: question.slice(0, 80), messages: [] }
     const chat = { ...base, messages: [...base.messages, { role: 'user', content: question }] }
@@ -504,6 +511,12 @@ function KnowledgeChat({ tabs = false, onAskData = null }) {
                 <h1 className="mb-2 text-center text-3xl font-medium text-gray-900">Ask about guidelines and protocols</h1>
                 <p className="mb-6 text-center text-sm text-gray-900">Answers come from approved KRCS documents and trusted sources, with a link to each source.</p>
                 {composer}
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {KB_EXAMPLES.map((q) => (
+                    <button key={q} type="button" onClick={() => send(q)} disabled={isLoading}
+                      className="rounded-full border border-gray-200 px-3 py-1.5 text-sm text-gray-900 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">{q}</button>
+                  ))}
+                </div>
               </div>
             </div>
           ) : (
@@ -550,7 +563,7 @@ function KnowledgeChat({ tabs = false, onAskData = null }) {
                       <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
                       This looks like a question about figures. The Knowledge base answers from documents.
                       <button type="button" onClick={() => onAskData(lastQuestion)} className="font-semibold text-red-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
-                        Ask it in Surveillance data
+                        Ask it in Query Surveillance Data
                       </button>
                     </p>
                   )}

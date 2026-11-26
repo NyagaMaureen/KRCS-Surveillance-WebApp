@@ -323,5 +323,51 @@ def get_my_chps():
 		x["units"].append(names.get(r.health_unit) or r.health_unit)
 	for x in out.values():
 		x["reportsThisMonth"] = frappe.db.count("Case Report", {"reported_by": x["id"], "creation": [">=", month]})
-		x["openTasks"] = frappe.db.count("Event Task", {"assigned_to": x["id"], "status": ["in", ["Assigned", "In progress", "Blocked"]]})
+		# referrals counted on their own, so Open tasks leaves them out (KRCS 26 Nov 2026)
+		x["openTasks"] = frappe.db.count("Event Task", {"assigned_to": x["id"], "task_type": ["!=", "Referral"],
+			"status": ["in", ["Assigned", "In progress", "Blocked"]]})
+		x["referralsThisMonth"] = frappe.db.count("Event Task", {"assigned_to": x["id"], "task_type": "Referral",
+			"creation": [">=", month]})
 	return {"units": [names.get(u) or u for u in units], "chps": list(out.values())}
+
+
+# a fixed set of keys mobile can translate (David, 26 Nov 2026); never changes when the English labels do
+REFERRAL_STATUS_KEYS = {"Assigned": "to_refer", "In progress": "referred", "Blocked": "blocked",
+	"Done": "reached_facility", "Could not complete": "did_not_reach"}
+
+
+@frappe.whitelist()
+def get_chp_referrals(chp, period="month"):
+	"""The referrals a CHP in the CHA's own unit(s) has been given, newest first, for the mobile CHP card
+	(KRCS 26 Nov 2026). period: "month" (this month, the same as the count on the card) or "all".
+	sentOn is when the referral was sent to the CHP; status shows how far it got."""
+	require_capability("view_my_chps")
+	from frappe.utils import get_first_day, nowdate
+	from surveillance.event_tasks import REFERRAL_LABELS, _ref_no
+	units = units_of(frappe.session.user)
+	mine = units and frappe.db.sql(f"""select 1 from `tab{CHILD}` uh join `tabHas Role` hr
+		on hr.parent = uh.parent and hr.parenttype = 'User'
+		where uh.parenttype = 'User' and uh.parentfield = 'health_units' and uh.parent = %(chp)s
+		and uh.health_unit in %(units)s and hr.role in %(roles)s limit 1""",
+		{"chp": chp, "units": units, "roles": list(CHP_ROLES)})
+	if not mine:
+		frappe.throw(_("This CHP is not in your Community Health Unit."), frappe.PermissionError)
+	filters = {"assigned_to": chp, "task_type": "Referral"}
+	if period != "all":
+		filters["creation"] = [">=", get_first_day(nowdate())]
+	rows = frappe.get_all("Event Task", filters=filters, order_by="creation desc", limit_page_length=200,
+		fields=["name", "event", "status", "facility", "disease_name", "area", "sub_county", "due_date", "creation",
+			"completed_on", "assigned_by", "outcome"])
+	return {
+		"chp": chp, "chpName": frappe.utils.get_fullname(chp), "period": "This month" if period != "all" else "All time",
+		"referrals": [{
+			"id": r.name, "ref": _ref_no(r.name), "event": r.event,
+			"sentOn": str(r.creation)[:16], "sentBy": frappe.utils.get_fullname(r.assigned_by) if r.assigned_by else None,
+			"status": r.status, "statusKey": REFERRAL_STATUS_KEYS.get(r.status, "other"),
+			"statusLabel": REFERRAL_LABELS.get(r.status, r.status),
+			"disease": r.disease_name, "facility": r.facility or None,
+			"place": ", ".join(x for x in [r.area, r.sub_county] if x) or None,
+			"dueDate": str(r.due_date) if r.due_date else None,
+			"completedOn": str(r.completed_on)[:16] if r.completed_on else None, "outcome": r.outcome or ""}
+			for r in rows],
+	}

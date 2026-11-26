@@ -30,9 +30,13 @@ def _summary(row):
 	return {"id": row.chat_id, "title": row.title or "New chat", "updatedAt": str(row.modified), "count": cint(row.message_count)}
 
 
+SD = "sd:"   # Query Surveillance Data history (KRCS 26 Nov 2026): chat ids start with this; they keep only questions
+             # and the checked choices, never figures, and are run again when opened
+
+
 @frappe.whitelist()
-def list_chats(search=None, limit=100):
-	filters = {"user": _user()}
+def list_chats(search=None, limit=100, kind=None):
+	filters = {"user": _user(), "chat_id": ["like", f"{SD}%"] if kind == "sd" else ["not like", f"{SD}%"]}
 	or_filters = None
 	term = (search or "").strip()
 	if term:

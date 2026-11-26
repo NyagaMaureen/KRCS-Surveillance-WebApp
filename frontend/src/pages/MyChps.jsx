@@ -52,6 +52,7 @@ export default function MyChps() {
                         <th className="px-4 py-3">Phone</th>
                         <th className="px-4 py-3">Community Health Unit</th>
                         <th className="px-4 py-3">Reports this month</th>
+                        <th className="px-4 py-3">Referrals this month</th>
                         <th className="px-4 py-3">Open tasks</th>
                         <th className="px-4 py-3">Last sign-in</th>
                         <th className="px-4 py-3">Status</th>
@@ -67,6 +68,7 @@ export default function MyChps() {
                           </td>
                           <td className="px-4 py-3 text-gray-900">{c.units.join(', ')}</td>
                           <td className="px-4 py-3 tabular-nums text-gray-900">{c.reportsThisMonth}</td>
+                          <td className="px-4 py-3 tabular-nums text-gray-900">{c.referralsThisMonth ?? 0}</td>
                           <td className="px-4 py-3 tabular-nums text-gray-900">{c.openTasks}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-gray-900">{when(c.lastLogin)}</td>
                           <td className="px-4 py-3"><Badge tone={c.active ? 'green' : 'gray'}>{c.active ? 'Active' : 'Inactive'}</Badge></td>
