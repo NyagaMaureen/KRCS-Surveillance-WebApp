@@ -91,7 +91,8 @@ def get_overview():
 	day = now - timedelta(hours=24)
 	signed_in = len(set(frappe.get_all("Activity Log", filters={"operation": "Login", "status": "Success", "creation": [">=", week]},
 		pluck="user")))
-	active = frappe.db.count("User", {"enabled": 1, "user_type": "System User", "name": ["not in", ["Administrator", "Guest"]]})
+	from surveillance.hq_dashboard import active_people
+	active = len(active_people())   # CHAs who are Website Users count too (KRCS 27 Nov 2026)
 	cards = [
 		{"key": "users", "label": "People who signed in", "value": signed_in, "note": f"last 7 days, of {active} active accounts"},
 	]

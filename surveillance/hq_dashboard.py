@@ -323,9 +323,15 @@ def get_surveillance(region=None, sub_county=None, from_date=None, to_date=None,
 
 # ---------- System Performance ----------
 
+def active_people():
+	"""Enabled people who use the system: System Users, and anyone with a main role whatever their account type
+	(KRCS 27 Nov 2026: on staging the CHAs are Website Users, so the CHAs card showed 0)."""
+	return set(frappe.get_all("User", filters={"enabled": 1, "name": ["not in", ["Administrator", "Guest"]]},
+		or_filters={"user_type": "System User", "primary_role": ["is", "set"]}, pluck="name"))
+
+
 def _users_by_role():
-	enabled = set(frappe.get_all("User", filters={"enabled": 1, "user_type": "System User",
-		"name": ["not in", ["Administrator", "Guest"]]}, pluck="name"))
+	enabled = active_people()
 	counts = Counter()
 	people = set()
 	for h in frappe.get_all("Has Role", filters={"parenttype": "User", "role": ["in", USER_ROLES]},

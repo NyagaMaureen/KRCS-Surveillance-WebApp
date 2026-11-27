@@ -181,8 +181,8 @@ def reviewed(doc, action, chosen=None, chosen_name=None, reason=None):
 		if late:
 			hours = round((now - get_datetime(rec.review_due)).total_seconds() / 3600, 1)
 			frappe.get_doc("Surveillance Event", doc.name).append("actions", {"at": now, "user": frappe.session.user,
-				"action": "AI output reviewed late",
-				"note": f"{action}. Reviewed {hours:g} hours after the deadline ({_fmt(rec.review_due)})."}).save(ignore_permissions=True)
+				"action": "AI triage checked late",
+				"note": f"{action}. Checked {hours:g} hours after it was due ({_fmt(rec.review_due)})."}).save(ignore_permissions=True)
 	except Exception:  # noqa: BLE001
 		frappe.log_error(title=f"AI review record failed ({doc.name})", message=frappe.get_traceback())
 
@@ -236,7 +236,8 @@ def _escalate(rec, doc, level, users, deadline_text, told=None, l2_hours=None):
 	"""The overdue email, in plain words (KRCS 27 Nov 2026): what the event is, that no officer has checked the AI
 	triage (the suggested disease and risk score) in time, and what to do. told: who had the first escalation (L3)."""
 	from surveillance.notifications import _button, _in_app, _link, _rows, _send, _suspected
-	names = ", ".join(sorted(get_fullname(u) for u in users)) or "nobody: no user has an L%s role for this area" % level
+	who = {2: "the Public Health Manager", 3: "the Public Health Specialist / HQ"}[level]
+	names = ", ".join(sorted(get_fullname(u) for u in users)) or "nobody: no one has that role for this area"
 	place = ", ".join(x for x in (doc.get("area"), doc.sub_county) if x) or "an unknown place"
 	unclassified = _unclassified(rec)
 	what = "Unclassified illness" if unclassified else (_suspected(rec.ai_suggestion_name or doc.disease_name) or doc.title)
@@ -269,8 +270,9 @@ def _escalate(rec, doc, level, users, deadline_text, told=None, l2_hours=None):
 		_send(emails, subject, html, doc.name)
 		_in_app(list(set(users) | set(copy)), subject, doc.name)
 	ev = frappe.get_doc("Surveillance Event", doc.name)
-	ev.append("actions", {"at": now_datetime(), "user": "Administrator", "action": f"AI review overdue: escalated to L{level}",
-		"note": f"Not reviewed within {deadline_text}. Sent to {names}."})
+	# the event's history in plain words too (KRCS 27 Nov 2026)
+	ev.append("actions", {"at": now_datetime(), "user": "Administrator", "action": f"Not checked in time: sent to {who}",
+		"note": f"No officer checked the AI triage by {_fmt(rec.review_due)}. Sent to {names}."})
 	ev.save(ignore_permissions=True)
 	if level == 2:
 		rec.escalation_level, rec.escalated_l2_on = 2, now_datetime()
