@@ -1,0 +1,131 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-27 10:00:00.000000",
+ "modified": "2026-11-27 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Help FAQ",
+ "description": "Help Center FAQs, each shown to the workspaces ticked (KRCS 27 Nov 2026).",
+ "field_order": [
+  "question",
+  "answer",
+  "question_sw",
+  "answer_sw",
+  "topic",
+  "sort_order",
+  "published",
+  "for_everyone",
+  "for_chp",
+  "for_cha",
+  "for_fhw",
+  "for_officer",
+  "for_dataai",
+  "for_full",
+  "for_sysadmin"
+ ],
+ "fields": [
+  {
+   "fieldname": "question",
+   "fieldtype": "Small Text",
+   "label": "Question (English)",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "answer",
+   "fieldtype": "Long Text",
+   "label": "Answer (English)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "question_sw",
+   "fieldtype": "Small Text",
+   "label": "Question (Kiswahili)"
+  },
+  {
+   "fieldname": "answer_sw",
+   "fieldtype": "Long Text",
+   "label": "Answer (Kiswahili)"
+  },
+  {
+   "fieldname": "topic",
+   "fieldtype": "Select",
+   "label": "Topic",
+   "options": "Getting started\nReporting\nReferrals and follow-ups\nTasks\nData and figures\nKRCS Data Assistant\nAccount and access\nOther",
+   "default": "Getting started",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sort_order",
+   "fieldtype": "Int",
+   "label": "Order",
+   "default": "10"
+  },
+  {
+   "fieldname": "published",
+   "fieldtype": "Check",
+   "label": "Published",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "for_everyone",
+   "fieldtype": "Check",
+   "label": "Everyone"
+  },
+  {
+   "fieldname": "for_chp",
+   "fieldtype": "Check",
+   "label": "CHP"
+  },
+  {
+   "fieldname": "for_cha",
+   "fieldtype": "Check",
+   "label": "CHA"
+  },
+  {
+   "fieldname": "for_fhw",
+   "fieldtype": "Check",
+   "label": "Facility Health Worker"
+  },
+  {
+   "fieldname": "for_officer",
+   "fieldtype": "Check",
+   "label": "Surveillance Officer"
+  },
+  {
+   "fieldname": "for_dataai",
+   "fieldtype": "Check",
+   "label": "Data & AI Admin"
+  },
+  {
+   "fieldname": "for_full",
+   "fieldtype": "Check",
+   "label": "County / National"
+  },
+  {
+   "fieldname": "for_sysadmin",
+   "fieldtype": "Check",
+   "label": "System Administrator"
+  }
+ ],
+ "links": [],
+ "states": [],
+ "sort_field": "sort_order",
+ "sort_order": "ASC",
+ "index_web_pages_for_search": 0,
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1
+  }
+ ]
+}

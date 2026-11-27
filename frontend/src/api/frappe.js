@@ -862,6 +862,21 @@ export async function rerunSurveillanceData(form) {
   return callMethodPost('/api/method/surveillance.data_questions.rerun', { form: JSON.stringify(form) })
 }
 
+// Help Center FAQs (KRCS 27 Nov 2026): the user's own workspace and language; managing needs Manage FAQs
+export const getFaqs = (language) =>
+  callMethod(`/api/method/surveillance.help_faqs.get_faqs${language ? `?language=${encodeURIComponent(language)}` : ''}`)
+export const listFaqs = () => callMethod('/api/method/surveillance.help_faqs.list_faqs')
+export const saveFaq = (faq) => callMethodPost('/api/method/surveillance.help_faqs.save_faq', { faq: JSON.stringify(faq) })
+export const deleteFaq = (id) => callMethodPost('/api/method/surveillance.help_faqs.delete_faq', { id })
+// Contact Us, support tickets, guides and videos (KRCS 27 Nov 2026)
+export const getHelpContact = () => callMethod('/api/method/surveillance.help_faqs.get_contact')
+export const saveHelpContact = (contact) => callMethodPost('/api/method/surveillance.help_faqs.save_contact', { contact: JSON.stringify(contact) })
+export const submitSupportTicket = (message) => callMethodPost('/api/method/surveillance.help_faqs.submit_ticket', { message })
+export const getHelpResources = (kind) => callMethod(`/api/method/surveillance.help_faqs.get_resources?kind=${encodeURIComponent(kind)}`)
+export const listHelpResources = (kind) => callMethod(`/api/method/surveillance.help_faqs.list_resources?kind=${encodeURIComponent(kind)}`)
+export const saveHelpResource = (resource) => callMethodPost('/api/method/surveillance.help_faqs.save_resource', { resource: JSON.stringify(resource) })
+export const deleteHelpResource = (id) => callMethodPost('/api/method/surveillance.help_faqs.delete_resource', { id })
+
 /*
 |--------------------------------------------------------------------------
 | AI Governance & Monitoring Dashboard (Data & AI Administrator)

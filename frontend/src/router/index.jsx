@@ -6,6 +6,8 @@ import KbDocumentView from '../pages/KbDocumentView'
 import Analytics from '../pages/Analytics'
 import DataExplorer from '../pages/DataExplorer'
 import AiPerformance from '../pages/AiPerformance'
+import HelpCenterContent from '../pages/HelpCenterContent'
+import { HelpFaqs, HelpContact, HelpGuides, HelpVideos } from '../pages/HelpPages'
 import Reports from '../pages/Reports'
 import ReportDetail from '../pages/ReportDetail'
 import RecordHealthSignal from '../pages/RecordHealthSignal'
@@ -76,6 +78,11 @@ const rawRoutes = [
   { path: '/analytics', name: 'analytics', element: Analytics },
   { path: '/data-explorer', name: 'data-explorer', element: DataExplorer },
   { path: '/ai-performance', name: 'ai-performance', element: AiPerformance },
+  { path: '/help-center-content', name: 'help-center-content', element: HelpCenterContent },
+  { path: '/help-faqs', name: 'help-faqs', element: HelpFaqs },
+  { path: '/help-contact', name: 'help-contact', element: HelpContact },
+  { path: '/help-guides', name: 'help-guides', element: HelpGuides },
+  { path: '/help-videos', name: 'help-videos', element: HelpVideos },
   { path: '/reports', name: 'reports', element: Reports },
   { path: '/reports/:id', name: 'report-detail', element: ReportDetail },
   { path: '/record-health-signal', name: 'record-health-signal', element: RecordHealthSignal },

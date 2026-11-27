@@ -41,12 +41,13 @@ export const SIDEBAR_MENU = [
     { label: 'Security Settings', icon: 'Lock', page: 'settings', query: 'tab=security', requiresCapability: 'settings_security' },
   ]},
   { section: 'HELP CENTER', items: [
-    { label: 'Contact Us', icon: 'Phone', page: 'help-center', hash: 'contact', requiresCapability: null },
-    { label: 'FAQs', icon: 'MessageCircleQuestion', page: 'help-center', hash: 'faqs', requiresCapability: null },
-    { label: 'Guides', icon: 'BookOpenText', page: 'help-center', hash: 'guides', requiresCapability: null },
-    { label: 'Video Tutorials', icon: 'PlaySquare', page: 'help-center', hash: 'videos', requiresCapability: null },
+    { label: 'Contact Us', icon: 'Phone', page: 'help-contact', requiresCapability: null },   // a page each (KRCS 27 Nov 2026)
+    { label: 'FAQs', icon: 'MessageCircleQuestion', page: 'help-faqs', requiresCapability: null },
+    { label: 'Guides', icon: 'BookOpenText', page: 'help-guides', requiresCapability: null },
+    { label: 'Video Tutorials', icon: 'PlaySquare', page: 'help-videos', requiresCapability: null },
     { label: 'Feedback', icon: 'MessageSquareWarning', page: 'feedback', requiresCapability: null },
     { label: 'Feedback Received', icon: 'Inbox', page: 'settings', query: 'tab=feedback', requiresCapability: 'view_feedback' },
+    { label: 'Help Center Content', icon: 'LifeBuoy', page: 'help-center-content', requiresCapability: 'manage_faqs' },   // KRCS 27 Nov 2026
   ]},
 ]
 

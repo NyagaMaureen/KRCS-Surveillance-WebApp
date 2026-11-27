@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "creation": "2026-11-27 11:00:00.000000",
+ "modified": "2026-11-27 11:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "module": "Surveillance",
+ "name": "Help Center Settings",
+ "field_order": [
+  "support_email",
+  "support_phone",
+  "support_hours",
+  "support_note"
+ ],
+ "fields": [
+  {
+   "fieldname": "support_email",
+   "fieldtype": "Data",
+   "label": "Support email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "support_phone",
+   "fieldtype": "Data",
+   "label": "Support phone"
+  },
+  {
+   "fieldname": "support_hours",
+   "fieldtype": "Data",
+   "label": "Hours"
+  },
+  {
+   "fieldname": "support_note",
+   "fieldtype": "Small Text",
+   "label": "Note"
+  }
+ ],
+ "links": [],
+ "states": [],
+ "index_web_pages_for_search": 0,
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  }
+ ],
+ "issingle": 1,
+ "description": "Contact Us details shown to everyone in the Help Center (KRCS 27 Nov 2026)."
+}

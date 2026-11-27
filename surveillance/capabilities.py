@@ -218,6 +218,10 @@ CAPABILITIES += [
 	 "description": "See the Alert Thresholds tab (changing them needs Manage Alert Thresholds)", "grants": {}},
 	{"key": "settings_ai_config", "name": "Settings: AI Config", "category": "Settings",
 	 "description": "See the AI Config tab (risk score weights, red-flag symptoms)", "grants": {}},
+	{"key": "manage_faqs", "name": "Manage Help Center", "category": "Settings",
+	 "description": "Change the Help Center: FAQs, Contact Us details, guides and video tutorials, and which workspaces see each "
+	 "one (KRCS 27 Nov 2026)",
+	 "grants": {}},
 	{"key": "view_ai_performance", "name": "View AI Performance", "category": "Settings",
 	 "description": "Open AI Performance: how often each AI part agreed with people, and the models in use (KRCS 26 Nov 2026)",
 	 "grants": {}},
@@ -271,6 +275,7 @@ MENU_LABELS = {
 	"view_context_data": ("Context Data", "View Context Data"), "manage_context_data": ("Context Data", "Manage Context Data"),
 	"settings_ai_config": ("AI Risk Engine", "AI Risk Engine Settings"),
 	"view_ai_performance": ("AI Performance", "View AI Performance"),
+	"manage_faqs": ("Help Center Content", "Manage Help Center"),
 	"view_knowledge_base": ("AI Knowledge Base", "View"),
 	"manage_knowledge_base": ("AI Knowledge Base", "Upload"),
 	"approve_knowledge_base": ("AI Knowledge Base", "Approve"),
@@ -293,7 +298,7 @@ MENU_LABELS = {
 CATEGORY_ORDER = ["Dashboard", "Signals Captured", "Review Queue", STEPS_TAB, "KRCS Data Assistant", "Data Explorer", "Monitoring Reports",
 	"Data Quality", "Response Protocols", "MOH 505 Facility Reports", "Context Data", "AI Risk Engine", "AI Performance", "AI Knowledge Base",
 	"AI Assistant Query Log", "Alert Thresholds", "Reporting Channels", "Data and Database", "Users and Roles", "Audit Log",
-	"Security Settings", "Feedback Received", "Notifications and System", "Workspaces"]
+	"Security Settings", "Feedback Received", "Help Center Content", "Notifications and System", "Workspaces"]
 for _c in CAPABILITIES:
 	if _c["key"] in MENU_LABELS:
 		_c["category"], _c["name"] = MENU_LABELS[_c["key"]]
@@ -315,7 +320,7 @@ WORKSPACES = [("chp_workspace", "chp"), ("officer_workspace", "officer"), ("fhw_
 # (AI, data, integrations, users, roles, security, settings) and sees no case or patient data. Set by data_ai_admin_setup.
 DATA_AI_CAPABILITIES = ["dataai_workspace", "view_users", "manage_users", "manage_roles", "view_audit_log",
 	"settings_security", "settings_data", "settings_ai_config", "settings_alert_thresholds", "manage_alert_thresholds",
-	"settings_notifications", "settings_system", "view_ai_performance", "manage_reference_data", "view_knowledge_base", "manage_knowledge_base", "approve_knowledge_base",
+	"settings_notifications", "settings_system", "view_ai_performance", "manage_faqs", "manage_reference_data", "view_knowledge_base", "manage_knowledge_base", "approve_knowledge_base",
 	"use_knowledge_base", "kb_national_scope", "view_chatbot_logs", "view_reporting_channels", "upload_facility_data",
 	"view_context_data", "manage_context_data", "view_data_quality", *SYSTEM_MONITORING_KEYS, "export_monitoring_reports",
 	"view_feedback", "view_all_regions"]   # national: the region set on the user (required by the form) does not limit it

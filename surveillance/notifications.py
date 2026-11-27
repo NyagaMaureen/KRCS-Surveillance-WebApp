@@ -556,7 +556,11 @@ def _link_for(doctype, name):
 		return alert_link(name)
 	if doctype == "User Feedback":
 		from surveillance.capabilities import has_capability
-		return "/settings?tab=feedback" if has_capability("view_feedback") else "/feedback"
+		from surveillance.help_faqs import TICKET_PAGE
+		if has_capability("view_feedback"):
+			return "/settings?tab=feedback"
+		# a reply to a support ticket opens Contact Us, where the ticket and the reply are (KRCS 27 Nov 2026)
+		return "/help-contact" if frappe.db.get_value("User Feedback", name, "page") == TICKET_PAGE else "/feedback"
 	return LINKS[doctype].format(name) if doctype in LINKS and name else None
 
 

@@ -47,3 +47,8 @@ surveillance.patches.fhw_allan_role
 surveillance.patches.allan_roles_reports_kb
 surveillance.patches.awd_suspected_name
 surveillance.patches.explorer_assistant_ai_perf
+surveillance.patches.help_faqs_seed
+surveillance.patches.help_faqs_chp_update
+surveillance.patches.help_contact_defaults
+surveillance.patches.help_faqs_more
+surveillance.patches.help_faqs_admin
