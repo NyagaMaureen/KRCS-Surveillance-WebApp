@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Building2, Search, X, ArrowRightLeft, Users, MapPin, FileText, UserRound, UserCheck, CalendarDays, Clock, CheckCheck, ClipboardList } from 'lucide-react'
+import { Building2, Search, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import { getReferralsOverview, getReferralState, closeReferralCase, getReferralCase } from '../api/frappe'
@@ -22,22 +22,13 @@ const TONE = {
 const SELECT = 'border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 bg-white min-w-0 max-w-full'
 const fmt = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—')
 
-function FollowUp({ f }) {
-  if (!f) return <span className="text-gray-400">—</span>
-  if (f.state === 'done') return <span className="text-emerald-700">Done</span>
-  return <span className={f.state === 'overdue' ? 'text-red-700' : 'text-gray-600'}>{f.state === 'overdue' ? 'Overdue' : 'Due'} {fmt(f.due)}</span>
-}
-
-// everything about one referral, in a window (KRCS 18 Nov 2026): grouped tiles with icons, not a list of text
-function Tile({ icon: Icon, label, children, tone = '' }) {
+// one row of the details table: bold label, black text, grid lines (KRCS 27 Nov 2026)
+function Row({ label, children }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3.5">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-red-600 shadow-sm"><Icon className="h-4 w-4" aria-hidden="true" /></span>
-      <div className="min-w-0">
-        <p className="text-xs font-bold text-gray-900">{label}</p>
-        <div className={`mt-0.5 text-sm ${tone || 'text-gray-900'}`}>{children}</div>
-      </div>
-    </div>
+    <tr>
+      <th scope="row" className="w-44 border border-gray-200 bg-gray-50 px-3 py-2.5 text-left align-top text-sm font-bold text-gray-900">{label}</th>
+      <td className="border border-gray-200 px-3 py-2.5 align-top text-sm text-gray-900">{children}</td>
+    </tr>
   )
 }
 
@@ -66,7 +57,6 @@ function CaseSection({ task }) {
             <b>{ev.id}</b>{ev.disease ? ` · ${/^suspected/i.test(ev.disease) ? ev.disease : `Suspected ${ev.disease}`}` : ''} · {ev.status}{ev.place ? ` · ${ev.place}` : ''}
             <span className="block text-gray-700">{ev.people} {ev.people === 1 ? 'person' : 'people'}{ev.deaths ? ` · ${ev.deaths} ${ev.deaths === 1 ? 'death' : 'deaths'}` : ''} · {ev.reports} {ev.reports === 1 ? 'report' : 'reports'} · first reported {fmtWhen(ev.firstReported)}</span>
           </p>
-          <Link to={`/alerts-signals/${encodeURIComponent(ev.id)}`} className="text-sm font-semibold text-red-700 hover:underline">Open the case →</Link>
         </div>
       )}
       {data.reports.length > 0 && (
@@ -79,27 +69,26 @@ function CaseSection({ task }) {
             <tbody>
               {data.reports.map((x) => (
                 <tr key={x.ref} className="border-t border-gray-200 align-top">
-                  <td className="px-3 py-3 whitespace-nowrap text-gray-900">
+                  <td className="px-3 py-3 text-gray-900">
                     <Link to={`/reports/${encodeURIComponent(x.ref)}`} className="font-semibold text-red-700 hover:underline">{x.ref}</Link>
                     <span className="block">{x.channel || '—'}</span>
                     {x.kind && <span className="block">{x.kind}</span>}
                     <span className="block">{fmtWhen(x.date)}</span>
                   </td>
-                  <td className="px-3 py-3 text-gray-900 min-w-[220px]">
+                  <td className="px-3 py-3 text-gray-900">
                     <span className="block font-semibold">{x.people} {x.people === 1 ? 'person' : 'people'}{x.deaths > 0 && <span className="text-red-700"> · {x.deaths} {x.deaths === 1 ? 'death' : 'deaths'}</span>}</span>
                     <span className="block">{x.symptoms || '—'}</span>
-                    {x.notPresent && <span className="block text-gray-700">Not present: {x.notPresent}</span>}
                     {x.onset && <span className="block"><b>Date of onset</b> {longDate(x.onset)}</span>}
                     {x.ages && <span className="block"><b>Age group</b> {x.ages}</span>}
                     {x.animal && <span className="block"><b>Animal exposure</b> {x.animal}</span>}
                     {x.notes && <span className="mt-1 block whitespace-pre-wrap"><b>Notes</b> {x.notes}</span>}
                   </td>
-                  <td className="px-3 py-3 text-gray-900 min-w-[130px]">
+                  <td className="px-3 py-3 text-gray-900">
                     <span className="block">{x.location || '—'}</span>
                     {x.gps ? <a href={`https://www.google.com/maps?q=${x.gps[0]},${x.gps[1]}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-red-700 hover:underline">View on map</a>
                       : <span className="block text-gray-700">No GPS recorded</span>}
                   </td>
-                  <td className="px-3 py-3 text-gray-900 min-w-[130px]">
+                  <td className="px-3 py-3 text-gray-900">
                     <span className="block">{x.reporter || '—'}</span>
                     {x.phone && <a href={`tel:${x.phone}`} className="font-semibold text-red-700 hover:underline">Call {x.phone}</a>}
                   </td>
@@ -119,6 +108,7 @@ function CaseSection({ task }) {
 }
 
 function ReferralDetails({ row: r, onClose }) {
+  const [showReports, setShowReports] = useState(false)
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -129,71 +119,48 @@ function ReferralDetails({ row: r, onClose }) {
   const fu = r.followup
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div role="dialog" aria-modal="true" aria-label={`Referral ${r.ref}`} className="bg-white rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto shadow-xl">
-        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600"><ArrowRightLeft className="h-5 w-5" aria-hidden="true" /></span>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-lg font-bold text-gray-900">Referral {r.ref}</h3>
-                <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${TONE[label] || 'bg-gray-100 text-gray-600'}`}>{label}</span>
-              </div>
-              <p className="text-sm text-gray-600">{r.disease || 'Disease not set'}{r.event ? ` · case ${r.event}` : ''}</p>
-            </div>
+      <div role="dialog" aria-modal="true" aria-label={`Referral ${r.ref}`} className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto shadow-xl">
+        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-lg font-bold text-gray-900">Referral {r.ref}</h3>
+            <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${TONE[label] || 'bg-gray-100 text-gray-600'}`}>{label}</span>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Close"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900" aria-label="Close"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="px-6 py-5 space-y-5">
-          <section>
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Patient and place</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Tile icon={Users} label="Patients">{patients || '—'}</Tile>
-              <Tile icon={Building2} label="Health facility">{r.facility || '—'}</Tile>
-              <Tile icon={MapPin} label="Place">{[r.area, r.subCountyName].filter(Boolean).join(', ') || '—'}</Tile>
-              <Tile icon={FileText} label="Case">{r.event || (r.caseReport ? `Report ${r.caseReport}` : 'Not linked to a case')}</Tile>
-            </div>
-            <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3.5">
-              <p className="text-xs font-bold text-gray-900">Why referred</p>
-              <p className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap">{r.reason || r.instructions || '—'}</p>
-            </div>
-          </section>
+        <div className="px-6 py-5">
+          <table className="w-full border-collapse">
+            <tbody>
+              <Row label="Disease">{r.disease || '—'}</Row>
+              <Row label="Facility">{r.facility || '—'}</Row>
+              <Row label="Why referred"><span className="whitespace-pre-wrap">{r.reason || r.instructions || '—'}</span></Row>
+              <Row label="Patients">{patients || '—'}</Row>
+              <Row label="Place">{[r.area, r.subCountyName].filter(Boolean).join(', ') || '—'}</Row>
+              <Row label="CHP">{r.assignedToName || '—'}{r.unit ? ` (${r.unit})` : ''}</Row>
+              <Row label="Referred by">{r.selfMade ? 'The CHP, on their own' : (r.assignedBy || '—')}, {longDate(r.createdOn)}</Row>
+              <Row label="Due"><span className={r.overdue ? 'font-semibold text-red-700' : ''}>{longDate(r.dueDate)}</span></Row>
+              <Row label="Outcome">
+                {r.outcome || (r.state === 'ongoing' ? 'Waiting to hear if the patient reached the facility' : 'No note recorded')}
+                {r.completedOn && <span className="block text-gray-700">Updated {longDate(r.completedOn)}</span>}
+              </Row>
+              <Row label="Follow-up">
+                {!fu ? 'None planned' : fu.state === 'done' ? 'Done'
+                  : <span className={fu.state === 'overdue' ? 'font-semibold text-red-700' : ''}>{fu.state === 'overdue' ? 'Overdue, was due' : 'Due'} {longDate(fu.due)}</span>}
+              </Row>
+            </tbody>
+          </table>
 
-          <section>
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">The case</h4>
-            <CaseSection task={r.id} />
-          </section>
-
-          <section>
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">People and dates</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Tile icon={UserRound} label="Assigned to">{r.assignedToName || '—'}{r.unit && <span className="block text-xs text-gray-600">{r.unit}</span>}</Tile>
-              <Tile icon={UserCheck} label="Assigned by">{r.selfMade ? 'No one. The CHP referred the patient on their own' : (r.assignedBy || '—')}</Tile>
-              <Tile icon={CalendarDays} label="Referred on">{longDate(r.createdOn)}</Tile>
-              <Tile icon={Clock} label="Due" tone={r.overdue ? 'text-red-700 font-semibold' : ''}>{longDate(r.dueDate)}</Tile>
-            </div>
-          </section>
-
-          {/* outcome and follow-up at the bottom, in the same tiles (KRCS 18 Nov 2026) */}
-          <section>
-            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Outcome and follow-up</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Tile icon={CheckCheck} label="Referral outcome">
-                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONE[label] || 'bg-gray-100 text-gray-600'}`}>{label}</span>
-                <span className="mt-1 block whitespace-pre-wrap">{r.outcome || (r.state === 'ongoing' ? 'Waiting to hear if the patient reached the facility' : 'No note recorded')}</span>
-                {r.completedOn && <span className="mt-0.5 block text-xs text-gray-600">Updated {longDate(r.completedOn)}</span>}
-              </Tile>
-              <Tile icon={ClipboardList} label="Follow-up">
-                {!fu ? 'None planned'
-                  : fu.state === 'done' ? <span className="text-emerald-700 font-semibold">Done</span>
-                    : <span className={fu.state === 'overdue' ? 'text-red-700 font-semibold' : ''}>{fu.state === 'overdue' ? 'Overdue, was due' : 'Due'} {longDate(fu.due)}</span>}
-              </Tile>
-            </div>
-          </section>
+          {/* the case behind the referral, only when asked for: it is long */}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <button type="button" aria-expanded={showReports} onClick={() => setShowReports((v) => !v)}
+              className="text-sm font-semibold text-gray-900 underline underline-offset-2">{showReports ? 'Hide the reports' : 'Show the reports'}</button>
+            {r.event && <Link to={`/alerts-signals/${encodeURIComponent(r.event)}`} className="text-sm font-semibold text-red-700 hover:underline">Open the case {r.event} →</Link>}
+          </div>
+          {showReports && <div className="mt-3"><CaseSection task={r.id} /></div>}
         </div>
 
-        <div className="flex justify-end px-6 py-4 bg-gray-50 border-t border-gray-100 rounded-b-2xl">
-          <button onClick={onClose} className="border border-gray-200 bg-white rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-gray-50">Close</button>
+        <div className="flex justify-end px-6 py-4 border-t border-gray-200">
+          <button onClick={onClose} className="border border-gray-200 bg-white rounded-lg px-5 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50">Close</button>
         </div>
       </div>
     </div>
@@ -331,39 +298,33 @@ export default function ReferralsOverview() {
           <table className="w-full text-sm border-collapse [&_th]:border [&_td]:border [&_th]:border-gray-200 [&_td]:border-gray-200">
             <thead>
               <tr className="text-left text-gray-900 text-xs [&_th]:font-bold [&_th]:border-b-2 [&_th]:border-b-red-600">
+                <th className="px-4 py-3 w-12">No.</th>
                 <th className="px-4 py-3">Referral</th>
                 <th className="px-4 py-3">Disease</th>
-                <th className="px-4 py-3">Patients</th>
                 <th className="px-4 py-3">Facility</th>
                 <th className="px-4 py-3">Assigned to</th>
                 <th className="px-4 py-3">Due</th>
-                <th className="px-4 py-3">Referral</th>
-                <th className="px-4 py-3">Follow-up</th>
+                <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
               {!data ? (
-                <tr><td colSpan={9} className="px-5 py-10 text-center text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={8} className="px-5 py-10 text-center text-gray-400">Loading…</td></tr>
               ) : !paged.length ? (
-                <tr><td colSpan={9} className="px-5 py-10 text-center text-gray-400">No referrals here</td></tr>
-              ) : paged.map((r) => {
+                <tr><td colSpan={8} className="px-5 py-10 text-center text-gray-400">No referrals here</td></tr>
+              ) : paged.map((r, i) => {
                 const label = r.overdue ? 'Overdue' : r.statusLabel
-                const patients = [r.people ? `${r.people}` : null, r.patient?.ageGroup, r.patient?.sex].filter(Boolean).join(' · ')
                 return (
                   <tr key={r.id} className="hover:bg-red-50/40 align-top">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="font-medium text-gray-900">{r.ref}</span>
-                      <span className="block text-xs text-gray-500">{r.event || 'Not linked to a case'}</span>
-                    </td>
+                    <td className="px-4 py-3 tabular-nums text-gray-900">{page * size + i + 1}</td>
+                    <td className="px-4 py-3 whitespace-nowrap font-medium text-gray-900">{r.ref}</td>
                     <td className="px-4 py-3 text-gray-700">{r.disease || '—'}<span className="block text-xs text-gray-400">{[r.area, r.subCountyName].filter(Boolean).join(', ')}</span></td>
-                    <td className="px-4 py-3 text-gray-700">{patients || '—'}</td>
                     <td className="px-4 py-3 text-gray-700"><span className="inline-flex items-start gap-1"><Building2 className="w-3.5 h-3.5 mt-0.5 text-gray-400 shrink-0" aria-hidden="true" />{r.facility || '—'}</span></td>
                     <td className="px-4 py-3 text-gray-700">{r.assignedToName || '—'}{r.unit && <span className="block text-xs text-gray-400">{r.unit}</span>}</td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{fmt(r.dueDate)}</td>
                     <td className="px-4 py-3"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap ${TONE[label] || 'bg-gray-100 text-gray-600'}`}>{label}</span>
                       {r.outcome && <span className="block mt-1 text-xs text-gray-500">{r.outcome}</span>}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap"><FollowUp f={r.followup} /></td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       {/* the referral's details here instead of the Review Queue (KRCS 18 Nov 2026) */}
                       <div className="flex justify-end gap-2">
