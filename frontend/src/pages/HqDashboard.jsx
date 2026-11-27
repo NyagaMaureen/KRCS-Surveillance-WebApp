@@ -432,7 +432,6 @@ function Loading({ error }) {
 
 // ---------- At a Glance ----------
 
-const SEV = { critical: 'bg-red-50 text-red-800', high: 'bg-amber-50 text-amber-800', standard: 'bg-gray-100 text-gray-900' }
 
 function GlanceTab({ filters, stamp }) {
   const { has: can } = useCapabilities()
@@ -450,14 +449,14 @@ function GlanceTab({ filters, stamp }) {
               options={{ responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: legendBottom, tooltip } }} />
           ) : <Empty />}
         </Panel>
-        <Panel title="Priority events requiring attention" icon={ShieldCheck} note="Open critical and high events, by cluster" height={null} className="xl:col-span-2">
+        <Panel title="Priority events requiring attention" icon={ShieldCheck} note="Open events that need attention, by cluster" height={null} className="xl:col-span-2">
           {data.priorityEvents.length ? (
             <div className="overflow-x-auto">
               <table className="red-head w-full border-collapse text-sm">
                 <thead>
                   <tr className="text-left text-xs">
                     <th className="w-10 px-3 py-2">#</th><th className="px-3 py-2">Event</th><th className="px-3 py-2">Place</th><th className="px-3 py-2">Reports</th>
-                    <th className="px-3 py-2">People</th><th className="px-3 py-2">Priority</th><th className="px-3 py-2">Status</th><th className="px-3 py-2" />
+                    <th className="px-3 py-2">People</th><th className="px-3 py-2">Status</th><th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -468,7 +467,6 @@ function GlanceTab({ filters, stamp }) {
                       <td className="px-3 py-2 text-gray-900">{e.place || '—'}</td>
                       <td className="px-3 py-2 text-gray-900">{e.reports}</td>
                       <td className="px-3 py-2 text-gray-900">{e.people || '—'}</td>
-                      <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${SEV[e.severity] || SEV.standard}`}>{e.severity}</span></td>
                       <td className="px-3 py-2 text-gray-900">{e.status}</td>
                       <td className="px-3 py-2 text-right">{can('view_review_queue') && <Link to={`/alerts-signals/${encodeURIComponent(e.id)}`} className={`rounded text-xs font-semibold text-red-700 hover:underline ${FOCUS}`}>Open</Link>}</td>
                     </tr>
@@ -476,7 +474,7 @@ function GlanceTab({ filters, stamp }) {
                 </tbody>
               </table>
             </div>
-          ) : <p className="py-8 text-center text-sm text-gray-900">No open critical or high events.</p>}
+          ) : <p className="py-8 text-center text-sm text-gray-900">No open events that need attention.</p>}
         </Panel>
         <Panel title="Signals by signal type" icon={Radio}><VBar series={data.signalType} color={NAVY} /></Panel>
         <Panel title="Suspected disease distribution" icon={Activity} note="All active diseases in the period" height={has(dist) ? null : 'h-72'}>

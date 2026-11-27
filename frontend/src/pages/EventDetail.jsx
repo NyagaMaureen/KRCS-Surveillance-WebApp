@@ -541,14 +541,40 @@ function SignalMedia({ eventId, signalId, media, canAct, canAdd = canAct, report
 // different diseases the officer splits one off: the priority / higher-risk one is investigated first.
 const ANSWER_OPTIONS = ['Yes', 'No']   // "Didn't know" removed (KRCS 19 Nov 2026)
 const DOT = ['bg-emerald-500', 'bg-amber-400', 'bg-amber-400', 'bg-gray-300']
-const RISK_TONE = { 'Very high': 'bg-red-50 text-red-700', High: 'bg-red-50 text-red-700', Medium: 'bg-amber-50 text-amber-800', Low: 'bg-gray-100 text-gray-600' }
 
 // Why / why not in plain words, from the signs only: no reporter names (KRCS 19 and 20 Nov 2026)
 const _cap = (x) => { const t = String(x).trim(); return t ? t[0].toUpperCase() + t.slice(1) : t }
 const _clean = (x) => String(x).replace(/\s*\([^)]*\)\s*$/, '').trim()
-function _against(x) {
+function _against(x) {   // short: "No fever" (KRCS 27 Nov 2026)
   const m = String(x).match(/said no to\s+(.+)$/i)
-  return m ? `${_cap(_clean(m[1]).toLowerCase())} is absent (the reporter said no)` : _cap(_clean(x))
+  return m ? `No ${_clean(m[1]).toLowerCase()}` : _cap(_clean(x))
+}
+
+// "15 signs": the names show on hover, or on tap / keyboard focus (KRCS 27 Nov 2026: the signs someone does not
+// have are many and rarely needed, so they are out of the way until asked for)
+function HoverList({ items, noun = 'signs' }) {
+  if (!items.length) return <span>None</span>
+  return (
+    <span className="group relative inline-block">
+      <span tabIndex={0} className={`cursor-help font-semibold underline decoration-dotted underline-offset-4 rounded ${FOCUS}`}>
+        {items.length} {items.length === 1 ? noun.replace(/s$/, '') : noun}
+      </span>
+      <span role="tooltip" className="pointer-events-none invisible absolute left-0 top-full z-30 mt-1 w-72 rounded-lg border border-gray-200 bg-white p-3 text-sm font-normal text-gray-900 shadow-lg group-hover:visible group-focus-within:visible">
+        {_cap(items.join(', '))}
+      </span>
+    </span>
+  )
+}
+
+// first two points, the rest on hover
+function ShortList({ items }) {
+  if (!items.length) return <span>Nothing against it</span>
+  return (
+    <ul className="list-disc space-y-0.5 pl-4">
+      {items.slice(0, 2).map((x) => <li key={x}>{x}</li>)}
+      {items.length > 2 && <li className="list-none -ml-4"><HoverList items={items.slice(2)} noun="more" /></li>}
+    </ul>
+  )
 }
 function diseaseWhy(d) {
   const signs = [...new Set(d.support.flatMap((s) => s.signs.map((x) => String(x).toLowerCase())))]
@@ -559,7 +585,7 @@ function diseaseWhy(d) {
   if (d.record != null) why.push(`The AI model was right about ${d.record} times in 10 for this in past clinic visits`)
   const not = [...new Set(d.against.map(_against))]
   if (d.ageAgainst) not.push(`Less common at age ${d.ageAgainst}`)
-  ;[...new Set((d.unknown || []).map((x) => _clean(x).toLowerCase()))].forEach((x) => not.push(`${_cap(x)}: not known (the reporter didn't know)`))
+  ;[...new Set((d.unknown || []).map((x) => _clean(x).toLowerCase()))].forEach((x) => not.push(`${_cap(x)}: not known`))
   const ask = [...new Set(d.ask.map((x) => _clean(x).toLowerCase()))]
   if (ask.length) not.push(`Not asked yet: ${ask.join(', ')}`)
   if (d.rulesOut.length) not.push(`Would be ruled out by ${d.rulesOut.map((x) => String(x).toLowerCase()).join(', ')}`)
@@ -598,7 +624,7 @@ function TriageDisease({ d, chosen, picked, canChoose, onPick, top }) {
         <ul className="list-disc space-y-0.5 pl-4">{w.why.map((x) => <li key={x}>{x}</li>)}</ul>
       </td>
       <td className="border border-gray-200 p-3 text-sm text-gray-900">
-        {w.not.length === 0 ? <span>Nothing against it</span> : <ul className="list-disc space-y-0.5 pl-4">{w.not.map((x) => <li key={x}>{x}</li>)}</ul>}
+        <ShortList items={w.not} />
       </td>
     </tr>
   )
@@ -750,11 +776,11 @@ function TriageRisk({ risk, event }) {
       <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 ${FOCUS}`}>
         <span className="text-gray-500">Risk</span><span className="font-semibold tabular-nums text-gray-900">{risk.score}</span>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${RISK_TONE[risk.level] || RISK_TONE.Low}`}>{risk.level}</span>
         <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
       {open && (
-        <div className="absolute left-0 sm:left-auto sm:right-0 z-20 mt-2 w-[min(88vw,560px)] rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+        // phones: a panel across the screen; larger screens: under the button. Dark text: the banner's is white.
+        <div className="fixed inset-x-4 top-24 z-50 max-h-[70vh] overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 text-gray-900 shadow-lg sm:absolute sm:inset-x-auto sm:top-auto sm:left-0 sm:mt-2 sm:w-[min(calc(100vw-2rem),560px)]">
           <ul className="grid gap-3 sm:grid-cols-2">
             {(risk.parts || []).map((p) => (
               <li key={p.key} className="text-sm">
@@ -946,22 +972,6 @@ function VerificationStep({ event, inv, signals, onInv, onSaved, onError, onDisc
 }
 
 // A short list: the first 3, then the rest on request (KRCS 23 Nov 2026)
-function FirstThree({ items, noun = 'answers' }) {
-  const [all, setAll] = useState(false)
-  if (!items.length) return null
-  const shown = all ? items : items.slice(0, 3)
-  return (
-    <>
-      {shown.map((x, i) => <Fragment key={i}>{i > 0 && ' · '}{x}</Fragment>)}
-      {items.length > 3 && (
-        <button type="button" onClick={() => setAll((v) => !v)} className={`ml-2 font-semibold text-red-700 hover:underline rounded ${FOCUS}`}>
-          {all ? 'Show fewer' : `Show all ${items.length} ${noun}`}
-        </button>
-      )}
-    </>
-  )
-}
-
 // What Verification found, read only and short (KRCS 23 Nov 2026): who verified and whom they spoke to, the
 // symptoms asked on the call (first 3, then the rest) and the answer to each question about the signal.
 const _redFlagQ = (q) => q.redFlag ?? String(q.kind || '').toLowerCase().includes('red')
@@ -977,26 +987,25 @@ function VerifiedCompact({ inv, reports, cbs = [], next, onNext }) {
     <div className={card}>
       <h2 className="text-xl font-semibold text-gray-900">Verification</h2>
       <p className="mt-1 mb-4 text-sm text-gray-900">
-        {inv.verified
-          ? <><b className="text-emerald-700">✓ Verified</b> by <b>{inv.verified.by || '—'}</b> on {fmtDateTime(inv.verified.on)}.{one ? ` ${call(one)}.` : ''}</>
-          : 'Not verified yet. The CHA calls the reporter and answers the questions below.'}
+        {inv.verified ? null : 'Not verified yet. The CHA calls the reporter and answers the questions below.'}
       </p>
       <table className="w-full border-collapse text-sm">
         <tbody>
           {reports.map((r) => {
-            const asked = (r.questions || []).filter((q) => q.answer && q.source === 'phone')
+            const sx = symptomsSummary([r])   // Has / Does not have, the "not" ones on hover (KRCS 27 Nov 2026)
+            const ref = one ? '' : ` (${r.ref})`
             return (
               <Fragment key={r.ref}>
                 {!one && (
                   <tr><th scope="row" className={TH}>Call ({r.ref})</th><td className={TD}>{call(r)}</td></tr>
                 )}
                 <tr>
-                  <th scope="row" className={TH}>Asked on the call{one ? '' : ` (${r.ref})`}</th>
-                  <td className={TD}>
-                    {asked.length
-                      ? <FirstThree noun="symptoms" items={asked.map((q) => <>{q.name}: <b>{q.answer}</b></>)} />
-                      : 'No symptoms asked on the call'}
-                  </td>
+                  <th scope="row" className={TH}>Has{ref}</th>
+                  <td className={TD}>{_cap([...sx.reported, ...sx.added].join(', ')) || 'None reported'}</td>
+                </tr>
+                <tr>
+                  <th scope="row" className={TH}>Does not have{ref}</th>
+                  <td className={TD}><HoverList items={sx.no} /></td>
                 </tr>
               </Fragment>
             )
@@ -1084,7 +1093,6 @@ function TriagePanel({ event, canAct, onConfirmed, onNext, onError, onDiscard, o
     <div className={`${card} relative`}>
       <div className="mb-5">
         <h2 className="text-xl font-semibold text-gray-900">AI triage</h2>
-        <p className="text-sm text-gray-900 mt-0.5">Choose the disease, answer its questions, then decide the next step. What the CHA found is in Verification (step 2).</p>
       </div>
 
       <CurvedTabs label="AI triage" value={cur} onChange={setTtab} tabs={[
@@ -1109,9 +1117,8 @@ function TriagePanel({ event, canAct, onConfirmed, onNext, onError, onDiscard, o
           if (!sx.reported.length && !sx.added.length && !sx.no.length) return null
           return (
             <p className="text-sm text-gray-900">
-              <b>Symptoms:</b> {sx.reported.join(', ') || 'none reported'}{sx.reported.length ? ' (reported)' : ''}
-              {sx.added.length > 0 && <> · {sx.added.join(', ')} (added on the call)</>}
-              {sx.no.length > 0 && <> · <b>said no to:</b> {sx.no.join(', ')}</>}
+              <b>Has:</b> {_cap([...sx.reported, ...sx.added].join(', ')) || 'None reported'}
+              {sx.no.length > 0 && <> · <b>Does not have:</b> <HoverList items={sx.no} /></>}
             </p>
           )
         })()}
@@ -1486,16 +1493,13 @@ function SignalCapturePanel({ event, signals, canAct, canAddVoice, next, onNext,
   const [mapOpen, setMapOpen] = useState(false)
   const FIRST = 3
   const rows = showAll ? signals : signals.slice(0, FIRST)
-  const field = signals.filter((s) => s.source === 'Field').length
-  const intro = signals.length === 1
-    ? `1 report${field ? ' from the field' : ''}. Nothing to answer here.`
-    : `${signals.length} reports, newest first. Nothing to answer here.`
+  const intro = signals.length === 1 ? '' : `${signals.length} reports, newest first.`
   return (
     <div className={card}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">Signal captured</h2>
-          <p className="mt-0.5 text-sm text-gray-700">{signals.length ? intro : 'No individual reports are linked to this event.'}</p>
+          {(intro || !signals.length) && <p className="mt-0.5 text-sm text-gray-700">{signals.length ? intro : 'No individual reports are linked to this event.'}</p>}
         </div>
         {signals.some(hasGps) && (
           <button type="button" aria-expanded={mapOpen} onClick={() => setMapOpen((v) => !v)}
@@ -1552,7 +1556,6 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
   const visible = showAll ? ordered : ordered.slice(0, 5)
   // the chosen disease's own questions; the ones asked in Verification (step 2) are not repeated (KRCS 19 Nov 2026)
   const all = (inv.questions || []).filter((q) => q.stage !== 'CHA')
-  const chaDone = (inv.questions || []).filter((q) => q.stage === 'CHA' && q.answer).length
   const caseQ = all.find((q) => String(q.kind || '').toLowerCase().includes('case'))
   const qText = caseQ?.question || ''
   const definition = qText.includes('?') ? qText.slice(qText.indexOf('?') + 1).trim() : ''
@@ -1571,7 +1574,7 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
     : !questionsDone ? `${questions.length - answered} question${questions.length - answered === 1 ? '' : 's'} left before the field investigation can start.`
       : 'Ready. Read the suggestion and continue.'
 
-  const sub = `${chaDone ? `The ${chaDone} question${chaDone === 1 ? '' : 's'} the CHA answered ${chaDone === 1 ? 'is' : 'are'} not asked again. ` : ''}Ask the reporter, the facility or the team.`
+  const sub = questions.length ? `${answered} of ${questions.length} answered` : ''
   return (
     <div className={part ? '' : card}>
       {!part && <PanelHeader title={`${triaged ? '3. ' : ''}Questions for ${event.diseaseName || 'this disease'}`} sub={sub} />}
@@ -1717,17 +1720,23 @@ function VerificationPanel({ event, inv, editable, busy, busyKey, signals, canVe
                       {red && <span className="ml-2 align-middle text-xs font-semibold text-red-700">Red flag</span>}
                     </p>
                     {q.why && <p className="text-sm text-gray-700 mt-0.5">{q.why}</p>}
-                    {fixed && <p className="text-xs text-gray-700 mt-0.5">Answered from the reporter reached in Verification</p>}
                   </td>
-                  <td className="w-36 p-3 whitespace-nowrap">
-                    {fixed || (!editable && q.answer) ? <span className="font-bold text-gray-900">{q.answer || '—'}</span> : (
-                      <MiniSeg
-                        label={`Question ${i + 1}`}
-                        options={['Yes', 'No']}
-                        value={q.answer}
-                        disabled={!editable || !reportsDone || rowBusy || busy}
-                        onChange={(v) => onAnswer(q.n, v)}
-                      />
+                  <td className="w-56 p-3">
+                    {/* answered or not, and by whom, so an answer is never mistaken for a default (KRCS 27 Nov 2026) */}
+                    {q.answer
+                      ? <p className="text-sm text-gray-900"><b>✓ {q.answer}</b>
+                          <span className="block text-xs text-gray-700">{fixed ? 'From Verification' : q.answeredBy ? `Answered by ${q.answeredBy}` : 'Answered'}{q.answeredOn ? `, ${fmtDateTime(q.answeredOn)}` : ''}</span></p>
+                      : <p className="text-sm font-semibold text-gray-700">Not answered yet</p>}
+                    {!fixed && editable && (
+                      <div className="mt-1.5">
+                        <MiniSeg
+                          label={`Question ${i + 1}`}
+                          options={['Yes', 'No']}
+                          value={q.answer}
+                          disabled={!reportsDone || rowBusy || busy}
+                          onChange={(v) => onAnswer(q.n, v)}
+                        />
+                      </div>
                     )}
                   </td>
                 </tr>

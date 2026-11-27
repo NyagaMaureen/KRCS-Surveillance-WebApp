@@ -122,7 +122,7 @@ export default function AlertsSignalsQueue() {
   const isCha = workspace === 'cha' || (has(['view_review_queue', 'act_on_events', 'step_signal', 'step_verification']) && !has('ai_triage'))
   // officers start on Verified: the signals a CHA has checked, waiting for AI triage (KRCS 19 Nov 2026)
   const defaultTab = isMoh ? 'escalated' : isCha ? 'new' : 'verified'
-  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : defaultTab
+  const tabParam = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : null
   const sort = SORTS.some((s) => s.key === params.get('sort')) ? params.get('sort') : 'risk'
   const q = params.get('q') || ''
   const disease = params.get('disease') || ''
@@ -174,7 +174,6 @@ export default function AlertsSignalsQueue() {
     return () => clearTimeout(t)
   }, [searchText, q, setParam])
 
-  const statuses = TABS.find((t) => t.key === tab).statuses
 
   const load = useCallback(
     ({ silent = false } = {}) => {
@@ -222,6 +221,9 @@ export default function AlertsSignalsQueue() {
     return new Set([scKey(subCounty), hit ? scKey(hit.id) : ''].filter(Boolean))
   }, [area, subCounty])
   const scEvents = useMemo(() => (subCounty ? events.filter((e) => scMatch.has(scKey(e.subCounty))) : events), [events, subCounty, scMatch])
+  // nothing verified yet: officers start on To review, so they never think there is nothing to check (KRCS 27 Nov 2026)
+  const tab = tabParam || (defaultTab === 'verified' && updatedAt && !scEvents.some((e) => e.status === 'Verified') ? 'new' : defaultTab)
+  const statuses = TABS.find((t) => t.key === tab).statuses
   const subCountyOptions = useMemo(() => (area.locked ? area.subCounties.map((x) => x.name)
     : [...new Set(events.map((e) => e.subCounty).filter(Boolean))].sort()), [area, events])
   const overdueCount = useMemo(() => scEvents.filter((e) => waitInfo(e)?.state === 'over').length, [scEvents])
@@ -425,7 +427,7 @@ export default function AlertsSignalsQueue() {
                           <td className="px-3 py-3.5 hidden md:table-cell text-gray-600">{place || <span className="text-amber-600">Location missing</span>}</td>
                           <td className="px-3 py-3.5 whitespace-nowrap">
                             <span className="inline-flex items-center gap-1.5 flex-nowrap">
-                              <RiskPill risk={ev.risk} severity={ev.severity} />   {/* CHAs too (KRCS 23 Nov 2026) */}
+                              <RiskPill risk={ev.risk} />   {/* CHAs too (KRCS 23 Nov 2026) */}
                             </span>
                             {w && w.state !== 'ok' && (
                               <span className={`block text-xs mt-1 ${w.state === 'over' ? 'text-red-700' : 'text-amber-600'}`} title={`Target: start verification within ${w.target} h`}>

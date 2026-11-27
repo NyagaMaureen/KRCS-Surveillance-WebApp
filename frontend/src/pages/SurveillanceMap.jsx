@@ -1,19 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, RefreshCw, Search, Filter, MapPin, AlertTriangle, Clock, TrendingUp, Maximize2, Minimize2, ChevronUp } from 'lucide-react'
+import { Download, RefreshCw, Search, Filter, MapPin, Clock, TrendingUp, Maximize2, Minimize2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import StatCard from '../components/analytics/StatCard'
 import MapView from '../components/map/MapView'
 import { getMapEvents, getDiseaseOptions, exportCsv } from '../api/frappe'
 
-const SEVERITY_COLORS = {
-  critical: '#EE2435',
-  high: '#F2C94C',
-  standard: '#3B82F6',
-}
-
-const SEVERITIES = ['critical', 'high', 'standard']
-const SEVERITY_RANK = { critical: 0, high: 1, standard: 2 }
+const PIN = '#EE2435'   // every event the same pin: no Critical / High / Normal (KRCS 27 Nov 2026)
 
 const STATUS_OPTIONS = [
   { value: 'open', label: 'Open' },
@@ -33,11 +26,6 @@ const PERIOD_OPTIONS = [
 ]
 
 const EMPTY_DATA = { events: [], unmapped: 0, stats: { open: 0, critical: 0, waiting: 0, escalated: 0 } }
-
-function cap(s) {
-  if (s === 'standard') return 'Normal'
-  return s ? s[0].toUpperCase() + s.slice(1) : s
-}
 
 function relTime(v) {
   const t = new Date(String(v || '').replace(' ', 'T')).getTime()
@@ -68,13 +56,11 @@ export default function SurveillanceMap() {
   const [diseaseOptions, setDiseaseOptions] = useState([])
   const [search, setSearch] = useState('')
   const [diseaseFilter, setDiseaseFilter] = useState('')
-  const [severityFilter, setSeverityFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('open')
   const [days, setDays] = useState(30)
   const [waitingOnly, setWaitingOnly] = useState(false)
   const [hoveredId, setHoveredId] = useState(null)
   const [focus, setFocus] = useState(null)
-  const [legendOpen, setLegendOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '', error: false })
   const toastTimer = useRef(null)
@@ -131,17 +117,11 @@ export default function SurveillanceMap() {
     })
   }, [data.events, search, waitingOnly])
 
-  const severityCounts = useMemo(() => {
-    const counts = { critical: 0, high: 0, standard: 0 }
-    baseFiltered.forEach((a) => { if (counts[a.severity] != null) counts[a.severity] += 1 })
-    return counts
-  }, [baseFiltered])
 
   const filteredAlerts = useMemo(
     () => baseFiltered
-      .filter((a) => !severityFilter || a.severity === severityFilter)
-      .map((a) => ({ ...a, color: SEVERITY_COLORS[a.severity] || '#6B7280' })),
-    [baseFiltered, severityFilter]
+      .map((a) => ({ ...a, color: PIN })),
+    [baseFiltered]
   )
 
   const mapEvents = filteredAlerts
@@ -149,17 +129,16 @@ export default function SurveillanceMap() {
 
   const listAlerts = useMemo(
     () => [...filteredAlerts].sort(
-      (a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9) || time(b.firstSeen) - time(a.firstSeen)
+      (a, b) => time(b.firstSeen) - time(a.firstSeen)
     ),
     [filteredAlerts]
   )
 
-  const filtersActive = !!(search || diseaseFilter || severityFilter || waitingOnly || statusFilter !== 'open' || days !== 30)
+  const filtersActive = !!(search || diseaseFilter || waitingOnly || statusFilter !== 'open' || days !== 30)
 
   function clearFilters() {
     setSearch('')
     setDiseaseFilter('')
-    setSeverityFilter('')
     setStatusFilter('open')
     setDays(30)
     setWaitingOnly(false)
@@ -169,9 +148,7 @@ export default function SurveillanceMap() {
     setSearch('')
     setDiseaseFilter('')
     setWaitingOnly(false)
-    setSeverityFilter('')
     setStatusFilter('open')
-    if (card === 'critical') setSeverityFilter('critical')
     if (card === 'waiting') { setStatusFilter('New'); setWaitingOnly(true) }
     if (card === 'escalated') setStatusFilter('Escalated')
   }
@@ -187,7 +164,6 @@ export default function SurveillanceMap() {
       { label: 'Disease', value: (a) => a.diseaseName || a.disease },
       { label: 'Area', value: (a) => a.area },
       { label: 'Sub-county', value: (a) => a.subCounty },
-      { label: 'Severity', value: (a) => a.severity },
       { label: 'Status', value: (a) => a.status },
       { label: 'People', value: (a) => a.people },
       { label: 'Reports', value: (a) => a.reports },
@@ -199,7 +175,7 @@ export default function SurveillanceMap() {
     ], { page: '/surveillance-map', title: 'Surveillance Map', filters: [
       { label: 'Period', value: `Last ${days} days` }, { label: 'Search', value: search.trim() },
       { label: 'Disease', value: diseaseFilter ? diseaseOptions.find((d) => d.key === diseaseFilter)?.name || diseaseFilter : '' },
-      { label: 'Severity', value: severityFilter }, { label: 'Status', value: STATUS_OPTIONS.find((s) => s.value === statusFilter)?.label || statusFilter },
+      { label: 'Status', value: STATUS_OPTIONS.find((s) => s.value === statusFilter)?.label || statusFilter },
       { label: 'Waiting only', value: waitingOnly ? 'Yes' : '' },
     ] }).catch((e) => window.alert(e.message || 'Export failed'))
   }
@@ -213,7 +189,7 @@ export default function SurveillanceMap() {
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-brand-navy">Surveillance Map</h2>
-          <p className="text-sm text-gray-400">Where reported events are in Dadaab and Kalobeyei, coloured by severity.</p>
+          <p className="text-sm text-gray-400">Where reported events are in Dadaab and Kalobeyei.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {updatedAt && <span className="text-xs text-gray-400">Updated {formatTime(updatedAt)}</span>}
@@ -233,12 +209,9 @@ export default function SurveillanceMap() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
         <button type="button" className={cardBtn} onClick={() => applyCard('open')}>
           <StatCard icon={MapPin} label="Open events" value={stats.open} />
-        </button>
-        <button type="button" className={cardBtn} onClick={() => applyCard('critical')}>
-          <StatCard icon={AlertTriangle} label="Critical" value={stats.critical} />
         </button>
         <button type="button" className={cardBtn} onClick={() => applyCard('waiting')}>
           <StatCard icon={Clock} label="Waiting over 24h" value={stats.waiting} />
@@ -313,34 +286,7 @@ export default function SurveillanceMap() {
             {fullscreen ? <Minimize2 className="w-4 h-4 text-gray-900" /> : <Maximize2 className="w-4 h-4 text-gray-900" />}
           </button>
 
-          <div className="absolute bottom-4 left-4 z-[1000] pointer-events-auto">
-            <button
-              type="button"
-              onClick={() => setLegendOpen((o) => !o)}
-              className="sm:hidden bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-medium text-gray-900 shadow-sm flex items-center gap-1.5"
-              aria-expanded={legendOpen}
-            >
-              Legend <ChevronUp className={['w-4 h-4 transition-transform', legendOpen ? '' : 'rotate-180'].join(' ')} />
-            </button>
-            <div
-              className={[
-                legendOpen ? 'flex' : 'hidden',
-                'sm:flex bg-white border border-gray-200 rounded-lg px-3 py-2 gap-1 flex-wrap shadow-sm max-sm:flex-col max-sm:absolute max-sm:bottom-11 max-sm:left-0',
-              ].join(' ')}
-            >
-              {SEVERITIES.map((s) => {
-                // a colour key only, not a filter (KRCS 18 Nov 2026)
-                return (
-                  <span key={s} className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-gray-900">
-                    <span className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ backgroundColor: SEVERITY_COLORS[s] }} />
-                    {cap(s)}
-                    <span className="text-xs text-gray-400">{severityCounts[s]}</span>
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-
+          
           {loading && (
             <div className="absolute inset-0 z-[1100] bg-gray-100 animate-pulse flex items-center justify-center" aria-busy="true">
               <MapPin className="w-10 h-10 text-gray-300" />

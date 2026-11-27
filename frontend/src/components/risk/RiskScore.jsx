@@ -1,26 +1,13 @@
 import { useState } from 'react'
 // Risk score (0-100): which event to look at first. Rule-based; the breakdown says why.
-const TONE = {
-  'Very high': 'bg-red-600 text-white',
-  High: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  Medium: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
-  Low: 'bg-gray-100 text-gray-600',
-}
 
 /** Small "Risk 78" pill for lists. */
-const PRIORITY_PILL = {
-  critical: 'bg-red-100 text-red-700',
-  high: 'bg-amber-100 text-amber-700',
-  standard: 'bg-gray-100 text-gray-600',
-}
 
-export function RiskPill({ risk, severity }) {
+export function RiskPill({ risk }) {   // the score only, no High / Critical (KRCS 27 Nov 2026)
   if (!risk) return null
-  const tone = (severity && PRIORITY_PILL[severity]) || TONE[risk.level] || TONE.Low
-  const priority = severity === 'standard' ? 'Normal' : severity ? severity[0].toUpperCase() + severity.slice(1) : ''
   return (
-    <span title={[priority && `${priority} priority`, risk.top?.length ? `Mostly: ${risk.top.join(', ')}` : `${risk.level} risk`].filter(Boolean).join(' · ')}
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums whitespace-nowrap ${tone}`}>
+    <span title={risk.top?.length ? `Mostly: ${risk.top.join(', ')}` : undefined}
+      className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums whitespace-nowrap text-gray-900">
       Risk {risk.score}
     </span>
   )
@@ -38,7 +25,6 @@ export function RiskBreakdown({ risk }) {
         <div className="flex items-baseline gap-2">
           <span className="text-3xl font-semibold text-gray-900 tabular-nums">{risk.score}</span>
           <span className="text-sm text-gray-500">/ 100</span>
-          <span className={`ml-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONE[risk.level] || TONE.Low}`}>{risk.level} risk</span>
         </div>
         <p className="text-xs text-gray-400">Helps decide what to look at first. The officer decides.</p>
       </div>
@@ -94,7 +80,6 @@ export function RiskAssessment({ risk, disease, children }) {
               <span className="text-right">
                 <span className="text-3xl font-semibold tabular-nums text-gray-900">{risk.score}</span>
                 <span className="text-sm text-gray-400"> / 100</span>
-                <span className={`block mt-1 rounded-full px-2.5 py-0.5 text-xs font-semibold text-center ${TONE[risk.level] || TONE.Low}`}>{risk.level}</span>
               </span>
             ) : <span className="text-sm text-gray-400">Not calculated yet</span>}
           </div>

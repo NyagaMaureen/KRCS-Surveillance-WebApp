@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Marker, Polyline, Popup, ZoomControl, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, ZoomControl, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import { Link } from 'react-router-dom'
 import { Navigation, Share2, MessageCircle, AlertTriangle } from 'lucide-react'
@@ -16,12 +16,6 @@ export const TILE_ATTRIBUTION = MAPTILER_KEY
 const PILOT_CENTER = [0.0512, 40.3129]
 const PILOT_ZOOM = 11
 
-const SEVERITY_BADGE = {
-  critical: 'bg-red-600',
-  high: 'bg-amber-400',
-  standard: 'bg-blue-500',
-}
-const SEVERITY_LABEL = { critical: 'Critical', high: 'High', standard: 'Normal' }
 
 const PULSE_CSS = `
 @keyframes map-critical-pulse { 0% { transform: scale(0.6); opacity: 0.7; } 100% { transform: scale(1.6); opacity: 0; } }
@@ -37,16 +31,6 @@ function radiusFor(affected, min, max) {
   const n = Number(affected) || 0
   const range = max - min
   return Math.round(min + Math.min(1, Math.log10(n + 1) / 3) * range)
-}
-
-function pulseIcon(radius) {
-  const size = radius * 2 + 12
-  return L.divIcon({
-    html: `<div class="map-pulse-ring" style="width:${size}px;height:${size}px"></div>`,
-    className: '',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  })
 }
 
 function relTime(v) {
@@ -92,9 +76,6 @@ function PopupCard({ event: a, onToast }) {
         <span className="text-sm font-semibold text-gray-900 leading-snug">{a.title}</span>
       </div>
       <div className="flex items-center flex-wrap gap-2 mb-4">
-        <span className={['text-[10px] font-semibold text-white px-2 py-1 rounded-md uppercase tracking-wide', SEVERITY_BADGE[a.severity] || 'bg-gray-400'].join(' ')}>
-          {SEVERITY_LABEL[a.severity] || a.severity}
-        </span>
         {a.status && <span className="text-xs font-medium bg-gray-100 text-gray-700 rounded-full px-2.5 py-1">{a.status}</span>}
       </div>
       <div className="space-y-1.5 mb-4">
@@ -236,9 +217,7 @@ function Markers({ events, hoveredId, onToast, markerRefs, centersRef }) {
   })
   centersRef.current = centers
 
-  const sorted = placed.sort(
-    (x, y) => (x.a.severity === 'critical' ? 1 : 0) - (y.a.severity === 'critical' ? 1 : 0)
-  )
+  const sorted = placed
 
   return (
     <>
@@ -256,9 +235,6 @@ function Markers({ events, hoveredId, onToast, markerRefs, centersRef }) {
         const escalated = a.status === 'Escalated'
         return (
           <Fragment key={a.id}>
-            {a.severity === 'critical' && a.status === 'New' && (
-              <Marker position={pos} icon={pulseIcon(radius)} interactive={false} keyboard={false} zIndexOffset={-100} />
-            )}
             <CircleMarker
               ref={(el) => {
                 if (el) markerRefs.current[a.id] = el
