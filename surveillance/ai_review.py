@@ -226,17 +226,42 @@ def _officers(doc):
 	return [u.name for u in officers(sub_county_users(doc.sub_county, doc.name))]
 
 
-def _escalate(rec, doc, level, users, deadline_text):
-	from surveillance.notifications import _button, _in_app, _link, _rows, _send
-	tier = {2: "L2 (Public Health Manager / Field Supervisor)", 3: "L3 (Public Health Specialist / HQ Admin)"}[level]
+def _unclassified(rec):
+	"""No disease suggested, or only Unclassified illness: an officer has to choose the suspected disease."""
+	key, name = (rec.ai_suggestion or "").lower(), (rec.ai_suggestion_name or "").lower()
+	return not key or "unclassified" in key or "unclassified" in name
+
+
+def _escalate(rec, doc, level, users, deadline_text, told=None, l2_hours=None):
+	"""The overdue email, in plain words (KRCS 27 Nov 2026): what the event is, that no officer has checked the AI
+	triage (the suggested disease and risk score) in time, and what to do. told: who had the first escalation (L3)."""
+	from surveillance.notifications import _button, _in_app, _link, _rows, _send, _suspected
 	names = ", ".join(sorted(get_fullname(u) for u in users)) or "nobody: no user has an L%s role for this area" % level
-	subject = f"AI output not reviewed in time: {doc.disease_name or doc.title} in {doc.sub_county or 'unknown place'} ({doc.name})"
-	html = (f"<p>The AI triage for this event has not been reviewed by an officer within {deadline_text}. "
-		f"It has been escalated to you ({tier}). The reports are kept; please make sure an officer reviews it now.</p>"
-		+ _rows([("Event", escape_html(doc.name)), ("Disease suggested", escape_html(rec.ai_suggestion_name or "—")),
-			("Risk", f"{rec.risk_score} ({escape_html(rec.risk_level or '')})" if rec.risk_score is not None else "—"),
-			("Place", escape_html(", ".join(x for x in (doc.get("area"), doc.sub_county) if x) or "—")),
-			("Ready for review since", _fmt(rec.review_from)), ("Deadline", _fmt(rec.review_due))])
+	place = ", ".join(x for x in (doc.get("area"), doc.sub_county) if x) or "an unknown place"
+	unclassified = _unclassified(rec)
+	what = "Unclassified illness" if unclassified else (_suspected(rec.ai_suggestion_name or doc.disease_name) or doc.title)
+	subject = f"Not yet checked by an officer: {what} in {doc.sub_county or 'unknown place'} ({doc.name})"
+	if unclassified:
+		intro = (f"An event in {escape_html(place)} needs an officer. The system could not suggest a disease for it, and no "
+			"officer has checked it in time to choose the suspected disease.")
+		ask = "Please make sure an officer opens the event, checks the reports and chooses the suspected disease now."
+	else:
+		intro = (f"An event in {escape_html(place)} needs an officer. The system suggested a likely disease and a risk score "
+			"for it, but no officer has checked the suggestion in time.")
+		ask = "Please make sure an officer opens the event and checks the AI triage now."
+	if level == 3:
+		hours = f"{flt(l2_hours):g} hours ago" if l2_hours else "earlier"
+		intro += f" The Public Health Manager was told {hours}; it is now with you."
+	else:
+		intro += f" It should have been checked by {get_datetime(rec.review_due).strftime('%H:%M') if rec.review_due else 'now'}."
+	told_names = ", ".join(sorted(get_fullname(u) for u in (told or []))) if level == 3 else ""
+	html = (f"<p>{intro}</p><p><b>{ask}</b></p>"
+		+ _rows([("Event", escape_html(doc.name)),
+			("Suggested disease", "None yet: an officer should choose one" if unclassified else escape_html(what)),
+			("Risk score", f"{rec.risk_score} out of 100 ({escape_html(rec.risk_level or '')})" if rec.risk_score is not None else "—"),
+			("Place", escape_html(place)),
+			("Waiting since", _fmt(rec.review_from)), ("Should have been checked by", _fmt(rec.review_due)),
+			("Already told", escape_html(told_names) if told_names else None)])
 		+ _button(_link(doc.name), "Open the event"))
 	copy = _officers(doc) if level == 2 else []
 	emails = [frappe.db.get_value("User", u, "email") or u for u in set(users) | set(copy)]
@@ -276,7 +301,8 @@ def check_overdue():
 				_escalate(rec, doc, 2, _role_users(cfg["l2_roles"], doc), f"{flt(l1):g} hours ({rec.risk_level or 'unknown'} risk)")
 			elif now > add_to_date(due, hours=flt(cfg["l2_hours"])) and cint(rec.escalation_level) < 3:
 				_escalate(rec, doc, 3, _role_users(cfg["l3_roles"], doc, national=True),
-					f"{flt(l1):g} hours plus {flt(cfg['l2_hours']):g} hours at L2")
+					f"{flt(l1):g} hours plus {flt(cfg['l2_hours']):g} hours at L2",
+					told=_role_users(cfg["l2_roles"], doc), l2_hours=cfg["l2_hours"])
 		except Exception:  # noqa: BLE001
 			frappe.log_error(title=f"AI review escalation failed ({name})", message=frappe.get_traceback())
 	frappe.db.commit()
